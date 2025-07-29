@@ -17,73 +17,86 @@ const JobSchema = new Schema({
     required: true,
     trim: true
   },
-  budget: {
-    min: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    max: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    currency: {
-      type: String,
-      default: 'USD'
-    }
-  },
-  location: {
+  icon: {
     type: String,
-    required: true,
     trim: true
   },
-  status: {
+  media: [{
     type: String,
-    enum: ['open', 'in_progress', 'completed', 'cancelled'],
-    default: 'open'
-  },
-  clientId: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
+    trim: true
+  }],
+  location: {
+    type: Schema.Types.Mixed,
     required: true
   },
-  providerId: {
-    type: Schema.Types.ObjectId,
-    ref: 'User'
+  locationDetails: {
+    type: String,
+    trim: true
+  },
+  date: {
+    type: Date,
+    required: true
+  },
+  isUrgent: {
+    type: Boolean,
+    default: false
+  },
+  serviceTier: {
+    type: String,
+    enum: ['basic', 'standard', 'premium'],
+    default: 'standard'
   },
   paymentMethod: {
     type: String,
     enum: ['wallet', 'cash', 'xendit'],
     required: true
   },
-  applications: [{
-    providerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    quote: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    coverLetter: {
-      type: String,
-      trim: true
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'accepted', 'rejected'],
-      default: 'pending'
-    },
-    submittedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  completedAt: {
-    type: Date
+  status: {
+    type: String,
+    enum: ['open', 'in_progress', 'completed', 'cancelled'],
+    default: 'open'
+  },
+  user: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  assignedTo: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  budget: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'refunded'],
+    default: 'pending'
+  },
+  escrowAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  paidAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  paidAt: {
+    type: Date,
+    default: null
+  },
+  draftId: {
+    type: String,
+    default: null
+  },
+  completionStatus: {
+    type: Schema.Types.Mixed,
+    default: {}
   }
 }, {
   timestamps: true,
@@ -91,11 +104,29 @@ const JobSchema = new Schema({
   toObject: { virtuals: true }
 });
 
+// Virtual to get application count
+JobSchema.virtual('applicationCount', {
+  ref: 'Application',
+  localField: '_id',
+  foreignField: 'job',
+  count: true
+});
+
+// Virtual to get applications
+JobSchema.virtual('applications', {
+  ref: 'Application',
+  localField: '_id',
+  foreignField: 'job'
+});
+
 // Indexes for better query performance
 JobSchema.index({ status: 1 });
 JobSchema.index({ category: 1 });
-JobSchema.index({ clientId: 1 });
-JobSchema.index({ providerId: 1 });
+JobSchema.index({ user: 1 });
+JobSchema.index({ assignedTo: 1 });
 JobSchema.index({ createdAt: -1 });
+JobSchema.index({ date: 1 });
+JobSchema.index({ isUrgent: 1 });
+JobSchema.index({ title: 'text', description: 'text' });
 
-module.exports = mongoose.model('Job', JobSchema);
+module.exports = mongoose.model('Job', JobSchema, 'jobs');

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Eye, EyeOff, Loader } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const LoginForm: React.FC = () => {
@@ -11,10 +11,20 @@ const LoginForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  
+  // Log when authentication state changes
+  useEffect(() => {
+    console.log('[LoginForm] Auth state changed - isAuthenticated:', isAuthenticated);
+    if (isAuthenticated) {
+      console.log('[LoginForm] User is now authenticated, form should disappear');
+    }
+  }, [isAuthenticated]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    console.log('[LoginForm] Form submitted with credentials:', credentials.username);
     
     if (!credentials.username || !credentials.password) {
       toast.error('Please enter both username and password');
@@ -22,19 +32,28 @@ const LoginForm: React.FC = () => {
     }
 
     setLoading(true);
+    console.log('[LoginForm] Starting login process...');
     
     try {
       const result = await login(credentials.username, credentials.password);
       
+      console.log('[LoginForm] Login result:', result);
+      
       if (result.success) {
         toast.success('Login successful! Welcome to Admin Panel');
+        console.log('[LoginForm] Login successful, waiting for auth state update...');
+        // The AuthContext will automatically trigger a re-render
+        // No need for manual navigation since App.tsx will handle the routing
       } else {
+        console.log('[LoginForm] Login failed:', result.error);
         toast.error(result.error || 'Login failed');
       }
     } catch (error) {
+      console.error('[LoginForm] Login error:', error);
       toast.error('An unexpected error occurred');
     } finally {
       setLoading(false);
+      console.log('[LoginForm] Login process completed');
     }
   };
 

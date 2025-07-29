@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
-import { useAuth } from './hooks/useAuth';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import LoginForm from './components/Auth/LoginForm';
 import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard';
@@ -24,16 +25,35 @@ const queryClient = new QueryClient({
 });
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+  
+  // Log auth state changes
+  useEffect(() => {
+    console.log('[AppContent] Auth state changed:', {
+      isAuthenticated,
+      loading,
+      user: user?.username
+    });
+  }, [isAuthenticated, loading, user]);
 
   if (loading) {
-    return <LoadingSpinner />;
+    console.log('[AppContent] Showing loading spinner');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingSpinner />
+        <div className="ml-4">
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
+    console.log('[AppContent] User not authenticated, showing login form');
     return <LoginForm />;
   }
 
+  console.log('[AppContent] User authenticated, showing dashboard');
   return (
     <Router>
       <Routes>
@@ -53,16 +73,20 @@ const AppContent: React.FC = () => {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-gray-50">
-        <AppContent />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            className: 'bg-white shadow-lg border border-gray-200',
-            duration: 4000,
-          }}
-        />
-      </div>
+      <AuthProvider>
+        <SocketProvider>
+          <div className="min-h-screen bg-gray-50">
+            <AppContent />
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                className: 'bg-white shadow-lg border border-gray-200',
+                duration: 4000,
+              }}
+            />
+          </div>
+        </SocketProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

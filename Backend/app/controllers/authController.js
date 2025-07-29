@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
 const login = async (req, res) => {
   try {
@@ -9,16 +10,21 @@ const login = async (req, res) => {
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
     if (username === adminUsername && password === adminPassword) {
+      // Generate a consistent adminId based on username (or use a fixed one for simplicity)
+      const adminId = process.env.ADMIN_ID || 'admin-' + Buffer.from(username).toString('base64');
+      
       req.session.isAuthenticated = true;
       req.session.role = 'admin';
       req.session.username = username;
+      req.session.adminId = adminId;
 
       res.json({
         success: true,
         message: 'Login successful',
         user: {
           username: username,
-          role: 'admin'
+          role: 'admin',
+          adminId: adminId
         }
       });
     } else {
@@ -58,7 +64,8 @@ const checkAuth = (req, res) => {
       isAuthenticated: true,
       user: {
         username: req.session.username,
-        role: req.session.role
+        role: req.session.role,
+        adminId: req.session.adminId
       }
     });
   } else {

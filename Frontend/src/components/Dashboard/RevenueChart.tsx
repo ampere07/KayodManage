@@ -10,6 +10,25 @@ interface ChartData {
 const RevenueChart: React.FC = () => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
 
+  // Currency formatter for PHP peso
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount).replace('PHP', '₱');
+  };
+
+  // Custom tooltip formatter
+  const formatTooltip = (value: number, name: string) => {
+    if (name === 'revenue') {
+      return [formatCurrency(value), 'Revenue'];
+    }
+    return [value, 'Transactions'];
+  };
+
   useEffect(() => {
     // Generate sample chart data for the last 7 days
     const generateChartData = () => {
@@ -50,6 +69,7 @@ const RevenueChart: React.FC = () => {
               fontSize={12}
             />
             <Tooltip 
+              formatter={formatTooltip}
               contentStyle={{
                 backgroundColor: 'white',
                 border: '1px solid #e5e7eb',

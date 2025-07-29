@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, User, Briefcase, CreditCard, Calendar, Filter } from 'lucide-react';
+import { Activity, User, Briefcase, CreditCard, Calendar, Filter, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
-import { useSocket } from '../hooks/useSocket';
+import toast from 'react-hot-toast';
 
 interface ActivityItem {
   _id: string;
@@ -22,23 +22,10 @@ const ActivityPage: React.FC = () => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('all');
-  const socket = useSocket('admin');
 
   useEffect(() => {
     fetchActivities();
-  }, [typeFilter]);
-
-  useEffect(() => {
-    if (socket) {
-      socket.on('activity:new', (activity: ActivityItem) => {
-        setActivities(prev => [activity, ...prev]);
-      });
-
-      return () => {
-        socket.off('activity:new');
-      };
-    }
-  }, [socket]);
+  }, []);
 
   const fetchActivities = async () => {
     try {
@@ -46,12 +33,17 @@ const ActivityPage: React.FC = () => {
       const response = await fetch('/api/dashboard/activity', {
         credentials: 'include'
       });
+      
       if (response.ok) {
         const data = await response.json();
-        setActivities(data);
+        setActivities(data || []);
+      } else {
+        console.error('Failed to fetch activities:', response.status);
+        toast.error('Failed to load activities');
       }
     } catch (error) {
       console.error('Failed to fetch activities:', error);
+      toast.error('Error loading activities');
     } finally {
       setLoading(false);
     }
@@ -112,13 +104,27 @@ const ActivityPage: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Activity Feed</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Real-time platform activity and events
+            <div className="flex items-center space-x-3 mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">Activity Feed</h2>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-gray-600">API Mode</span>
+              </div>
+            </div>
+            <p className="text-sm text-gray-500">
+              Platform activity and events
             </p>
           </div>
           
           <div className="flex items-center space-x-3">
+            <button
+              onClick={fetchActivities}
+              disabled={loading}
+              className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            
             <Filter className="h-5 w-5 text-gray-500" />
             <select
               value={typeFilter}

@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, UserCheck, UserX, Eye, AlertCircle } from 'lucide-react';
+import { 
+  Search, 
+  Filter, 
+  UserCheck, 
+  UserX, 
+  Eye, 
+  AlertCircle, 
+  Ban, 
+  Clock, 
+  Shield,
+  MoreVertical,
+  X,
+  Settings,
+  Wifi,
+  WifiOff,
+  RefreshCw
+} from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { useSocket } from '../hooks/useSocket';
 import toast from 'react-hot-toast';
 
 interface User {
@@ -14,6 +29,14 @@ interface User {
   isVerified: boolean;
   isRestricted: boolean;
   isOnline: boolean;
+  accountStatus?: 'active' | 'restricted' | 'suspended' | 'banned';
+  restrictionDetails?: {
+    type: 'restricted' | 'suspended' | 'banned';
+    reason: string;
+    restrictedAt: Date;
+    suspendedUntil?: Date;
+    appealAllowed: boolean;
+  };
   wallet: {
     balance: number;
     currency: string;
@@ -27,89 +50,281 @@ interface User {
   lastLogin?: Date;
 }
 
+interface UserStats {
+  totalUsers: number;
+  onlineUsers: number;
+  verifiedUsers: number;
+  restrictedUsers: number;
+}
+
+interface ActionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (data: any) => void;
+  user: User | null;
+  actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict';
+}
+
+const ActionModal: React.FC<ActionModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  user, 
+  actionType 
+}) => {
+  const [reason, setReason] = useState('');
+  const [duration, setDuration] = useState(7);
+  
+  if (!isOpen || !user) return null;
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('Form submitted with action:', actionType); // Debug log
+    
+    if (actionType === 'unrestrict') {
+      onConfirm({});
+    } else if (actionType === 'suspend') {
+      if (!reason.trim()) {
+        toast.error('Please provide a reason for suspension');
+        return;
+      }
+      onConfirm({ reason: reason.trim(), duration });
+    } else if (actionType === 'ban') {
+      if (!reason.trim()) {
+        toast.error('Please provide a reason for ban');
+        return;
+      }
+      onConfirm({ reason: reason.trim() });
+    } else if (actionType === 'restrict') {
+      onConfirm({ restricted: true });
+    }
+    
+    setReason('');
+    setDuration(7);
+    onClose();
+  };
+  
+  const getModalTitle = () => {
+    switch (actionType) {
+      case 'ban': return 'Ban User';
+      case 'suspend': return 'Suspend User';
+      case 'restrict': return 'Restrict User';
+      case 'unrestrict': return 'Remove Restrictions';
+      default: return '';
+    }
+  };
+  
+  const getModalDescription = () => {
+    switch (actionType) {
+      case 'ban': return 'This will permanently ban the user from the platform. They will not be able to access their account.';
+      case 'suspend': return 'This will temporarily suspend the user for the specified duration. They will not be able to access their account during this period.';
+      case 'restrict': return 'This will restrict the user\'s account access with limited functionality.';
+      case 'unrestrict': return 'This will remove all restrictions from the user\'s account and restore full access.';
+      default: return '';
+    }
+  };
+
+  const getButtonText = () => {
+    switch (actionType) {
+      case 'ban': return 'Ban User';
+      case 'suspend': return 'Suspend User';
+      case 'restrict': return 'Restrict User';
+      case 'unrestrict': return 'Remove Restrictions';
+      default: return 'Confirm';
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-2xl border border-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">{getModalTitle()}</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <div className="mb-4">
+          <p className="text-sm text-gray-600 mb-2">
+            User: <span className="font-medium">{user.name}</span> ({user.email})
+          </p>
+          <p className="text-sm text-gray-500">{getModalDescription()}</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {(actionType === 'ban' || actionType === 'suspend') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason *
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                rows={3}
+                placeholder="Provide a detailed reason for this action..."
+                required
+              />
+            </div>
+          )}
+          
+          {actionType === 'suspend' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Duration (days)
+              </label>
+              <select
+                value={duration}
+                onChange={(e) => setDuration(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value={1}>1 day</option>
+                <option value={3}>3 days</option>
+                <option value={7}>1 week</option>
+                <option value={14}>2 weeks</option>
+                <option value={30}>1 month</option>
+                <option value={90}>3 months</option>
+              </select>
+            </div>
+          )}
+          
+          {/* Action Buttons - Made more prominent */}
+          <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-3 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 rounded-lg transition-colors shadow-lg font-semibold"
+            >
+              {getButtonText()}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const Users: React.FC = () => {
+  // Local state for all data
   const [users, setUsers] = useState<User[]>([]);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20,
-    total: 0,
-    pages: 0
-  });
-
-  const socket = useSocket('admin');
-
-  useEffect(() => {
-    fetchUsers();
-  }, [searchTerm, statusFilter, pagination.page]);
-
-  useEffect(() => {
-    if (socket) {
-      socket.on('user:updated', ({ user, updateType }) => {
-        setUsers(prev => prev.map(u => u._id === user._id ? user : u));
-        toast.success(`User ${user.name} was ${updateType}`);
-      });
-
-      socket.on('user:registered', (user) => {
-        setUsers(prev => [user, ...prev]);
-        toast.success(`New user registered: ${user.name}`);
-      });
-
-      return () => {
-        socket.off('user:updated');
-        socket.off('user:registered');
-      };
-    }
-  }, [socket]);
-
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [actionModal, setActionModal] = useState<{
+    isOpen: boolean;
+    actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict';
+  }>({ isOpen: false, actionType: 'restrict' });
+  
+  // API functions
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        ...(searchTerm && { search: searchTerm }),
-        ...(statusFilter !== 'all' && { status: statusFilter })
-      });
-
-      const response = await fetch(`/api/users?${params}`, {
+      const response = await fetch('/api/users', {
         credentials: 'include'
       });
-
+      
       if (response.ok) {
         const data = await response.json();
-        setUsers(data.users);
-        setPagination(prev => ({ ...prev, ...data.pagination }));
+        setUsers(data.users || []);
+        setUserStats(data.stats || null);
+      } else {
+        console.error('Failed to fetch users:', response.status);
+        toast.error('Failed to load users');
       }
     } catch (error) {
-      console.error('Failed to fetch users:', error);
-      toast.error('Failed to load users');
+      console.error('Error fetching users:', error);
+      toast.error('Error loading users');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleUserRestriction = async (userId: string, isRestricted: boolean) => {
+  // Load users on component mount
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+  
+  // Filter users based on search and status
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = !searchTerm || 
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'verified' && user.isVerified) ||
+      (statusFilter === 'online' && user.isOnline) ||
+      (statusFilter === 'restricted' && isUserRestricted(user));
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleUserAction = async (actionType: string, data: any = {}) => {
+    if (!selectedUser) return;
+    
+    console.log('Handling user action:', actionType, 'for user:', selectedUser._id); // Debug log
+    
     try {
-      const response = await fetch(`/api/users/${userId}/restrict`, {
-        method: 'PATCH',
+      let endpoint = '';
+      let method = 'PATCH';
+      let body = {};
+      
+      switch (actionType) {
+        case 'ban':
+          endpoint = `/api/users/${selectedUser._id}/ban`;
+          body = { reason: data.reason };
+          break;
+        case 'suspend':
+          endpoint = `/api/users/${selectedUser._id}/suspend`;
+          body = { reason: data.reason, duration: data.duration };
+          break;
+        case 'restrict':
+          endpoint = `/api/users/${selectedUser._id}/restrict`;
+          body = { restricted: true };
+          break;
+        case 'unrestrict':
+          endpoint = `/api/users/${selectedUser._id}/unrestrict`;
+          break;
+        default:
+          console.error('Unknown action type:', actionType);
+          return;
+      }
+      
+      console.log('Making request to:', endpoint); // Debug log
+      
+      const response = await fetch(endpoint, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ restricted: !isRestricted })
+        body: JSON.stringify(body)
       });
+
+      console.log('Response status:', response.status); // Debug log
 
       if (response.ok) {
         const updatedUser = await response.json();
         setUsers(prev => prev.map(user => 
-          user._id === userId ? updatedUser : user
+          user._id === selectedUser._id ? updatedUser : user
         ));
-        toast.success(`User ${!isRestricted ? 'restricted' : 'unrestricted'} successfully`);
+        toast.success(`User ${actionType === 'unrestrict' ? 'unrestricted' : actionType + 'ned'} successfully`);
+      } else {
+        const errorText = await response.text();
+        console.error('Error response:', errorText); // Debug log
+        toast.error(`Failed to ${actionType} user - Server returned ${response.status}`);
       }
     } catch (error) {
-      console.error('Failed to update user restriction:', error);
-      toast.error('Failed to update user status');
+      console.error(`Failed to ${actionType} user:`, error);
+      toast.error(`Failed to ${actionType} user`);
     }
   };
 
@@ -135,14 +350,76 @@ const Users: React.FC = () => {
     }
   };
 
+  const openActionModal = (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => {
+    console.log('Opening modal for action:', actionType, 'user:', user.name); // Debug log
+    setSelectedUser(user);
+    setActionModal({ isOpen: true, actionType });
+  };
+
+  const closeActionModal = () => {
+    setActionModal({ isOpen: false, actionType: 'restrict' });
+    setSelectedUser(null);
+  };
+
+  // Helper function to determine if user is restricted (includes backward compatibility)
+  const isUserRestricted = (user: User) => {
+    if (user.accountStatus) {
+      return user.accountStatus !== 'active';
+    }
+    // Fallback to legacy field
+    return user.isRestricted;
+  };
+
+  // Helper function to get user's effective status
+  const getUserStatus = (user: User) => {
+    if (user.accountStatus) {
+      return user.accountStatus;
+    }
+    // Fallback logic for users without accountStatus
+    return user.isRestricted ? 'restricted' : 'active';
+  };
+
+  const getStatusBadge = (user: User) => {
+    const status = getUserStatus(user);
+    
+    if (status === 'banned') {
+      return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Banned</span>;
+    }
+    if (status === 'suspended') {
+      const isExpired = user.restrictionDetails?.suspendedUntil && new Date(user.restrictionDetails.suspendedUntil) <= new Date();
+      return (
+        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+          isExpired ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+        }`}>
+          {isExpired ? 'Suspension Expired' : 'Suspended'}
+        </span>
+      );
+    }
+    if (status === 'restricted') {
+      return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Restricted</span>;
+    }
+    return null;
+  };
+
   const getOverdueFees = (fees: User['fees']) => {
+    if (!fees || !Array.isArray(fees)) return [];
     return fees.filter(fee => !fee.isPaid && new Date(fee.dueDate) < new Date());
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency: string = 'PHP') => {
+    if (currency === 'PHP') {
+      return new Intl.NumberFormat('en-PH', {
+        style: 'currency',
+        currency: 'PHP',
+        currencyDisplay: 'symbol',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(amount).replace('PHP', '₱');
+    }
+    
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: currency,
       minimumFractionDigits: 0,
     }).format(amount);
   };
@@ -153,35 +430,57 @@ const Users: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">User Management</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              {pagination.total} total users
+            <div className="flex items-center space-x-3 mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">User Management</h2>
+              <div className="flex items-center space-x-2">
+                <WifiOff className="h-4 w-4 text-gray-500" />
+                <span className="text-xs text-gray-600">API Mode</span>
+              </div>
+            </div>
+            <p className="text-sm text-gray-500">
+              {userStats ? `${userStats.totalUsers} total users` : `${filteredUsers.length} users`}
+              {userStats && (
+                <span className="ml-2">
+                  • {userStats.onlineUsers} online • {userStats.verifiedUsers} verified
+                </span>
+              )}
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
-              />
-            </div>
-            
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={fetchUsers}
+              disabled={loading}
+              className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
             >
-              <option value="all">All Users</option>
-              <option value="verified">Verified</option>
-              <option value="restricted">Restricted</option>
-              <option value="online">Online</option>
-            </select>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
           </div>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-3 mt-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+            />
+          </div>
+          
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">All Users</option>
+            <option value="verified">Verified</option>
+            <option value="restricted">Restricted</option>
+            <option value="online">Online</option>
+          </select>
         </div>
       </div>
 
@@ -189,8 +488,18 @@ const Users: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Loading users...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-gray-500">Loading users...</p>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-8 text-center">
+            <div className="text-gray-500">
+              {searchTerm || statusFilter !== 'all' ? (
+                <p>No users match your filters</p>
+              ) : (
+                <p>No users found</p>
+              )}
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -218,9 +527,11 @@ const Users: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((user) => {
+                {filteredUsers.map((user) => {
                   const overdueFees = getOverdueFees(user.fees);
                   const totalOverdue = overdueFees.reduce((sum, fee) => sum + fee.amount, 0);
+                  const userStatus = getUserStatus(user);
+                  const isRestricted = isUserRestricted(user);
                   
                   return (
                     <tr key={user._id} className="hover:bg-gray-50">
@@ -256,22 +567,18 @@ const Users: React.FC = () => {
                           }`}>
                             {user.isVerified ? 'Verified' : 'Unverified'}
                           </span>
-                          {user.isRestricted && (
-                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                              Restricted
-                            </span>
-                          )}
+                          {getStatusBadge(user)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatCurrency(user.wallet.balance)}
+                        {formatCurrency(user.wallet.balance, user.wallet.currency)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {overdueFees.length > 0 ? (
                           <div className="flex items-center space-x-1 text-red-600">
                             <AlertCircle className="h-4 w-4" />
                             <span className="text-sm font-medium">
-                              {formatCurrency(totalOverdue)} overdue
+                              {formatCurrency(totalOverdue, 'PHP')} overdue
                             </span>
                           </div>
                         ) : (
@@ -283,6 +590,7 @@ const Users: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
+                          {/* Verification Toggle */}
                           <button
                             onClick={() => toggleUserVerification(user._id, user.isVerified)}
                             className={`p-2 rounded-lg transition-colors ${
@@ -295,18 +603,42 @@ const Users: React.FC = () => {
                             <UserCheck className="h-4 w-4" />
                           </button>
                           
-                          <button
-                            onClick={() => toggleUserRestriction(user._id, user.isRestricted)}
-                            className={`p-2 rounded-lg transition-colors ${
-                              user.isRestricted
-                                ? 'text-green-600 hover:bg-green-100'
-                                : 'text-red-600 hover:bg-red-100'
-                            }`}
-                            title={user.isRestricted ? 'Remove restriction' : 'Restrict user'}
-                          >
-                            <UserX className="h-4 w-4" />
-                          </button>
+                          {/* Restriction Actions */}
+                          {!isRestricted ? (
+                            <>
+                              <button
+                                onClick={() => openActionModal(user, 'restrict')}
+                                className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors"
+                                title="Restrict user"
+                              >
+                                <Shield className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => openActionModal(user, 'suspend')}
+                                className="p-2 text-yellow-600 hover:bg-yellow-100 rounded-lg transition-colors"
+                                title="Suspend user"
+                              >
+                                <Clock className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => openActionModal(user, 'ban')}
+                                className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Ban user"
+                              >
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => openActionModal(user, 'unrestrict')}
+                              className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                              title="Remove restrictions"
+                            >
+                              <UserX className="h-4 w-4" />
+                            </button>
+                          )}
                           
+                          {/* View Details */}
                           <button
                             className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                             title="View details"
@@ -322,65 +654,16 @@ const Users: React.FC = () => {
             </table>
           </div>
         )}
-
-        {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 flex justify-between sm:hidden">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-                  disabled={pagination.page === pagination.pages}
-                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm text-gray-700">
-                    Showing{' '}
-                    <span className="font-medium">
-                      {((pagination.page - 1) * pagination.limit) + 1}
-                    </span>{' '}
-                    to{' '}
-                    <span className="font-medium">
-                      {Math.min(pagination.page * pagination.limit, pagination.total)}
-                    </span>{' '}
-                    of{' '}
-                    <span className="font-medium">{pagination.total}</span> results
-                  </p>
-                </div>
-                <div>
-                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                    <button
-                      onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                      disabled={pagination.page === 1}
-                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-                      disabled={pagination.page === pagination.pages}
-                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Next
-                    </button>
-                  </nav>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Action Modal */}
+      <ActionModal
+        isOpen={actionModal.isOpen}
+        onClose={closeActionModal}
+        onConfirm={(data) => handleUserAction(actionModal.actionType, data)}
+        user={selectedUser}
+        actionType={actionModal.actionType}
+      />
     </div>
   );
 };
