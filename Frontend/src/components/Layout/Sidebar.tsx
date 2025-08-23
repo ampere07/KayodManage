@@ -7,7 +7,8 @@ import {
   CreditCard, 
   Settings,
   AlertTriangle,
-  Activity
+  Activity,
+  MessageCircleQuestion
 } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
@@ -18,6 +19,7 @@ const Sidebar: React.FC = () => {
     { to: '/transactions', icon: CreditCard, label: 'Transactions' },
     { to: '/activity', icon: Activity, label: 'Activity' },
     { to: '/alerts', icon: AlertTriangle, label: 'Alerts' },
+    { to: '/support', icon: MessageCircleQuestion, label: 'Support' },
     { to: '/settings', icon: Settings, label: 'Settings' }
   ];
 

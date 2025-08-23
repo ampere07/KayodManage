@@ -154,7 +154,19 @@ const emitAlertUpdate = (alert, updateType) => {
   }
 };
 
+const emitSupportUpdate = (ticket, updateType) => {
+  if (adminNamespace) {
+    adminNamespace.to('admin').emit('support:ticket_updated', {
+      ticket,
+      updateType,
+      timestamp: new Date()
+    });
+    console.log(`🎫 Support ticket update emitted: ${updateType}`);
+  }
+};
+
 module.exports = {
   setupSocketHandlers,
-  emitAlertUpdate
+  emitAlertUpdate,
+  emitSupportUpdate
 };

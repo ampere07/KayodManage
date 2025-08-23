@@ -14,6 +14,7 @@ const userRoutes = require('./app/routes/users');
 const jobRoutes = require('./app/routes/jobs');
 const transactionRoutes = require('./app/routes/transactions');
 const adminRoutes = require('./app/routes/admin');
+const supportRoutes = require('./app/routes/support');
 
 // Load environment variables
 dotenv.config();
@@ -51,6 +52,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/support', supportRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
