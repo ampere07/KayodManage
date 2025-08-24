@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 
 const login = async (req, res) => {
   try {
@@ -10,13 +11,15 @@ const login = async (req, res) => {
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
     if (username === adminUsername && password === adminPassword) {
-      // Generate a consistent adminId based on username (or use a fixed one for simplicity)
-      const adminId = process.env.ADMIN_ID || 'admin-' + Buffer.from(username).toString('base64');
+      // Generate a consistent adminId - use a fixed string for simplicity
+      // Since we're not using ObjectIds for admin assignment, we can use any unique string
+      const adminId = process.env.ADMIN_ID || `admin_${username}`;
       
       req.session.isAuthenticated = true;
       req.session.role = 'admin';
       req.session.username = username;
       req.session.adminId = adminId;
+      req.session.userId = adminId; // Set userId to be compatible with middleware
 
       res.json({
         success: true,
@@ -59,13 +62,19 @@ const logout = (req, res) => {
 
 const checkAuth = (req, res) => {
   if (req.session && req.session.isAuthenticated) {
+    // Ensure userId is set for backward compatibility
+    if (!req.session.userId && req.session.adminId) {
+      req.session.userId = req.session.adminId;
+    }
+    
     res.json({
       success: true,
       isAuthenticated: true,
       user: {
         username: req.session.username,
         role: req.session.role,
-        adminId: req.session.adminId
+        adminId: req.session.adminId,
+        userId: req.session.userId
       }
     });
   } else {

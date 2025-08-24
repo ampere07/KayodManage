@@ -21,6 +21,39 @@ const setupSocketHandlers = (io) => {
     socket.on('request:dashboard', () => broadcastDashboardStats());
     socket.on('request:alerts', () => broadcastAlertUpdates());
     
+    // Support ticket events
+    socket.on('support:join_ticket', (data) => {
+      if (data.ticketId) {
+        socket.join(`support:${data.ticketId}`);
+        console.log(`🎫 Admin joined support ticket: ${data.ticketId}`);
+        socket.emit('support:joined_ticket', { ticketId: data.ticketId });
+      }
+    });
+    
+    socket.on('support:leave_ticket', (data) => {
+      if (data.ticketId) {
+        socket.leave(`support:${data.ticketId}`);
+        console.log(`🎫 Admin left support ticket: ${data.ticketId}`);
+      }
+    });
+    
+    socket.on('support:send_message', (data) => {
+      if (data.ticketId && data.message) {
+        // Broadcast to all admins in the ticket room
+        adminNamespace.to(`support:${data.ticketId}`).emit('support:new_message', {
+          ticketId: data.ticketId,
+          message: {
+            _id: `msg_${Date.now()}`,
+            senderType: 'Admin',
+            senderName: data.senderName || 'Support Agent',
+            message: data.message,
+            timestamp: new Date().toISOString()
+          }
+        });
+        console.log(`💬 Support message sent in ticket ${data.ticketId}`);
+      }
+    });
+    
     socket.on('disconnect', () => {
       console.log('🔌 Admin disconnected:', socket.id);
       Object.values(intervals).forEach(interval => clearInterval(interval));
@@ -154,7 +187,40 @@ const emitAlertUpdate = (alert, updateType) => {
   }
 };
 
+const emitSupportUpdate = (ticket, updateType) => {
+  if (adminNamespace) {
+    // Emit to all admins
+    adminNamespace.to('admin').emit('support:ticket_updated', {
+      ticket,
+      updateType,
+      timestamp: new Date()
+    });
+    
+    // If it's a new ticket, emit specific event
+    if (updateType === 'new_ticket') {
+      adminNamespace.to('admin').emit('support:new_ticket', {
+        ticket,
+        timestamp: new Date()
+      });
+    }
+    
+    // If there's a ticketId, also emit to ticket-specific room
+    if (ticket.ticketId || ticket._id) {
+      const ticketId = ticket.ticketId || ticket._id;
+      adminNamespace.to(`support:${ticketId}`).emit('support:ticket_updated', {
+        ticketId,
+        ...ticket,
+        updateType,
+        timestamp: new Date()
+      });
+    }
+    
+    console.log(`🎫 Support ticket update emitted: ${updateType}`);
+  }
+};
+
 module.exports = {
   setupSocketHandlers,
-  emitAlertUpdate
+  emitAlertUpdate,
+  emitSupportUpdate
 };

@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   LogOut,
-  Shield
+  Shield,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -30,6 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'Users', href: '/users', icon: Users },
     { name: 'Jobs', href: '/jobs', icon: Briefcase },
     { name: 'Transactions', href: '/transactions', icon: CreditCard },
+    { name: 'Support', href: '/support', icon: MessageSquare },
     { name: 'Activity', href: '/activity', icon: Activity },
     { name: 'Alerts', href: '/alerts', icon: AlertTriangle },
     { name: 'Settings', href: '/settings', icon: Settings },
