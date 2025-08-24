@@ -24,15 +24,15 @@ interface Job {
   category: string;
   icon?: string;
   media: string[];
-  location: any;
+  location?: any;
   locationDisplay: string;
   locationDetails?: string;
-  date: Date;
+  date: Date | string;
   isUrgent: boolean;
   serviceTier: 'basic' | 'standard' | 'premium';
   paymentMethod: 'wallet' | 'cash' | 'xendit';
   status: 'open' | 'in_progress' | 'completed' | 'cancelled';
-  user: {
+  user?: {
     _id: string;
     name: string;
     email: string;
@@ -46,10 +46,10 @@ interface Job {
   paymentStatus: 'pending' | 'paid' | 'refunded';
   escrowAmount: number;
   paidAmount: number;
-  paidAt?: Date;
+  paidAt?: Date | string;
   applicationCount: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 interface JobModalProps {
@@ -101,7 +101,7 @@ const JobDetailsModal: React.FC<JobModalProps> = ({ isOpen, onClose, job }) => {
             </div>
             <div>
               <span className="text-sm font-medium text-gray-500">Location:</span>
-              <p className="text-sm text-gray-900">{job.locationDisplay}</p>
+              <p className="text-sm text-gray-900">{job.locationDisplay || 'Not specified'}</p>
             </div>
             <div>
               <span className="text-sm font-medium text-gray-500">Payment Method:</span>
@@ -109,8 +109,8 @@ const JobDetailsModal: React.FC<JobModalProps> = ({ isOpen, onClose, job }) => {
             </div>
             <div>
               <span className="text-sm font-medium text-gray-500">Client:</span>
-              <p className="text-sm text-gray-900">{job.user.name}</p>
-              <p className="text-xs text-gray-500">{job.user.email}</p>
+              <p className="text-sm text-gray-900">{job.user?.name || 'Unknown User'}</p>
+              <p className="text-xs text-gray-500">{job.user?.email || 'No email'}</p>
             </div>
             <div>
               <span className="text-sm font-medium text-gray-500">Service Tier:</span>
@@ -420,7 +420,9 @@ const Jobs: React.FC = () => {
                             {job.title}
                           </div>
                           {job.isUrgent && (
-                            <AlertTriangle className="h-4 w-4 text-orange-500" title="Urgent" />
+                            <span title="Urgent">
+                              <AlertTriangle className="h-4 w-4 text-orange-500" />
+                            </span>
                           )}
                         </div>
                         <div className="text-sm text-gray-500 truncate mt-1">
@@ -432,7 +434,7 @@ const Jobs: React.FC = () => {
                           </div>
                           <div className="flex items-center text-xs text-gray-400">
                             <MapPin className="h-3 w-3 mr-1" />
-                            {job.locationDisplay}
+                            {job.locationDisplay || 'Not specified'}
                           </div>
                         </div>
                       </div>
@@ -445,8 +447,8 @@ const Jobs: React.FC = () => {
                           </div>
                         </div>
                         <div className="ml-3">
-                          <div className="text-sm text-gray-900">{job.user.name}</div>
-                          <div className="text-xs text-gray-500">{job.user.email}</div>
+                          <div className="text-sm text-gray-900">{job.user?.name || 'Unknown User'}</div>
+                          <div className="text-xs text-gray-500">{job.user?.email || 'No email'}</div>
                         </div>
                       </div>
                     </td>
@@ -492,6 +494,7 @@ const Jobs: React.FC = () => {
                             <button
                               onClick={() => updateJobStatus(job._id, 'in_progress')}
                               className="p-2 text-yellow-600 hover:bg-yellow-100 rounded-lg transition-colors"
+                              aria-label="Mark as in progress"
                               title="Mark as in progress"
                             >
                               <Clock className="h-4 w-4" />
@@ -499,6 +502,7 @@ const Jobs: React.FC = () => {
                             <button
                               onClick={() => updateJobStatus(job._id, 'cancelled')}
                               className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                              aria-label="Cancel job"
                               title="Cancel job"
                             >
                               <XCircle className="h-4 w-4" />
@@ -509,6 +513,7 @@ const Jobs: React.FC = () => {
                           <button
                             onClick={() => updateJobStatus(job._id, 'completed')}
                             className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                            aria-label="Mark as completed"
                             title="Mark as completed"
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -517,6 +522,7 @@ const Jobs: React.FC = () => {
                         <button
                           onClick={() => openJobModal(job)}
                           className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                          aria-label="View details"
                           title="View details"
                         >
                           <Eye className="h-4 w-4" />

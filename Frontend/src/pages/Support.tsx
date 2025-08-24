@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Filter, 
@@ -10,60 +10,238 @@ import {
   User,
   Calendar,
   MessageCircleQuestion,
-  Send
+  Send,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
-import io from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import '../styles/support.css';
 
+// Type definitions
+interface Message {
+  _id?: string;
+  senderType: 'Admin' | 'User';
+  senderId?: string;
+  senderName?: string;
+  message: string;
+  timestamp: string;
+}
+
+interface Ticket {
+  _id: string;
+  ticketId: string;
+  userId: string;
+  userEmail?: string;
+  userName?: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'rejected' | 'closed';
+  priority: 'urgent' | 'high' | 'medium' | 'low';
+  category?: string;
+  messages?: Message[];
+  createdAt: string;
+  updatedAt?: string;
+  resolution?: string;
+}
+
 const Support: React.FC = () => {
-  const [tickets, setTickets] = useState([]);
-  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [socket, setSocket] = useState(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const messageEndRef = useRef<HTMLDivElement>(null);
+  const joinedTickets = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     fetchTickets();
     setupSocket();
-    return () => {
-      if (socket) socket.disconnect();
-    };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      cleanupSocket();
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    // Join/leave ticket room when selection changes
+    if (socket && isConnected) {
+      // Leave all previously joined tickets
+      joinedTickets.current.forEach(ticketId => {
+        socket.emit('support:leave_ticket', { ticketId });
+      });
+      joinedTickets.current.clear();
+
+      // Join the newly selected ticket
+      if (selectedTicket) {
+        socket.emit('support:join_ticket', { ticketId: selectedTicket._id });
+        joinedTickets.current.add(selectedTicket._id);
+      }
+    }
+  }, [selectedTicket, socket, isConnected]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [selectedTicket?.messages]);
+
+  const scrollToBottom = () => {
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const cleanupSocket = () => {
+    if (socket) {
+      // Leave all joined ticket rooms
+      joinedTickets.current.forEach(ticketId => {
+        socket.emit('support:leave_ticket', { ticketId });
+      });
+      joinedTickets.current.clear();
+      
+      socket.disconnect();
+      setSocket(null);
+      setIsConnected(false);
+    }
+  };
+
   const setupSocket = () => {
-    const newSocket = io('http://localhost:5000', {
-      path: '/socket.io/',
-      transports: ['websocket', 'polling']
+    // Connect to admin namespace
+    const newSocket = io('http://localhost:5000/admin', {
+      transports: ['websocket', 'polling'],
+      withCredentials: true
     });
     
     newSocket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('Socket connected to admin namespace');
+      setIsConnected(true);
+      
+      // Rejoin selected ticket room on reconnection
+      if (selectedTicket) {
+        newSocket.emit('support:join_ticket', { ticketId: selectedTicket._id });
+      }
     });
     
-    newSocket.on('support:ticket_updated', (updatedTicket) => {
-      setTickets(prev => prev.map(ticket => 
-        ticket._id === updatedTicket._id ? updatedTicket : ticket
-      ));
+    newSocket.on('disconnect', () => {
+      console.log('Socket disconnected');
+      setIsConnected(false);
     });
     
-    newSocket.on('support:new_ticket', () => {
+    newSocket.on('connect_error', (error: any) => {
+      console.error('Socket connection error:', error);
+      setIsConnected(false);
+    });
+    
+    // Connection status
+    newSocket.on('connection:status', (status: string) => {
+      console.log('Connection status:', status);
+      setIsConnected(status === 'connected');
+    });
+    
+    // Support-specific events
+    newSocket.on('support:new_message', (data: any) => {
+      handleNewMessage(data);
+    });
+    
+    newSocket.on('support:ticket_updated', (data: any) => {
+      handleTicketUpdate(data);
+    });
+    
+    newSocket.on('support:new_ticket', (data: any) => {
+      // Refresh tickets when a new ticket is created
       fetchTickets();
     });
     
-    newSocket.on('error', (error) => {
-      console.error('Socket error:', error);
+    newSocket.on('support:joined_ticket', (data: any) => {
+      console.log('Successfully joined ticket:', data.ticketId);
+    });
+    
+    newSocket.on('support:message_error', (error: any) => {
+      console.error('Message error:', error);
+      setSendingMessage(false);
+    });
+    
+    // Also listen for general stats and alerts
+    newSocket.on('stats:update', (stats: any) => {
+      console.log('Stats update received');
+    });
+    
+    newSocket.on('alerts:update', (alerts: any) => {
+      console.log('Alerts update received');
     });
     
     setSocket(newSocket);
   };
 
+  const handleNewMessage = (data: any) => {
+    const { ticketId, message } = data;
+    
+    // Update the ticket's messages
+    setTickets(prev => prev.map(ticket => {
+      if (ticket._id === ticketId) {
+        const messages = ticket.messages || [];
+        // Check if message already exists to avoid duplicates
+        const exists = messages.some(m => 
+          m._id === message._id || 
+          (m.timestamp === message.timestamp && m.message === message.message)
+        );
+        
+        if (!exists) {
+          return {
+            ...ticket,
+            messages: [...messages, message]
+          };
+        }
+      }
+      return ticket;
+    }));
+    
+    // Update selected ticket if it's the same
+    if (selectedTicket?._id === ticketId) {
+      setSelectedTicket(prev => {
+        if (!prev) return prev;
+        const messages = prev.messages || [];
+        const exists = messages.some(m => 
+          m._id === message._id || 
+          (m.timestamp === message.timestamp && m.message === message.message)
+        );
+        
+        if (!exists) {
+          return {
+            ...prev,
+            messages: [...messages, message]
+          };
+        }
+        return prev;
+      });
+    }
+  };
+
+  const handleTicketUpdate = (data: any) => {
+    const { ticketId, ...updateData } = data;
+    
+    // Update ticket in the list
+    setTickets(prev => prev.map(ticket => 
+      ticket._id === ticketId 
+        ? { ...ticket, ...updateData, updatedAt: data.timestamp }
+        : ticket
+    ));
+    
+    // Update selected ticket if it's the same
+    if (selectedTicket?._id === ticketId) {
+      setSelectedTicket(prev => 
+        prev ? { ...prev, ...updateData, updatedAt: data.timestamp } : prev
+      );
+    }
+  };
+
   const fetchTickets = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/support/tickets', {
+      const response = await fetch('/api/support/tickets', {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
@@ -78,9 +256,9 @@ const Support: React.FC = () => {
     }
   };
 
-  const handleTicketAction = async (ticketId, action, resolution = null) => {
+  const handleTicketAction = async (ticketId: string, action: string, resolution: string | null = null) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/support/tickets/${ticketId}/${action}`, {
+      const response = await fetch(`/api/support/tickets/${ticketId}/${action}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -90,7 +268,7 @@ const Support: React.FC = () => {
       if (response.ok) {
         fetchTickets();
         if (selectedTicket?._id === ticketId) {
-          const updatedResponse = await fetch(`http://localhost:5000/api/support/tickets/${ticketId}`, {
+          const updatedResponse = await fetch(`/api/support/tickets/${ticketId}`, {
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -104,32 +282,76 @@ const Support: React.FC = () => {
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || !selectedTicket) return;
+    if (!message.trim() || !selectedTicket || sendingMessage) return;
+
+    const messageText = message.trim();
+    setSendingMessage(true);
+    
+    // Create optimistic message
+    const optimisticMessage: Message = {
+      _id: `temp-${Date.now()}`,
+      senderType: 'Admin',
+      senderName: 'Support Agent',
+      message: messageText,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add optimistic message
+    setSelectedTicket(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...(prev.messages || []), optimisticMessage]
+      };
+    });
+    
+    setMessage('');
 
     try {
-      const response = await fetch(`http://localhost:5000/api/support/tickets/${selectedTicket._id}/messages`, {
+      // Send via socket if connected
+      if (socket && isConnected) {
+        socket.emit('support:send_message', {
+          ticketId: selectedTicket._id,
+          message: messageText,
+          senderName: 'Support Agent',
+          senderType: 'Admin'
+        });
+      }
+      
+      // Also send via API for persistence
+      const response = await fetch(`/api/support/tickets/${selectedTicket._id}/messages`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message.trim() })
+        body: JSON.stringify({ message: messageText })
       });
 
       if (response.ok) {
-        const updatedResponse = await fetch(`http://localhost:5000/api/support/tickets/${selectedTicket._id}`, {
+        const updatedResponse = await fetch(`/api/support/tickets/${selectedTicket._id}`, {
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' }
         });
         const updatedTicket = await updatedResponse.json();
         setSelectedTicket(updatedTicket.ticket);
-        setMessage('');
         fetchTickets();
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      // Remove optimistic message on error
+      setSelectedTicket(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: prev.messages?.filter(m => m._id !== optimisticMessage._id)
+        };
+      });
+      setMessage(messageText); // Restore message
+    } finally {
+      setSendingMessage(false);
     }
   };
 
-  const filteredTickets = tickets.filter(ticket => {
+  const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch = ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          ticket.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          ticket.ticketId.toLowerCase().includes(searchQuery.toLowerCase());
@@ -139,7 +361,7 @@ const Support: React.FC = () => {
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  const getStatusIcon = (status) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending': return <Clock className="w-3 h-3 text-yellow-500" />;
       case 'accepted': case 'in_progress': return <MessageSquare className="w-3 h-3 text-blue-500" />;
@@ -149,7 +371,7 @@ const Support: React.FC = () => {
     }
   };
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
       case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
@@ -174,8 +396,25 @@ const Support: React.FC = () => {
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
       {/* Fixed Header */}
       <div className="bg-white border-b px-6 py-3 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-gray-900">Support Center</h1>
-        <p className="text-sm text-gray-600">Manage support tickets and help users</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Support Center</h1>
+            <p className="text-sm text-gray-600">Manage support tickets and help users</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isConnected ? (
+              <div className="flex items-center gap-1 text-green-600">
+                <Wifi className="w-4 h-4" />
+                <span className="text-xs">Live</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-gray-400">
+                <WifiOff className="w-4 h-4" />
+                <span className="text-xs">Offline</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main Content - Scrollable Area */}
@@ -192,7 +431,7 @@ const Support: React.FC = () => {
                     type="text"
                     placeholder="Search tickets..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                     className="pl-9 pr-3 py-1.5 w-full border bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   />
                 </div>
@@ -202,7 +441,7 @@ const Support: React.FC = () => {
               <div className="flex gap-2">
                 <select
                   value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
                   className="px-2 py-1.5 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1"
                 >
                   <option value="all">All Status</option>
@@ -216,7 +455,7 @@ const Support: React.FC = () => {
                 
                 <select
                   value={filterPriority}
-                  onChange={(e) => setFilterPriority(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterPriority(e.target.value)}
                   className="px-2 py-1.5 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1"
                 >
                   <option value="all">All Priority</option>
@@ -238,7 +477,7 @@ const Support: React.FC = () => {
                 </div>
               ) : (
                 <div className="p-2">
-                  {filteredTickets.map(ticket => (
+                  {filteredTickets.map((ticket) => (
                     <div
                       key={ticket._id}
                       onClick={() => setSelectedTicket(ticket)}
@@ -344,33 +583,41 @@ const Support: React.FC = () => {
               {/* Messages */}
               <div className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0 custom-scrollbar smooth-scroll">
                 <div className="space-y-4">
-                  {selectedTicket.messages?.map((msg, index) => (
-                    <div
-                      key={index}
-                      className={`flex ${msg.senderType === 'Admin' ? 'justify-end' : 'justify-start'}`}
-                    >
+                  {selectedTicket.messages?.map((msg, index) => {
+                    const isTemp = msg._id?.startsWith('temp-');
+                    return (
                       <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          msg.senderType === 'Admin' 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-white text-gray-900 border'
-                        }`}
+                        key={msg._id || index}
+                        className={`flex ${msg.senderType === 'Admin' ? 'justify-end' : 'justify-start'}`}
+                        style={{ opacity: isTemp ? 0.7 : 1 }}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-xs font-medium ${
-                            msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-600'
-                          }`}>
-                            {msg.senderName || (msg.senderType === 'Admin' ? 'Admin' : 'User')}
-                          </span>
+                        <div
+                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                            msg.senderType === 'Admin' 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-white text-gray-900 border'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs font-medium ${
+                              msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-600'
+                            }`}>
+                              {msg.senderName || (msg.senderType === 'Admin' ? 'Admin' : 'User')}
+                            </span>
+                            {isTemp && (
+                              <span className="text-xs opacity-75">Sending...</span>
+                            )}
+                          </div>
+                          <p className="text-sm">{msg.message}</p>
+                          <p className={`text-xs mt-1 ${
+                            msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-500'}`}>
+                            {new Date(msg.timestamp).toLocaleString()}
+                          </p>
                         </div>
-                        <p className="text-sm">{msg.message}</p>
-                        <p className={`text-xs mt-1 ${
-                          msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-500'}`}>
-                          {new Date(msg.timestamp).toLocaleString()}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                  <div ref={messageEndRef} />
                 </div>
               </div>
 
@@ -381,17 +628,32 @@ const Support: React.FC = () => {
                     <input
                       type="text"
                       value={message}
-                      onChange={(e) => setMessage(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)}
                       placeholder="Type your message..."
                       className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                        if (e.key === 'Enter' && !sendingMessage) {
+                          sendMessage();
+                        }
+                      }}
+                      disabled={sendingMessage}
                     />
                     <button
                       onClick={sendMessage}
-                      disabled={!message.trim()}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!message.trim() || sendingMessage}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      <Send className="w-4 h-4" />
+                      {sendingMessage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <span>Sending...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Send</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
