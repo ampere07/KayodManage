@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Search,
   Filter,
-  Download,
   RefreshCw,
   ChevronLeft,
   FileText
@@ -20,38 +19,9 @@ import { toast } from 'react-hot-toast';
 import apiClient, { isNetworkError } from '../utils/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { checkImageExists, getPlaceholderImage } from '../utils/imageUtils';
+import ClickableImage from '../components/UI/ClickableImage';
 
-// Safe image component with error handling
-const SafeImage: React.FC<{
-  src: string;
-  alt: string;
-  className?: string;
-  imageType?: 'face' | 'id' | 'credential';
-}> = ({ src, alt, className = '', imageType = 'credential' }) => {
-  const [imgSrc, setImgSrc] = useState(src);
-  const [hasError, setHasError] = useState(false);
 
-  const handleError = () => {
-    if (!hasError) {
-      setHasError(true);
-      setImgSrc(getPlaceholderImage(imageType));
-    }
-  };
-
-  const handleLoad = () => {
-    setHasError(false);
-  };
-
-  return (
-    <img
-      src={imgSrc}
-      alt={alt}
-      className={className}
-      onError={handleError}
-      onLoad={handleLoad}
-    />
-  );
-};
 
 interface UserInfo {
   _id: string;
@@ -410,47 +380,95 @@ const UserDetailView: React.FC<{
         <div className="mb-6">
           {activeImageTab === 'face' && (
             <div className="space-y-4">
-              <SafeImage
-                src={selectedVerification.faceVerification.cloudinaryUrl}
-                alt="Face Verification"
-                className="w-full max-w-md mx-auto rounded-lg shadow-lg"
-                imageType="face"
-              />
-              <div className="flex justify-between items-center text-sm text-gray-500">
-                <span>Uploaded: {new Date(selectedVerification.faceVerification.uploadedAt).toLocaleString()}</span>
-                <a
-                  href={selectedVerification.faceVerification.cloudinaryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline inline-flex items-center"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Download
-                </a>
-              </div>
+              {/* Check if faceVerification is an array or single object */}
+              {Array.isArray(selectedVerification.faceVerification) ? (
+                <div className="grid grid-cols-3 gap-6">
+                  {selectedVerification.faceVerification.map((face, index) => {
+                    const faceLabels = ['Left Side', 'Front View', 'Right Side'];
+                    return (
+                      <div key={index} className="space-y-3">
+                        <div className="text-center">
+                          <p className="font-medium text-sm">{faceLabels[index] || `Face ${index + 1}`}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(face.uploadedAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <ClickableImage
+                          src={face.cloudinaryUrl}
+                          alt={`Face Verification - ${faceLabels[index] || `Photo ${index + 1}`}`}
+                          className="w-full max-w-md mx-auto rounded-lg shadow-lg"
+                          imageType="face"
+                          title={`Face Verification - ${faceLabels[index]} - ${user.name}`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback for single face verification */
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <p className="font-medium text-sm">Face Verification</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(selectedVerification.faceVerification.uploadedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <ClickableImage
+                    src={selectedVerification.faceVerification.cloudinaryUrl}
+                    alt="Face Verification"
+                    className="w-full max-w-md mx-auto rounded-lg shadow-lg"
+                    imageType="face"
+                    title={`Face Verification - ${user.name}`}
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {activeImageTab === 'validId' && (
             <div className="space-y-4">
-              <SafeImage
-                src={selectedVerification.validId.cloudinaryUrl}
-                alt={getIdTypeLabel(selectedVerification.validId.type)}
-                className="w-full max-w-2xl mx-auto rounded-lg shadow-lg"
-                imageType="id"
-              />
-              <div className="flex justify-between items-center text-sm text-gray-500">
-                <span>Type: {getIdTypeLabel(selectedVerification.validId.type)}</span>
-                <a
-                  href={selectedVerification.validId.cloudinaryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline inline-flex items-center"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Download
-                </a>
-              </div>
+              {/* Check if validId is an array or single object */}
+              {Array.isArray(selectedVerification.validId) ? (
+                <div className="grid grid-cols-2 gap-6">
+                  {selectedVerification.validId.map((idDoc, index) => {
+                    const idLabels = ['Front', 'Back'];
+                    return (
+                      <div key={index} className="space-y-3">
+                        <div className="text-center">
+                          <p className="font-medium text-sm">{getIdTypeLabel(idDoc.type)} - {idLabels[index] || `Side ${index + 1}`}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(idDoc.uploadedAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <ClickableImage
+                          src={idDoc.cloudinaryUrl}
+                          alt={`${getIdTypeLabel(idDoc.type)} - ${idLabels[index]}`}
+                          className="w-full max-w-md mx-auto rounded-lg shadow-lg"
+                          imageType="id"
+                          title={`Valid ID (${getIdTypeLabel(idDoc.type)} - ${idLabels[index]}) - ${user.name}`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback for single valid ID */
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <p className="font-medium text-sm">{getIdTypeLabel(selectedVerification.validId.type)}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(selectedVerification.validId.uploadedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <ClickableImage
+                    src={selectedVerification.validId.cloudinaryUrl}
+                    alt={getIdTypeLabel(selectedVerification.validId.type)}
+                    className="w-full max-w-2xl mx-auto rounded-lg shadow-lg"
+                    imageType="id"
+                    title={`Valid ID (${getIdTypeLabel(selectedVerification.validId.type)}) - ${user.name}`}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -459,33 +477,25 @@ const UserDetailView: React.FC<{
               {selectedVerification.credentials.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No credentials uploaded</p>
               ) : (
-                selectedVerification.credentials.map((credential, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <p className="font-medium">{credential.originalName || `Credential ${index + 1}`}</p>
-                        <p className="text-sm text-gray-500">
-                          Uploaded: {new Date(credential.uploadedAt).toLocaleString()}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {selectedVerification.credentials.map((credential, index) => (
+                    <div key={index} className="space-y-3">
+                      <div className="text-center">
+                        <p className="font-medium text-sm">{credential.originalName || `Credential ${index + 1}`}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(credential.uploadedAt).toLocaleString()}
                         </p>
                       </div>
-                      <a
-                        href={credential.cloudinaryUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline text-sm inline-flex items-center"
-                      >
-                        <Download className="w-4 h-4 mr-1" />
-                        Download
-                      </a>
+                      <ClickableImage
+                        src={credential.cloudinaryUrl}
+                        alt={credential.originalName || `Credential ${index + 1}`}
+                        className="w-full max-w-md mx-auto rounded-lg shadow-lg"
+                        imageType="credential"
+                        title={`${credential.originalName || `Credential ${index + 1}`} - ${user.name}`}
+                      />
                     </div>
-                    <SafeImage
-                      src={credential.cloudinaryUrl}
-                      alt={credential.originalName || `Credential ${index + 1}`}
-                      className="w-full rounded-lg"
-                      imageType="credential"
-                    />
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           )}

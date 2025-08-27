@@ -430,10 +430,10 @@ exports.updateVerificationStatus = async (req, res) => {
     // Validate status
     const validStatuses = ['pending', 'approved', 'rejected', 'under_review'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status value'
-      });
+    return res.status(400).json({
+    success: false,
+    message: 'Invalid status value'
+    });
     }
 
     // Make request to update status
