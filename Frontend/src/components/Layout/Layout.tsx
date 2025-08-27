@@ -31,6 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'Users', href: '/users', icon: Users },
     { name: 'Jobs', href: '/jobs', icon: Briefcase },
     { name: 'Transactions', href: '/transactions', icon: CreditCard },
+    { name: 'Verifications', href: '/verifications', icon: Shield },
     { name: 'Support', href: '/support', icon: MessageSquare },
     { name: 'Activity', href: '/activity', icon: Activity },
     { name: 'Alerts', href: '/alerts', icon: AlertTriangle },

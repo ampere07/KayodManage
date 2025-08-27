@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Jobs from './pages/Jobs';
 import Transactions from './pages/Transactions';
+import Verifications from './pages/Verifications';
 import Activity from './pages/Activity';
 import Alerts from './pages/Alerts';
 import Support from './pages/Support';
@@ -62,6 +63,7 @@ const AppContent: React.FC = () => {
         <Route path="/users" element={<Layout title="User Management"><Users /></Layout>} />
         <Route path="/jobs" element={<Layout title="Job Management"><Jobs /></Layout>} />
         <Route path="/transactions" element={<Layout title="Transactions"><Transactions /></Layout>} />
+        <Route path="/verifications" element={<Layout title="User Verifications"><Verifications /></Layout>} />
         <Route path="/activity" element={<Layout title="Activity Feed"><Activity /></Layout>} />
         <Route path="/alerts" element={<Layout title="Alerts"><Alerts /></Layout>} />
         <Route path="/support" element={<Layout title="Support Center"><Support /></Layout>} />
