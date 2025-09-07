@@ -125,6 +125,11 @@ const UserListView: React.FC<{
   // Group verifications by user
   const userVerifications = React.useMemo(() => {
     const grouped = verifications.reduce((acc, verification) => {
+      // Skip if userId is null or undefined
+      if (!verification.userId) {
+        return acc;
+      }
+      
       const userId = verification.userId._id;
       if (!acc[userId]) {
         acc[userId] = {
@@ -235,7 +240,7 @@ const UserDetailView: React.FC<{
   const [rejectionReason, setRejectionReason] = useState('');
   const [updating, setUpdating] = useState(false);
 
-  const userVerifications = verifications.filter(v => v.userId._id === userId);
+  const userVerifications = verifications.filter(v => v.userId && v.userId._id === userId);
   const user = userVerifications[0]?.userId;
 
   useEffect(() => {
