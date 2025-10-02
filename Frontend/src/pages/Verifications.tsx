@@ -120,7 +120,8 @@ const UserListView: React.FC<{
   onUserSelect: (userId: string) => void;
   searchTerm: string;
   statusFilter: string;
-}> = ({ verifications, onUserSelect, searchTerm, statusFilter }) => {
+  onStatusUpdate: (verificationId: string, status: string, notes?: string, reason?: string) => Promise<void>;
+}> = ({ verifications, onUserSelect, searchTerm, statusFilter, onStatusUpdate }) => {
   
   // Group verifications by user
   const userVerifications = React.useMemo(() => {
@@ -219,6 +220,47 @@ const UserListView: React.FC<{
                 </span>
               </div>
             </div>
+
+            {latestVerification.status === 'pending' && (
+              <div className="flex gap-2 mt-4 pt-4 border-t border-gray-200">
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!window.confirm(`Approve verification for ${user.name}?`)) return;
+                    try {
+                      await onStatusUpdate(latestVerification._id, 'approved', 'Quick approved from list view');
+                      toast.success('Verification approved');
+                    } catch (error) {
+                      toast.error('Failed to approve');
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors font-medium"
+                >
+                  <CheckCircle className="w-4 h-4 mr-1" />
+                  Approve
+                </button>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const reason = window.prompt('Reason for rejection:');
+                    if (!reason || reason.trim() === '') {
+                      toast.error('Rejection reason required');
+                      return;
+                    }
+                    try {
+                      await onStatusUpdate(latestVerification._id, 'rejected', 'Quick rejected from list view', reason.trim());
+                      toast.success('Verification rejected');
+                    } catch (error) {
+                      toast.error('Failed to reject');
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors font-medium"
+                >
+                  <XCircle className="w-4 h-4 mr-1" />
+                  Reject
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -235,9 +277,6 @@ const UserDetailView: React.FC<{
 }> = ({ userId, verifications, onBack, onStatusUpdate }) => {
   const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
   const [activeImageTab, setActiveImageTab] = useState<'face' | 'validId' | 'credentials'>('face');
-  const [updateStatus, setUpdateStatus] = useState('');
-  const [adminNotes, setAdminNotes] = useState('');
-  const [rejectionReason, setRejectionReason] = useState('');
   const [updating, setUpdating] = useState(false);
 
   const userVerifications = verifications.filter(v => v.userId && v.userId._id === userId);
@@ -249,26 +288,39 @@ const UserDetailView: React.FC<{
     }
   }, [userVerifications, selectedVerification]);
 
-  const handleStatusUpdate = async () => {
-    if (!selectedVerification || !updateStatus) {
-      toast.error('Please select a status');
-      return;
-    }
-
-    if (updateStatus === 'rejected' && !rejectionReason) {
-      toast.error('Please provide a rejection reason');
+  const handleQuickApprove = async () => {
+    if (!selectedVerification) return;
+    
+    if (!window.confirm('Are you sure you want to approve this verification?')) {
       return;
     }
 
     setUpdating(true);
     try {
-      await onStatusUpdate(selectedVerification._id, updateStatus, adminNotes, rejectionReason);
-      toast.success('Verification status updated');
-      setUpdateStatus('');
-      setAdminNotes('');
-      setRejectionReason('');
+      await onStatusUpdate(selectedVerification._id, 'approved', 'Quick approved by admin');
+      toast.success('Verification approved successfully');
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error('Failed to approve verification');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleQuickReject = async () => {
+    if (!selectedVerification) return;
+
+    const reason = window.prompt('Please provide a reason for rejection:');
+    if (!reason || reason.trim() === '') {
+      toast.error('Rejection reason is required');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      await onStatusUpdate(selectedVerification._id, 'rejected', 'Quick rejected by admin', reason.trim());
+      toast.success('Verification rejected');
+    } catch (error) {
+      toast.error('Failed to reject verification');
     } finally {
       setUpdating(false);
     }
@@ -319,7 +371,29 @@ const UserDetailView: React.FC<{
               </div>
             </div>
           </div>
-          <StatusBadge status={selectedVerification.status} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={selectedVerification.status} />
+            {selectedVerification.status === 'pending' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleQuickApprove}
+                  disabled={updating}
+                  className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Approve
+                </button>
+                <button
+                  onClick={handleQuickReject}
+                  disabled={updating}
+                  className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Reject
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Submission selector if multiple */}
@@ -385,7 +459,6 @@ const UserDetailView: React.FC<{
         <div className="mb-6">
           {activeImageTab === 'face' && (
             <div className="space-y-4">
-              {/* Check if faceVerification is an array or single object */}
               {Array.isArray(selectedVerification.faceVerification) ? (
                 <div className="grid grid-cols-3 gap-6">
                   {selectedVerification.faceVerification.map((face, index) => {
@@ -410,7 +483,6 @@ const UserDetailView: React.FC<{
                   })}
                 </div>
               ) : (
-                /* Fallback for single face verification */
                 <div className="space-y-3">
                   <div className="text-center">
                     <p className="font-medium text-sm">Face Verification</p>
@@ -432,7 +504,6 @@ const UserDetailView: React.FC<{
 
           {activeImageTab === 'validId' && (
             <div className="space-y-4">
-              {/* Check if validId is an array or single object */}
               {Array.isArray(selectedVerification.validId) ? (
                 <div className="grid grid-cols-2 gap-6">
                   {selectedVerification.validId.map((idDoc, index) => {
@@ -457,7 +528,6 @@ const UserDetailView: React.FC<{
                   })}
                 </div>
               ) : (
-                /* Fallback for single valid ID */
                 <div className="space-y-3">
                   <div className="text-center">
                     <p className="font-medium text-sm">{getIdTypeLabel(selectedVerification.validId.type)}</p>
@@ -504,65 +574,6 @@ const UserDetailView: React.FC<{
               )}
             </div>
           )}
-        </div>
-
-        {/* Status update section */}
-        <div className="border-t border-gray-200 pt-6">
-          <h3 className="font-medium mb-4">Update Verification Status</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
-              </label>
-              <select
-                value={updateStatus}
-                onChange={(e) => setUpdateStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Status</option>
-                <option value="under_review">Under Review</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-
-            {updateStatus === 'rejected' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rejection Reason *
-                </label>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={3}
-                  placeholder="Provide a clear reason for rejection..."
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Admin Notes
-              </label>
-              <textarea
-                value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={3}
-                placeholder="Internal notes (optional)..."
-              />
-            </div>
-
-            <button
-              onClick={handleStatusUpdate}
-              disabled={updating || !updateStatus}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {updating ? 'Updating...' : 'Update Status'}
-            </button>
-          </div>
         </div>
 
         {/* Previous review info */}
@@ -616,11 +627,9 @@ const Verifications: React.FC = () => {
   const RETRY_DELAY = 2000;
 
   useEffect(() => {
-    // Only fetch verifications if user is authenticated and auth is not loading
     if (isAuthenticated && !authLoading) {
       fetchVerifications();
     } else if (!authLoading && !isAuthenticated) {
-      // User is not authenticated
       setLoading(false);
       setConnectionError(false);
     }
@@ -639,7 +648,6 @@ const Verifications: React.FC = () => {
         return;
       }
 
-      // Using apiClient with session/cookie authentication - no need for manual headers
       const response = await apiClient.get('/api/admin/verifications');
       
       if (response.data.success) {
@@ -666,7 +674,6 @@ const Verifications: React.FC = () => {
         toast.error('Cannot connect to server. Please check if the API server is running.');
       } else if (error.response?.status === 401) {
         toast.error('Authentication failed. Please log in again.');
-        // Let AuthContext handle the logout
       } else if (error.response?.status >= 500) {
         toast.error('Server error. Please try again later.');
       } else {
@@ -693,11 +700,16 @@ const Verifications: React.FC = () => {
     reason?: string
   ): Promise<void> => {
     try {
+      console.log('📝 Updating verification status:');
+      console.log('   Verification ID:', verificationId);
+      console.log('   New Status:', status);
+      console.log('   Admin Notes:', notes);
+      console.log('   Rejection Reason:', reason);
+
       if (!isAuthenticated) {
         throw new Error('Please login to perform this action');
       }
 
-      // Using apiClient with session/cookie authentication - no need for manual headers
       const response = await apiClient.patch(
         `/api/admin/verifications/${verificationId}`,
         {
@@ -707,12 +719,18 @@ const Verifications: React.FC = () => {
         }
       );
 
+      console.log('✅ Status update response:', response.data);
+
       if (response.data.success) {
+        console.log('✅ Status updated successfully, refreshing verifications...');
         await fetchVerifications();
+        console.log('✅ Verifications refreshed');
       } else {
+        console.log('❌ Status update failed:', response.data.message);
         throw new Error(response.data.message || 'Failed to update status');
       }
     } catch (error: any) {
+      console.error('❌ Error in handleStatusUpdate:', error);
       const isNetworkErrorDetected = isNetworkError(error);
       
       if (isNetworkErrorDetected) {
@@ -725,7 +743,6 @@ const Verifications: React.FC = () => {
     }
   };
 
-  // Check authentication first
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -754,7 +771,6 @@ const Verifications: React.FC = () => {
     );
   }
 
-  // Calculate stats
   const stats = {
     total: verifications.length,
     pending: verifications.filter(v => v.status === 'pending').length,
@@ -775,7 +791,6 @@ const Verifications: React.FC = () => {
     );
   }
 
-  // Connection error state
   if (connectionError && verifications.length === 0) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
@@ -803,24 +818,23 @@ const Verifications: React.FC = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="mb-8">
-      <div className="flex justify-between items-center mb-4">
-      <div>
-      <h1 className="text-3xl font-bold text-gray-900">User Verifications</h1>
-      <p className="text-gray-600 mt-2">
-          Review and manage user verification documents
-          {connectionError && (
-          <span className="ml-2 inline-flex items-center px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Connection issues detected
-        </span>
-        )}
-        </p>
-      </div>
-      <button
-        onClick={handleRefresh}
-          disabled={refreshing}
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">User Verifications</h1>
+            <p className="text-gray-600 mt-2">
+              Review and manage user verification documents
+              {connectionError && (
+                <span className="ml-2 inline-flex items-center px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  Connection issues detected
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
             className={`flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ${
               refreshing ? 'opacity-50 cursor-not-allowed' : ''
             }`}
@@ -830,7 +844,6 @@ const Verifications: React.FC = () => {
           </button>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <StatsCard title="Total" value={stats.total} icon={Shield} color="text-gray-900" />
           <StatsCard title="Pending" value={stats.pending} icon={Clock} color="text-yellow-600" />
@@ -838,7 +851,6 @@ const Verifications: React.FC = () => {
           <StatsCard title="Rejected" value={stats.rejected} icon={XCircle} color="text-red-600" />
         </div>
 
-        {/* Filters - only show when not viewing user details */}
         {!selectedUserId && (
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
@@ -871,7 +883,6 @@ const Verifications: React.FC = () => {
         )}
       </div>
 
-      {/* Main content */}
       {selectedUserId ? (
         <UserDetailView
           userId={selectedUserId}
@@ -885,6 +896,7 @@ const Verifications: React.FC = () => {
           onUserSelect={setSelectedUserId}
           searchTerm={searchTerm}
           statusFilter={statusFilter}
+          onStatusUpdate={handleStatusUpdate}
         />
       )}
     </div>

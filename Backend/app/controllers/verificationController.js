@@ -427,14 +427,40 @@ exports.updateVerificationStatus = async (req, res) => {
     const { verificationId } = req.params;
     const { status, adminNotes, rejectionReason } = req.body;
 
+    console.log('========================================');
+    console.log('📝 UPDATE VERIFICATION STATUS REQUEST');
+    console.log('========================================');
+    console.log('Verification ID:', verificationId);
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('Status:', status);
+    console.log('Admin Notes:', adminNotes);
+    console.log('Rejection Reason:', rejectionReason);
+    console.log('========================================');
+
     // Validate status
     const validStatuses = ['pending', 'approved', 'rejected', 'under_review'];
     if (!validStatuses.includes(status)) {
-    return res.status(400).json({
-    success: false,
-    message: 'Invalid status value'
-    });
+      console.log('❌ Invalid status value:', status);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value'
+      });
     }
+
+    // Validate rejection reason for rejected status
+    if (status === 'rejected' && (!rejectionReason || rejectionReason.trim() === '')) {
+      console.log('❌ Missing rejection reason for rejected status');
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason is required when rejecting a verification'
+      });
+    }
+
+    console.log('✅ Validation passed');
+    console.log('🔌 Making request to Kayod backend...');
+    console.log('   URL:', `${KAYOD_BACKEND_URL}/api/credential-verification/admin/${verificationId}/status`);
+    console.log('   Method: PUT');
+    console.log('   API Key:', KAYOD_API_KEY ? 'Present' : 'Missing');
 
     // Make request to update status
     const response = await makeKayodRequest(
@@ -443,25 +469,12 @@ exports.updateVerificationStatus = async (req, res) => {
       {
         status,
         adminNotes,
-        rejectionReason,
-        reviewedBy: req.admin?.id || 'admin' // Get admin ID from auth middleware
+        rejectionReason
       }
     );
 
-    // If the main backend is not available, return success for development
-    if (!response) {
-      return res.json({
-        success: true,
-        message: 'Verification status updated successfully (mock)',
-        data: {
-          _id: verificationId,
-          status,
-          adminNotes,
-          rejectionReason,
-          reviewedAt: new Date().toISOString()
-        }
-      });
-    }
+    console.log('✅ Kayod backend response received');
+    console.log('Response data:', JSON.stringify(response, null, 2));
 
     res.json({
       success: true,
@@ -469,19 +482,20 @@ exports.updateVerificationStatus = async (req, res) => {
       data: response.data || response.verification
     });
   } catch (error) {
-    console.error('Error updating verification status:', error);
+    console.error('========================================');
+    console.error('❌ ERROR UPDATING VERIFICATION STATUS');
+    console.error('========================================');
+    console.error('Error message:', error.message);
+    console.error('Error response status:', error.response?.status);
+    console.error('Error response data:', error.response?.data);
+    console.error('Error stack:', error.stack);
+    console.error('========================================');
     
-    // Return success for development if the main backend is not available
-    res.json({
-      success: true,
-      message: 'Verification status updated successfully (mock)',
-      data: {
-        _id: req.params.verificationId,
-        status: req.body.status,
-        adminNotes: req.body.adminNotes,
-        rejectionReason: req.body.rejectionReason,
-        reviewedAt: new Date().toISOString()
-      }
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.message || 'Failed to update verification status',
+      error: error.message,
+      details: error.response?.data
     });
   }
 };
