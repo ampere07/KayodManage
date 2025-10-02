@@ -3,11 +3,18 @@ const Job = require('../models/Job');
 const Transaction = require('../models/Transaction');
 const ActivityFeed = require('../models/ActivityFeed');
 const Alert = require('../models/Alert');
+const ChatSupport = require('../models/ChatSupport');
 
 let adminNamespace = null;
+let mainIo = null;
+let chatSupportChangeStream = null;
 
 const setupSocketHandlers = (io) => {
+  mainIo = io;
   adminNamespace = io.of('/admin');
+  
+  setupChatSupportChangeStream();
+  setupMainNamespaceHandlers(io);
   
   adminNamespace.on('connection', async (socket) => {
     console.log('🔌 Admin connected:', socket.id);
@@ -21,36 +28,52 @@ const setupSocketHandlers = (io) => {
     socket.on('request:dashboard', () => broadcastDashboardStats());
     socket.on('request:alerts', () => broadcastAlertUpdates());
     
-    // Support ticket events
-    socket.on('support:join_ticket', (data) => {
-      if (data.ticketId) {
-        socket.join(`support:${data.ticketId}`);
-        console.log(`🎫 Admin joined support ticket: ${data.ticketId}`);
-        socket.emit('support:joined_ticket', { ticketId: data.ticketId });
+    socket.on('support:join_chat', (data) => {
+      if (data.chatSupportId) {
+        socket.join(`support:${data.chatSupportId}`);
+        console.log(`💬 Admin joined chat support: ${data.chatSupportId}`);
+        socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
       }
     });
     
-    socket.on('support:leave_ticket', (data) => {
-      if (data.ticketId) {
-        socket.leave(`support:${data.ticketId}`);
-        console.log(`🎫 Admin left support ticket: ${data.ticketId}`);
+    socket.on('support:leave_chat', (data) => {
+      if (data.chatSupportId) {
+        socket.leave(`support:${data.chatSupportId}`);
+        console.log(`💬 Admin left chat support: ${data.chatSupportId}`);
       }
     });
     
-    socket.on('support:send_message', (data) => {
-      if (data.ticketId && data.message) {
-        // Broadcast to all admins in the ticket room
-        adminNamespace.to(`support:${data.ticketId}`).emit('support:new_message', {
-          ticketId: data.ticketId,
-          message: {
-            _id: `msg_${Date.now()}`,
-            senderType: 'Admin',
-            senderName: data.senderName || 'Support Agent',
-            message: data.message,
-            timestamp: new Date().toISOString()
+    socket.on('support:send_message', async (data) => {
+      if (data.chatSupportId && data.message) {
+        try {
+          const ChatSupport = require('../models/ChatSupport');
+          const chatSupport = await ChatSupport.findById(data.chatSupportId);
+          
+          if (chatSupport && chatSupport.status === 'open') {
+            const mongoose = require('mongoose');
+            const adminId = '000000000000000000000000';
+            const adminObjectId = new mongoose.Types.ObjectId(adminId);
+            
+            const newMessage = {
+              senderId: data.senderId || adminObjectId,
+              senderName: data.senderName || 'Support Agent',
+              senderType: data.senderType || 'Admin',
+              message: data.message.trim(),
+              timestamp: new Date()
+            };
+            
+            chatSupport.messages.push(newMessage);
+            await chatSupport.save();
+            
+            console.log(`💬 Message saved to DB, change stream will broadcast`);
           }
-        });
-        console.log(`💬 Support message sent in ticket ${data.ticketId}`);
+        } catch (error) {
+          console.error('Error sending chat support message:', error);
+          socket.emit('support:message_error', { 
+            error: 'Failed to send message',
+            chatSupportId: data.chatSupportId 
+          });
+        }
       }
     });
     
@@ -61,6 +84,73 @@ const setupSocketHandlers = (io) => {
   });
   
   return adminNamespace;
+};
+
+const setupMainNamespaceHandlers = (io) => {
+  io.on('connection', (socket) => {
+    console.log('📱 User connected to main namespace:', socket.id);
+    
+    socket.on('authenticate', (data) => {
+      console.log('📱 User attempting authentication:', data?.userId);
+      socket.emit('authenticated');
+      console.log('✅ User authenticated:', socket.id);
+    });
+    
+    socket.on('support:join_chat', (data) => {
+      if (data.chatSupportId) {
+        socket.join(`support:${data.chatSupportId}`);
+        console.log(`📱 User joined chat support: ${data.chatSupportId}`);
+        socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
+      }
+    });
+    
+    socket.on('support:leave_chat', (data) => {
+      if (data.chatSupportId) {
+        socket.leave(`support:${data.chatSupportId}`);
+        console.log(`📱 User left chat support: ${data.chatSupportId}`);
+      }
+    });
+    
+    socket.on('support:send_message', async (data) => {
+      if (data.chatSupportId && data.message) {
+        try {
+          const ChatSupport = require('../models/ChatSupport');
+          const chatSupport = await ChatSupport.findById(data.chatSupportId);
+          
+          if (chatSupport && chatSupport.status === 'open') {
+            const mongoose = require('mongoose');
+            const userId = data.userId || socket.handshake.auth?.userId || '000000000000000000000000';
+            const userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+              ? new mongoose.Types.ObjectId(userId)
+              : new mongoose.Types.ObjectId('000000000000000000000000');
+            
+            const newMessage = {
+              senderId: userObjectId,
+              senderName: data.senderName || 'User',
+              senderType: 'User',
+              message: data.message.trim(),
+              timestamp: new Date()
+            };
+            
+            chatSupport.messages.push(newMessage);
+            await chatSupport.save();
+            
+            console.log(`📱 User message saved to DB, change stream will broadcast`);
+          }
+        } catch (error) {
+          console.error('Error sending user chat support message:', error);
+          socket.emit('support:message_error', { 
+            error: 'Failed to send message',
+            chatSupportId: data.chatSupportId 
+          });
+        }
+      }
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('📱 User disconnected from main namespace:', socket.id);
+    });
+  });
 };
 
 const sendInitialData = async (socket) => {
@@ -187,16 +277,58 @@ const emitAlertUpdate = (alert, updateType) => {
   }
 };
 
+const emitChatSupportMessage = (chatSupportId, message) => {
+  if (adminNamespace && chatSupportId && message) {
+    console.log('📤 Broadcasting message to admins:', { chatSupportId, message });
+    
+    adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', {
+      chatSupportId,
+      message
+    });
+    
+    console.log('💬 Broadcasted message to admin panel for chat:', chatSupportId);
+  }
+};
+
+const emitChatSupportUpdate = (chatSupport, updates) => {
+  if (adminNamespace && chatSupport) {
+    const chatSupportId = chatSupport._id.toString();
+    
+    adminNamespace.to('admin').emit('support:chat_updated', {
+      chatSupportId,
+      updates,
+      timestamp: new Date()
+    });
+    
+    adminNamespace.to(`support:${chatSupportId}`).emit('support:chat_updated', {
+      chatSupportId,
+      updates,
+      timestamp: new Date()
+    });
+    
+    console.log(`💬 Chat support update emitted: ${chatSupportId}`);
+  }
+};
+
+const emitNewChatSupport = (chatSupport) => {
+  if (adminNamespace && chatSupport) {
+    adminNamespace.to('admin').emit('support:new_chat', {
+      chatSupport,
+      timestamp: new Date()
+    });
+    
+    console.log(`💬 New chat support emitted: ${chatSupport._id}`);
+  }
+};
+
 const emitSupportUpdate = (ticket, updateType) => {
   if (adminNamespace) {
-    // Emit to all admins
     adminNamespace.to('admin').emit('support:ticket_updated', {
       ticket,
       updateType,
       timestamp: new Date()
     });
     
-    // If it's a new ticket, emit specific event
     if (updateType === 'new_ticket') {
       adminNamespace.to('admin').emit('support:new_ticket', {
         ticket,
@@ -204,7 +336,6 @@ const emitSupportUpdate = (ticket, updateType) => {
       });
     }
     
-    // If there's a ticketId, also emit to ticket-specific room
     if (ticket.ticketId || ticket._id) {
       const ticketId = ticket.ticketId || ticket._id;
       adminNamespace.to(`support:${ticketId}`).emit('support:ticket_updated', {
@@ -219,8 +350,135 @@ const emitSupportUpdate = (ticket, updateType) => {
   }
 };
 
+const setupChatSupportChangeStream = () => {
+  if (chatSupportChangeStream) {
+    return;
+  }
+
+  try {
+    const changeStream = ChatSupport.watch([], {
+      fullDocument: 'updateLookup'
+    });
+
+    changeStream.on('change', async (change) => {
+      try {
+        if ((change.operationType === 'update' || change.operationType === 'insert')) {
+          const chatSupportId = change.documentKey._id.toString();
+          
+          if (change.operationType === 'insert') {
+            const chatSupport = change.fullDocument;
+            if (chatSupport && adminNamespace) {
+              adminNamespace.to('admin').emit('support:new_chat', {
+                chatSupport,
+                timestamp: new Date()
+              });
+              console.log('📡 New chat support created:', chatSupportId);
+            }
+            return;
+          }
+          
+          const chatSupport = change.fullDocument || await ChatSupport.findById(chatSupportId);
+          
+          if (chatSupport) {
+            const hasNewMessage = change.updateDescription?.updatedFields?.messages || 
+                                 change.updateDescription?.updatedFields?.['messages.0'] ||
+                                 Object.keys(change.updateDescription?.updatedFields || {}).some(key => key.startsWith('messages.'));
+            
+            if (hasNewMessage && chatSupport.messages.length > 0) {
+              const lastMessage = chatSupport.messages[chatSupport.messages.length - 1];
+              
+              const messageData = {
+                chatSupportId,
+                message: {
+                  _id: lastMessage._id.toString(),
+                  senderId: lastMessage.senderId.toString(),
+                  senderName: lastMessage.senderName,
+                  senderType: lastMessage.senderType,
+                  message: lastMessage.message,
+                  timestamp: lastMessage.timestamp.toISOString()
+                }
+              };
+
+              console.log('📡 Broadcasting message from DB change stream to both namespaces:', messageData);
+              
+              if (adminNamespace) {
+                adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
+                adminNamespace.to('admin').emit('support:new_message', messageData);
+                console.log('✅ Broadcasted to admin namespace');
+              }
+              
+              if (mainIo) {
+                mainIo.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
+                console.log('✅ Broadcasted to main namespace (mobile users)');
+              }
+            }
+            
+            if (change.updateDescription?.updatedFields?.status) {
+              const updates = { status: chatSupport.status };
+              if (chatSupport.closedAt) {
+                updates.closedAt = chatSupport.closedAt;
+              }
+              
+              if (adminNamespace) {
+                adminNamespace.to('admin').emit('support:chat_updated', {
+                  chatSupportId,
+                  updates,
+                  timestamp: new Date()
+                });
+                
+                adminNamespace.to(`support:${chatSupportId}`).emit('support:chat_updated', {
+                  chatSupportId,
+                  updates,
+                  timestamp: new Date()
+                });
+              }
+              
+              if (mainIo) {
+                mainIo.to(`support:${chatSupportId}`).emit('support:chat_updated', {
+                  chatSupportId,
+                  updates,
+                  timestamp: new Date()
+                });
+              }
+              
+              console.log('📡 Chat support status updated:', chatSupportId, updates.status);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error processing chat support change:', error);
+      }
+    });
+
+    changeStream.on('error', (error) => {
+      console.error('Chat support change stream error:', error);
+    });
+
+    chatSupportChangeStream = changeStream;
+    console.log('👁️ Chat support change stream initialized');
+  } catch (error) {
+    console.error('Failed to setup chat support change stream:', error);
+  }
+};
+
+const closeChatSupportChangeStream = () => {
+  if (chatSupportChangeStream) {
+    try {
+      chatSupportChangeStream.close();
+      chatSupportChangeStream = null;
+      console.log('Chat support change stream closed');
+    } catch (error) {
+      console.error('Error closing chat support change stream:', error);
+    }
+  }
+};
+
 module.exports = {
   setupSocketHandlers,
   emitAlertUpdate,
-  emitSupportUpdate
+  emitSupportUpdate,
+  emitChatSupportUpdate,
+  emitNewChatSupport,
+  emitChatSupportMessage,
+  closeChatSupportChangeStream
 };

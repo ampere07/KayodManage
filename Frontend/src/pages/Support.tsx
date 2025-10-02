@@ -17,7 +17,6 @@ import {
 import io, { Socket } from 'socket.io-client';
 import '../styles/support.css';
 
-// Type definitions
 interface Message {
   _id?: string;
   senderType: 'Admin' | 'User';
@@ -27,26 +26,25 @@ interface Message {
   timestamp: string;
 }
 
-interface Ticket {
+interface ChatSupport {
   _id: string;
-  ticketId: string;
   userId: string;
   userEmail?: string;
   userName?: string;
-  title: string;
-  description: string;
-  status: 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'rejected' | 'closed';
+  subject: string;
+  category: string;
+  description?: string;
+  status: 'open' | 'closed';
   priority: 'urgent' | 'high' | 'medium' | 'low';
-  category?: string;
   messages?: Message[];
   createdAt: string;
   updatedAt?: string;
-  resolution?: string;
+  closedAt?: string;
 }
 
 const Support: React.FC = () => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [chatSupports, setChatSupports] = useState<ChatSupport[]>([]);
+  const [selectedChat, setSelectedChat] = useState<ChatSupport | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
@@ -56,10 +54,19 @@ const Support: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const joinedTickets = useRef<Set<string>>(new Set());
+  const joinedChats = useRef<Set<string>>(new Set());
+  const selectedChatIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    fetchTickets();
+    if (selectedChat) {
+      selectedChatIdRef.current = selectedChat._id;
+    } else {
+      selectedChatIdRef.current = null;
+    }
+  }, [selectedChat?._id]);
+
+  useEffect(() => {
+    fetchChatSupports();
     setupSocket();
   }, []);
 
@@ -70,25 +77,23 @@ const Support: React.FC = () => {
   }, [socket]);
 
   useEffect(() => {
-    // Join/leave ticket room when selection changes
     if (socket && isConnected) {
-      // Leave all previously joined tickets
-      joinedTickets.current.forEach(ticketId => {
-        socket.emit('support:leave_ticket', { ticketId });
+      joinedChats.current.forEach(chatId => {
+        socket.emit('support:leave_chat', { chatSupportId: chatId });
       });
-      joinedTickets.current.clear();
+      joinedChats.current.clear();
 
-      // Join the newly selected ticket
-      if (selectedTicket) {
-        socket.emit('support:join_ticket', { ticketId: selectedTicket._id });
-        joinedTickets.current.add(selectedTicket._id);
+      if (selectedChat) {
+        console.log('🔗 Joining chat room:', selectedChat._id);
+        socket.emit('support:join_chat', { chatSupportId: selectedChat._id });
+        joinedChats.current.add(selectedChat._id);
       }
     }
-  }, [selectedTicket, socket, isConnected]);
+  }, [selectedChat, socket, isConnected]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [selectedTicket?.messages]);
+  }, [selectedChat?.messages]);
 
   const scrollToBottom = () => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -96,11 +101,10 @@ const Support: React.FC = () => {
 
   const cleanupSocket = () => {
     if (socket) {
-      // Leave all joined ticket rooms
-      joinedTickets.current.forEach(ticketId => {
-        socket.emit('support:leave_ticket', { ticketId });
+      joinedChats.current.forEach(chatId => {
+        socket.emit('support:leave_chat', { chatSupportId: chatId });
       });
-      joinedTickets.current.clear();
+      joinedChats.current.clear();
       
       socket.disconnect();
       setSocket(null);
@@ -109,19 +113,18 @@ const Support: React.FC = () => {
   };
 
   const setupSocket = () => {
-    // Connect to admin namespace
     const newSocket = io('http://localhost:5000/admin', {
       transports: ['websocket', 'polling'],
       withCredentials: true
     });
     
     newSocket.on('connect', () => {
-      console.log('Socket connected to admin namespace');
+      console.log('✅ Socket connected to admin namespace - ID:', newSocket.id);
       setIsConnected(true);
       
-      // Rejoin selected ticket room on reconnection
-      if (selectedTicket) {
-        newSocket.emit('support:join_ticket', { ticketId: selectedTicket._id });
+      if (selectedChatIdRef.current) {
+        console.log('🔗 Rejoining chat room:', selectedChatIdRef.current);
+        newSocket.emit('support:join_chat', { chatSupportId: selectedChatIdRef.current });
       }
     });
     
@@ -135,28 +138,26 @@ const Support: React.FC = () => {
       setIsConnected(false);
     });
     
-    // Connection status
     newSocket.on('connection:status', (status: string) => {
       console.log('Connection status:', status);
       setIsConnected(status === 'connected');
     });
     
-    // Support-specific events
     newSocket.on('support:new_message', (data: any) => {
+      console.log('🔔 Socket event: support:new_message received', data);
       handleNewMessage(data);
     });
     
-    newSocket.on('support:ticket_updated', (data: any) => {
-      handleTicketUpdate(data);
+    newSocket.on('support:chat_updated', (data: any) => {
+      handleChatUpdate(data);
     });
     
-    newSocket.on('support:new_ticket', (data: any) => {
-      // Refresh tickets when a new ticket is created
-      fetchTickets();
+    newSocket.on('support:new_chat', (data: any) => {
+      fetchChatSupports();
     });
     
-    newSocket.on('support:joined_ticket', (data: any) => {
-      console.log('Successfully joined ticket:', data.ticketId);
+    newSocket.on('support:joined_chat', (data: any) => {
+      console.log('✅ Successfully joined chat room:', data.chatSupportId);
     });
     
     newSocket.on('support:message_error', (error: any) => {
@@ -164,209 +165,285 @@ const Support: React.FC = () => {
       setSendingMessage(false);
     });
     
-    // Also listen for general stats and alerts
-    newSocket.on('stats:update', (stats: any) => {
-      console.log('Stats update received');
-    });
-    
-    newSocket.on('alerts:update', (alerts: any) => {
-      console.log('Alerts update received');
-    });
-    
     setSocket(newSocket);
   };
 
   const handleNewMessage = (data: any) => {
-    const { ticketId, message } = data;
+    const { chatSupportId, message: newMessage } = data;
+    console.log('📨 Processing new message:', { chatSupportId, newMessage });
     
-    // Update the ticket's messages
-    setTickets(prev => prev.map(ticket => {
-      if (ticket._id === ticketId) {
-        const messages = ticket.messages || [];
-        // Check if message already exists to avoid duplicates
-        const exists = messages.some(m => 
-          m._id === message._id || 
-          (m.timestamp === message.timestamp && m.message === message.message)
-        );
-        
-        if (!exists) {
+    if (!newMessage) {
+      console.error('❌ No message in socket data!');
+      return;
+    }
+    
+    setSendingMessage(false);
+    
+    setChatSupports(prevChats => {
+      const updatedChats = prevChats.map(chat => {
+        if (chat._id === chatSupportId) {
+          const currentMessages = chat.messages || [];
+          const messageExists = currentMessages.some(
+            (m: Message) => m._id === newMessage._id
+          );
+          
+          if (messageExists) {
+            console.log('ℹ️ Message already exists in chat list');
+            return chat;
+          }
+          
+          const filteredMessages = currentMessages.filter(
+            (m: Message) => !m._id?.startsWith('temp-')
+          );
+          
+          const updatedMessages = [...filteredMessages, newMessage];
+          console.log('✅ Adding new message to chat list. Total messages:', updatedMessages.length);
+          
           return {
-            ...ticket,
-            messages: [...messages, message]
+            ...chat,
+            messages: updatedMessages,
+            updatedAt: new Date().toISOString()
           };
         }
-      }
-      return ticket;
-    }));
-    
-    // Update selected ticket if it's the same
-    if (selectedTicket?._id === ticketId) {
-      setSelectedTicket(prev => {
-        if (!prev) return prev;
-        const messages = prev.messages || [];
-        const exists = messages.some(m => 
-          m._id === message._id || 
-          (m.timestamp === message.timestamp && m.message === message.message)
-        );
-        
-        if (!exists) {
-          return {
-            ...prev,
-            messages: [...messages, message]
-          };
-        }
-        return prev;
+        return chat;
       });
+      return updatedChats;
+    });
+    
+    if (selectedChatIdRef.current === chatSupportId) {
+      console.log('🎯 Updating selected chat with new message');
+      setSelectedChat(prevChat => {
+        if (!prevChat || prevChat._id !== chatSupportId) {
+          console.log('⚠️ Selected chat mismatch');
+          return prevChat;
+        }
+        
+        const currentMessages = prevChat.messages || [];
+        const messageExists = currentMessages.some(
+          (m: Message) => m._id === newMessage._id
+        );
+        
+        if (messageExists) {
+          console.log('ℹ️ Message already exists in selected chat');
+          return prevChat;
+        }
+        
+        const filteredMessages = currentMessages.filter(
+          (m: Message) => !m._id?.startsWith('temp-')
+        );
+        
+        const updatedMessages = [...filteredMessages, newMessage];
+        console.log('✅ Updated selected chat. Total messages:', updatedMessages.length);
+        
+        return {
+          ...prevChat,
+          messages: updatedMessages,
+          updatedAt: new Date().toISOString()
+        };
+      });
+    } else {
+      console.log('ℹ️ Message for different chat:', chatSupportId, 'Current:', selectedChatIdRef.current);
     }
   };
 
-  const handleTicketUpdate = (data: any) => {
-    const { ticketId, ...updateData } = data;
+  const handleChatUpdate = (data: any) => {
+    const { chatSupportId, updates } = data;
     
-    // Update ticket in the list
-    setTickets(prev => prev.map(ticket => 
-      ticket._id === ticketId 
-        ? { ...ticket, ...updateData, updatedAt: data.timestamp }
-        : ticket
+    setChatSupports(prev => prev.map(chat => 
+      chat._id === chatSupportId 
+        ? { ...chat, ...updates, updatedAt: data.timestamp }
+        : chat
     ));
     
-    // Update selected ticket if it's the same
-    if (selectedTicket?._id === ticketId) {
-      setSelectedTicket(prev => 
-        prev ? { ...prev, ...updateData, updatedAt: data.timestamp } : prev
+    if (selectedChatIdRef.current === chatSupportId) {
+      setSelectedChat(prev => 
+        prev ? { ...prev, ...updates, updatedAt: data.timestamp } : prev
       );
     }
   };
 
-  const fetchTickets = async () => {
+  const fetchChatSupports = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/support/tickets', {
+      const response = await fetch('/api/support/chatsupports', {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         }
       });
       const data = await response.json();
-      setTickets(data.tickets || []);
+      const chats = data.chatSupports || [];
+      setChatSupports(chats);
+      
+      if (selectedChatIdRef.current) {
+        const updatedChat = chats.find((c: ChatSupport) => c._id === selectedChatIdRef.current);
+        if (updatedChat) {
+          setSelectedChat(updatedChat);
+        }
+      }
     } catch (error) {
-      console.error('Error fetching tickets:', error);
+      console.error('Error fetching chat supports:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTicketAction = async (ticketId: string, action: string, resolution: string | null = null) => {
+  const handleSelectChat = async (chat: ChatSupport) => {
     try {
-      const response = await fetch(`/api/support/tickets/${ticketId}/${action}`, {
+      console.log('📥 Loading chat:', chat._id);
+      const response = await fetch(`/api/support/chatsupports/${chat._id}`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Chat loaded with messages:', data.chatSupport.messages?.length || 0);
+        setSelectedChat(data.chatSupport);
+      } else {
+        console.log('⚠️ Failed to load chat details, using cached data');
+        setSelectedChat(chat);
+      }
+    } catch (error) {
+      console.error('Error fetching chat details:', error);
+      setSelectedChat(chat);
+    }
+  };
+
+  const handleChatAction = async (chatSupportId: string, action: string) => {
+    try {
+      const response = await fetch(`/api/support/chatsupports/${chatSupportId}/${action}`, {
         method: 'PUT',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolution })
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (response.ok) {
-        fetchTickets();
-        if (selectedTicket?._id === ticketId) {
-          const updatedResponse = await fetch(`/api/support/tickets/${ticketId}`, {
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' }
-          });
-          const updatedTicket = await updatedResponse.json();
-          setSelectedTicket(updatedTicket.ticket);
+        const result = await response.json();
+        if (selectedChatIdRef.current === chatSupportId) {
+          setSelectedChat(result.chatSupport);
         }
+        setChatSupports(prev => prev.map(chat => 
+          chat._id === chatSupportId ? result.chatSupport : chat
+        ));
       }
     } catch (error) {
-      console.error(`Error ${action} ticket:`, error);
+      console.error(`Error ${action} chat:`, error);
     }
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || !selectedTicket || sendingMessage) return;
+    if (!message.trim() || !selectedChat || sendingMessage) return;
 
     const messageText = message.trim();
     setSendingMessage(true);
+    setMessage('');
     
-    // Create optimistic message
+    const tempId = `temp-${Date.now()}`;
     const optimisticMessage: Message = {
-      _id: `temp-${Date.now()}`,
+      _id: tempId,
       senderType: 'Admin',
       senderName: 'Support Agent',
       message: messageText,
       timestamp: new Date().toISOString()
     };
     
-    // Add optimistic message
-    setSelectedTicket(prev => {
+    setSelectedChat(prev => {
       if (!prev) return prev;
       return {
         ...prev,
         messages: [...(prev.messages || []), optimisticMessage]
       };
     });
-    
-    setMessage('');
+
+    const timeoutId = setTimeout(() => {
+      setSelectedChat(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: prev.messages?.filter(m => m._id !== tempId) || []
+        };
+      });
+      setMessage(messageText);
+      setSendingMessage(false);
+      console.error('Message send timeout - no socket response');
+    }, 10000);
 
     try {
-      // Send via socket if connected
       if (socket && isConnected) {
+        console.log('📤 Sending message via socket:', { chatSupportId: selectedChat._id, message: messageText });
         socket.emit('support:send_message', {
-          ticketId: selectedTicket._id,
+          chatSupportId: selectedChat._id,
           message: messageText,
           senderName: 'Support Agent',
           senderType: 'Admin'
         });
-      }
-      
-      // Also send via API for persistence
-      const response = await fetch(`/api/support/tickets/${selectedTicket._id}/messages`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: messageText })
-      });
-
-      if (response.ok) {
-        const updatedResponse = await fetch(`/api/support/tickets/${selectedTicket._id}`, {
+        
+        const messageHandler = (data: any) => {
+          if (data.chatSupportId === selectedChat._id) {
+            clearTimeout(timeoutId);
+            socket.off('support:new_message', messageHandler);
+          }
+        };
+        
+        socket.on('support:new_message', messageHandler);
+      } else {
+        const response = await fetch(`/api/support/chatsupports/${selectedChat._id}/messages`, {
+          method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: messageText })
         });
-        const updatedTicket = await updatedResponse.json();
-        setSelectedTicket(updatedTicket.ticket);
-        fetchTickets();
+        
+        if (response.ok) {
+          clearTimeout(timeoutId);
+          const result = await response.json();
+          
+          setSelectedChat(prev => {
+            if (!prev) return prev;
+            const filtered = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
+            return {
+              ...prev,
+              messages: [...filtered, result.message]
+            };
+          });
+        } else {
+          throw new Error('Failed to send message');
+        }
+        
+        setSendingMessage(false);
       }
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Error sending message:', error);
-      // Remove optimistic message on error
-      setSelectedTicket(prev => {
+      setSelectedChat(prev => {
         if (!prev) return prev;
         return {
           ...prev,
-          messages: prev.messages?.filter(m => m._id !== optimisticMessage._id)
+          messages: prev.messages?.filter(m => m._id !== tempId) || []
         };
       });
-      setMessage(messageText); // Restore message
-    } finally {
+      setMessage(messageText);
       setSendingMessage(false);
     }
   };
 
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesSearch = ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         ticket.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         ticket.ticketId.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
-    const matchesPriority = filterPriority === 'all' || ticket.priority === filterPriority;
+  const filteredChatSupports = chatSupports.filter((chat) => {
+    const matchesSearch = chat.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         chat.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (chat.userEmail && chat.userEmail.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesStatus = filterStatus === 'all' || chat.status === filterStatus;
+    const matchesPriority = filterPriority === 'all' || chat.priority === filterPriority;
     
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'pending': return <Clock className="w-3 h-3 text-yellow-500" />;
-      case 'accepted': case 'in_progress': return <MessageSquare className="w-3 h-3 text-blue-500" />;
-      case 'resolved': return <CheckCircle className="w-3 h-3 text-green-500" />;
-      case 'rejected': case 'closed': return <XCircle className="w-3 h-3 text-red-500" />;
+      case 'open': return <Clock className="w-3 h-3 text-green-500" />;
+      case 'closed': return <XCircle className="w-3 h-3 text-red-500" />;
       default: return <AlertCircle className="w-3 h-3 text-gray-500" />;
     }
   };
@@ -386,7 +463,7 @@ const Support: React.FC = () => {
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-600 mt-4">Loading tickets...</p>
+          <p className="text-gray-600 mt-4">Loading chats...</p>
         </div>
       </div>
     );
@@ -394,12 +471,11 @@ const Support: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-      {/* Fixed Header */}
       <div className="bg-white border-b px-6 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Support Center</h1>
-            <p className="text-sm text-gray-600">Manage support tickets and help users</p>
+            <p className="text-sm text-gray-600">Manage support conversations and help users</p>
           </div>
           <div className="flex items-center gap-2">
             {isConnected ? (
@@ -417,19 +493,16 @@ const Support: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content - Scrollable Area */}
       <div className="flex-1 p-4 overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
-          {/* Tickets List */}
           <div className="lg:col-span-1 bg-white rounded-lg shadow-sm border flex flex-col h-full overflow-hidden">
-            {/* Fixed Header Section */}
             <div className="p-3 border-b bg-gray-50 flex-shrink-0">
               <div className="flex items-center gap-2 mb-3">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Search tickets..."
+                    placeholder="Search chats..."
                     value={searchQuery}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                     className="pl-9 pr-3 py-1.5 w-full border bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -445,11 +518,7 @@ const Support: React.FC = () => {
                   className="px-2 py-1.5 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1"
                 >
                   <option value="all">All Status</option>
-                  <option value="pending">Pending</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="rejected">Rejected</option>
+                  <option value="open">Open</option>
                   <option value="closed">Closed</option>
                 </select>
                 
@@ -467,44 +536,43 @@ const Support: React.FC = () => {
               </div>
             </div>
 
-            {/* Scrollable Tickets List */}
             <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar smooth-scroll">
-              {filteredTickets.length === 0 ? (
+              {filteredChatSupports.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
                   <MessageCircleQuestion className="w-12 h-12 mb-4 text-gray-300" />
-                  <p className="text-base font-medium">No tickets found</p>
+                  <p className="text-base font-medium">No chats found</p>
                   <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
                 </div>
               ) : (
                 <div className="p-2">
-                  {filteredTickets.map((ticket) => (
+                  {filteredChatSupports.map((chat) => (
                     <div
-                      key={ticket._id}
-                      onClick={() => setSelectedTicket(ticket)}
+                      key={chat._id}
+                      onClick={() => handleSelectChat(chat)}
                       className={`p-3 rounded-lg cursor-pointer transition-all duration-200 mb-2 ${
-                        selectedTicket?._id === ticket._id 
+                        selectedChat?._id === chat._id 
                           ? 'bg-blue-50 shadow-sm ring-2 ring-blue-500' 
                           : 'bg-white hover:bg-gray-50 hover:shadow-sm'
                       }`}
                     >
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-medium text-sm text-gray-900 truncate pr-2">
-                        {ticket.title}
+                        {chat.subject}
                       </h3>
-                      {getStatusIcon(ticket.status)}
+                      {getStatusIcon(chat.status)}
                     </div>
                     
-                    <p className="text-xs text-gray-600 mb-2 line-clamp-2">
-                      {ticket.description}
+                    <p className="text-xs text-gray-600 mb-2 line-clamp-1">
+                      {chat.category}
                     </p>
                     
                     <div className="flex items-center justify-between">
                       <span className={`px-2 py-1 rounded-full text-xs border ${
-                        getPriorityColor(ticket.priority)}`}>
-                        {ticket.priority}
+                        getPriorityColor(chat.priority)}`}>
+                        {chat.priority}
                       </span>
                       <span className="text-xs text-gray-500">
-                        {ticket.ticketId}
+                        {chat.userEmail || chat.userName}
                       </span>
                     </div>
                   </div>
@@ -514,115 +582,107 @@ const Support: React.FC = () => {
             </div>
           </div>
 
-          {/* Ticket Details */}
           <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col h-full overflow-hidden">
-          {selectedTicket ? (
+          {selectedChat ? (
             <>
-              {/* Ticket Header */}
               <div className="p-3 border-b bg-gray-50 flex-shrink-0">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <h2 className="text-lg font-bold text-gray-900 mb-1">
-                      {selectedTicket.title}
+                      {selectedChat.subject}
                     </h2>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                      {selectedTicket.description}
+                    <p className="text-sm text-gray-600 mb-2">
+                      {selectedChat.category}
                     </p>
                     
                     <div className="flex items-center gap-3 text-xs text-gray-500">
                       <div className="flex items-center gap-1">
                         <User className="w-3 h-3" />
-                        {selectedTicket.userName || selectedTicket.userEmail || `User ID: ${selectedTicket.userId}`}
+                        {selectedChat.userName || selectedChat.userEmail || `User ID: ${selectedChat.userId}`}
                       </div>
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(selectedTicket.createdAt).toLocaleDateString()}
+                        {new Date(selectedChat.createdAt).toLocaleDateString()}
                       </div>
                       <div className="flex items-center gap-1">
-                        {getStatusIcon(selectedTicket.status)}
-                        {selectedTicket.status.replace('_', ' ')}
+                        {getStatusIcon(selectedChat.status)}
+                        {selectedChat.status}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {selectedChat.messages?.length || 0} messages
                       </div>
                     </div>
                   </div>
                   
                   <div className="flex gap-2 ml-2">
-                    {selectedTicket.status === 'pending' && (
-                      <>
-                        <button
-                          onClick={() => handleTicketAction(selectedTicket._id, 'accept')}
-                          className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => handleTicketAction(selectedTicket._id, 'reject')}
-                          className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs"
-                        >
-                          Reject
-                        </button>
-                      </>
+                    {selectedChat.status === 'open' && (
+                      <button
+                        onClick={() => handleChatAction(selectedChat._id, 'close')}
+                        className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs"
+                      >
+                        Close Chat
+                      </button>
                     )}
                     
-                    {(selectedTicket.status === 'accepted' || selectedTicket.status === 'in_progress') && (
+                    {selectedChat.status === 'closed' && (
                       <button
-                        onClick={() => {
-                          const resolution = prompt('Enter resolution summary:');
-                          if (resolution) {
-                            handleTicketAction(selectedTicket._id, 'resolve', resolution);
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs"
+                        onClick={() => handleChatAction(selectedChat._id, 'reopen')}
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs"
                       >
-                        Mark Resolved
+                        Reopen Chat
                       </button>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Messages */}
               <div className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0 custom-scrollbar smooth-scroll">
                 <div className="space-y-4">
-                  {selectedTicket.messages?.map((msg, index) => {
-                    const isTemp = msg._id?.startsWith('temp-');
-                    return (
-                      <div
-                        key={msg._id || index}
-                        className={`flex ${msg.senderType === 'Admin' ? 'justify-end' : 'justify-start'}`}
-                        style={{ opacity: isTemp ? 0.7 : 1 }}
-                      >
+                  {(!selectedChat.messages || selectedChat.messages.length === 0) ? (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <p>No messages yet. Start the conversation!</p>
+                    </div>
+                  ) : (
+                    selectedChat.messages.map((msg, index) => {
+                      const isTemp = msg._id?.startsWith('temp-');
+                      return (
                         <div
-                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                            msg.senderType === 'Admin' 
-                              ? 'bg-blue-600 text-white' 
-                              : 'bg-white text-gray-900 border'
-                          }`}
+                          key={msg._id || index}
+                          className={`flex ${msg.senderType === 'Admin' ? 'justify-end' : 'justify-start'}`}
+                          style={{ opacity: isTemp ? 0.7 : 1 }}
                         >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-xs font-medium ${
-                              msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-600'
-                            }`}>
-                              {msg.senderName || (msg.senderType === 'Admin' ? 'Admin' : 'User')}
-                            </span>
-                            {isTemp && (
-                              <span className="text-xs opacity-75">Sending...</span>
-                            )}
+                          <div
+                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              msg.senderType === 'Admin' 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-white text-gray-900 border'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs font-medium ${
+                                msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-600'
+                              }`}>
+                                {msg.senderName || (msg.senderType === 'Admin' ? 'Admin' : 'User')}
+                              </span>
+                              {isTemp && (
+                                <span className="text-xs opacity-75">Sending...</span>
+                              )}
+                            </div>
+                            <p className="text-sm">{msg.message}</p>
+                            <p className={`text-xs mt-1 ${
+                              msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-500'}`}>
+                              {new Date(msg.timestamp).toLocaleString()}
+                            </p>
                           </div>
-                          <p className="text-sm">{msg.message}</p>
-                          <p className={`text-xs mt-1 ${
-                            msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-500'}`}>
-                            {new Date(msg.timestamp).toLocaleString()}
-                          </p>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                   <div ref={messageEndRef} />
                 </div>
               </div>
 
-              {/* Message Input */}
-              {(selectedTicket.status === 'accepted' || selectedTicket.status === 'in_progress') && (
+              {selectedChat.status === 'open' && (
                 <div className="p-4 border-t bg-white flex-shrink-0">
                   <div className="flex gap-2">
                     <input
@@ -663,8 +723,8 @@ const Support: React.FC = () => {
             <div className="flex-1 flex items-center justify-center text-gray-500">
               <div className="text-center">
                 <MessageCircleQuestion className="w-16 h-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Select a Ticket</h3>
-                <p>Choose a support ticket from the list to view details and chat</p>
+                <h3 className="text-lg font-medium mb-2">Select a Chat</h3>
+                <p>Choose a support chat from the list to view details and messages</p>
               </div>
             </div>
           )}
