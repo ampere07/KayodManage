@@ -7,11 +7,39 @@ const {
   rejectTicket,
   resolveTicket,
   addMessage,
-  getSupportStats
+  getSupportStats,
+  getAllChatSupports,
+  getChatSupport,
+  closeChatSupport,
+  reopenChatSupport,
+  addChatSupportMessage,
+  broadcastMobileMessage
 } = require('../controllers/supportController');
-const { authMiddleware, adminAuth } = require('../middleware/auth'); // Assuming you have auth middleware
+const { authMiddleware, adminAuth } = require('../middleware/auth');
 
-// Apply authentication middleware to all routes
+// Public routes (no authentication required for mobile users)
+router.post('/broadcast-mobile-message', broadcastMobileMessage);
+
+// Mobile user routes (accessible without admin auth)
+router.get('/chat/:chatSupportId', getChatSupport);
+router.post('/chat/:chatSupportId/messages', addChatSupportMessage);
+
+// Notification endpoints (no auth required for inter-service communication)
+router.post('/notify-new-ticket', (req, res) => {
+  console.log('New support ticket notification received:', req.body);
+  const { emitSupportUpdate } = require('../socket/socketHandlers');
+  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_ticket');
+  res.json({ success: true });
+});
+
+router.post('/notify-new-message', (req, res) => {
+  console.log('New support message notification received:', req.body);
+  const { emitSupportUpdate } = require('../socket/socketHandlers');
+  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_message');
+  res.json({ success: true });
+});
+
+// Admin routes (require authentication)
 router.use(authMiddleware);
 router.use(adminAuth);
 
@@ -36,23 +64,11 @@ router.put('/tickets/:ticketId/resolve', resolveTicket);
 // POST /api/support/tickets/:ticketId/messages - Add message to ticket
 router.post('/tickets/:ticketId/messages', addMessage);
 
-// Notification endpoint (no auth required for inter-service communication)
-router.post('/notify-new-ticket', (req, res) => {
-  // Log the new ticket notification
-  console.log('New support ticket notification received:', req.body);
-  // Emit socket event to notify admins
-  const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_ticket');
-  res.json({ success: true });
-});
-
-router.post('/notify-new-message', (req, res) => {
-  // Log the new message notification
-  console.log('New support message notification received:', req.body);
-  // Emit socket event to notify admins
-  const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_message');
-  res.json({ success: true });
-});
+// ChatSupport Routes (admin only)
+router.get('/chatsupports', getAllChatSupports);
+router.get('/chatsupports/:chatSupportId', getChatSupport);
+router.put('/chatsupports/:chatSupportId/close', closeChatSupport);
+router.put('/chatsupports/:chatSupportId/reopen', reopenChatSupport);
+router.post('/chatsupports/:chatSupportId/messages', addChatSupportMessage);
 
 module.exports = router;
