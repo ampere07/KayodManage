@@ -44,36 +44,55 @@ const setupSocketHandlers = (io) => {
     });
     
     socket.on('support:send_message', async (data) => {
+      console.log('📥 Admin send_message received:', data);
+      
       if (data.chatSupportId && data.message) {
         try {
-          const ChatSupport = require('../models/ChatSupport');
           const chatSupport = await ChatSupport.findById(data.chatSupportId);
           
-          if (chatSupport && chatSupport.status === 'open') {
-            const mongoose = require('mongoose');
-            const adminId = '000000000000000000000000';
-            const adminObjectId = new mongoose.Types.ObjectId(adminId);
-            
-            const newMessage = {
-              senderId: data.senderId || adminObjectId,
-              senderName: data.senderName || 'Support Agent',
-              senderType: data.senderType || 'Admin',
-              message: data.message.trim(),
-              timestamp: new Date()
-            };
-            
-            chatSupport.messages.push(newMessage);
-            await chatSupport.save();
-            
-            console.log(`💬 Message saved to DB, change stream will broadcast`);
+          if (!chatSupport) {
+            console.error('❌ Chat support not found:', data.chatSupportId);
+            socket.emit('support:message_error', { 
+              error: 'Chat support not found',
+              chatSupportId: data.chatSupportId 
+            });
+            return;
           }
+          
+          if (chatSupport.status !== 'open') {
+            console.error('❌ Chat support is closed:', data.chatSupportId);
+            socket.emit('support:message_error', { 
+              error: 'Chat support is closed',
+              chatSupportId: data.chatSupportId 
+            });
+            return;
+          }
+          
+          const mongoose = require('mongoose');
+          const adminId = '000000000000000000000000';
+          const adminObjectId = new mongoose.Types.ObjectId(adminId);
+          
+          const newMessage = {
+            senderId: data.senderId || adminObjectId,
+            senderName: data.senderName || 'Support Agent',
+            senderType: data.senderType || 'Admin',
+            message: data.message.trim(),
+            timestamp: new Date()
+          };
+          
+          chatSupport.messages.push(newMessage);
+          await chatSupport.save();
+          
+          console.log(`✅ Admin message saved to DB:`, newMessage._id);
         } catch (error) {
-          console.error('Error sending chat support message:', error);
+          console.error('❌ Error sending admin chat support message:', error);
           socket.emit('support:message_error', { 
             error: 'Failed to send message',
             chatSupportId: data.chatSupportId 
           });
         }
+      } else {
+        console.error('❌ Missing chatSupportId or message:', data);
       }
     });
     
@@ -112,38 +131,89 @@ const setupMainNamespaceHandlers = (io) => {
     });
     
     socket.on('support:send_message', async (data) => {
-      if (data.chatSupportId && data.message) {
-        try {
-          const ChatSupport = require('../models/ChatSupport');
-          const chatSupport = await ChatSupport.findById(data.chatSupportId);
-          
-          if (chatSupport && chatSupport.status === 'open') {
-            const mongoose = require('mongoose');
-            const userId = data.userId || socket.handshake.auth?.userId || '000000000000000000000000';
-            const userObjectId = mongoose.Types.ObjectId.isValid(userId) 
-              ? new mongoose.Types.ObjectId(userId)
-              : new mongoose.Types.ObjectId('000000000000000000000000');
-            
-            const newMessage = {
-              senderId: userObjectId,
-              senderName: data.senderName || 'User',
-              senderType: 'User',
-              message: data.message.trim(),
-              timestamp: new Date()
-            };
-            
-            chatSupport.messages.push(newMessage);
-            await chatSupport.save();
-            
-            console.log(`📱 User message saved to DB, change stream will broadcast`);
-          }
-        } catch (error) {
-          console.error('Error sending user chat support message:', error);
+      console.log('📥 Mobile send_message received:', JSON.stringify(data, null, 2));
+      
+      if (!data.chatSupportId) {
+        console.error('❌ Missing chatSupportId');
+        socket.emit('support:message_error', { error: 'Missing chatSupportId' });
+        return;
+      }
+      
+      if (!data.message) {
+        console.error('❌ Missing message');
+        socket.emit('support:message_error', { error: 'Missing message', chatSupportId: data.chatSupportId });
+        return;
+      }
+      
+      try {
+        const chatSupport = await ChatSupport.findById(data.chatSupportId);
+        
+        if (!chatSupport) {
+          console.error('❌ Chat support not found:', data.chatSupportId);
           socket.emit('support:message_error', { 
-            error: 'Failed to send message',
+            error: 'Chat support not found',
             chatSupportId: data.chatSupportId 
           });
+          return;
         }
+        
+        if (chatSupport.status !== 'open') {
+          console.error('❌ Chat support is closed:', data.chatSupportId);
+          socket.emit('support:message_error', { 
+            error: 'Chat support is closed',
+            chatSupportId: data.chatSupportId 
+          });
+          return;
+        }
+        
+        const mongoose = require('mongoose');
+        const userId = data.userId || socket.handshake.auth?.userId || '000000000000000000000000';
+        console.log('👤 Using userId:', userId);
+        
+        const userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+          ? new mongoose.Types.ObjectId(userId)
+          : new mongoose.Types.ObjectId('000000000000000000000000');
+        
+        const newMessage = {
+          senderId: userObjectId,
+          senderName: data.senderName || 'User',
+          senderType: 'User',
+          message: data.message.trim(),
+          timestamp: new Date()
+        };
+        
+        console.log('💾 Saving message:', newMessage);
+        chatSupport.messages.push(newMessage);
+        await chatSupport.save();
+        
+        const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
+        console.log(`✅ Mobile message saved to DB with ID:`, savedMessage._id);
+        
+        // Immediately send confirmation back to sender
+        const messageData = {
+          chatSupportId,
+          message: {
+            _id: savedMessage._id.toString(),
+            senderId: savedMessage.senderId.toString(),
+            senderName: savedMessage.senderName,
+            senderType: savedMessage.senderType,
+            message: savedMessage.message,
+            timestamp: savedMessage.timestamp.toISOString()
+          }
+        };
+        
+        console.log('📤 Sending immediate confirmation to sender');
+        socket.emit('support:new_message', messageData);
+        
+        console.log('📡 Broadcasting to all users in room');
+        io.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
+        
+      } catch (error) {
+        console.error('❌ Error sending mobile chat support message:', error);
+        socket.emit('support:message_error', { 
+          error: 'Failed to send message: ' + error.message,
+          chatSupportId: data.chatSupportId 
+        });
       }
     });
     
@@ -399,7 +469,7 @@ const setupChatSupportChangeStream = () => {
                 }
               };
 
-              console.log('📡 Broadcasting message from DB change stream to both namespaces:', messageData);
+              console.log('📡 Broadcasting message from DB change stream to both namespaces');
               
               if (adminNamespace) {
                 adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
