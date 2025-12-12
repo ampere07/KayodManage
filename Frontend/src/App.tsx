@@ -60,8 +60,8 @@ const AppContent: React.FC = () => {
     <Router>
       <Routes>
         <Route path="/" element={<Layout title="Dashboard"><Dashboard /></Layout>} />
-        <Route path="/users" element={<Layout title="User Management"><Users /></Layout>} />
-        <Route path="/jobs" element={<Layout title="Job Management"><Jobs /></Layout>} />
+        <Route path="/users" element={<Layout title="Users"><Users /></Layout>} />
+        <Route path="/jobs" element={<Layout title="Jobs"><Jobs /></Layout>} />
         <Route path="/transactions" element={<Layout title="Transactions"><Transactions /></Layout>} />
         <Route path="/verifications" element={<Layout title="User Verifications"><Verifications /></Layout>} />
         <Route path="/activity" element={<Layout title="Activity Feed"><Activity /></Layout>} />

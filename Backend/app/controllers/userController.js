@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const FeeRecord = require('../models/FeeRecord');
+const mongoose = require('mongoose');
 
 const getUsers = async (req, res) => {
   try {
@@ -172,23 +173,30 @@ const restrictUser = async (req, res) => {
     const { userId } = req.params;
     const { restricted } = req.body;
     
+    const updateData = { 
+      isRestricted: restricted,
+      accountStatus: restricted ? 'restricted' : 'active'
+    };
+
+    if (restricted) {
+      updateData.restrictionDetails = {
+        type: 'restricted',
+        reason: 'Account restricted by admin',
+        restrictedAt: new Date(),
+        appealAllowed: true
+      };
+      
+      // Only add restrictedBy if we have a valid ObjectId
+      if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
+        updateData.restrictionDetails.restrictedBy = req.session.adminId;
+      }
+    } else {
+      updateData.$unset = { restrictionDetails: 1 };
+    }
+    
     const user = await User.findByIdAndUpdate(
       userId,
-      { 
-        isRestricted: restricted,
-        accountStatus: restricted ? 'restricted' : 'active',
-        ...(restricted ? {
-          restrictionDetails: {
-            type: 'restricted',
-            reason: 'Account restricted by admin',
-            restrictedBy: req.session.adminId,
-            restrictedAt: new Date(),
-            appealAllowed: true
-          }
-        } : {
-          $unset: { restrictionDetails: 1 }
-        })
-      },
+      updateData,
       { new: true }
     );
     
@@ -221,18 +229,24 @@ const banUser = async (req, res) => {
       return res.status(400).json({ error: 'Ban reason is required' });
     }
     
+    const restrictionDetails = {
+      type: 'banned',
+      reason: reason.trim(),
+      restrictedAt: new Date(),
+      appealAllowed: true
+    };
+    
+    // Only add restrictedBy if we have a valid ObjectId
+    if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
+      restrictionDetails.restrictedBy = req.session.adminId;
+    }
+    
     const user = await User.findByIdAndUpdate(
       userId,
       { 
         accountStatus: 'banned',
         isRestricted: true,
-        restrictionDetails: {
-          type: 'banned',
-          reason: reason.trim(),
-          restrictedBy: req.session.adminId,
-          restrictedAt: new Date(),
-          appealAllowed: true
-        }
+        restrictionDetails
       },
       { new: true }
     );
@@ -273,19 +287,25 @@ const suspendUser = async (req, res) => {
     const suspendedUntil = new Date();
     suspendedUntil.setDate(suspendedUntil.getDate() + duration);
     
+    const restrictionDetails = {
+      type: 'suspended',
+      reason: reason.trim(),
+      restrictedAt: new Date(),
+      suspendedUntil,
+      appealAllowed: true
+    };
+    
+    // Only add restrictedBy if we have a valid ObjectId
+    if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
+      restrictionDetails.restrictedBy = req.session.adminId;
+    }
+    
     const user = await User.findByIdAndUpdate(
       userId,
       { 
         accountStatus: 'suspended',
         isRestricted: true,
-        restrictionDetails: {
-          type: 'suspended',
-          reason: reason.trim(),
-          restrictedBy: req.session.adminId,
-          restrictedAt: new Date(),
-          suspendedUntil,
-          appealAllowed: true
-        }
+        restrictionDetails
       },
       { new: true }
     );

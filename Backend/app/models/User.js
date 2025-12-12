@@ -51,7 +51,7 @@ const UserSchema = new Schema({
     restrictedBy: {
       type: Schema.Types.ObjectId,
       ref: 'Admin',
-      required: function() { return this.accountStatus !== 'active'; }
+      required: false
     },
     restrictedAt: {
       type: Date,

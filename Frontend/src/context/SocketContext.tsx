@@ -69,10 +69,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log('[Socket] User authenticated, connecting to admin socket...');
       connectSocket();
     } else {
-      console.log('[Socket] User not authenticated, disconnecting socket...');
       disconnectSocket();
     }
 
@@ -83,11 +81,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   const connectSocket = () => {
     if (socket) {
-      console.log('[Socket] Socket already exists, disconnecting first...');
       socket.disconnect();
     }
 
-    console.log('[Socket] Creating new admin socket connection...');
     const newSocket = io('http://localhost:5000/admin', {
       withCredentials: true,
       transports: ['websocket', 'polling'],
@@ -97,53 +93,37 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     // Connection events
     newSocket.on('connect', () => {
-      console.log('🔌 [Socket] Connected to admin namespace:', newSocket.id);
       setIsConnected(true);
-      toast.success('Real-time updates connected');
     });
 
     newSocket.on('disconnect', (reason) => {
-      console.log('🔌 [Socket] Disconnected:', reason);
       setIsConnected(false);
-      if (reason !== 'io client disconnect') {
-        toast.error('Real-time updates disconnected');
-      }
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('🔌 [Socket] Connection error:', error);
+      console.error('[Socket] Connection error:', error);
       setIsConnected(false);
-      toast.error('Failed to connect real-time updates');
     });
 
-    newSocket.on('connection:status', (status) => {
-      console.log('🔌 [Socket] Connection status:', status);
-    });
-
-    // Dashboard events only
+    // Dashboard events
     newSocket.on('stats:initial', (stats) => {
-      console.log('📊 [Socket] Initial dashboard stats received');
       setDashboardStats(stats);
     });
 
     newSocket.on('stats:update', (stats) => {
-      console.log('📊 [Socket] Dashboard stats updated');
       setDashboardStats(stats);
     });
 
     // Alerts events
     newSocket.on('alerts:initial', (alerts) => {
-      console.log('🚨 [Socket] Initial alerts received:', alerts.length);
       setAlerts(alerts);
     });
 
     newSocket.on('alerts:update', (data) => {
-      console.log('🚨 [Socket] Alerts updated:', data.alerts.length);
       setAlerts(data.alerts);
     });
 
     newSocket.on('alert:updated', (data) => {
-      console.log('🚨 [Socket] Single alert updated:', data.updateType);
       setAlerts(prev => prev.map(a => a._id === data.alert._id ? data.alert : a));
       if (data.updateType === 'created' && data.alert.priority >= 3) {
         toast.error(`Alert: ${data.alert.title}`);
@@ -155,28 +135,22 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   const disconnectSocket = () => {
     if (socket) {
-      console.log('[Socket] Manually disconnecting socket...');
       socket.disconnect();
       setSocket(null);
     }
     setIsConnected(false);
-    
-    // Clear dashboard data
     setDashboardStats(null);
     setAlerts([]);
   };
 
-  // Manual refresh functions - only for dashboard
   const refreshDashboard = () => {
     if (socket?.connected) {
-      console.log('[Socket] Manually requesting dashboard refresh...');
       socket.emit('request:dashboard');
     }
   };
 
   const refreshAlerts = () => {
     if (socket?.connected) {
-      console.log('[Socket] Manually requesting alerts refresh...');
       socket.emit('request:alerts');
     }
   };

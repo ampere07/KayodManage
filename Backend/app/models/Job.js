@@ -25,6 +25,10 @@ const JobSchema = new Schema({
     type: String,
     trim: true
   }],
+  video: {
+    type: String,
+    default: null
+  },
   location: {
     type: Schema.Types.Mixed,
     required: true
@@ -56,20 +60,67 @@ const JobSchema = new Schema({
     enum: ['open', 'in_progress', 'completed', 'cancelled'],
     default: 'open'
   },
-  user: {
+  userId: {
     type: Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  assignedTo: {
+  assignedToId: {
     type: Schema.Types.ObjectId,
     ref: 'User',
     default: null
+  },
+  softLimitBudget: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   budget: {
     type: Number,
     required: true,
     min: 0
+  },
+  budgetType: {
+    type: String,
+    enum: ['fixed', 'flexible'],
+    default: 'fixed'
+  },
+  paymentDetails: {
+    method: {
+      type: String,
+      enum: ['wallet', 'cash', 'xendit'],
+    },
+    isPaid: {
+      type: Boolean,
+      default: false
+    },
+    paidAt: {
+      type: Date,
+      default: null
+    },
+    cashPaymentConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    cashPaymentConfirmedAt: {
+      type: Date,
+      default: null
+    },
+    feeStatus: {
+      type: String,
+      enum: ['not_applicable', 'pending', 'paid', 'waived'],
+      default: 'not_applicable'
+    },
+    feeRecord: {
+      type: Schema.Types.ObjectId,
+      ref: 'FeeRecord',
+      default: null
+    },
+    heldTransaction: {
+      type: Schema.Types.ObjectId,
+      ref: 'Transaction',
+      default: null
+    }
   },
   paymentStatus: {
     type: String,
@@ -86,30 +137,67 @@ const JobSchema = new Schema({
     default: 0,
     min: 0
   },
-  paidAt: {
-    type: Date,
-    default: null
-  },
   draftId: {
     type: String,
     default: null
   },
   completionStatus: {
-    type: Schema.Types.Mixed,
-    default: {}
+    clientConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    providerConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    paymentReleased: {
+      type: Boolean,
+      default: false
+    },
+    providerConfirmedAt: {
+      type: Date,
+      default: null
+    },
+    clientConfirmedAt: {
+      type: Date,
+      default: null
+    },
+    paymentReleasedAt: {
+      type: Date,
+      default: null
+    }
   },
-  // Soft deletion fields
+  acceptedProvider: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  agreedPrice: {
+    type: Number,
+    default: null
+  },
+  hasNewQuotes: {
+    type: Boolean,
+    default: false
+  },
+  lastQuoteAt: {
+    type: Date,
+    default: null
+  },
+  startNavigation: {
+    type: Boolean,
+    default: false
+  },
+  navigationStartedAt: {
+    type: Date,
+    default: null
+  },
   isDeleted: {
     type: Boolean,
     default: false
   },
   deletedAt: {
     type: Date,
-    default: null
-  },
-  deletedBy: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
     default: null
   },
   deletionReason: {
@@ -121,6 +209,22 @@ const JobSchema = new Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
+});
+
+// Virtual for backward compatibility - map userId to user
+JobSchema.virtual('user', {
+  ref: 'User',
+  localField: 'userId',
+  foreignField: '_id',
+  justOne: true
+});
+
+// Virtual for backward compatibility - map assignedToId to assignedTo
+JobSchema.virtual('assignedTo', {
+  ref: 'User',
+  localField: 'assignedToId',
+  foreignField: '_id',
+  justOne: true
 });
 
 // Virtual to get application count
@@ -141,8 +245,8 @@ JobSchema.virtual('applications', {
 // Indexes for better query performance
 JobSchema.index({ status: 1 });
 JobSchema.index({ category: 1 });
-JobSchema.index({ user: 1 });
-JobSchema.index({ assignedTo: 1 });
+JobSchema.index({ userId: 1 });
+JobSchema.index({ assignedToId: 1 });
 JobSchema.index({ createdAt: -1 });
 JobSchema.index({ date: 1 });
 JobSchema.index({ isUrgent: 1 });
@@ -154,7 +258,6 @@ JobSchema.index({ title: 'text', description: 'text' });
 JobSchema.methods.softDelete = function(deletedBy, reason = 'Deleted due to policy violation') {
   this.isDeleted = true;
   this.deletedAt = new Date();
-  this.deletedBy = deletedBy;
   this.deletionReason = reason;
   this.status = 'cancelled';
   return this.save();
@@ -164,9 +267,8 @@ JobSchema.methods.softDelete = function(deletedBy, reason = 'Deleted due to poli
 JobSchema.methods.restore = function() {
   this.isDeleted = false;
   this.deletedAt = null;
-  this.deletedBy = null;
   this.deletionReason = null;
-  this.status = 'open'; // or previous status
+  this.status = 'open';
   return this.save();
 };
 

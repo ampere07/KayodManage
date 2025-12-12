@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, 
-  Filter, 
   Eye, 
   CheckCircle, 
   XCircle, 
   Clock, 
   MapPin, 
   User, 
-  DollarSign,
+  Wallet,
   Calendar,
-  AlertTriangle,
-  Users,
-  RefreshCw
+  AlertCircle,
+  Users
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -241,15 +239,15 @@ const Jobs: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'open':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'in_progress':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-50 text-yellow-700 border-yellow-200';
       case 'completed':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-50 text-green-700 border-green-200';
       case 'cancelled':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-50 text-red-700 border-red-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-50 text-gray-700 border-gray-200';
     }
   };
 
@@ -262,7 +260,7 @@ const Jobs: React.FC = () => {
       case 'in_progress':
         return <Clock className="h-4 w-4" />;
       default:
-        return null;
+        return <AlertCircle className="h-4 w-4" />;
     }
   };
 
@@ -282,51 +280,50 @@ const Jobs: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header and Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+      <div className="flex-shrink-0 bg-white px-6 py-5 border-b border-gray-200">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <h2 className="text-xl font-semibold text-gray-900">Job Management</h2>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-600">API Mode</span>
-              </div>
-            </div>
-            <p className="text-sm text-gray-500">
-              {pagination.total} total jobs
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
+            <p className="text-sm text-gray-500 mt-1">{pagination.total} total jobs</p>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={fetchJobs}
-              disabled={loading}
-              className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+          <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4 text-yellow-600" />
+              <span className="font-medium text-gray-600">In Progress</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="font-medium text-gray-600">Complete</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <XCircle className="h-4 w-4 text-red-600" />
+              <span className="font-medium text-gray-600">Cancel</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Eye className="h-4 w-4 text-blue-600" />
+              <span className="font-medium text-gray-600">View</span>
+            </div>
           </div>
         </div>
-        
-        {/* Search and Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
               type="text"
               placeholder="Search jobs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
           </div>
           
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
           >
             <option value="all">All Status</option>
             <option value="open">Open</option>
@@ -338,7 +335,7 @@ const Jobs: React.FC = () => {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
           >
             <option value="all">All Categories</option>
             {categories.map(category => (
@@ -351,7 +348,7 @@ const Jobs: React.FC = () => {
           <select
             value={paymentMethodFilter}
             onChange={(e) => setPaymentMethodFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
           >
             <option value="all">All Payment Methods</option>
             <option value="wallet">Wallet</option>
@@ -362,7 +359,7 @@ const Jobs: React.FC = () => {
           <select
             value={urgentFilter}
             onChange={(e) => setUrgentFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
           >
             <option value="all">All Priority</option>
             <option value="true">Urgent Only</option>
@@ -371,231 +368,209 @@ const Jobs: React.FC = () => {
         </div>
       </div>
 
-      {/* Jobs Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="flex-1 overflow-y-auto px-6 py-4">
         {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Loading jobs...</p>
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading jobs...</p>
+            </div>
           </div>
         ) : jobs.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-gray-500">No jobs found</p>
+          <div className="bg-white rounded-lg p-12 text-center">
+            <div className="text-gray-400 mb-4">
+              <Search className="h-12 w-12 mx-auto" />
+            </div>
+            <p className="text-gray-600 font-medium">No jobs found</p>
+            <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Job Details
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Client
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Budget
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Applications
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Posted
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {jobs.map((job) => (
-                  <tr key={job._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="max-w-xs">
-                        <div className="flex items-center space-x-2">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {job.title}
+          <>
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Job Details
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Client
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Budget
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Applications
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Posted
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {jobs.map((job) => (
+                    <tr key={job._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-gray-900">{job.title}</p>
+                            {job.isUrgent && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                Urgent
+                              </span>
+                            )}
                           </div>
-                          {job.isUrgent && (
-                            <span title="Urgent">
-                              <AlertTriangle className="h-4 w-4 text-orange-500" />
+                          <p className="text-xs text-gray-500 line-clamp-1">{job.description}</p>
+                          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
+                            <span className="capitalize font-medium">{job.category}</span>
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {job.locationDisplay || 'Selected Location'}
                             </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-500 truncate mt-1">
-                          {job.description}
-                        </div>
-                        <div className="flex items-center space-x-4 mt-1">
-                          <div className="text-xs text-gray-400 capitalize">
-                            {job.category}
-                          </div>
-                          <div className="flex items-center text-xs text-gray-400">
-                            <MapPin className="h-3 w-3 mr-1" />
-                            {job.locationDisplay || 'Not specified'}
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-8 w-8">
-                          <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                             <User className="h-4 w-4 text-blue-600" />
                           </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {job.user?.name || 'Unknown User'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {job.user?.email || 'No email'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="ml-3">
-                          <div className="text-sm text-gray-900">{job.user?.name || 'Unknown User'}</div>
-                          <div className="text-xs text-gray-500">{job.user?.email || 'No email'}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-bold text-gray-900">{formatCurrency(job.budget)}</p>
+                          <div className="flex items-center gap-1 text-xs text-gray-500">
+                            <Wallet className="h-3 w-3" />
+                            <span className="capitalize">{job.paymentMethod}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 capitalize">{job.serviceTier} Tier</p>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {formatCurrency(job.budget)}
-                      </div>
-                      <div className="text-xs text-gray-500 capitalize flex items-center">
-                        <DollarSign className="h-3 w-3 mr-1" />
-                        {job.paymentMethod}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(job.status)}
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(job.status)}`}>
-                          {job.status.replace('_', ' ')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 capitalize mt-1">
-                        {job.serviceTier} tier
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Users className="h-4 w-4 mr-1 text-gray-400" />
-                        {job.applicationCount}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                      </div>
-                      <div className="flex items-center text-xs text-gray-400 mt-1">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {new Date(job.date).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-2">
-                        {job.status === 'open' && (
-                          <>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${getStatusColor(job.status)}`}>
+                            {getStatusIcon(job.status)}
+                            <span className="capitalize">{job.status.replace('_', ' ')}</span>
+                          </span>
+                          <p className="text-xs text-gray-500 capitalize">{job.serviceTier} Tier</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Users className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-semibold text-gray-900">{job.applicationCount}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-500">
+                            {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                          </p>
+                          <div className="flex items-center gap-1 text-xs text-gray-400">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(job.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          {job.status === 'open' && (
+                            <>
+                              <button
+                                onClick={() => updateJobStatus(job._id, 'in_progress')}
+                                className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors"
+                                title="Mark as in progress"
+                              >
+                                <Clock className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => updateJobStatus(job._id, 'cancelled')}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Cancel job"
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                          {job.status === 'in_progress' && (
                             <button
-                              onClick={() => updateJobStatus(job._id, 'in_progress')}
-                              className="p-2 text-yellow-600 hover:bg-yellow-100 rounded-lg transition-colors"
-                              aria-label="Mark as in progress"
-                              title="Mark as in progress"
+                              onClick={() => updateJobStatus(job._id, 'completed')}
+                              className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                              title="Mark as completed"
                             >
-                              <Clock className="h-4 w-4" />
+                              <CheckCircle className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => updateJobStatus(job._id, 'cancelled')}
-                              className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                              aria-label="Cancel job"
-                              title="Cancel job"
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </button>
-                          </>
-                        )}
-                        {job.status === 'in_progress' && (
+                          )}
                           <button
-                            onClick={() => updateJobStatus(job._id, 'completed')}
-                            className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
-                            aria-label="Mark as completed"
-                            title="Mark as completed"
+                            onClick={() => openJobModal(job)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="View details"
                           >
-                            <CheckCircle className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => openJobModal(job)}
-                          className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                          aria-label="View details"
-                          title="View details"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 flex justify-between sm:hidden">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-                  disabled={pagination.page === pagination.pages}
-                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm text-gray-700">
-                    Showing{' '}
-                    <span className="font-medium">
-                      {((pagination.page - 1) * pagination.limit) + 1}
-                    </span>{' '}
-                    to{' '}
-                    <span className="font-medium">
-                      {Math.min(pagination.page * pagination.limit, pagination.total)}
-                    </span>{' '}
-                    of{' '}
-                    <span className="font-medium">{pagination.total}</span> results
-                  </p>
-                </div>
-                <div>
-                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+            {pagination.pages > 1 && (
+              <div className="bg-white px-6 py-4 border-t border-gray-200 mt-4 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Showing{' '}
+                      <span className="font-medium">
+                        {((pagination.page - 1) * pagination.limit) + 1}
+                      </span>{' '}
+                      to{' '}
+                      <span className="font-medium">
+                        {Math.min(pagination.page * pagination.limit, pagination.total)}
+                      </span>{' '}
+                      of{' '}
+                      <span className="font-medium">{pagination.total}</span> results
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
                     <button
                       onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                       disabled={pagination.page === 1}
-                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Previous
                     </button>
                     <button
                       onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
                       disabled={pagination.page === pagination.pages}
-                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Next
                     </button>
-                  </nav>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Job Details Modal */}
       <JobDetailsModal
         isOpen={jobModal.isOpen}
         onClose={closeJobModal}
