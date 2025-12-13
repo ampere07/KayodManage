@@ -225,17 +225,17 @@ const Alerts: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
       {viewMode === 'table' ? (
         // Table View
         <>
           {/* Header */}
-          <div className="bg-white border-b border-gray-200 p-6">
+          <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div className="flex items-center">
                 <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
                 <div>
-                  <p className="text-gray-600">Review and manage reported content</p>
+                  <h1 className="text-2xl font-bold text-gray-900">Alerts</h1>
                 </div>
               </div>
               
@@ -245,14 +245,6 @@ const Alerts: React.FC = () => {
                     {pendingCount} pending review{pendingCount !== 1 ? 's' : ''}
                   </span>
                 )}
-                <button
-                  onClick={fetchReportedPosts}
-                  disabled={loading}
-                  className="flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
               </div>
             </div>
 
@@ -303,7 +295,7 @@ const Alerts: React.FC = () => {
 
           {/* Error State */}
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3">
+            <div className="flex-shrink-0 mx-6 mt-4 bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 rounded">
               <div className="flex items-center">
                 <XCircle className="h-5 w-5 mr-2" />
                 <span>Error: {error}</span>
@@ -311,47 +303,49 @@ const Alerts: React.FC = () => {
             </div>
           )}
 
-          {/* Table */}
-          {filteredPosts.length === 0 ? (
-            <div className="bg-white border-b border-gray-200 p-12">
-              <div className="text-center">
-                <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  {searchTerm ? 'No matching reports found' : 
-                   filter === 'all' ? 'No reported posts found' : `No ${filter} reports`}
-                </h2>
-                <p className="text-gray-600">
-                  {searchTerm ? 'Try adjusting your search terms' :
-                   filter === 'pending' ? 'All reports have been reviewed!' : 'Check back later for new reports.'}
-                </p>
+          {/* Scrollable Table Container */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto">
+            {filteredPosts.length === 0 ? (
+              <div className="h-full flex items-center justify-center bg-white p-12">
+                <div className="text-center">
+                  <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                    {searchTerm ? 'No matching reports found' : 
+                     filter === 'all' ? 'No reported posts found' : `No ${filter} reports`}
+                  </h2>
+                  <p className="text-gray-600">
+                    {searchTerm ? 'Try adjusting your search terms' :
+                     filter === 'pending' ? 'All reports have been reviewed!' : 'Check back later for new reports.'}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="bg-white border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Job Details
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Report Info
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedPosts.map((post) => (
-                      <tr key={post._id} className="hover:bg-gray-50 transition-colors">
+            ) : (
+              <div className="bg-white overflow-hidden">
+                  <table className="min-w-full w-full table-fixed">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="w-[30%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Job Details
+                        </th>
+                        <th className="w-[25%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Report Info
+                        </th>
+                        <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="w-[10%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                    {paginatedPosts.map((post, index) => (
+                      <React.Fragment key={post._id}>
+                      <tr className="hover:bg-gray-50 transition-colors">
                         {/* Job Details */}
                         <td className="px-6 py-4">
                           <div className="max-w-xs">
@@ -370,12 +364,15 @@ const Alerts: React.FC = () => {
                               </span>
                               {post.jobId.media && post.jobId.media.length > 0 && (
                                 <span className="ml-2 flex items-center text-blue-600">
-                                  <span className="mr-1">📎</span>
+                                  <ImageIcon className="h-3 w-3 mr-1" />
                                   {post.jobId.media.length} file{post.jobId.media.length !== 1 ? 's' : ''}
                                 </span>
                               )}
                               {post.jobId.isDeleted && (
-                                <span className="ml-2 text-red-600 font-medium">⚠️ Deleted</span>
+                                <span className="ml-2 flex items-center text-red-600 font-medium">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Deleted
+                                </span>
                               )}
                             </div>
                           </div>
@@ -439,26 +436,32 @@ const Alerts: React.FC = () => {
                           )}
                         </td>
                       </tr>
+                      {index < paginatedPosts.length - 1 && (
+                        <tr>
+                          <td colSpan={5} className="p-0">
+                            <div className="border-b border-gray-200" />
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
-              </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                {totalPages > 1 && (
+                <div className="bg-white px-6 py-4 flex items-center justify-between border-t border-gray-200">
                   <div className="flex-1 flex justify-between sm:hidden">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                       disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Previous
                     </button>
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                       disabled={currentPage === totalPages}
-                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Next
                     </button>
@@ -474,16 +477,15 @@ const Alerts: React.FC = () => {
                       </p>
                     </div>
                     <div>
-                      <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                      <nav className="relative z-0 inline-flex rounded-lg shadow-sm -space-x-px">
                         <button
                           onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                           disabled={currentPage === 1}
-                          className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                          className="relative inline-flex items-center px-2 py-2 rounded-l-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <ChevronLeft className="h-5 w-5" />
                         </button>
                         
-                        {/* Page Numbers */}
                         {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                           const pageNumber = i + 1;
                           return (
@@ -504,7 +506,7 @@ const Alerts: React.FC = () => {
                         <button
                           onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                           disabled={currentPage === totalPages}
-                          className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                          className="relative inline-flex items-center px-2 py-2 rounded-r-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <ChevronRight className="h-5 w-5" />
                         </button>
@@ -513,12 +515,15 @@ const Alerts: React.FC = () => {
                   </div>
                 </div>
               )}
+              </div>
+            )}
             </div>
-          )}
+          </div>
         </>
       ) : (
         // Review Panel View
-        <div className="bg-white border border-gray-200">
+        <div className="flex-1 overflow-hidden px-6 py-4">
+          <div className="h-full bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
           {/* Panel Header with Back Button */}
           <div className="border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -544,7 +549,7 @@ const Alerts: React.FC = () => {
           </div>
 
           {selectedPost && (
-            <div className="p-6 space-y-6">
+            <div className="flex-1 overflow-auto p-6 space-y-6">
               {/* Job Details */}
               <div className="border-b border-gray-200 pb-6">
                 <h3 className="font-semibold text-lg mb-4 text-gray-900">Job Details</h3>
@@ -557,8 +562,9 @@ const Alerts: React.FC = () => {
                   <p><strong>Location:</strong> {selectedPost.jobId.location.address}, {selectedPost.jobId.location.city}</p>
                   <p><strong>Posted:</strong> {formatDate(selectedPost.jobId.createdAt)}</p>
                   {selectedPost.jobId.isDeleted && (
-                    <div className="mt-3 p-3 bg-red-100 border-l-4 border-red-400">
-                      <p className="text-red-800 font-medium">⚠️ This job has been deleted</p>
+                    <div className="mt-3 p-3 bg-red-100 border-l-4 border-red-400 flex items-start">
+                      <AlertTriangle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                      <p className="text-red-800 font-medium">This job has been deleted</p>
                     </div>
                   )}
                 </div>
@@ -631,11 +637,11 @@ const Alerts: React.FC = () => {
                                     controls
                                     preload="metadata"
                                     onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const errorDiv = document.createElement('div');
-                                      errorDiv.className = 'w-full h-32 bg-gray-200 rounded border flex items-center justify-center text-gray-500';
-                                      errorDiv.innerHTML = '<div class="flex items-center"><span class="mr-2">🎥</span>Video not available</div>';
-                                      e.currentTarget.parentNode.appendChild(errorDiv);
+                                    e.currentTarget.style.display = 'none';
+                                    const errorDiv = document.createElement('div');
+                                    errorDiv.className = 'w-full h-32 bg-gray-200 rounded border flex items-center justify-center text-gray-500';
+                                    errorDiv.innerHTML = '<div class="flex items-center"><svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Video not available</div>';
+                                    e.currentTarget.parentNode.appendChild(errorDiv);
                                     }}
                                   >
                                     Your browser does not support the video tag.
@@ -703,7 +709,7 @@ const Alerts: React.FC = () => {
                   </>
                 ) : (
                   // Placeholder when no media
-                  <div className="p-8 border-2 border-dashed border-gray-300 text-center">
+                  <div className="p-8 border-2 border-dashed border-gray-300 rounded-lg text-center">
                     <div className="flex flex-col items-center">
                       <div className="flex space-x-2 mb-3">
                         <ImageIcon className="h-8 w-8 text-gray-400" />
@@ -790,6 +796,7 @@ const Alerts: React.FC = () => {
               )}
             </div>
           )}
+        </div>
         </div>
       )}
     </div>

@@ -712,15 +712,6 @@ const Transactions: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {transactionStats ? (
-                <span>
-                  {transactionStats.total} transactions • {transactionStats.pending} pending • {transactionStats.completed} completed
-                </span>
-              ) : (
-                `${filteredTransactions.length} transactions`
-              )}
-            </p>
           </div>
           
           <div className="flex items-center gap-4 text-xs">
@@ -822,7 +813,8 @@ const Transactions: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
@@ -831,7 +823,7 @@ const Transactions: React.FC = () => {
             </div>
           </div>
         ) : filteredTransactions.length === 0 ? (
-          <div className="bg-white rounded-lg p-12 text-center">
+          <div className="bg-white p-12 text-center">
             <div className="text-gray-400 mb-4">
               <Search className="h-12 w-12 mx-auto" />
             </div>
@@ -839,40 +831,41 @@ const Transactions: React.FC = () => {
             <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-white overflow-hidden">
+            <table className="min-w-full w-full table-fixed">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[25%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Transaction
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[18%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Users
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[12%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Amount
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Method
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[12%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTransactions.map((transaction) => {
+              <tbody className="bg-white">
+                {filteredTransactions.map((transaction, index) => {
                   const user = getUser(transaction);
                   const toUser = getToUser(transaction);
                   
                   return (
-                    <tr key={transaction._id} className="hover:bg-gray-50 transition-colors">
+                    <React.Fragment key={transaction._id}>
+                    <tr className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-start gap-2">
                           <div className="flex-shrink-0 mt-1">
@@ -984,12 +977,21 @@ const Transactions: React.FC = () => {
                         </div>
                       </td>
                     </tr>
+                    {index < filteredTransactions.length - 1 && (
+                      <tr>
+                        <td colSpan={7} className="p-0">
+                          <div className="border-b border-gray-200" />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
             </table>
           </div>
         )}
+        </div>
       </div>
 
       <TransactionDetailsModal

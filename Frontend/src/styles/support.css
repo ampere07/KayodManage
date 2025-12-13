@@ -1,5 +1,15 @@
 /* Custom scrollbar styles for Support page */
 
+/* Hide scrollbar while keeping functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Firefox */
 .custom-scrollbar {
   scrollbar-width: thin;

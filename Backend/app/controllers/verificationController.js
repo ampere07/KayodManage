@@ -79,7 +79,7 @@ const updateVerificationStatus = async (req, res) => {
     console.log('Rejection Reason:', rejectionReason);
     console.log('========================================');
 
-    const validStatuses = ['pending', 'approved', 'rejected', 'under_review'];
+    const validStatuses = ['approved', 'rejected', 'under_review'];
     if (!validStatuses.includes(status)) {
       console.log('❌ Invalid status value:', status);
       return res.status(400).json({

@@ -131,7 +131,7 @@ const RevenueChart: React.FC = () => {
         </div>
       </div>
       
-      <div className="h-64 relative">
+      <div className="h-80 relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>

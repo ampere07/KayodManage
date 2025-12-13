@@ -45,7 +45,7 @@ interface Verification {
   faceVerification: VerificationDocument;
   validId: VerificationDocument & { type: string };
   credentials: VerificationDocument[];
-  status: 'pending' | 'approved' | 'rejected' | 'under_review';
+  status: 'approved' | 'rejected' | 'under_review';
   submittedAt: string;
   reviewedAt?: string;
   reviewedBy?: UserInfo;
@@ -59,17 +59,16 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const configs = {
     approved: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
     rejected: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
-    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
-    pending: { bg: 'bg-gray-100', text: 'text-gray-800', icon: Clock }
+    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle }
   };
 
-  const config = configs[status as keyof typeof configs] || configs.pending;
+  const config = configs[status as keyof typeof configs] || configs.under_review;
   const Icon = config.icon;
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
       <Icon className="w-3 h-3 mr-1" />
-      {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+      {status === 'under_review' ? 'Under Review' : status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 };
@@ -223,7 +222,7 @@ const UserListView: React.FC<{
               </div>
             </div>
 
-            {latestVerification.status === 'pending' && (
+            {latestVerification.status === 'under_review' && (
               <div className="flex gap-2 mt-4 pt-4 border-t border-gray-200">
                 <button
                   onClick={async (e) => {
@@ -278,6 +277,7 @@ const UserDetailView: React.FC<{
   onStatusUpdate: (verificationId: string, status: string, notes?: string, reason?: string) => Promise<void>;
 }> = ({ userId, verifications, onBack, onStatusUpdate }) => {
   const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
+  const [activeTab, setActiveTab] = useState<'face' | 'id' | 'credentials'>('face');
   const [updating, setUpdating] = useState(false);
 
   const userVerifications = verifications.filter(v => v.userId && v.userId._id === userId);
@@ -342,6 +342,13 @@ const UserDetailView: React.FC<{
     return types[type] || type;
   };
 
+  const getValidIdType = () => {
+    if (Array.isArray(selectedVerification.validId)) {
+      return selectedVerification.validId[0]?.type || 'ID';
+    }
+    return selectedVerification.validId?.type || 'ID';
+  };
+
   return (
     <div className="space-y-6">
       {/* Back button and header */}
@@ -353,12 +360,11 @@ const UserDetailView: React.FC<{
           <ChevronLeft className="w-5 h-5 mr-1" />
           Back to Users
         </button>
-        <RefreshCw className="w-5 h-5 text-gray-400" />
       </div>
 
       {/* User info card */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between pb-6 border-b border-gray-200">
           <div className="flex items-center">
             <UserAvatar user={user} size="lg" />
             <div className="ml-4">
@@ -374,7 +380,7 @@ const UserDetailView: React.FC<{
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge status={selectedVerification.status} />
-            {selectedVerification.status === 'pending' && (
+            {selectedVerification.status === 'under_review' && (
               <div className="flex gap-2">
                 <button
                   onClick={handleQuickApprove}
@@ -420,29 +426,74 @@ const UserDetailView: React.FC<{
           </div>
         )}
 
-        {/* Document Sections - Improved Layout */}
-        <div className="space-y-6 mb-6">
-          {/* Face Verification */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-600 rounded-lg">
-                    <User className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">Face Verification</h3>
-                    <p className="text-xs text-gray-600">
-                      Uploaded {new Date(selectedVerification.faceVerification.uploadedAt).toLocaleDateString()}
-                    </p>
-                  </div>
+        {/* Side Tab Layout */}
+        <div className="flex gap-6 pt-6">
+          {/* Tab Navigation - Left Side */}
+          <nav className="flex flex-col gap-2 min-w-[200px]" aria-label="Verification tabs">
+            <button
+              onClick={() => setActiveTab('face')}
+              className={`px-4 py-3 rounded-lg text-left font-semibold text-sm transition-all ${
+                activeTab === 'face'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-transparent text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Face Verification
+            </button>
+            <button
+              onClick={() => setActiveTab('id')}
+              className={`px-4 py-3 rounded-lg text-left font-semibold text-sm transition-all ${
+                activeTab === 'id'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-transparent text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {getIdTypeLabel(getValidIdType())}
+            </button>
+            <button
+              onClick={() => setActiveTab('credentials')}
+              className={`px-4 py-3 rounded-lg text-left font-semibold text-sm transition-all ${
+                activeTab === 'credentials'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-transparent text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Credentials ({selectedVerification.credentials.length})
+            </button>
+          </nav>
+
+          {/* Tab Content - Right Side */}
+          <div className="flex-1">
+          {/* Face Verification Tab */}
+          {activeTab === 'face' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 pb-4 border-b border-gray-200">
+                <div className="p-2 bg-blue-600 rounded-lg">
+                  <User className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Face Verification</h3>
+                  <p className="text-xs text-gray-600">
+                    {selectedVerification.faceVerification?.uploadedAt 
+                      ? `Uploaded ${new Date(selectedVerification.faceVerification.uploadedAt).toLocaleDateString()}`
+                      : 'Upload date not available'
+                    }
+                  </p>
                 </div>
               </div>
-            </div>
-            <div className="p-6">
-              {Array.isArray(selectedVerification.faceVerification) ? (
+              <div>
+                {!selectedVerification.faceVerification ? (
+                  <div className="text-center py-16">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                      <User className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600 mb-1">No face verification uploaded</p>
+                    <p className="text-xs text-gray-500">Face verification photos will appear here once submitted</p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {selectedVerification.faceVerification.map((face, index) => {
+                {Array.isArray(selectedVerification.faceVerification) ? (
+                  selectedVerification.faceVerification.map((face, index) => {
                     const faceLabels = ['Left Side', 'Front View', 'Right Side'];
                     return (
                       <div key={index} className="space-y-3">
@@ -461,135 +512,159 @@ const UserDetailView: React.FC<{
                         />
                       </div>
                     );
-                  })}
-                </div>
-              ) : (
-                <ClickableImage
-                  src={selectedVerification.faceVerification.cloudinaryUrl}
-                  alt="Face Verification"
-                  className="w-full max-w-md mx-auto rounded-lg shadow-md hover:shadow-xl transition-shadow"
-                  imageType="face"
-                  title={`Face Verification - ${user.name}`}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Valid ID */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-green-50 to-green-100 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-600 rounded-lg">
-                    <Shield className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">
-                      {getIdTypeLabel(selectedVerification.validId.type)}
-                    </h3>
-                    <p className="text-xs text-gray-600">
-                      Uploaded {Array.isArray(selectedVerification.validId) 
-                        ? new Date(selectedVerification.validId[0].uploadedAt).toLocaleDateString()
-                        : new Date(selectedVerification.validId.uploadedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="p-6">
-              {Array.isArray(selectedVerification.validId) ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {selectedVerification.validId.map((idDoc, index) => {
-                    const idLabels = ['Front Side', 'Back Side'];
-                    return (
-                      <div key={index} className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-                            <span className="text-sm font-semibold text-green-600">{index + 1}</span>
-                          </div>
-                          <span className="text-sm font-medium text-gray-700">{idLabels[index]}</span>
-                        </div>
-                        <ClickableImage
-                          src={idDoc.cloudinaryUrl}
-                          alt={`${getIdTypeLabel(idDoc.type)} ${idLabels[index]}`}
-                          className="w-full aspect-[16/10] object-cover rounded-lg shadow-md hover:shadow-xl transition-shadow"
-                          imageType="id"
-                          title={`Valid ID (${getIdTypeLabel(idDoc.type)} - ${idLabels[index]}) - ${user.name}`}
-                        />
+                  })
+                ) : (
+                  <div className="md:col-start-2 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                        <span className="text-sm font-semibold text-blue-600">1</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <ClickableImage
-                  src={selectedVerification.validId.cloudinaryUrl}
-                  alt={getIdTypeLabel(selectedVerification.validId.type)}
-                  className="w-full max-w-2xl mx-auto rounded-lg shadow-md hover:shadow-xl transition-shadow"
-                  imageType="id"
-                  title={`Valid ID (${getIdTypeLabel(selectedVerification.validId.type)}) - ${user.name}`}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Credentials */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-purple-50 to-purple-100 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-600 rounded-lg">
-                    <FileText className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">
-                      Professional Credentials
-                    </h3>
-                    <p className="text-xs text-gray-600">
-                      {selectedVerification.credentials.length} {selectedVerification.credentials.length === 1 ? 'document' : 'documents'} uploaded
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="p-6">
-              {selectedVerification.credentials.length === 0 ? (
-                <div className="text-center py-16">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-                    <FileText className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">No credentials uploaded</p>
-                  <p className="text-xs text-gray-500">Professional credentials will appear here once submitted</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {selectedVerification.credentials.map((credential, index) => (
-                    <div key={index} className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-                          <span className="text-sm font-semibold text-purple-600">{index + 1}</span>
-                        </div>
-                        <span className="text-sm font-medium text-gray-700 truncate flex-1" title={credential.originalName}>
-                          {credential.originalName || `Credential ${index + 1}`}
-                        </span>
-                      </div>
-                      <ClickableImage
-                        src={credential.cloudinaryUrl}
-                        alt={credential.originalName || `Credential ${index + 1}`}
-                        className="w-full aspect-[3/4] object-cover rounded-lg shadow-md hover:shadow-xl transition-shadow"
-                        imageType="credential"
-                        title={`${credential.originalName || `Credential ${index + 1}`} - ${user.name}`}
-                      />
+                      <span className="text-sm font-medium text-gray-700">Face Photo</span>
                     </div>
-                  ))}
+                    <ClickableImage
+                      src={selectedVerification.faceVerification.cloudinaryUrl}
+                      alt="Face Verification"
+                      className="w-full aspect-square object-cover rounded-lg shadow-md hover:shadow-xl transition-shadow"
+                      imageType="face"
+                      title={`Face Verification - ${user.name}`}
+                    />
+                  </div>
+                )}
                 </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Valid ID Tab */}
+          {activeTab === 'id' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 pb-4 border-b border-gray-200">
+                <div className="p-2 bg-green-600 rounded-lg">
+                  <Shield className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    {getIdTypeLabel(getValidIdType())}
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    {selectedVerification.validId 
+                      ? (Array.isArray(selectedVerification.validId) 
+                        ? `Uploaded ${new Date(selectedVerification.validId[0]?.uploadedAt || Date.now()).toLocaleDateString()}`
+                        : `Uploaded ${new Date(selectedVerification.validId.uploadedAt || Date.now()).toLocaleDateString()}`)
+                      : 'Upload date not available'
+                    }
+                  </p>
+                </div>
+              </div>
+              <div>
+                {!selectedVerification.validId ? (
+                  <div className="text-center py-16">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                      <Shield className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600 mb-1">No valid ID uploaded</p>
+                    <p className="text-xs text-gray-500">Valid ID photos will appear here once submitted</p>
+                  </div>
+                ) : (
+                <>
+                {Array.isArray(selectedVerification.validId) ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {selectedVerification.validId.map((idDoc, index) => {
+                      const idLabels = ['Front Side', 'Back Side'];
+                      return (
+                        <div key={index} className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                              <span className="text-sm font-semibold text-green-600">{index + 1}</span>
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">{idLabels[index]}</span>
+                          </div>
+                          <ClickableImage
+                            src={idDoc.cloudinaryUrl}
+                            alt={`${getIdTypeLabel(idDoc.type || getValidIdType())} ${idLabels[index]}`}
+                            className="w-full aspect-[16/10] object-cover rounded-lg shadow-md hover:shadow-xl transition-shadow"
+                            imageType="id"
+                            title={`Valid ID (${getIdTypeLabel(idDoc.type || getValidIdType())} - ${idLabels[index]}) - ${user.name}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <ClickableImage
+                    src={selectedVerification.validId.cloudinaryUrl}
+                    alt={getIdTypeLabel(getValidIdType())}
+                    className="w-full max-w-2xl mx-auto rounded-lg shadow-md hover:shadow-xl transition-shadow"
+                    imageType="id"
+                    title={`Valid ID (${getIdTypeLabel(getValidIdType())}) - ${user.name}`}
+                  />
+                )}
+                </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Credentials Tab */}
+          {activeTab === 'credentials' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 pb-4 border-b border-gray-200">
+                <div className="p-2 bg-purple-600 rounded-lg">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    Professional Credentials
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    {selectedVerification.credentials.length} {selectedVerification.credentials.length === 1 ? 'document' : 'documents'} uploaded
+                  </p>
+                </div>
+              </div>
+              <div>
+                {selectedVerification.credentials.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                      <FileText className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600 mb-1">No credentials uploaded</p>
+                    <p className="text-xs text-gray-500">Professional credentials will appear here once submitted</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="flex gap-6 pb-4">
+                      {selectedVerification.credentials.map((credential, index) => (
+                        <div key={index} className="flex-shrink-0 w-64 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
+                              <span className="text-sm font-semibold text-purple-600">{index + 1}</span>
+                            </div>
+                            <span className="text-sm font-medium text-gray-700 truncate flex-1" title={credential.originalName}>
+                              {credential.originalName || `Credential ${index + 1}`}
+                            </span>
+                          </div>
+                          <ClickableImage
+                            src={credential.cloudinaryUrl}
+                            alt={credential.originalName || `Credential ${index + 1}`}
+                            className="w-full aspect-square object-cover rounded-lg shadow-md hover:shadow-xl transition-shadow"
+                            imageType="credential"
+                            title={`${credential.originalName || `Credential ${index + 1}`} - ${user.name}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         </div>
 
         {/* Previous review info */}
         {selectedVerification.reviewedBy && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+          <div className="pt-6 border-t border-gray-200">
             <h4 className="text-sm font-medium text-gray-700 mb-2">Review History</h4>
             <div className="space-y-2 text-sm">
               <div>
@@ -791,7 +866,7 @@ const Verifications: React.FC = () => {
 
   const stats = {
     total: verifications.length,
-    pending: verifications.filter(v => v.status === 'pending').length,
+    under_review: verifications.filter(v => v.status === 'under_review').length,
     approved: verifications.filter(v => v.status === 'approved').length,
     rejected: verifications.filter(v => v.status === 'rejected').length
   };
@@ -845,15 +920,6 @@ const Verifications: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">User Verifications</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {stats.total} verifications • {stats.pending} pending • {stats.approved} approved
-              {connectionError && (
-                <span className="ml-2 inline-flex items-center px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                  <AlertCircle className="w-3 h-3 mr-1" />
-                  Connection issues
-                </span>
-              )}
-            </p>
           </div>
         </div>
 
@@ -881,16 +947,6 @@ const Verifications: React.FC = () => {
                 All ({stats.total})
               </button>
               <button
-                onClick={() => setStatusFilter('pending')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  statusFilter === 'pending'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                Pending ({stats.pending})
-              </button>
-              <button
                 onClick={() => setStatusFilter('under_review')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   statusFilter === 'under_review'
@@ -898,7 +954,7 @@ const Verifications: React.FC = () => {
                     : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                Under Review ({verifications.filter(v => v.status === 'under_review').length})
+                Under Review ({stats.under_review})
               </button>
               <button
                 onClick={() => setStatusFilter('approved')}

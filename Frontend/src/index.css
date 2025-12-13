@@ -53,6 +53,16 @@ code {
   background: #cbd5e1;
 }
 
+/* Hide scrollbar for dashboard */
+.dashboard-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.dashboard-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Loading animations */
 @keyframes pulse {
   0%, 100% {

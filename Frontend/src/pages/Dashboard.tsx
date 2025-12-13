@@ -108,37 +108,20 @@ const Dashboard: React.FC = () => {
   const greeting = currentDate.getHours() < 12 ? 'Good Morning' : currentDate.getHours() < 18 ? 'Good Afternoon' : 'Good Evening';
 
   return (
-    <div className="space-y-4">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 dashboard-scroll">
       {/* Compact Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg px-6 py-4 text-white">
+      <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-100 rounded-xl shadow-lg px-6 py-4 border border-amber-200">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{greeting}, Admin</h1>
-            <p className="text-sm text-blue-100 mt-0.5">
+            <h1 className="text-2xl font-bold text-gray-800">{greeting}, Admin</h1>
+            <p className="text-sm text-gray-600 mt-0.5">
               {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
             </p>
           </div>
-          <div className="flex items-center space-x-2">
-            <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm ${
-              isConnected ? 'bg-green-500/20 border border-green-400/30' : 'bg-red-500/20 border border-red-400/30'
-            }`}>
-              {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-              <span className="font-medium">{isConnected ? 'Live' : 'Offline'}</span>
-              {isConnected && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
-            </div>
-            <button onClick={fetchActivities} disabled={loadingActivities} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Refresh Activity">
-              <Activity className={`h-4 w-4 ${loadingActivities ? 'animate-spin' : ''}`} />
-            </button>
-            <button onClick={refreshDashboard} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Refresh Stats">
-              <RefreshCw className="h-4 w-4" />
-            </button>
-            <button onClick={refreshAlerts} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Refresh Alerts">
-              <AlertTriangle className="h-4 w-4" />
-            </button>
-          </div>
         </div>
         {dashboardStats?.timestamp && (
-          <p className="text-xs text-blue-200 mt-2 flex items-center space-x-1">
+          <p className="text-xs text-gray-600 mt-2 flex items-center space-x-1">
             <Clock className="h-3 w-3" />
             <span>Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}</span>
           </p>
@@ -253,135 +236,83 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Charts and Activity - Compact Layout */}
+      {/* Charts and Alerts - Compact Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <RevenueChart />
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col" style={{ height: '410px' }}>
+          <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
-              <h3 className="text-base font-bold text-gray-900">Recent Activity</h3>
-              <p className="text-xs text-gray-500">Platform events</p>
-            </div>
-            <div className="p-1.5 rounded-lg bg-blue-50">
-              <Activity className="h-4 w-4 text-blue-600" />
+              <h3 className="text-base font-bold text-gray-900">Active Alerts</h3>
+              <p className="text-xs text-gray-500">
+                {alerts && alerts.length > 0 ? `${alerts.length} pending` : 'No alerts'}
+              </p>
             </div>
           </div>
           
-          <div className="space-y-2 max-h-[350px] overflow-y-auto custom-scrollbar">
-            {loadingActivities ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="text-xs text-gray-500 mt-2">Loading...</p>
-              </div>
-            ) : activities.length > 0 ? (
-              activities.slice(0, 15).map((activity, index) => (
-                <div key={activity._id} className="flex items-start space-x-2 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 flex-shrink-0"></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-900 leading-relaxed">{activity.description}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {activity.createdAt || activity.timestamp 
-                        ? new Date(activity.createdAt || activity.timestamp).toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true
-                          })
-                        : 'Unknown time'
-                      }
+          <div className="space-y-2 flex-1 overflow-y-auto dashboard-scroll">
+            {alerts && alerts.length > 0 ? (
+              alerts.slice(0, 10).map((alert) => (
+                <div
+                  key={alert._id}
+                  onClick={() => handleAlertClick(alert)}
+                  className={`p-2 rounded-lg border-l-4 transition-all hover:shadow-md cursor-pointer ${
+                    alert.priority >= 4
+                      ? 'border-red-500 bg-gradient-to-br from-red-50 to-red-100/50 hover:from-red-100 hover:to-red-200/50'
+                      : alert.priority === 3
+                      ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 to-yellow-100/50 hover:from-yellow-100 hover:to-yellow-200/50'
+                      : 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-center space-x-1.5">
+                      <div className={`p-1 rounded ${
+                        alert.priority >= 4 ? 'bg-red-100 text-red-600' : alert.priority === 3 ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {getCategoryIcon(alert.category)}
+                      </div>
+                      <h4 className="font-semibold text-gray-900 text-xs line-clamp-1">{alert.title}</h4>
+                    </div>
+                    {alert.priority >= 4 && (
+                      <span className="px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full flex-shrink-0">!</span>
+                    )}
+                  </div>
+                  
+                  <p className="text-xs text-gray-700 leading-tight mb-1 line-clamp-1">{alert.message}</p>
+                  
+                  <div className="flex items-center justify-between pt-1 border-t border-gray-200/50">
+                    <p className="text-xs text-gray-500">
+                      {new Date(alert.createdAt).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
                     </p>
+                    <span className="text-xs font-semibold text-gray-500 hover:text-gray-700">
+                      View →
+                    </span>
                   </div>
                 </div>
               ))
             ) : (
               <div className="text-center py-8">
-                <Activity className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-xs text-gray-500">No recent activity</p>
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-2">
+                  <AlertTriangle className="h-6 w-6 text-green-600" />
+                </div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-1">All Clear!</h4>
+                <p className="text-xs text-gray-500">
+                  {isConnected ? 'No active alerts' : 'Connecting...'}
+                </p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Compact Alerts Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">Active Alerts</h3>
-            <p className="text-xs text-gray-500">
-              {alerts && alerts.length > 0 ? `${alerts.length} pending` : 'No alerts'}
-            </p>
-          </div>
-          <div className="px-2 py-1 rounded-full bg-red-50 border border-red-200">
-            <div className="flex items-center space-x-1.5">
-              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-xs font-medium text-red-700">Live</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {alerts && alerts.length > 0 ? (
-            alerts.slice(0, 6).map((alert) => (
-              <div
-                key={alert._id}
-                onClick={() => handleAlertClick(alert)}
-                className={`p-3 rounded-lg border-l-4 transition-all hover:shadow-md cursor-pointer ${
-                  alert.priority >= 4
-                    ? 'border-red-500 bg-gradient-to-br from-red-50 to-red-100/50 hover:from-red-100 hover:to-red-200/50'
-                    : alert.priority === 3
-                    ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 to-yellow-100/50 hover:from-yellow-100 hover:to-yellow-200/50'
-                    : 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center space-x-1.5">
-                    <div className={`p-1.5 rounded ${
-                      alert.priority >= 4 ? 'bg-red-100 text-red-600' : alert.priority === 3 ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'
-                    }`}>
-                      {getCategoryIcon(alert.category)}
-                    </div>
-                    <h4 className="font-semibold text-gray-900 text-xs">{alert.title}</h4>
-                  </div>
-                  {alert.priority >= 4 && (
-                    <span className="px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full">!</span>
-                  )}
-                </div>
-                
-                <p className="text-xs text-gray-700 leading-relaxed mb-2 line-clamp-2">{alert.message}</p>
-                
-                <div className="flex items-center justify-between pt-2 border-t border-gray-200/50">
-                  <p className="text-xs text-gray-600 font-medium">
-                    {new Date(alert.createdAt).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    })}
-                  </p>
-                  <span className="text-xs font-semibold text-gray-500 hover:text-gray-700">
-                    View →
-                  </span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="col-span-full text-center py-8">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-2">
-                <AlertTriangle className="h-6 w-6 text-green-600" />
-              </div>
-              <h4 className="text-sm font-semibold text-gray-900 mb-1">All Clear!</h4>
-              <p className="text-xs text-gray-500">
-                {isConnected ? 'No active alerts' : 'Connecting...'}
-              </p>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

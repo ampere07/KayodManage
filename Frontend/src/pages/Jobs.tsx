@@ -368,7 +368,8 @@ const Jobs: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
@@ -377,7 +378,7 @@ const Jobs: React.FC = () => {
             </div>
           </div>
         ) : jobs.length === 0 ? (
-          <div className="bg-white rounded-lg p-12 text-center">
+          <div className="bg-white p-12 text-center">
             <div className="text-gray-400 mb-4">
               <Search className="h-12 w-12 mx-auto" />
             </div>
@@ -386,36 +387,37 @@ const Jobs: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="bg-white overflow-hidden">
+              <table className="min-w-full w-full table-fixed">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[30%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Job Details
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[15%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Client
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[12%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Budget
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[12%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Applications
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[11%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Posted
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {jobs.map((job) => (
-                    <tr key={job._id} className="hover:bg-gray-50 transition-colors">
+                <tbody className="bg-white">
+                  {jobs.map((job, index) => (
+                    <React.Fragment key={job._id}>
+                    <tr className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
@@ -526,13 +528,21 @@ const Jobs: React.FC = () => {
                         </div>
                       </td>
                     </tr>
+                    {index < jobs.length - 1 && (
+                      <tr>
+                        <td colSpan={7} className="p-0">
+                          <div className="border-b border-gray-200" />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
 
             {pagination.pages > 1 && (
-              <div className="bg-white px-6 py-4 border-t border-gray-200 mt-4 rounded-lg">
+              <div className="bg-white px-6 py-4 border-t border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-700">
@@ -569,6 +579,7 @@ const Jobs: React.FC = () => {
             )}
           </>
         )}
+        </div>
       </div>
 
       <JobDetailsModal

@@ -40,6 +40,7 @@ interface ChatSupport {
   createdAt: string;
   updatedAt?: string;
   closedAt?: string;
+  unreadCount?: number;
 }
 
 const Support: React.FC = () => {
@@ -470,156 +471,213 @@ const Support: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-      <div className="bg-white border-b px-6 py-3 flex-shrink-0">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+      <div className="flex-shrink-0 bg-white px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Support Center</h1>
-            <p className="text-sm text-gray-600">Manage support conversations and help users</p>
+            <p className="text-sm text-gray-500 mt-1">Manage support conversations and help users</p>
           </div>
-          <div className="flex items-center gap-2">
-            {isConnected ? (
-              <div className="flex items-center gap-1 text-green-600">
-                <Wifi className="w-4 h-4" />
-                <span className="text-xs">Live</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 text-gray-400">
-                <WifiOff className="w-4 h-4" />
-                <span className="text-xs">Offline</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 p-4 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
-          <div className="lg:col-span-1 bg-white rounded-lg shadow-sm border flex flex-col h-full overflow-hidden">
-            <div className="p-3 border-b bg-gray-50 flex-shrink-0">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="Search chats..."
-                    value={searchQuery}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-3 py-1.5 w-full border bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  />
-                </div>
-                <Filter className="w-4 h-4 text-gray-400" />
-              </div>
-              
-              <div className="flex gap-2">
-                <select
-                  value={filterStatus}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
-                  className="px-2 py-1.5 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1"
-                >
-                  <option value="all">All Status</option>
-                  <option value="open">Open</option>
-                  <option value="closed">Closed</option>
-                </select>
-                
-                <select
-                  value={filterPriority}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterPriority(e.target.value)}
-                  className="px-2 py-1.5 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1"
-                >
-                  <option value="all">All Priority</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
+              <span className="text-xs font-medium text-gray-600">Total Chats:</span>
+              <span className="text-sm font-bold text-gray-900">{chatSupports.length}</span>
             </div>
-
-            <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar smooth-scroll">
-              {filteredChatSupports.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-                  <MessageCircleQuestion className="w-12 h-12 mb-4 text-gray-300" />
-                  <p className="text-base font-medium">No chats found</p>
-                  <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg">
+                  <Wifi className="w-4 h-4" />
+                  <span className="text-xs font-medium">Live</span>
                 </div>
               ) : (
-                <div className="p-2">
-                  {filteredChatSupports.map((chat) => (
-                    <div
-                      key={chat._id}
-                      onClick={() => handleSelectChat(chat)}
-                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 mb-2 ${
-                        selectedChat?._id === chat._id 
-                          ? 'bg-blue-50 shadow-sm ring-2 ring-blue-500' 
-                          : 'bg-white hover:bg-gray-50 hover:shadow-sm'
-                      }`}
-                    >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-medium text-sm text-gray-900 truncate pr-2">
-                        {chat.subject}
-                      </h3>
-                      {getStatusIcon(chat.status)}
-                    </div>
-                    
-                    <p className="text-xs text-gray-600 mb-2 line-clamp-1">
-                      {chat.category}
-                    </p>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className={`px-2 py-1 rounded-full text-xs border ${
-                        getPriorityColor(chat.priority)}`}>
-                        {chat.priority}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {chat.userEmail || chat.userName}
-                      </span>
-                    </div>
-                  </div>
-                  ))}
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg">
+                  <WifiOff className="w-4 h-4" />
+                  <span className="text-xs font-medium">Offline</span>
                 </div>
               )}
             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col h-full overflow-hidden">
-          {selectedChat ? (
-            <>
-              <div className="p-3 border-b bg-gray-50 flex-shrink-0">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h2 className="text-lg font-bold text-gray-900 mb-1">
-                      {selectedChat.subject}
-                    </h2>
-                    <p className="text-sm text-gray-600 mb-2">
-                      {selectedChat.category}
+      <div className="flex-1 flex gap-0 overflow-hidden">
+        <div className="w-full lg:w-96 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+          <div className="p-4 border-b bg-gray-50 flex-shrink-0">
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search chats..."
+                value={searchQuery}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 w-full border bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <select
+                value={filterStatus}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1 font-medium"
+              >
+                <option value="all">All Status</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+              
+              <select
+                value={filterPriority}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterPriority(e.target.value)}
+                className="px-3 py-2 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1 font-medium"
+              >
+                <option value="all">All Priority</option>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hide">
+            {filteredChatSupports.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
+                <MessageCircleQuestion className="w-16 h-16 mb-4 text-gray-300" />
+                <p className="text-base font-semibold text-gray-700">No chats found</p>
+                <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+              </div>
+            ) : (
+              <div>
+                {filteredChatSupports.map((chat, index) => {
+                  const createdDate = new Date(chat.createdAt);
+                  const now = new Date();
+                  const diffTime = Math.abs(now.getTime() - createdDate.getTime());
+                  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                  const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+                  const diffMinutes = Math.floor(diffTime / (1000 * 60));
+                  
+                  let timeAgo: string;
+                  if (diffMinutes < 1) {
+                    timeAgo = 'Just now';
+                  } else if (diffMinutes < 60) {
+                    timeAgo = `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+                  } else if (diffHours < 24) {
+                    timeAgo = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+                  } else if (diffDays < 7) {
+                    timeAgo = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+                  } else {
+                    timeAgo = createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  }
+                  
+                  return (
+                  <div key={chat._id}>
+                  <div
+                    onClick={() => handleSelectChat(chat)}
+                    className={`p-4 cursor-pointer transition-all duration-200 ${
+                      selectedChat?._id === chat._id 
+                        ? 'bg-blue-50 border-l-4 border-l-blue-500' 
+                        : 'hover:bg-gray-50 border-l-4 border-l-transparent'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <h3 className="font-semibold text-sm text-gray-900 truncate">
+                          {chat.userName || chat.userEmail || 'Unknown User'}
+                        </h3>
+                        {(chat.unreadCount || 0) > 0 && (
+                          <span className="flex-shrink-0 bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                            {chat.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-900 truncate ml-2 max-w-[40%]">
+                        {chat.subject}
+                      </h4>
+                    </div>
+                    
+                    <p className="text-xs text-gray-500 mb-1">{timeAgo}</p>
+                    
+                    <p className="text-xs text-gray-600 mb-2">
+                      {chat.category}
                     </p>
                     
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {selectedChat.userName || selectedChat.userEmail || `User ID: ${selectedChat.userId}`}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(selectedChat.createdAt).toLocaleDateString()}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {getStatusIcon(selectedChat.status)}
-                        {selectedChat.status}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {selectedChat.messages?.length || 0} messages
+                    <div className="flex items-end justify-between">
+                      {chat.messages && chat.messages.length > 0 ? (
+                        <p className="text-xs text-gray-500 line-clamp-1 flex-1">
+                          <span className="font-medium">Last:</span> {chat.messages[chat.messages.length - 1].message}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-400 flex-1">No messages</p>
+                      )}
+                      <div className="flex-shrink-0 ml-2">
+                        {getStatusIcon(chat.status)}
                       </div>
                     </div>
                   </div>
+                  {index < filteredChatSupports.length - 1 && (
+                    <div className="border-b border-gray-200" />
+                  )}
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          {selectedChat ? (
+            <>
+              <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <User className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                    <h3 className="text-lg font-semibold text-gray-900 truncate">
+                      {selectedChat.userName || selectedChat.userEmail || `User ${selectedChat.userId}`}
+                    </h3>
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900 truncate ml-4 max-w-[40%]">
+                    {selectedChat.subject}
+                  </h2>
+                </div>
+                
+                <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                  <Calendar className="w-4 h-4" />
+                  <span>Created {new Date(selectedChat.createdAt).toLocaleDateString('en-US', { 
+                    month: 'long', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                  })}</span>
+                </div>
+                
+                <p className="text-sm text-gray-600 mb-2">
+                  Category: <span className="font-semibold">{selectedChat.category}</span>
+                </p>
+                
+                <div className="flex items-end justify-between">
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
+                      selectedChat.status === 'open' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
+                      {getStatusIcon(selectedChat.status)}
+                      <span className="text-xs font-medium text-gray-500">Status:</span>
+                      <span className="text-xs font-semibold capitalize">{selectedChat.status}</span>
+                    </div>
+                    
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                      getPriorityColor(selectedChat.priority || 'low')}`}>
+                      {(selectedChat.priority || 'low').toUpperCase()} PRIORITY
+                    </span>
+                  </div>
                   
-                  <div className="flex gap-2 ml-2">
+                  <div className="flex gap-2 ml-4">
                     {selectedChat.status === 'open' && (
                       <button
                         onClick={() => handleChatAction(selectedChat._id, 'close')}
-                        className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs"
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
                       >
+                        <XCircle className="w-4 h-4" />
                         Close Chat
                       </button>
                     )}
@@ -627,8 +685,9 @@ const Support: React.FC = () => {
                     {selectedChat.status === 'closed' && (
                       <button
                         onClick={() => handleChatAction(selectedChat._id, 'reopen')}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs"
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
                       >
+                        <CheckCircle className="w-4 h-4" />
                         Reopen Chat
                       </button>
                     )}
@@ -636,42 +695,47 @@ const Support: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0 custom-scrollbar smooth-scroll">
-                <div className="space-y-4">
+              <div className="flex-1 p-6 overflow-y-auto bg-gradient-to-b from-gray-50 to-white min-h-0">
+                <div className="space-y-4 max-w-4xl mx-auto">
                   {(!selectedChat.messages || selectedChat.messages.length === 0) ? (
                     <div className="flex items-center justify-center h-full text-gray-400">
-                      <p>No messages yet. Start the conversation!</p>
+                      <div className="text-center">
+                        <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                        <p className="text-base font-medium text-gray-600">No messages yet</p>
+                        <p className="text-sm text-gray-500">Start the conversation!</p>
+                      </div>
                     </div>
                   ) : (
                     selectedChat.messages.map((msg, index) => {
                       const isTemp = msg._id?.startsWith('temp-');
+                      const isAdmin = msg.senderType === 'Admin';
                       return (
                         <div
                           key={msg._id || index}
-                          className={`flex ${msg.senderType === 'Admin' ? 'justify-end' : 'justify-start'}`}
-                          style={{ opacity: isTemp ? 0.7 : 1 }}
+                          className={`flex ${isAdmin ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                          style={{ opacity: isTemp ? 0.6 : 1 }}
                         >
                           <div
-                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                              msg.senderType === 'Admin' 
-                                ? 'bg-blue-600 text-white' 
-                                : 'bg-white text-gray-900 border'
+                            className={`max-w-lg px-4 py-3 rounded-2xl shadow-sm ${
+                              isAdmin 
+                                ? 'bg-blue-600 text-white rounded-br-sm' 
+                                : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'
                             }`}
                           >
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-xs font-medium ${
-                                msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-600'
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className={`text-xs font-semibold ${
+                                isAdmin ? 'text-blue-100' : 'text-gray-600'
                               }`}>
-                                {msg.senderName || (msg.senderType === 'Admin' ? 'Admin' : 'User')}
+                                {msg.senderName || (isAdmin ? 'Admin' : 'User')}
                               </span>
                               {isTemp && (
-                                <span className="text-xs opacity-75">Sending...</span>
+                                <span className="text-xs opacity-75 italic">Sending...</span>
                               )}
                             </div>
-                            <p className="text-sm">{msg.message}</p>
-                            <p className={`text-xs mt-1 ${
-                              msg.senderType === 'Admin' ? 'text-blue-100' : 'text-gray-500'}`}>
-                              {new Date(msg.timestamp).toLocaleString()}
+                            <p className="text-sm leading-relaxed">{msg.message}</p>
+                            <p className={`text-xs mt-1.5 ${
+                              isAdmin ? 'text-blue-200' : 'text-gray-500'}`}>
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </p>
                           </div>
                         </div>
@@ -684,13 +748,13 @@ const Support: React.FC = () => {
 
               {selectedChat.status === 'open' && (
                 <div className="p-4 border-t bg-white flex-shrink-0">
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
                     <input
                       type="text"
                       value={message}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)}
                       placeholder="Type your message..."
-                      className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => {
                         if (e.key === 'Enter' && !sendingMessage) {
                           sendMessage();
@@ -701,12 +765,12 @@ const Support: React.FC = () => {
                     <button
                       onClick={sendMessage}
                       disabled={!message.trim() || sendingMessage}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-sm transition-all"
                     >
                       {sendingMessage ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          <span>Sending...</span>
+                          <span>Sending</span>
                         </>
                       ) : (
                         <>
@@ -722,13 +786,12 @@ const Support: React.FC = () => {
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-500">
               <div className="text-center">
-                <MessageCircleQuestion className="w-16 h-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Select a Chat</h3>
-                <p>Choose a support chat from the list to view details and messages</p>
+                <MessageCircleQuestion className="w-20 h-20 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Select a Chat</h3>
+                <p className="text-sm text-gray-500">Choose a support chat from the list to view details and messages</p>
               </div>
             </div>
           )}
-        </div>
         </div>
       </div>
     </div>
