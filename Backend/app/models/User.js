@@ -97,7 +97,7 @@ UserSchema.virtual('wallet', {
 UserSchema.virtual('fees', {
   ref: 'FeeRecord',
   localField: '_id',
-  foreignField: 'provider'
+  foreignField: 'providerId'
 });
 
 // Virtual to check if user is currently restricted

@@ -109,32 +109,31 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 dashboard-scroll">
+      <div className="flex-1 overflow-y-auto dashboard-scroll pt-14 md:pt-0">
+      <div className="p-3 md:p-4 space-y-3 md:space-y-4">
       {/* Compact Header */}
-      <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-100 rounded-xl shadow-lg px-6 py-4 border border-amber-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">{greeting}, Admin</h1>
-            <p className="text-sm text-gray-600 mt-0.5">
-              {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-          </div>
-        </div>
+      <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-100 rounded-lg md:rounded-xl shadow-lg px-3 md:px-6 py-2.5 md:py-4 border border-amber-200">
+        <div className="space-y-0.5">
+          <h1 className="text-sm md:text-2xl font-bold text-gray-800 leading-tight">{greeting}, Admin</h1>
+          <p className="text-xs md:text-sm text-gray-600 leading-tight">
+            {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          </p>
+        </div>  
         {dashboardStats?.timestamp && (
-          <p className="text-xs text-gray-600 mt-2 flex items-center space-x-1">
-            <Clock className="h-3 w-3" />
-            <span>Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}</span>
+          <p className="text-xs text-gray-600 mt-1.5 md:mt-2 flex items-center space-x-1">
+            <Clock className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate">Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}</span>
           </p>
         )}
       </div>
 
       {/* Compact Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {/* Total Users */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 rounded-lg bg-blue-50">
-              <Users className="h-5 w-5 text-blue-600" />
+              <Users className="h-4 md:h-5 w-4 md:w-5 text-blue-600" />
             </div>
             {stats.newUsersToday > 0 && (
               <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
@@ -144,15 +143,15 @@ const Dashboard: React.FC = () => {
             )}
           </div>
           <h3 className="text-gray-600 text-xs font-medium">Total Users</h3>
-          <p className="text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
           <p className="text-xs text-gray-500 mt-1">New today: {stats.newUsersToday}</p>
         </div>
 
         {/* Active Jobs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 rounded-lg bg-green-50">
-              <Briefcase className="h-5 w-5 text-green-600" />
+              <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-green-600" />
             </div>
             {stats.completedJobsToday > 0 && (
               <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
@@ -162,15 +161,15 @@ const Dashboard: React.FC = () => {
             )}
           </div>
           <h3 className="text-gray-600 text-xs font-medium">Active Jobs</h3>
-          <p className="text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
           <p className="text-xs text-gray-500 mt-1">Completed today: {stats.completedJobsToday}</p>
         </div>
 
         {/* Total Revenue */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 rounded-lg bg-purple-50">
-              <DollarSign className="h-5 w-5 text-purple-600" />
+              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-purple-600" />
             </div>
             {stats.revenueToday > 0 && (
               <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
@@ -180,69 +179,69 @@ const Dashboard: React.FC = () => {
             )}
           </div>
           <h3 className="text-gray-600 text-xs font-medium">Total Revenue</h3>
-          <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
           <p className="text-xs text-gray-500 mt-1">Today: {formatCurrency(stats.revenueToday)}</p>
         </div>
 
         {/* Pending Fees */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 rounded-lg bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
+              <AlertTriangle className="h-4 md:h-5 w-4 md:w-5 text-red-600" />
             </div>
           </div>
           <h3 className="text-gray-600 text-xs font-medium">Pending Fees</h3>
-          <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
           <p className="text-xs text-gray-500 mt-1">Requires attention</p>
         </div>
       </div>
 
       {/* Compact Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 p-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 p-3 md:p-4">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-lg bg-green-500 shadow">
-              <Activity className="h-5 w-5 text-white" />
+              <Activity className="h-4 md:h-5 w-4 md:w-5 text-white" />
             </div>
             <div>
               <h3 className="text-gray-600 text-xs font-medium">Online Users</h3>
-              <p className="text-xl font-bold text-gray-900">{stats.onlineUsers.toLocaleString()}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.onlineUsers.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-3 md:p-4">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-lg bg-blue-500 shadow">
-              <TrendingUp className="h-5 w-5 text-white" />
+              <TrendingUp className="h-4 md:h-5 w-4 md:w-5 text-white" />
             </div>
             <div>
               <h3 className="text-gray-600 text-xs font-medium">New Users Today</h3>
-              <p className="text-xl font-bold text-gray-900">{stats.newUsersToday.toLocaleString()}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newUsersToday.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-4">
+        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-3 md:p-4">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-lg bg-purple-500 shadow">
-              <DollarSign className="h-5 w-5 text-white" />
+              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-white" />
             </div>
             <div>
               <h3 className="text-gray-600 text-xs font-medium">Revenue Today</h3>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(stats.revenueToday)}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{formatCurrency(stats.revenueToday)}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Charts and Alerts - Compact Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <div className="lg:col-span-2">
           <RevenueChart />
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col" style={{ height: '410px' }}>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 flex flex-col" style={{ height: '410px' }}>
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
               <h3 className="text-base font-bold text-gray-900">Active Alerts</h3>
@@ -313,6 +312,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      </div>
       </div>
     </div>
   );

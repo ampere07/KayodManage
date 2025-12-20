@@ -62,7 +62,10 @@ const AppContent: React.FC = () => {
         <Route path="/" element={<Layout title="Dashboard"><Dashboard /></Layout>} />
         <Route path="/users" element={<Layout title="Users"><Users /></Layout>} />
         <Route path="/jobs" element={<Layout title="Jobs"><Jobs /></Layout>} />
-        <Route path="/transactions" element={<Layout title="Transactions"><Transactions /></Layout>} />
+        <Route path="/transactions/fee-records" element={<Layout title="Fee Records"><Transactions /></Layout>} />
+        <Route path="/transactions/top-up" element={<Layout title="Top-up Transactions"><Transactions /></Layout>} />
+        <Route path="/transactions/cashout" element={<Layout title="Cashout Transactions"><Transactions /></Layout>} />
+        <Route path="/transactions/refund" element={<Layout title="Refund Transactions"><Transactions /></Layout>} />
         <Route path="/verifications" element={<Layout title="User Verifications"><Verifications /></Layout>} />
         <Route path="/activity" element={<Layout title="Activity Feed"><Activity /></Layout>} />
         <Route path="/alerts" element={<Layout title="Alerts"><Alerts /></Layout>} />

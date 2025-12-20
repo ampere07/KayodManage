@@ -83,3 +83,14 @@ code {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+
+/* Safe area for mobile - prevents content from being hidden under notch/status bar */
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+@media (min-width: 768px) {
+  .safe-top {
+    padding-top: 1rem;
+  }
+}

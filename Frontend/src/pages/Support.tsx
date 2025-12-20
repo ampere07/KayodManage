@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
-  Filter, 
   MessageSquare, 
   Clock, 
   CheckCircle, 
@@ -12,10 +11,17 @@ import {
   MessageCircleQuestion,
   Send,
   Wifi,
-  WifiOff
+  WifiOff,
+  X,
+  Eye
 } from 'lucide-react';
 import io, { Socket } from 'socket.io-client';
-import '../styles/support.css';
+
+const getInitials = (name: string): string => {
+  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
+  if (nameParts.length === 0) return '?';
+  return nameParts[0][0].toUpperCase();
+};
 
 interface Message {
   _id?: string;
@@ -54,6 +60,8 @@ const Support: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [showSidePanel, setShowSidePanel] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const joinedChats = useRef<Set<string>>(new Set());
   const selectedChatIdRef = useRef<string | null>(null);
@@ -85,7 +93,6 @@ const Support: React.FC = () => {
       joinedChats.current.clear();
 
       if (selectedChat) {
-        console.log('🔗 Joining chat room:', selectedChat._id);
         socket.emit('support:join_chat', { chatSupportId: selectedChat._id });
         joinedChats.current.add(selectedChat._id);
       }
@@ -120,32 +127,26 @@ const Support: React.FC = () => {
     });
     
     newSocket.on('connect', () => {
-      console.log('✅ Socket connected to admin namespace - ID:', newSocket.id);
       setIsConnected(true);
       
       if (selectedChatIdRef.current) {
-        console.log('🔗 Rejoining chat room:', selectedChatIdRef.current);
         newSocket.emit('support:join_chat', { chatSupportId: selectedChatIdRef.current });
       }
     });
     
     newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
       setIsConnected(false);
     });
     
-    newSocket.on('connect_error', (error: any) => {
-      console.error('Socket connection error:', error);
+    newSocket.on('connect_error', () => {
       setIsConnected(false);
     });
     
     newSocket.on('connection:status', (status: string) => {
-      console.log('Connection status:', status);
       setIsConnected(status === 'connected');
     });
     
     newSocket.on('support:new_message', (data: any) => {
-      console.log('🔔 Socket event: support:new_message received', data);
       handleNewMessage(data);
     });
     
@@ -153,16 +154,11 @@ const Support: React.FC = () => {
       handleChatUpdate(data);
     });
     
-    newSocket.on('support:new_chat', (data: any) => {
+    newSocket.on('support:new_chat', () => {
       fetchChatSupports();
     });
     
-    newSocket.on('support:joined_chat', (data: any) => {
-      console.log('✅ Successfully joined chat room:', data.chatSupportId);
-    });
-    
-    newSocket.on('support:message_error', (error: any) => {
-      console.error('Message error:', error);
+    newSocket.on('support:message_error', () => {
       setSendingMessage(false);
     });
     
@@ -171,79 +167,56 @@ const Support: React.FC = () => {
 
   const handleNewMessage = (data: any) => {
     const { chatSupportId, message: newMessage } = data;
-    console.log('📨 Processing new message:', { chatSupportId, newMessage });
     
-    if (!newMessage) {
-      console.error('❌ No message in socket data!');
-      return;
-    }
+    if (!newMessage) return;
     
     setSendingMessage(false);
     
     setChatSupports(prevChats => {
-      const updatedChats = prevChats.map(chat => {
+      return prevChats.map(chat => {
         if (chat._id === chatSupportId) {
           const currentMessages = chat.messages || [];
           const messageExists = currentMessages.some(
             (m: Message) => m._id === newMessage._id
           );
           
-          if (messageExists) {
-            console.log('ℹ️ Message already exists in chat list');
-            return chat;
-          }
+          if (messageExists) return chat;
           
           const filteredMessages = currentMessages.filter(
             (m: Message) => !m._id?.startsWith('temp-')
           );
           
-          const updatedMessages = [...filteredMessages, newMessage];
-          console.log('✅ Adding new message to chat list. Total messages:', updatedMessages.length);
-          
           return {
             ...chat,
-            messages: updatedMessages,
+            messages: [...filteredMessages, newMessage],
             updatedAt: new Date().toISOString()
           };
         }
         return chat;
       });
-      return updatedChats;
     });
     
     if (selectedChatIdRef.current === chatSupportId) {
-      console.log('🎯 Updating selected chat with new message');
       setSelectedChat(prevChat => {
-        if (!prevChat || prevChat._id !== chatSupportId) {
-          console.log('⚠️ Selected chat mismatch');
-          return prevChat;
-        }
+        if (!prevChat || prevChat._id !== chatSupportId) return prevChat;
         
         const currentMessages = prevChat.messages || [];
         const messageExists = currentMessages.some(
           (m: Message) => m._id === newMessage._id
         );
         
-        if (messageExists) {
-          console.log('ℹ️ Message already exists in selected chat');
-          return prevChat;
-        }
+        if (messageExists) return prevChat;
         
         const filteredMessages = currentMessages.filter(
           (m: Message) => !m._id?.startsWith('temp-')
         );
         
-        const updatedMessages = [...filteredMessages, newMessage];
-        console.log('✅ Updated selected chat. Total messages:', updatedMessages.length);
-        
         return {
           ...prevChat,
-          messages: updatedMessages,
+          messages: [...filteredMessages, newMessage],
           updatedAt: new Date().toISOString()
         };
       });
-    } else {
-      console.log('ℹ️ Message for different chat:', chatSupportId, 'Current:', selectedChatIdRef.current);
     }
   };
 
@@ -291,7 +264,6 @@ const Support: React.FC = () => {
 
   const handleSelectChat = async (chat: ChatSupport) => {
     try {
-      console.log('📥 Loading chat:', chat._id);
       const response = await fetch(`/api/support/chatsupports/${chat._id}`, {
         credentials: 'include',
         headers: {
@@ -301,16 +273,22 @@ const Support: React.FC = () => {
       
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Chat loaded with messages:', data.chatSupport.messages?.length || 0);
         setSelectedChat(data.chatSupport);
-      } else {
-        console.log('⚠️ Failed to load chat details, using cached data');
-        setSelectedChat(chat);
+        setIsChatModalOpen(true);
       }
     } catch (error) {
       console.error('Error fetching chat details:', error);
       setSelectedChat(chat);
+      setIsChatModalOpen(true);
     }
+  };
+
+  const closeChatModal = () => {
+    setIsChatModalOpen(false);
+    setTimeout(() => {
+      setSelectedChat(null);
+      setMessage('');
+    }, 300);
   };
 
   const handleChatAction = async (chatSupportId: string, action: string) => {
@@ -369,12 +347,10 @@ const Support: React.FC = () => {
       });
       setMessage(messageText);
       setSendingMessage(false);
-      console.error('Message send timeout - no socket response');
     }, 10000);
 
     try {
       if (socket && isConnected) {
-        console.log('📤 Sending message via socket:', { chatSupportId: selectedChat._id, message: messageText });
         socket.emit('support:send_message', {
           chatSupportId: selectedChat._id,
           message: messageText,
@@ -434,37 +410,51 @@ const Support: React.FC = () => {
   const filteredChatSupports = chatSupports.filter((chat) => {
     const matchesSearch = chat.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          chat.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (chat.userEmail && chat.userEmail.toLowerCase().includes(searchQuery.toLowerCase()));
+                         (chat.userEmail && chat.userEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                         (chat.userName && chat.userName.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesStatus = filterStatus === 'all' || chat.status === filterStatus;
     const matchesPriority = filterPriority === 'all' || chat.priority === filterPriority;
     
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'open': return <Clock className="w-3 h-3 text-green-500" />;
-      case 'closed': return <XCircle className="w-3 h-3 text-red-500" />;
-      default: return <AlertCircle className="w-3 h-3 text-gray-500" />;
-    }
+  const getPriorityBadge = (priority: string) => {
+    const configs = {
+      urgent: { bg: 'bg-red-100', text: 'text-red-700', label: 'Urgent' },
+      high: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'High' },
+      medium: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' },
+      low: { bg: 'bg-green-100', text: 'text-green-700', label: 'Low' }
+    };
+    
+    const config = configs[priority as keyof typeof configs] || configs.low;
+    
+    return (
+      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.text}`}>
+        {config.label}
+      </span>
+    );
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+  const getStatusBadge = (status: string) => {
+    return status === 'open' ? (
+      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+        <Clock className="w-3 h-3 mr-1" />
+        Open
+      </span>
+    ) : (
+      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+        <XCircle className="w-3 h-3 mr-1" />
+        Closed
+      </span>
+    );
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-600 mt-4">Loading chats...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading support tickets...</p>
         </div>
       </div>
     );
@@ -472,328 +462,508 @@ const Support: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
-      <div className="flex-shrink-0 bg-white px-6 py-4 border-b border-gray-200">
-        <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Support Center</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage support conversations and help users</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Support Center</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">{chatSupports.length} total tickets</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
-              <span className="text-xs font-medium text-gray-600">Total Chats:</span>
-              <span className="text-sm font-bold text-gray-900">{chatSupports.length}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isConnected ? (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg">
-                  <Wifi className="w-4 h-4" />
-                  <span className="text-xs font-medium">Live</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg">
-                  <WifiOff className="w-4 h-4" />
-                  <span className="text-xs font-medium">Offline</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex gap-0 overflow-hidden">
-        <div className="w-full lg:w-96 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
-          <div className="p-4 border-b bg-gray-50 flex-shrink-0">
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search chats..."
-                value={searchQuery}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full border bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              />
-            </div>
-            
-            <div className="flex gap-2">
-              <select
-                value={filterStatus}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1 font-medium"
-              >
-                <option value="all">All Status</option>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
-              
-              <select
-                value={filterPriority}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterPriority(e.target.value)}
-                className="px-3 py-2 border bg-white rounded-lg text-xs focus:ring-2 focus:ring-blue-500 flex-1 font-medium"
-              >
-                <option value="all">All Priority</option>
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hide">
-            {filteredChatSupports.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-                <MessageCircleQuestion className="w-16 h-16 mb-4 text-gray-300" />
-                <p className="text-base font-semibold text-gray-700">No chats found</p>
-                <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+          
+          <div className="flex items-center gap-2">
+            {isConnected ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg">
+                <Wifi className="w-4 h-4" />
+                <span className="text-xs font-medium">Live</span>
               </div>
             ) : (
-              <div>
-                {filteredChatSupports.map((chat, index) => {
-                  const createdDate = new Date(chat.createdAt);
-                  const now = new Date();
-                  const diffTime = Math.abs(now.getTime() - createdDate.getTime());
-                  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                  const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
-                  const diffMinutes = Math.floor(diffTime / (1000 * 60));
-                  
-                  let timeAgo: string;
-                  if (diffMinutes < 1) {
-                    timeAgo = 'Just now';
-                  } else if (diffMinutes < 60) {
-                    timeAgo = `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
-                  } else if (diffHours < 24) {
-                    timeAgo = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-                  } else if (diffDays < 7) {
-                    timeAgo = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-                  } else {
-                    timeAgo = createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                  }
-                  
-                  return (
-                  <div key={chat._id}>
-                  <div
-                    onClick={() => handleSelectChat(chat)}
-                    className={`p-4 cursor-pointer transition-all duration-200 ${
-                      selectedChat?._id === chat._id 
-                        ? 'bg-blue-50 border-l-4 border-l-blue-500' 
-                        : 'hover:bg-gray-50 border-l-4 border-l-transparent'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <h3 className="font-semibold text-sm text-gray-900 truncate">
-                          {chat.userName || chat.userEmail || 'Unknown User'}
-                        </h3>
-                        {(chat.unreadCount || 0) > 0 && (
-                          <span className="flex-shrink-0 bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
-                            {chat.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-sm font-medium text-gray-900 truncate ml-2 max-w-[40%]">
-                        {chat.subject}
-                      </h4>
-                    </div>
-                    
-                    <p className="text-xs text-gray-500 mb-1">{timeAgo}</p>
-                    
-                    <p className="text-xs text-gray-600 mb-2">
-                      {chat.category}
-                    </p>
-                    
-                    <div className="flex items-end justify-between">
-                      {chat.messages && chat.messages.length > 0 ? (
-                        <p className="text-xs text-gray-500 line-clamp-1 flex-1">
-                          <span className="font-medium">Last:</span> {chat.messages[chat.messages.length - 1].message}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-gray-400 flex-1">No messages</p>
-                      )}
-                      <div className="flex-shrink-0 ml-2">
-                        {getStatusIcon(chat.status)}
-                      </div>
-                    </div>
-                  </div>
-                  {index < filteredChatSupports.length - 1 && (
-                    <div className="border-b border-gray-200" />
-                  )}
-                  </div>
-                  );
-                })}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg">
+                <WifiOff className="w-4 h-4" />
+                <span className="text-xs font-medium">Offline</span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex-1 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-          {selectedChat ? (
+        {/* Filters */}
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
+            <input
+              type="text"
+              placeholder="Search by subject, category, user..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            />
+          </div>
+          
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+          >
+            <option value="all">All Status</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </select>
+          
+          <select
+            value={filterPriority}
+            onChange={(e) => setFilterPriority(e.target.value)}
+            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+          >
+            <option value="all">All Priority</option>
+            <option value="urgent">Urgent</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          {filteredChatSupports.length === 0 ? (
+            <div className="bg-white p-12 text-center">
+              <div className="text-gray-400 mb-4">
+                <MessageCircleQuestion className="h-12 w-12 mx-auto" />
+              </div>
+              <p className="text-gray-600 font-medium">No tickets found</p>
+              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+            </div>
+          ) : (
             <>
-              <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <User className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {selectedChat.userName || selectedChat.userEmail || `User ${selectedChat.userId}`}
-                    </h3>
-                  </div>
-                  <h2 className="text-xl font-bold text-gray-900 truncate ml-4 max-w-[40%]">
-                    {selectedChat.subject}
-                  </h2>
-                </div>
-                
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                  <Calendar className="w-4 h-4" />
-                  <span>Created {new Date(selectedChat.createdAt).toLocaleDateString('en-US', { 
-                    month: 'long', 
-                    day: 'numeric', 
-                    year: 'numeric' 
-                  })}</span>
-                </div>
-                
-                <p className="text-sm text-gray-600 mb-2">
-                  Category: <span className="font-semibold">{selectedChat.category}</span>
-                </p>
-                
-                <div className="flex items-end justify-between">
-                  <div className="flex flex-wrap items-center gap-3 text-sm">
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
-                      selectedChat.status === 'open' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                    }`}>
-                      {getStatusIcon(selectedChat.status)}
-                      <span className="text-xs font-medium text-gray-500">Status:</span>
-                      <span className="text-xs font-semibold capitalize">{selectedChat.status}</span>
-                    </div>
-                    
-                    <span className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                      getPriorityColor(selectedChat.priority || 'low')}`}>
-                      {(selectedChat.priority || 'low').toUpperCase()} PRIORITY
-                    </span>
-                  </div>
-                  
-                  <div className="flex gap-2 ml-4">
-                    {selectedChat.status === 'open' && (
-                      <button
-                        onClick={() => handleChatAction(selectedChat._id, 'close')}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
+              {/* Desktop Table */}
+              <div className="hidden md:block bg-white overflow-hidden">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Subject</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Messages</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredChatSupports.map((chat) => (
+                      <tr 
+                        key={chat._id}
+                        onClick={() => handleSelectChat(chat)}
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
                       >
-                        <XCircle className="w-4 h-4" />
-                        Close Chat
-                      </button>
-                    )}
-                    
-                    {selectedChat.status === 'closed' && (
-                      <button
-                        onClick={() => handleChatAction(selectedChat._id, 'reopen')}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        Reopen Chat
-                      </button>
-                    )}
-                  </div>
-                </div>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                              <span className="text-sm font-semibold text-gray-700">
+                                {getInitials(chat.userName || 'Unknown')}
+                              </span>
+                            </div>
+                            <div className="ml-3">
+                              <div className="text-sm font-semibold text-gray-900">{chat.userName || 'Unknown'}</div>
+                              <div className="text-xs text-gray-500 truncate max-w-[150px]">{chat.userEmail || 'N/A'}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900 max-w-[200px] truncate">{chat.subject}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-600">{chat.category}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {getPriorityBadge(chat.priority)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {getStatusBadge(chat.status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <MessageSquare className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-900">{chat.messages?.length || 0}</span>
+                            {(chat.unreadCount || 0) > 0 && (
+                              <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                                {chat.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-xs text-gray-500">
+                            {new Date(chat.createdAt).toLocaleDateString()}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(chat.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectChat(chat);
+                            }}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="View chat"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
-              <div className="flex-1 p-6 overflow-y-auto bg-gradient-to-b from-gray-50 to-white min-h-0">
-                <div className="space-y-4 max-w-4xl mx-auto">
-                  {(!selectedChat.messages || selectedChat.messages.length === 0) ? (
-                    <div className="flex items-center justify-center h-full text-gray-400">
-                      <div className="text-center">
-                        <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                        <p className="text-base font-medium text-gray-600">No messages yet</p>
-                        <p className="text-sm text-gray-500">Start the conversation!</p>
+              {/* Mobile Cards */}
+              <div className="md:hidden px-4 py-4 space-y-3">
+                {filteredChatSupports.map((chat) => (
+                  <div 
+                    key={chat._id}
+                    onClick={() => handleSelectChat(chat)}
+                    className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                        <span className="text-base font-semibold text-gray-700">
+                          {getInitials(chat.userName || 'Unknown')}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900 truncate">{chat.userName || 'Unknown'}</h3>
+                        <p className="text-xs text-gray-500 truncate">{chat.userEmail || 'N/A'}</p>
                       </div>
                     </div>
-                  ) : (
-                    selectedChat.messages.map((msg, index) => {
-                      const isTemp = msg._id?.startsWith('temp-');
-                      const isAdmin = msg.senderType === 'Admin';
-                      return (
-                        <div
-                          key={msg._id || index}
-                          className={`flex ${isAdmin ? 'justify-end' : 'justify-start'} animate-fade-in`}
-                          style={{ opacity: isTemp ? 0.6 : 1 }}
-                        >
-                          <div
-                            className={`max-w-lg px-4 py-3 rounded-2xl shadow-sm ${
-                              isAdmin 
-                                ? 'bg-blue-600 text-white rounded-br-sm' 
-                                : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className={`text-xs font-semibold ${
-                                isAdmin ? 'text-blue-100' : 'text-gray-600'
-                              }`}>
-                                {msg.senderName || (isAdmin ? 'Admin' : 'User')}
-                              </span>
-                              {isTemp && (
-                                <span className="text-xs opacity-75 italic">Sending...</span>
-                              )}
-                            </div>
-                            <p className="text-sm leading-relaxed">{msg.message}</p>
-                            <p className={`text-xs mt-1.5 ${
-                              isAdmin ? 'text-blue-200' : 'text-gray-500'}`}>
-                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={messageEndRef} />
-                </div>
-              </div>
 
-              {selectedChat.status === 'open' && (
-                <div className="p-4 border-t bg-white flex-shrink-0">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={message}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                        if (e.key === 'Enter' && !sendingMessage) {
-                          sendMessage();
-                        }
-                      }}
-                      disabled={sendingMessage}
-                    />
-                    <button
-                      onClick={sendMessage}
-                      disabled={!message.trim() || sendingMessage}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-sm transition-all"
-                    >
-                      {sendingMessage ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          <span>Sending</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          <span>Send</span>
-                        </>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2 truncate">{chat.subject}</h4>
+                    <p className="text-xs text-gray-600 mb-3">{chat.category}</p>
+
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {getPriorityBadge(chat.priority)}
+                      {getStatusBadge(chat.status)}
+                      {(chat.unreadCount || 0) > 0 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                          {chat.unreadCount} new
+                        </span>
                       )}
-                    </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        <span>{chat.messages?.length || 0} messages</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>{new Date(chat.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <MessageCircleQuestion className="w-20 h-20 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">Select a Chat</h3>
-                <p className="text-sm text-gray-500">Choose a support chat from the list to view details and messages</p>
+                ))}
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
+
+      {/* Chat Modal */}
+      {isChatModalOpen && selectedChat && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+            onClick={closeChatModal}
+          />
+          
+          <div className="fixed inset-0 md:left-64 bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col">
+            <div className="flex-shrink-0 px-6 py-4 border-b bg-white">
+              <div className="flex items-center justify-between">
+                {/* Left: User Info */}
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {selectedChat.userName || selectedChat.userEmail || 'Unknown User'}
+                  </h3>
+                  <span className="text-[10px] text-gray-500">KYD: {selectedChat.userId}</span>
+                </div>
+                
+                {/* Right: Close Button */}
+                <button
+                  onClick={closeChatModal}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex overflow-hidden relative">
+              {/* Ticket Info Button - Floating */}
+              {!showSidePanel && (
+                <button
+                  onClick={() => setShowSidePanel(true)}
+                  className="absolute top-4 right-4 p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors shadow-md z-10"
+                  title="Ticket Information"
+                >
+                  <AlertCircle className="h-5 w-5" />
+                </button>
+              )}
+              
+              {/* Messages Area */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto bg-white">
+                  <div className="px-6 py-4">
+                    {(!selectedChat.messages || selectedChat.messages.length === 0) ? (
+                      <div className="flex items-center justify-center h-full text-gray-400">
+                        <div className="text-center">
+                          <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-base font-medium text-gray-600">No messages yet</p>
+                          <p className="text-sm text-gray-500">Start the conversation!</p>
+                        </div>
+                      </div>
+                    ) : (
+                      selectedChat.messages.map((msg, index) => {
+                        const isTemp = msg._id?.startsWith('temp-');
+                        const isAdmin = msg.senderType === 'Admin';
+                        const currentDate = new Date(msg.timestamp);
+                        const previousDate = index > 0 ? new Date(selectedChat.messages![index - 1].timestamp) : null;
+                        
+                        const showDateSeparator = !previousDate || 
+                          currentDate.toDateString() !== previousDate.toDateString();
+                        
+                        const getDateLabel = (date: Date) => {
+                          const today = new Date();
+                          const yesterday = new Date(today);
+                          yesterday.setDate(yesterday.getDate() - 1);
+                          
+                          if (date.toDateString() === today.toDateString()) {
+                            return 'Today';
+                          } else if (date.toDateString() === yesterday.toDateString()) {
+                            return 'Yesterday';
+                          } else {
+                            return date.toLocaleDateString('en-US', { 
+                              month: 'long', 
+                              day: 'numeric', 
+                              year: 'numeric' 
+                            });
+                          }
+                        };
+                        
+                        // Check if this message should be grouped with the previous one
+                        const previousMsg = index > 0 ? selectedChat.messages![index - 1] : null;
+                        const nextMsg = index < selectedChat.messages!.length - 1 ? selectedChat.messages![index + 1] : null;
+                        
+                        const isGroupedWithPrevious = previousMsg && 
+                          previousMsg.senderType === msg.senderType &&
+                          (currentDate.getTime() - new Date(previousMsg.timestamp).getTime()) < 5 * 60 * 1000 &&
+                          currentDate.toDateString() === new Date(previousMsg.timestamp).toDateString();
+                        
+                        const isGroupedWithNext = nextMsg &&
+                          nextMsg.senderType === msg.senderType &&
+                          (new Date(nextMsg.timestamp).getTime() - currentDate.getTime()) < 5 * 60 * 1000 &&
+                          currentDate.toDateString() === new Date(nextMsg.timestamp).toDateString();
+                        
+                        const showSenderName = !isGroupedWithPrevious;
+                        const showTimestamp = !isGroupedWithNext;
+                        
+                        return (
+                          <React.Fragment key={msg._id || index}>
+                            {showDateSeparator && (
+                              <div className="flex items-center justify-center my-4">
+                                <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                                  {getDateLabel(currentDate)}
+                                </div>
+                              </div>
+                            )}
+                            <div
+                              className={`flex ${isAdmin ? 'justify-end' : 'justify-start'} ${isGroupedWithNext ? 'mb-1' : 'mb-3'}`}
+                              style={{ opacity: isTemp ? 0.6 : 1 }}
+                            >
+                              <div className={`max-w-sm ${
+                                isAdmin ? 'text-right' : 'text-left'
+                              }`}>
+                                <div className={`inline-block px-4 py-2.5 rounded-2xl ${
+                                  isAdmin 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'bg-gray-100 text-gray-900'
+                                }`}>
+                                  {showSenderName && (
+                                    <p className={`text-xs font-semibold mb-1 ${
+                                      isAdmin ? 'text-blue-100' : 'text-gray-700'
+                                    }`}>
+                                      {msg.senderName || (isAdmin ? 'Support Agent' : selectedChat.userName || 'User')}
+                                    </p>
+                                  )}
+                                  <p className="text-sm leading-relaxed">{msg.message}</p>
+                                </div>
+                                {showTimestamp && (
+                                  <p className={`text-xs mt-1 px-1 ${
+                                    isAdmin ? 'text-gray-500 text-right' : 'text-gray-500 text-left'
+                                  }`}>
+                                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                    <div ref={messageEndRef} />
+                  </div>
+                </div>
+
+                {/* Message Input */}
+                {selectedChat.status === 'open' && (
+                  <div className="flex-shrink-0 p-4 border-t bg-white">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Write a message..."
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !sendingMessage) {
+                            sendMessage();
+                          }
+                        }}
+                        disabled={sendingMessage}
+                      />
+                      <button
+                        onClick={sendMessage}
+                        disabled={!message.trim() || sendingMessage}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all"
+                      >
+                        {sendingMessage ? 'Sending...' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Side Panel */}
+              {showSidePanel && (
+                <div className="w-96 border-l border-gray-200 bg-white flex-shrink-0 overflow-y-auto">
+                  <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="p-6 border-b border-gray-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-lg font-semibold text-gray-900">Ticket Information</h3>
+                        <button
+                          onClick={() => setShowSidePanel(false)}
+                          className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-600">TID: {selectedChat._id}</p>
+                    </div>
+
+                    {/* User Info Section */}
+                    <div className="p-6 border-b border-gray-200">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          {/* Avatar */}
+                          <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                            <span className="text-base font-semibold text-gray-700">
+                              {getInitials(selectedChat.userName || selectedChat.userEmail || 'Unknown')}
+                            </span>
+                          </div>
+                          
+                          {/* Name and KYD */}
+                          <div>
+                            <p className="text-base font-semibold text-gray-900">{selectedChat.userName || 'Unknown'}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">KYD: {selectedChat.userId}</p>
+                          </div>
+                        </div>
+                        
+                        {/* Status and Category */}
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm text-gray-900">Status:</span>
+                            {getStatusBadge(selectedChat.status)}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm text-gray-900">Category:</span>
+                            <span className="text-sm font-semibold text-gray-900">{selectedChat.category}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Subject Section */}
+                    <div className="px-6 py-4 border-b border-gray-200">
+                      <label className="text-base font-semibold text-gray-900 block mb-2">Subject:</label>
+                      <p className="text-sm text-gray-700">{selectedChat.subject}</p>
+                    </div>
+
+                    {/* Description Section */}
+                    <div className="px-6 py-4 border-b border-gray-200 flex-1">
+                      <label className="text-base font-semibold text-gray-900 block mb-2">Description:</label>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {selectedChat.description || 'No description provided'}
+                      </p>
+                    </div>
+
+                    {/* Dates Section */}
+                    <div className="px-6 py-4 border-b border-gray-200">
+                      <div className="mb-3">
+                        <label className="text-base font-semibold text-gray-900 block mb-1">Created:</label>
+                        <p className="text-sm text-gray-700">
+                          {new Date(selectedChat.createdAt).toLocaleDateString('en-US', {
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-base font-semibold text-gray-900 block mb-1">Last Update:</label>
+                        <p className="text-sm text-gray-700">
+                          {selectedChat.updatedAt ? new Date(selectedChat.updatedAt).toLocaleDateString('en-US', {
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="p-6">
+                      {selectedChat.status === 'open' ? (
+                        <button
+                          onClick={() => handleChatAction(selectedChat._id, 'close')}
+                          className="w-full px-4 py-3 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-base font-medium transition-colors"
+                        >
+                          Close Ticket
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleChatAction(selectedChat._id, 'reopen')}
+                          className="w-full px-4 py-3 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-base font-medium transition-colors"
+                        >
+                          Reopen Ticket
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
