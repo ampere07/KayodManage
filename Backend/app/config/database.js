@@ -50,10 +50,4 @@ mongoose.connection.on('disconnected', () => {
   console.log('🔌 Mongoose disconnected from MongoDB');
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  await disconnectDatabase();
-  process.exit(0);
-});
-
 module.exports = { connectDatabase, disconnectDatabase };

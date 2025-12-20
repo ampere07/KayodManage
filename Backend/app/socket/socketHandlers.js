@@ -4,10 +4,13 @@ const Transaction = require('../models/Transaction');
 const ActivityFeed = require('../models/ActivityFeed');
 const Alert = require('../models/Alert');
 const ChatSupport = require('../models/ChatSupport');
+const ReportedPost = require('../models/ReportedPost');
+const CredentialVerification = require('../models/CredentialVerification');
 
 let adminNamespace = null;
 let mainIo = null;
 let chatSupportChangeStream = null;
+let activeIntervals = new Map();
 
 const setupSocketHandlers = (io) => {
   mainIo = io;
@@ -98,7 +101,11 @@ const setupSocketHandlers = (io) => {
     
     socket.on('disconnect', () => {
       console.log('🔌 Admin disconnected:', socket.id);
-      Object.values(intervals).forEach(interval => clearInterval(interval));
+      const intervals = activeIntervals.get(socket.id);
+      if (intervals) {
+        Object.values(intervals).forEach(interval => clearInterval(interval));
+        activeIntervals.delete(socket.id);
+      }
     });
   });
   
@@ -225,15 +232,11 @@ const setupMainNamespaceHandlers = (io) => {
 
 const sendInitialData = async (socket) => {
   try {
-    console.log('📡 Sending initial data to admin...');
-    
     const stats = await getRealtimeStats();
     socket.emit('stats:initial', stats);
     
     const alerts = await getActiveAlerts();
     socket.emit('alerts:initial', alerts);
-    
-    console.log('✅ Initial data sent successfully');
   } catch (error) {
     console.error('❌ Error sending initial data:', error);
   }
@@ -250,6 +253,8 @@ const setupRealtimeIntervals = (socket) => {
     await broadcastAlertUpdates();
   }, 20000);
   
+  activeIntervals.set(socket.id, intervals);
+  
   return intervals;
 };
 
@@ -257,7 +262,6 @@ const broadcastDashboardStats = async () => {
   try {
     const stats = await getRealtimeStats();
     adminNamespace.to('admin').emit('stats:update', stats);
-    console.log('📊 Dashboard stats broadcasted');
   } catch (error) {
     console.error('❌ Error broadcasting dashboard stats:', error);
   }
@@ -318,8 +322,6 @@ const broadcastAlertUpdates = async () => {
       alerts,
       timestamp: new Date()
     });
-    
-    console.log('🚨 Alert updates broadcasted');
   } catch (error) {
     console.error('❌ Error broadcasting alert updates:', error);
   }
@@ -327,9 +329,66 @@ const broadcastAlertUpdates = async () => {
 
 const getActiveAlerts = async () => {
   try {
-    return await Alert.find({ isActive: true })
+    let alerts = await Alert.find({ isActive: true })
       .sort({ priority: -1, createdAt: -1 })
-      .limit(10);
+      .limit(10)
+      .lean();
+
+    if (alerts.length === 0) {
+      const generatedAlerts = [];
+
+      const pendingReports = await ReportedPost.find({ status: 'pending' })
+        .populate('jobId', 'title')
+        .populate('reportedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
+
+      for (const report of pendingReports) {
+        generatedAlerts.push({
+          _id: `report_${report._id}`,
+          type: 'critical',
+          category: 'reported_post',
+          title: 'New Post Report',
+          message: `Job "${report.jobId?.title || 'Unknown'}" reported for ${report.reason.replace(/_/g, ' ')}`,
+          priority: 4,
+          isActive: true,
+          isRead: false,
+          createdAt: report.createdAt
+        });
+      }
+
+      const pendingVerifications = await CredentialVerification.find({ status: 'pending' })
+        .populate('userId', 'name email')
+        .sort({ submittedAt: -1 })
+        .limit(5)
+        .lean();
+
+      for (const verification of pendingVerifications) {
+        generatedAlerts.push({
+          _id: `verification_${verification._id}`,
+          type: 'warning',
+          category: 'verification_request',
+          title: 'New Verification Request',
+          message: `${verification.userId?.name || 'User'} submitted documents for verification`,
+          priority: 3,
+          isActive: true,
+          isRead: false,
+          createdAt: verification.submittedAt
+        });
+      }
+
+      generatedAlerts.sort((a, b) => {
+        if (b.priority !== a.priority) {
+          return b.priority - a.priority;
+        }
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      alerts = generatedAlerts.slice(0, 10);
+    }
+
+    return alerts;
   } catch (error) {
     console.error('Error getting active alerts:', error);
     return [];
@@ -541,6 +600,12 @@ const closeChatSupportChangeStream = () => {
       console.error('Error closing chat support change stream:', error);
     }
   }
+  
+  activeIntervals.forEach((intervals, socketId) => {
+    Object.values(intervals).forEach(interval => clearInterval(interval));
+  });
+  activeIntervals.clear();
+  console.log('All active intervals cleared');
 };
 
 module.exports = {

@@ -4,13 +4,19 @@ const { Schema } = mongoose;
 const TransactionSchema = new Schema({
   fromUser: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
+  },
+  fromUserId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User'
   },
   toUser: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
+  },
+  toUserId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User'
   },
   amount: {
     type: Number,
@@ -27,7 +33,9 @@ const TransactionSchema = new Schema({
       'fee_payment', 
       'refund', 
       'platform_fee',
-      'withdrawal'
+      'withdrawal',
+      'xendit_topup',
+      'cash_fee_payment'
     ],
     required: true
   },
@@ -104,7 +112,9 @@ const TransactionSchema = new Schema({
 
 // Indexes for better query performance
 TransactionSchema.index({ fromUser: 1 });
+TransactionSchema.index({ fromUserId: 1 });
 TransactionSchema.index({ toUser: 1 });
+TransactionSchema.index({ toUserId: 1 });
 TransactionSchema.index({ type: 1 });
 TransactionSchema.index({ status: 1 });
 TransactionSchema.index({ jobId: 1 });

@@ -19,19 +19,48 @@ code {
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f1f5f9;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
+  background: #cbd5e1;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: #94a3b8;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* Hide scrollbar for dashboard */
+.dashboard-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.dashboard-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Loading animations */
@@ -53,4 +82,15 @@ code {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
+}
+
+/* Safe area for mobile - prevents content from being hidden under notch/status bar */
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+@media (min-width: 768px) {
+  .safe-top {
+    padding-top: 1rem;
+  }
 }

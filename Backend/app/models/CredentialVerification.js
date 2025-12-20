@@ -38,8 +38,8 @@ const credentialVerificationSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'under_review'],
-    default: 'pending',
+    enum: ['approved', 'rejected', 'under_review'],
+    default: 'under_review',
     index: true
   },
   submittedAt: {

@@ -2,12 +2,12 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const FeeRecordSchema = new Schema({
-  provider: {
+  providerId: {
     type: Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  job: {
+  jobId: {
     type: Schema.Types.ObjectId,
     ref: 'Job',
     required: true
@@ -67,19 +67,30 @@ const FeeRecordSchema = new Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual to check if fee is paid
+FeeRecordSchema.virtual('provider', {
+  ref: 'User',
+  localField: 'providerId',
+  foreignField: '_id',
+  justOne: true
+});
+
+FeeRecordSchema.virtual('job', {
+  ref: 'Job',
+  localField: 'jobId',
+  foreignField: '_id',
+  justOne: true
+});
+
 FeeRecordSchema.virtual('isPaid').get(function() {
   return this.status === 'paid';
 });
 
-// Virtual to check if fee is overdue
 FeeRecordSchema.virtual('isOverdue').get(function() {
   return this.status !== 'paid' && new Date() > this.dueDate;
 });
 
-// Indexes for better query performance
-FeeRecordSchema.index({ provider: 1 });
-FeeRecordSchema.index({ job: 1 });
+FeeRecordSchema.index({ providerId: 1 });
+FeeRecordSchema.index({ jobId: 1 });
 FeeRecordSchema.index({ status: 1 });
 FeeRecordSchema.index({ dueDate: 1 });
 FeeRecordSchema.index({ createdAt: -1 });

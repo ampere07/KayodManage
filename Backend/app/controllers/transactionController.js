@@ -64,9 +64,11 @@ const getTransactions = async (req, res) => {
     
     // Fetch regular transactions
     const transactions = await Transaction.find(query)
-      .populate('fromUser', 'name email')
-      .populate('toUser', 'name email')
-      .populate('jobId', 'title')
+      .populate('fromUser', 'name email phone location')
+      .populate('toUser', 'name email phone location')
+      .populate('fromUserId', 'name email phone location')
+      .populate('toUserId', 'name email phone location')
+      .populate('jobId', 'title category')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -75,17 +77,30 @@ const getTransactions = async (req, res) => {
     console.log(`Found ${transactions.length} transactions`); // Debug log
 
     // Transform transactions for frontend compatibility
-    const transformedTransactions = transactions.map(tx => ({
-      ...tx,
-      _id: tx._id,
-      transactionType: 'transaction', // Mark as regular transaction
-      fromUserData: tx.fromUser,
-      toUserData: tx.toUser,
-      job: tx.jobId,
-      // For compatibility with old frontend structure
-      userId: tx.fromUser,
-      user: tx.fromUser
-    }));
+    const transformedTransactions = transactions.map(tx => {
+      const fromUserData = tx.fromUser || tx.fromUserId;
+      const toUserData = tx.toUser || tx.toUserId;
+      
+      // Extract xendit payment method from metadata if available
+      let displayPaymentMethod = tx.paymentMethod;
+      if (tx.type === 'xendit_topup' && tx.metadata?.xenditPaymentMethod) {
+        displayPaymentMethod = tx.metadata.xenditPaymentMethod;
+      }
+      
+      return {
+        ...tx,
+        _id: tx._id,
+        transactionType: 'transaction',
+        fromUserData: fromUserData,
+        toUserData: toUserData,
+        fromUser: fromUserData,
+        toUser: toUserData,
+        job: tx.jobId,
+        userId: fromUserData,
+        user: fromUserData,
+        paymentMethod: displayPaymentMethod
+      };
+    });
 
     let allTransactions = transformedTransactions;
     let totalCount = await Transaction.countDocuments(query);
@@ -127,45 +142,84 @@ const getTransactions = async (req, res) => {
       console.log('Fee records query:', feeQuery); // Debug log
       
       const feeRecords = await FeeRecord.find(feeQuery)
-        .populate('provider', 'name email')
-        .populate('job', 'title')
-        .populate('transaction', '_id')
+        .populate({
+          path: 'providerId',
+          select: 'name email phone location'
+        })
+        .populate({
+          path: 'jobId',
+          select: 'title category assignedToId',
+          populate: {
+            path: 'assignedToId',
+            select: 'name email phone location'
+          }
+        })
+        .populate({
+          path: 'transaction',
+          select: '_id'
+        })
         .sort({ createdAt: -1 })
         .skip(type === 'fee_record' ? skip : 0)
-        .limit(type === 'fee_record' ? limit : 50) // Limit fee records if not specifically filtering
+        .limit(type === 'fee_record' ? limit : 50)
         .lean();
 
-      console.log(`Found ${feeRecords.length} fee records`); // Debug log
+      console.log(`Found ${feeRecords.length} fee records`);
+      
+      feeRecords.forEach((fee, index) => {
+        console.log(`Fee Record ${index + 1}:`, {
+          feeId: fee._id,
+          provider: fee.providerId,
+          job: fee.jobId,
+          hasProvider: !!fee.providerId,
+          hasJob: !!fee.jobId,
+          hasAssignedTo: !!fee.jobId?.assignedToId
+        });
+      });
 
-      // Transform fee records to match transaction structure
-      const transformedFeeRecords = feeRecords.map(fee => ({
-        _id: fee._id,
-        transactionType: 'fee_record', // Mark as fee record
-        fromUser: fee.provider,
-        toUser: fee.provider, // Fee is from provider to platform
-        fromUserData: fee.provider,
-        toUserData: fee.provider,
-        user: fee.provider,
-        userId: fee.provider,
-        amount: fee.amount,
-        type: 'fee_payment',
-        status: fee.status === 'paid' ? 'completed' : 
-                fee.status === 'cancelled' ? 'failed' : 'pending',
-        jobId: fee.job,
-        job: fee.job,
-        description: `Platform fee for job: ${fee.job ? fee.job.title : 'Unknown job'}`,
-        paymentMethod: fee.paymentMethod,
-        currency: 'PHP',
-        createdAt: fee.createdAt,
-        updatedAt: fee.updatedAt,
-        completedAt: fee.paidAt,
-        // Fee-specific fields
-        originalFeeRecord: fee,
-        dueDate: fee.dueDate,
-        isFirstOffense: fee.isFirstOffense,
-        penaltyApplied: fee.penaltyApplied,
-        remindersSent: fee.remindersSent
-      }));
+      const transformedFeeRecords = feeRecords.map(fee => {
+        let description = fee.description;
+        if (!description) {
+          if (fee.jobId && fee.jobId.title) {
+            description = `Platform fee for job: ${fee.jobId.title}`;
+          } else {
+            description = `Platform fee (₱${fee.amount})`;
+          }
+        }
+        
+        const providerInfo = fee.jobId?.assignedToId || fee.providerId || {
+          _id: null,
+          name: 'Unknown Provider',
+          email: 'N/A'
+        };
+        
+        return {
+          _id: fee._id,
+          transactionType: 'fee_record',
+          fromUser: providerInfo,
+          toUser: providerInfo,
+          fromUserData: providerInfo,
+          toUserData: providerInfo,
+          user: providerInfo,
+          userId: providerInfo,
+          amount: fee.amount,
+          type: 'fee_payment',
+          status: fee.status === 'paid' ? 'completed' : 
+                  fee.status === 'cancelled' ? 'failed' : 'pending',
+          jobId: fee.jobId || null,
+          job: fee.jobId || null,
+          description: description,
+          paymentMethod: fee.paymentMethod || 'wallet',
+          currency: 'PHP',
+          createdAt: fee.createdAt,
+          updatedAt: fee.updatedAt,
+          completedAt: fee.paidAt,
+          originalFeeRecord: fee,
+          dueDate: fee.dueDate,
+          isFirstOffense: fee.isFirstOffense,
+          penaltyApplied: fee.penaltyApplied,
+          remindersSent: fee.remindersSent
+        };
+      });
 
       if (type === 'fee_record') {
         // If specifically filtering for fee records, return only those
@@ -208,37 +262,79 @@ const getTransactionDetails = async (req, res) => {
     
     if (type === 'fee_record') {
       transactionData = await FeeRecord.findById(transactionId)
-        .populate('provider', 'name email phone')
-        .populate('job', 'title description')
-        .populate('transaction', '_id amount status')
+        .populate({
+          path: 'providerId',
+          select: 'name email phone location'
+        })
+        .populate({
+          path: 'jobId',
+          select: 'title description category assignedToId',
+          populate: {
+            path: 'assignedToId',
+            select: 'name email phone location'
+          }
+        })
+        .populate({
+          path: 'transaction',
+          select: '_id amount status'
+        })
         .lean();
       
       if (transactionData) {
-        // Transform fee record to transaction-like structure
+        let description = transactionData.description;
+        if (!description) {
+          if (transactionData.jobId && transactionData.jobId.title) {
+            description = `Platform fee for job: ${transactionData.jobId.title}`;
+          } else {
+            description = `Platform fee (₱${transactionData.amount})`;
+          }
+        }
+        
+        const providerInfo = transactionData.jobId?.assignedToId || transactionData.providerId || {
+          _id: null,
+          name: 'Unknown Provider',
+          email: 'N/A',
+          phone: 'N/A'
+        };
+        
         transactionData = {
           ...transactionData,
           transactionType: 'fee_record',
-          fromUser: transactionData.provider,
-          toUser: transactionData.provider,
+          fromUser: providerInfo,
+          toUser: providerInfo,
           type: 'fee_payment',
           status: transactionData.status === 'paid' ? 'completed' : 
                   transactionData.status === 'cancelled' ? 'failed' : 'pending',
-          description: `Platform fee for job: ${transactionData.job ? transactionData.job.title : 'Unknown job'}`,
+          description: description,
           currency: 'PHP'
         };
       }
     } else {
       transactionData = await Transaction.findById(transactionId)
-        .populate('fromUser', 'name email phone')
-        .populate('toUser', 'name email phone')
-        .populate('jobId', 'title description')
+        .populate('fromUser', 'name email phone location')
+        .populate('toUser', 'name email phone location')
+        .populate('fromUserId', 'name email phone location')
+        .populate('toUserId', 'name email phone location')
+        .populate('jobId', 'title description category')
         .lean();
       
       if (transactionData) {
+        const fromUserData = transactionData.fromUser || transactionData.fromUserId;
+        const toUserData = transactionData.toUser || transactionData.toUserId;
+        
+        // Extract xendit payment method from metadata if available
+        let displayPaymentMethod = transactionData.paymentMethod;
+        if (transactionData.type === 'xendit_topup' && transactionData.metadata?.xenditPaymentMethod) {
+          displayPaymentMethod = transactionData.metadata.xenditPaymentMethod;
+        }
+        
         transactionData.transactionType = 'transaction';
-        transactionData.fromUserData = transactionData.fromUser;
-        transactionData.toUserData = transactionData.toUser;
+        transactionData.fromUserData = fromUserData;
+        transactionData.toUserData = toUserData;
+        transactionData.fromUser = fromUserData;
+        transactionData.toUser = toUserData;
         transactionData.job = transactionData.jobId;
+        transactionData.paymentMethod = displayPaymentMethod;
       }
     }
     
@@ -258,70 +354,54 @@ const updateTransactionStatus = async (req, res) => {
     const { transactionId } = req.params;
     const { status, type } = req.body;
     
+    if (type === 'fee_record') {
+      return res.status(403).json({ error: 'Fee records are read-only and cannot be updated from transactions' });
+    }
+    
+    // Check if it's a xendit_topup transaction
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.type === 'xendit_topup') {
+      return res.status(403).json({ error: 'Top-up transactions are read-only and cannot be manually updated' });
+    }
+    
     const validStatuses = ['pending', 'completed', 'failed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
     
-    let updatedTransaction;
+    const updateData = { 
+      status,
+      ...(status === 'completed' && { completedAt: new Date() }),
+      ...(status === 'failed' && { failedAt: new Date() })
+    };
     
-    if (type === 'fee_record') {
-      // Update fee record status
-      const feeStatus = status === 'completed' ? 'paid' : 
-                      status === 'failed' ? 'cancelled' : 'pending';
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+      transactionId,
+      updateData,
+      { new: true }
+    )
+    .populate('fromUser', 'name email phone location')
+    .populate('toUser', 'name email phone location')
+    .populate('fromUserId', 'name email phone location')
+    .populate('toUserId', 'name email phone location')
+    .populate('jobId', 'title category')
+    .lean();
+    
+    if (updatedTransaction) {
+      const fromUserData = updatedTransaction.fromUser || updatedTransaction.fromUserId;
+      const toUserData = updatedTransaction.toUser || updatedTransaction.toUserId;
       
-      const updateData = { 
-        status: feeStatus,
-        ...(status === 'completed' && { paidAt: new Date() })
-      };
-      
-      updatedTransaction = await FeeRecord.findByIdAndUpdate(
-        transactionId,
-        updateData,
-        { new: true }
-      )
-      .populate('provider', 'name email')
-      .populate('job', 'title')
-      .lean();
-      
-      if (updatedTransaction) {
-        // Transform back to transaction-like structure
-        updatedTransaction = {
-          ...updatedTransaction,
-          transactionType: 'fee_record',
-          fromUser: updatedTransaction.provider,
-          toUser: updatedTransaction.provider,
-          type: 'fee_payment',
-          status: status,
-          description: `Platform fee for job: ${updatedTransaction.job ? updatedTransaction.job.title : 'Unknown job'}`,
-          currency: 'PHP'
-        };
-      }
-    } else {
-      // Update regular transaction
-      const updateData = { 
-        status,
-        ...(status === 'completed' && { completedAt: new Date() }),
-        ...(status === 'failed' && { failedAt: new Date() })
-      };
-      
-      updatedTransaction = await Transaction.findByIdAndUpdate(
-        transactionId,
-        updateData,
-        { new: true }
-      )
-      .populate('fromUser', 'name email')
-      .populate('toUser', 'name email')
-      .populate('jobId', 'title')
-      .lean();
-      
-      if (updatedTransaction) {
-        updatedTransaction.transactionType = 'transaction';
-        updatedTransaction.fromUserData = updatedTransaction.fromUser;
-        updatedTransaction.toUserData = updatedTransaction.toUser;
-        updatedTransaction.job = updatedTransaction.jobId;
-        updatedTransaction.userId = updatedTransaction.fromUser;
-      }
+      updatedTransaction.transactionType = 'transaction';
+      updatedTransaction.fromUserData = fromUserData;
+      updatedTransaction.toUserData = toUserData;
+      updatedTransaction.fromUser = fromUserData;
+      updatedTransaction.toUser = toUserData;
+      updatedTransaction.job = updatedTransaction.jobId;
+      updatedTransaction.userId = fromUserData;
     }
     
     if (!updatedTransaction) {

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Briefcase, DollarSign, AlertTriangle, TrendingUp, Activity, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Users, Briefcase, DollarSign, AlertTriangle, TrendingUp, Activity, Wifi, WifiOff, RefreshCw, ArrowUpRight, Clock } from 'lucide-react';
 import StatsCard from '../components/Dashboard/StatsCard';
 import ActivityFeed from '../components/Dashboard/ActivityFeed';
 import RevenueChart from '../components/Dashboard/RevenueChart';
 import RealtimeStats from '../components/Dashboard/RealtimeStats';
 import AlertsWidget from '../components/Dashboard/AlertsWidget';
 import { useSocket } from '../context/SocketContext';
+import { useNavigate } from 'react-router-dom';
 
 interface ActivityItem {
   _id: string;
@@ -24,6 +25,7 @@ interface ActivityItem {
 }
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const {
     isConnected,
     dashboardStats,
@@ -32,11 +34,9 @@ const Dashboard: React.FC = () => {
     refreshAlerts
   } = useSocket();
 
-  // Local state for activities (no longer from socket)
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
 
-  // Fetch activities separately via API
   const fetchActivities = async () => {
     try {
       setLoadingActivities(true);
@@ -55,12 +55,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Load activities on component mount
   useEffect(() => {
     fetchActivities();
   }, []);
 
-  // Fallback stats for when socket data isn't available yet
   const stats = dashboardStats || {
     totalUsers: 0,
     activeJobs: 0,
@@ -83,196 +81,238 @@ const Dashboard: React.FC = () => {
     }).format(amount).replace('PHP', '₱');
   };
 
+  const handleAlertClick = (alert: any) => {
+    if (alert.category === 'reported_post' || alert.reportId) {
+      navigate(`/jobs?reportId=${alert.reportId || alert._id.replace('report_', '')}`);
+    } else if (alert.category === 'verification_request' || alert.verificationId) {
+      navigate(`/verifications?id=${alert.verificationId || alert._id.replace('verification_', '')}`);
+    } else if (alert.category === 'support_ticket' || alert.supportId) {
+      navigate(`/support?id=${alert.supportId || alert._id.replace('support_', '')}`);
+    } else {
+      navigate('/alerts');
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    if (category === 'reported_post') {
+      return <AlertTriangle className="h-4 w-4" />;
+    } else if (category === 'verification_request') {
+      return <Users className="h-4 w-4" />;
+    } else if (category === 'support_ticket') {
+      return <Activity className="h-4 w-4" />;
+    }
+    return <AlertTriangle className="h-4 w-4" />;
+  };
+
+  const currentDate = new Date();
+  const greeting = currentDate.getHours() < 12 ? 'Good Morning' : currentDate.getHours() < 18 ? 'Good Afternoon' : 'Good Evening';
+
   return (
-    <div className="space-y-8">
-      {/* Real-time Connection Status */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {isConnected ? (
-              <>
-                <Wifi className="h-5 w-5 text-green-500" />
-                <span className="text-sm text-green-700 font-medium">
-                  Real-time updates connected
-                </span>
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-5 w-5 text-red-500" />
-                <span className="text-sm text-red-700 font-medium">
-                  Real-time updates disconnected
-                </span>
-              </>
-            )}
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={fetchActivities}
-              disabled={loadingActivities}
-              className="flex items-center space-x-2 px-3 py-1 text-sm bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
-            >
-              <Activity className={`h-4 w-4 ${loadingActivities ? 'animate-spin' : ''}`} />
-              <span>Activity</span>
-            </button>
-            <button
-              onClick={refreshDashboard}
-              className="flex items-center space-x-2 px-3 py-1 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>Stats</span>
-            </button>
-            <button
-              onClick={refreshAlerts}
-              className="flex items-center space-x-2 px-3 py-1 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              <span>Alerts</span>
-            </button>
-          </div>
-        </div>
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 overflow-hidden">
+      <div className="flex-1 overflow-y-auto dashboard-scroll pt-14 md:pt-0">
+      <div className="p-3 md:p-4 space-y-3 md:space-y-4">
+      {/* Compact Header */}
+      <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-100 rounded-lg md:rounded-xl shadow-lg px-3 md:px-6 py-2.5 md:py-4 border border-amber-200">
+        <div className="space-y-0.5">
+          <h1 className="text-sm md:text-2xl font-bold text-gray-800 leading-tight">{greeting}, Admin</h1>
+          <p className="text-xs md:text-sm text-gray-600 leading-tight">
+            {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          </p>
+        </div>  
         {dashboardStats?.timestamp && (
-          <p className="text-xs text-gray-500 mt-2">
-            Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}
+          <p className="text-xs text-gray-600 mt-1.5 md:mt-2 flex items-center space-x-1">
+            <Clock className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate">Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}</span>
           </p>
         )}
       </div>
 
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard
-          title="Total Users"
-          value={stats.totalUsers.toLocaleString()}
-          icon={Users}
-          trend={{ value: stats.newUsersToday, isPositive: true }}
-          color="blue"
-        />
-        <StatsCard
-          title="Active Jobs"
-          value={stats.activeJobs.toLocaleString()}
-          icon={Briefcase}
-          trend={{ value: stats.completedJobsToday, isPositive: true }}
-          color="green"
-        />
-        <StatsCard
-          title="Total Revenue"
-          value={formatCurrency(stats.totalRevenue)}
-          icon={DollarSign}
-          trend={{ value: stats.revenueToday, isPositive: true }}
-          color="purple"
-        />
-        <StatsCard
-          title="Pending Fees"
-          value={formatCurrency(stats.pendingFees)}
-          icon={AlertTriangle}
-          color="red"
-        />
+      {/* Compact Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {/* Total Users */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-blue-50">
+              <Users className="h-4 md:h-5 w-4 md:w-5 text-blue-600" />
+            </div>
+            {stats.newUsersToday > 0 && (
+              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
+                <ArrowUpRight className="h-3 w-3" />
+                <span>+{stats.newUsersToday}</span>
+              </div>
+            )}
+          </div>
+          <h3 className="text-gray-600 text-xs font-medium">Total Users</h3>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">New today: {stats.newUsersToday}</p>
+        </div>
+
+        {/* Active Jobs */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-green-50">
+              <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-green-600" />
+            </div>
+            {stats.completedJobsToday > 0 && (
+              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
+                <ArrowUpRight className="h-3 w-3" />
+                <span>{stats.completedJobsToday}</span>
+              </div>
+            )}
+          </div>
+          <h3 className="text-gray-600 text-xs font-medium">Active Jobs</h3>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">Completed today: {stats.completedJobsToday}</p>
+        </div>
+
+        {/* Total Revenue */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-purple-50">
+              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-purple-600" />
+            </div>
+            {stats.revenueToday > 0 && (
+              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
+                <ArrowUpRight className="h-3 w-3" />
+                <span>{formatCurrency(stats.revenueToday)}</span>
+              </div>
+            )}
+          </div>
+          <h3 className="text-gray-600 text-xs font-medium">Total Revenue</h3>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+          <p className="text-xs text-gray-500 mt-1">Today: {formatCurrency(stats.revenueToday)}</p>
+        </div>
+
+        {/* Pending Fees */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-red-50">
+              <AlertTriangle className="h-4 md:h-5 w-4 md:w-5 text-red-600" />
+            </div>
+          </div>
+          <h3 className="text-gray-600 text-xs font-medium">Pending Fees</h3>
+          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
+          <p className="text-xs text-gray-500 mt-1">Requires attention</p>
+        </div>
       </div>
 
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard
-          title="Online Users"
-          value={stats.onlineUsers.toLocaleString()}
-          icon={Activity}
-          color="green"
-        />
-        <StatsCard
-          title="New Users Today"
-          value={stats.newUsersToday.toLocaleString()}
-          icon={TrendingUp}
-          color="blue"
-        />
-        <StatsCard
-          title="Revenue Today"
-          value={formatCurrency(stats.revenueToday)}
-          icon={DollarSign}
-          color="indigo"
-        />
+      {/* Compact Secondary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 p-3 md:p-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-lg bg-green-500 shadow">
+              <Activity className="h-4 md:h-5 w-4 md:w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium">Online Users</h3>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.onlineUsers.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-3 md:p-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-lg bg-blue-500 shadow">
+              <TrendingUp className="h-4 md:h-5 w-4 md:w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium">New Users Today</h3>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newUsersToday.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-3 md:p-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-lg bg-purple-500 shadow">
+              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium">Revenue Today</h3>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{formatCurrency(stats.revenueToday)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Charts and Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Charts and Alerts - Compact Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <div className="lg:col-span-2">
           <RevenueChart />
         </div>
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
-              <div className="flex items-center space-x-2">
-                <Activity className="h-5 w-5 text-gray-400" />
-                <span className="text-xs text-gray-500">API</span>
-              </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 flex flex-col" style={{ height: '410px' }}>
+          <div className="flex items-center justify-between mb-4 flex-shrink-0">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">Active Alerts</h3>
+              <p className="text-xs text-gray-500">
+                {alerts && alerts.length > 0 ? `${alerts.length} pending` : 'No alerts'}
+              </p>
             </div>
-            <div className="space-y-3">
-              {loadingActivities ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-sm text-gray-500 mt-2">Loading activities...</p>
-                </div>
-              ) : activities.length > 0 ? (
-                activities.slice(0, 10).map((activity) => (
-                  <div key={activity._id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 truncate">{activity.description}</p>
-                      <p className="text-xs text-gray-500">
-                        {activity.createdAt || activity.timestamp 
-                          ? new Date(activity.createdAt || activity.timestamp).toLocaleTimeString()
-                          : 'Unknown time'
-                        }
-                      </p>
+          </div>
+          
+          <div className="space-y-2 flex-1 overflow-y-auto dashboard-scroll">
+            {alerts && alerts.length > 0 ? (
+              alerts.slice(0, 10).map((alert) => (
+                <div
+                  key={alert._id}
+                  onClick={() => handleAlertClick(alert)}
+                  className={`p-2 rounded-lg border-l-4 transition-all hover:shadow-md cursor-pointer ${
+                    alert.priority >= 4
+                      ? 'border-red-500 bg-gradient-to-br from-red-50 to-red-100/50 hover:from-red-100 hover:to-red-200/50'
+                      : alert.priority === 3
+                      ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 to-yellow-100/50 hover:from-yellow-100 hover:to-yellow-200/50'
+                      : 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-center space-x-1.5">
+                      <div className={`p-1 rounded ${
+                        alert.priority >= 4 ? 'bg-red-100 text-red-600' : alert.priority === 3 ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {getCategoryIcon(alert.category)}
+                      </div>
+                      <h4 className="font-semibold text-gray-900 text-xs line-clamp-1">{alert.title}</h4>
                     </div>
+                    {alert.priority >= 4 && (
+                      <span className="px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full flex-shrink-0">!</span>
+                    )}
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  No recent activity found
+                  
+                  <p className="text-xs text-gray-700 leading-tight mb-1 line-clamp-1">{alert.message}</p>
+                  
+                  <div className="flex items-center justify-between pt-1 border-t border-gray-200/50">
+                    <p className="text-xs text-gray-500">
+                      {new Date(alert.createdAt).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
+                    </p>
+                    <span className="text-xs font-semibold text-gray-500 hover:text-gray-700">
+                      View →
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-2">
+                  <AlertTriangle className="h-6 w-6 text-green-600" />
+                </div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-1">All Clear!</h4>
+                <p className="text-xs text-gray-500">
+                  {isConnected ? 'No active alerts' : 'Connecting...'}
                 </p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Alerts Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Active Alerts</h3>
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="h-5 w-5 text-gray-400" />
-            <span className="text-xs text-gray-500">Live</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {alerts && alerts.length > 0 ? (
-            alerts.slice(0, 6).map((alert) => (
-              <div
-                key={alert._id}
-                className={`p-4 rounded-lg border-l-4 ${
-                  alert.priority >= 3
-                    ? 'border-red-500 bg-red-50'
-                    : alert.priority === 2
-                    ? 'border-yellow-500 bg-yellow-50'
-                    : 'border-blue-500 bg-blue-50'
-                }`}
-              >
-                <h4 className="font-medium text-gray-900 text-sm">{alert.title}</h4>
-                <p className="text-xs text-gray-600 mt-1">{alert.message}</p>
-                <p className="text-xs text-gray-500 mt-2">
-                  {new Date(alert.createdAt).toLocaleString()}
-                </p>
-              </div>
-            ))
-          ) : (
-            <div className="col-span-full text-center py-8">
-              <p className="text-sm text-gray-500">
-                {isConnected ? 'No active alerts' : 'Loading alerts...'}
-              </p>
-            </div>
-          )}
-        </div>
+      </div>
       </div>
     </div>
   );

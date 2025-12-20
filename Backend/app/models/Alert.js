@@ -7,6 +7,11 @@ const AlertSchema = new Schema({
     enum: ['critical', 'warning', 'info'],
     required: true
   },
+  category: {
+    type: String,
+    enum: ['reported_post', 'verification_request', 'support_ticket', 'system', 'user_activity', 'transaction'],
+    required: true
+  },
   title: {
     type: String,
     required: true,
@@ -16,6 +21,16 @@ const AlertSchema = new Schema({
     type: String,
     required: true,
     trim: true
+  },
+  priority: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 5
+  },
+  isActive: {
+    type: Boolean,
+    default: true
   },
   isRead: {
     type: Boolean,
@@ -33,8 +48,24 @@ const AlertSchema = new Schema({
     type: Schema.Types.ObjectId,
     ref: 'Transaction'
   },
+  reportId: {
+    type: Schema.Types.ObjectId,
+    ref: 'ReportedPost'
+  },
+  verificationId: {
+    type: Schema.Types.ObjectId,
+    ref: 'CredentialVerification'
+  },
+  supportId: {
+    type: Schema.Types.ObjectId,
+    ref: 'ChatSupport'
+  },
   metadata: {
     type: Schema.Types.Mixed
+  },
+  actionUrl: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true,
@@ -44,7 +75,11 @@ const AlertSchema = new Schema({
 
 // Indexes for better query performance
 AlertSchema.index({ type: 1 });
+AlertSchema.index({ category: 1 });
+AlertSchema.index({ isActive: 1 });
 AlertSchema.index({ isRead: 1 });
+AlertSchema.index({ priority: -1 });
 AlertSchema.index({ createdAt: -1 });
+AlertSchema.index({ isActive: 1, priority: -1, createdAt: -1 });
 
 module.exports = mongoose.model('Alert', AlertSchema);

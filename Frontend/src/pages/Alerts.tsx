@@ -5,18 +5,17 @@ import {
   Trash2, 
   CheckCircle, 
   XCircle, 
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
   Calendar,
   User,
   Flag,
   Search,
-  ArrowLeft,
   Image as ImageIcon,
   Video
 } from 'lucide-react';
-import { formatPHPCurrency, formatBudgetWithType } from '../utils/currency';
+import { formatBudgetWithType } from '../utils/currency';
+import SideModal from '../components/SideModal';
 
 interface ReportedPost {
   _id: string;
@@ -66,7 +65,7 @@ const Alerts: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [viewMode, setViewMode] = useState<'table' | 'review'>('table');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     fetchReportedPosts();
@@ -119,7 +118,6 @@ const Alerts: React.FC = () => {
 
       const result = await response.json();
       
-      // Update the reported post in the list with new status
       setReportedPosts(prev => 
         prev.map(post => 
           post._id === postId 
@@ -128,8 +126,7 @@ const Alerts: React.FC = () => {
         )
       );
 
-      // Go back to table view
-      setViewMode('table');
+      setIsModalOpen(false);
       setSelectedPost(null);
       setAdminNotes('');
       
@@ -152,11 +149,11 @@ const Alerts: React.FC = () => {
   const handleViewPost = (post: ReportedPost) => {
     setSelectedPost(post);
     setAdminNotes(post.adminNotes || '');
-    setViewMode('review');
+    setIsModalOpen(true);
   };
 
-  const handleBackToTable = () => {
-    setViewMode('table');
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
     setSelectedPost(null);
     setAdminNotes('');
   };
@@ -186,7 +183,6 @@ const Alerts: React.FC = () => {
     return reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Filter and search logic
   const getFilteredPosts = () => {
     let filtered = reportedPosts;
     
@@ -210,7 +206,6 @@ const Alerts: React.FC = () => {
   const filteredPosts = getFilteredPosts();
   const pendingCount = reportedPosts.filter(post => post.status === 'pending').length;
   
-  // Pagination logic
   const totalPages = Math.ceil(filteredPosts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedPosts = filteredPosts.slice(startIndex, startIndex + itemsPerPage);
@@ -225,95 +220,84 @@ const Alerts: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {viewMode === 'table' ? (
-        // Table View
-        <>
-          {/* Header */}
-          <div className="bg-white border-b border-gray-200 p-6">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-              <div className="flex items-center">
-                <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
-                <div>
-                  <p className="text-gray-600">Review and manage reported content</p>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                {pendingCount > 0 && (
-                  <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
-                    {pendingCount} pending review{pendingCount !== 1 ? 's' : ''}
-                  </span>
-                )}
-                <button
-                  onClick={fetchReportedPosts}
-                  disabled={loading}
-                  className="flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            {/* Search and Filter Controls */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-4">
-              {/* Search */}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="text"
-                  placeholder="Search by job title, reporter name, reason, or comment..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1); // Reset to first page when searching
-                  }}
-                  className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
-                {[
-                  { key: 'all', label: 'All', count: reportedPosts.length },
-                  { key: 'pending', label: 'Pending', count: reportedPosts.filter(p => p.status === 'pending').length },
-                  { key: 'reviewed', label: 'Reviewed', count: reportedPosts.filter(p => p.status === 'reviewed').length },
-                  { key: 'resolved', label: 'Resolved', count: reportedPosts.filter(p => p.status === 'resolved').length },
-                  { key: 'dismissed', label: 'Dismissed', count: reportedPosts.filter(p => p.status === 'dismissed').length }
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => {
-                      setFilter(tab.key as any);
-                      setCurrentPage(1); // Reset to first page when filtering
-                    }}
-                    className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                      filter === tab.key
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {tab.label} ({tab.count})
-                  </button>
-                ))}
-              </div>
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex items-center">
+            <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Alerts</h1>
             </div>
           </div>
+          
+          <div className="flex items-center space-x-3">
+            {pendingCount > 0 && (
+              <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
+                {pendingCount} pending review{pendingCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
 
-          {/* Error State */}
-          {error && (
-            <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3">
-              <div className="flex items-center">
-                <XCircle className="h-5 w-5 mr-2" />
-                <span>Error: {error}</span>
-              </div>
-            </div>
-          )}
+        {/* Search and Filter Controls */}
+        <div className="mt-6 flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Search by job title, reporter name, reason, or comment..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
 
-          {/* Table */}
+          <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+            {[
+              { key: 'all', label: 'All', count: reportedPosts.length },
+              { key: 'pending', label: 'Pending', count: reportedPosts.filter(p => p.status === 'pending').length },
+              { key: 'reviewed', label: 'Reviewed', count: reportedPosts.filter(p => p.status === 'reviewed').length },
+              { key: 'resolved', label: 'Resolved', count: reportedPosts.filter(p => p.status === 'resolved').length },
+              { key: 'dismissed', label: 'Dismissed', count: reportedPosts.filter(p => p.status === 'dismissed').length }
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setFilter(tab.key as any);
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                  filter === tab.key
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="flex-shrink-0 mx-6 mt-4 bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 rounded">
+          <div className="flex items-center">
+            <XCircle className="h-5 w-5 mr-2" />
+            <span>Error: {error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Scrollable Table Container */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
           {filteredPosts.length === 0 ? (
-            <div className="bg-white border-b border-gray-200 p-12">
+            <div className="h-full flex items-center justify-center bg-white p-12">
               <div className="text-center">
                 <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -327,32 +311,31 @@ const Alerts: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="bg-white border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Job Details
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Report Info
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedPosts.map((post) => (
-                      <tr key={post._id} className="hover:bg-gray-50 transition-colors">
-                        {/* Job Details */}
+            <div className="bg-white overflow-hidden">
+              <table className="min-w-full w-full table-fixed">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="w-[30%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Job Details
+                    </th>
+                    <th className="w-[25%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Report Info
+                    </th>
+                    <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Date
+                    </th>
+                    <th className="w-[10%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {paginatedPosts.map((post, index) => (
+                    <React.Fragment key={post._id}>
+                      <tr className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="max-w-xs">
                             <div className="text-sm font-medium text-gray-900 truncate">
@@ -370,18 +353,20 @@ const Alerts: React.FC = () => {
                               </span>
                               {post.jobId.media && post.jobId.media.length > 0 && (
                                 <span className="ml-2 flex items-center text-blue-600">
-                                  <span className="mr-1">📎</span>
+                                  <ImageIcon className="h-3 w-3 mr-1" />
                                   {post.jobId.media.length} file{post.jobId.media.length !== 1 ? 's' : ''}
                                 </span>
                               )}
                               {post.jobId.isDeleted && (
-                                <span className="ml-2 text-red-600 font-medium">⚠️ Deleted</span>
+                                <span className="ml-2 flex items-center text-red-600 font-medium">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Deleted
+                                </span>
                               )}
                             </div>
                           </div>
                         </td>
 
-                        {/* Report Info */}
                         <td className="px-6 py-4">
                           <div className="max-w-xs">
                             <div className="flex items-center text-sm text-gray-900 mb-1">
@@ -398,7 +383,6 @@ const Alerts: React.FC = () => {
                           </div>
                         </td>
 
-                        {/* Status */}
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(post.status)}`}>
                             {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
@@ -410,7 +394,6 @@ const Alerts: React.FC = () => {
                           )}
                         </td>
 
-                        {/* Date */}
                         <td className="px-6 py-4">
                           <div className="flex items-center text-sm text-gray-500">
                             <Calendar className="h-4 w-4 mr-1" />
@@ -418,47 +401,46 @@ const Alerts: React.FC = () => {
                           </div>
                         </td>
 
-                        {/* Actions */}
                         <td className="px-6 py-4 text-right">
-                          {post.status === 'pending' ? (
-                            <button
-                              onClick={() => handleViewPost(post)}
-                              className="inline-flex items-center px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              Review
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleViewPost(post)}
-                              className="inline-flex items-center px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleViewPost(post)}
+                            className={`inline-flex items-center px-3 py-1.5 text-sm rounded-md transition-colors ${
+                              post.status === 'pending'
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            {post.status === 'pending' ? 'Review' : 'View'}
+                          </button>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      {index < paginatedPosts.length - 1 && (
+                        <tr>
+                          <td colSpan={5} className="p-0">
+                            <div className="border-b border-gray-200" />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
 
-              {/* Pagination */}
               {totalPages > 1 && (
-                <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                <div className="bg-white px-6 py-4 flex items-center justify-between border-t border-gray-200">
                   <div className="flex-1 flex justify-between sm:hidden">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                       disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Previous
                     </button>
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                       disabled={currentPage === totalPages}
-                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Next
                     </button>
@@ -474,16 +456,15 @@ const Alerts: React.FC = () => {
                       </p>
                     </div>
                     <div>
-                      <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                      <nav className="relative z-0 inline-flex rounded-lg shadow-sm -space-x-px">
                         <button
                           onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                           disabled={currentPage === 1}
-                          className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                          className="relative inline-flex items-center px-2 py-2 rounded-l-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <ChevronLeft className="h-5 w-5" />
                         </button>
                         
-                        {/* Page Numbers */}
                         {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                           const pageNumber = i + 1;
                           return (
@@ -504,7 +485,7 @@ const Alerts: React.FC = () => {
                         <button
                           onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                           disabled={currentPage === totalPages}
-                          className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                          className="relative inline-flex items-center px-2 py-2 rounded-r-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <ChevronRight className="h-5 w-5" />
                         </button>
@@ -515,283 +496,235 @@ const Alerts: React.FC = () => {
               )}
             </div>
           )}
-        </>
-      ) : (
-        // Review Panel View
-        <div className="bg-white border border-gray-200">
-          {/* Panel Header with Back Button */}
-          <div className="border-b border-gray-200 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <button
-                  onClick={handleBackToTable}
-                  className="flex items-center px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors mr-4"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  Back to Reports
-                </button>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Review Reported Post</h2>
-                  <p className="text-gray-600 text-sm">Review details and take appropriate action</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedPost?.status || 'pending')}`}>
-                  {selectedPost?.status.charAt(0).toUpperCase() + selectedPost?.status.slice(1)}
-                </span>
-              </div>
+        </div>
+      </div>
+
+      {/* Side Modal */}
+      <SideModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        title="Review Reported Post"
+        width="2xl"
+      >
+        {selectedPost && (
+          <div className="p-6 space-y-6">
+            {/* Status Badge */}
+            <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+              <span className="text-sm text-gray-600">Current Status</span>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedPost.status)}`}>
+                {selectedPost.status.charAt(0).toUpperCase() + selectedPost.status.slice(1)}
+              </span>
             </div>
-          </div>
 
-          {selectedPost && (
-            <div className="p-6 space-y-6">
-              {/* Job Details */}
-              <div className="border-b border-gray-200 pb-6">
-                <h3 className="font-semibold text-lg mb-4 text-gray-900">Job Details</h3>
-                <div className="space-y-3">
-                  <p><strong>Title:</strong> {selectedPost.jobId.title}</p>
-                  <p><strong>Description:</strong> {selectedPost.jobId.description}</p>
-                  <p><strong>Category:</strong> {selectedPost.jobId.category}</p>
-                  <p><strong>Budget:</strong> {formatBudgetWithType(selectedPost.jobId.budget, selectedPost.jobId.budgetType)}</p>
-                  <p><strong>Payment Method:</strong> {selectedPost.jobId.paymentMethod}</p>
-                  <p><strong>Location:</strong> {selectedPost.jobId.location.address}, {selectedPost.jobId.location.city}</p>
-                  <p><strong>Posted:</strong> {formatDate(selectedPost.jobId.createdAt)}</p>
-                  {selectedPost.jobId.isDeleted && (
-                    <div className="mt-3 p-3 bg-red-100 border-l-4 border-red-400">
-                      <p className="text-red-800 font-medium">⚠️ This job has been deleted</p>
-                    </div>
-                  )}
+            {/* Job Details */}
+            <div>
+              <h3 className="font-semibold text-lg mb-3 text-gray-900">Job Details</h3>
+              <div className="space-y-2 text-sm">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Title:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.title}</span>
                 </div>
-              </div>
-
-              {/* Job Media Section - Always show, with placeholder when no media */}
-              <div className="border-b border-gray-200 pb-6">
-                <h3 className="font-semibold text-lg mb-3 text-gray-900">
-                  Job Media
-                  {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 && (
-                    <span className="ml-2 text-sm font-normal text-gray-600">
-                      ({selectedPost.jobId.media.length} file{selectedPost.jobId.media.length !== 1 ? 's' : ''})
-                    </span>
-                  )}
-                  {selectedPost.jobId.isDeleted && selectedPost.jobId.media && selectedPost.jobId.media.length > 0 && (
-                    <span className="ml-2 text-sm font-normal text-amber-600">(Preserved from snapshot)</span>
-                  )}
-                </h3>
-                
-                {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {selectedPost.jobId.media.map((mediaItem, index) => {
-                        const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.type;
-                        const mediaType = typeof mediaItem === 'string' 
-                          ? (mediaUrl.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                          : mediaItem.mediaType || 'image';
-                        const fileName = typeof mediaItem === 'string'
-                          ? mediaUrl.split('/').pop() || 'Unknown file'
-                          : mediaItem.originalName || 'Unknown file';
-                        
-                        return (
-                          <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                mediaType === 'video' 
-                                  ? 'bg-blue-100 text-blue-800' 
-                                  : 'bg-green-100 text-green-800'
-                              }`}>
-                                {mediaType === 'video' ? (
-                                  <><Video className="h-3 w-3 inline mr-1" />Video</>
-                                ) : (
-                                  <><ImageIcon className="h-3 w-3 inline mr-1" />Image</>
-                                )}
-                              </span>
-                              {mediaItem.fileSize && (
-                                <span className="text-xs text-gray-500">
-                                  {(mediaItem.fileSize / 1024 / 1024).toFixed(2)} MB
-                                </span>
-                              )}
-                            </div>
-                            
-                            <div className="mb-2">
-                              {mediaType === 'image' ? (
-                                <img
-                                  src={mediaUrl}
-                                  alt={fileName}
-                                  className="w-full h-32 object-cover rounded border cursor-pointer hover:opacity-90 transition-opacity"
-                                  onClick={() => window.open(mediaUrl, '_blank')}
-                                  onError={(e) => {
-                                    e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBmb3VuZDwvdGV4dD48L3N2Zz4=';
-                                    e.currentTarget.className = 'w-full h-32 object-cover rounded border opacity-50';
-                                  }}
-                                />
-                              ) : (
-                                <div className="relative">
-                                  <video
-                                    src={mediaUrl}
-                                    className="w-full h-32 object-cover rounded border"
-                                    controls
-                                    preload="metadata"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const errorDiv = document.createElement('div');
-                                      errorDiv.className = 'w-full h-32 bg-gray-200 rounded border flex items-center justify-center text-gray-500';
-                                      errorDiv.innerHTML = '<div class="flex items-center"><span class="mr-2">🎥</span>Video not available</div>';
-                                      e.currentTarget.parentNode.appendChild(errorDiv);
-                                    }}
-                                  >
-                                    Your browser does not support the video tag.
-                                  </video>
-                                </div>
-                              )}
-                            </div>
-                            
-                            <div className="text-xs text-gray-600">
-                              <p className="truncate" title={fileName}><strong>File:</strong> {fileName}</p>
-                              {mediaItem.uploadedAt && (
-                                <p className="mt-1"><strong>Uploaded:</strong> {formatDate(mediaItem.uploadedAt)}</p>
-                              )}
-                            </div>
-                            
-                            <div className="mt-2">
-                              <a
-                                href={mediaUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
-                              >
-                                <Eye className="h-3 w-3 mr-1" />
-                                View Full Size
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    
-                    {/* Media Summary */}
-                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center text-sm text-blue-800">
-                        <span className="font-medium">Media Summary:</span>
-                        <span className="ml-2">
-                          {selectedPost.jobId.media.filter(m => {
-                            const mediaType = typeof m === 'string' 
-                              ? (m.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                              : m.mediaType || 'image';
-                            return mediaType === 'image';
-                          }).length} image{selectedPost.jobId.media.filter(m => {
-                            const mediaType = typeof m === 'string' 
-                              ? (m.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                              : m.mediaType || 'image';
-                            return mediaType === 'image';
-                          }).length !== 1 ? 's' : ''}
-                        </span>
-                        <span className="mx-1">•</span>
-                        <span>
-                          {selectedPost.jobId.media.filter(m => {
-                            const mediaType = typeof m === 'string' 
-                              ? (m.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                              : m.mediaType || 'image';
-                            return mediaType === 'video';
-                          }).length} video{selectedPost.jobId.media.filter(m => {
-                            const mediaType = typeof m === 'string' 
-                              ? (m.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                              : m.mediaType || 'image';
-                            return mediaType === 'video';
-                          }).length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  // Placeholder when no media
-                  <div className="p-8 border-2 border-dashed border-gray-300 text-center">
-                    <div className="flex flex-col items-center">
-                      <div className="flex space-x-2 mb-3">
-                        <ImageIcon className="h-8 w-8 text-gray-400" />
-                        <Video className="h-8 w-8 text-gray-400" />
-                      </div>
-                      <p className="text-gray-500 text-sm font-medium mb-1">No Media Files Detected</p>
-                      <p className="text-gray-400 text-xs">This job posting does not contain any images or videos</p>
-                    </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Description:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.description}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Category:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.category}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Budget:</span>
+                  <span className="col-span-2 text-gray-900">{formatBudgetWithType(selectedPost.jobId.budget, selectedPost.jobId.budgetType)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Payment:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.paymentMethod}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Location:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.location.address}, {selectedPost.jobId.location.city}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-600 font-medium">Posted:</span>
+                  <span className="col-span-2 text-gray-900">{formatDate(selectedPost.jobId.createdAt)}</span>
+                </div>
+                {selectedPost.jobId.isDeleted && (
+                  <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-400 flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-800 text-sm font-medium">This job has been deleted</p>
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Report Details */}
-              <div className="border-b border-gray-200 pb-6">
-                <h3 className="font-semibold text-lg mb-4 text-gray-900">Report Details</h3>
-                <div className="space-y-3 p-4 border-l-4 border-red-400 bg-red-50">
-                  <p><strong>Reason:</strong> {formatReason(selectedPost.reason)}</p>
-                  <p><strong>Comment:</strong> "{selectedPost.comment}"</p>
-                  <p><strong>Reported by:</strong> {selectedPost.reportedBy.providerName} ({selectedPost.reportedBy.providerEmail})</p>
-                  <p><strong>Report Date:</strong> {formatDate(selectedPost.createdAt)}</p>
+            {/* Job Media */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="font-semibold text-lg mb-3 text-gray-900">
+                Job Media
+                {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 && (
+                  <span className="ml-2 text-sm font-normal text-gray-600">
+                    ({selectedPost.jobId.media.length} file{selectedPost.jobId.media.length !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </h3>
+              
+              {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {selectedPost.jobId.media.map((mediaItem, index) => {
+                    const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.type;
+                    const mediaType = typeof mediaItem === 'string' 
+                      ? (mediaUrl.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
+                      : mediaItem.mediaType || 'image';
+                    const fileName = typeof mediaItem === 'string'
+                      ? mediaUrl.split('/').pop() || 'Unknown file'
+                      : mediaItem.originalName || 'Unknown file';
+                    
+                    return (
+                      <div key={index} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            mediaType === 'video' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {mediaType === 'video' ? (
+                              <><Video className="h-3 w-3 inline mr-1" />Video</>
+                            ) : (
+                              <><ImageIcon className="h-3 w-3 inline mr-1" />Image</>
+                            )}
+                          </span>
+                        </div>
+                        
+                        {mediaType === 'image' ? (
+                          <img
+                            src={mediaUrl}
+                            alt={fileName}
+                            className="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => window.open(mediaUrl, '_blank')}
+                          />
+                        ) : (
+                          <video
+                            src={mediaUrl}
+                            className="w-full h-24 object-cover rounded border"
+                            controls
+                            preload="metadata"
+                          />
+                        )}
+                        
+                        <div className="mt-2">
+                          <a
+                            href={mediaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-
-              {/* Admin Notes */}
-              {selectedPost.status === 'pending' ? (
-                <div className="border-b border-gray-200 pb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Notes
-                  </label>
-                  <textarea
-                    value={adminNotes}
-                    onChange={(e) => setAdminNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={4}
-                    placeholder="Add your notes about this review decision..."
-                  />
-                </div>
-              ) : selectedPost.adminNotes && (
-                <div className="border-b border-gray-200 pb-6">
-                  <h3 className="font-semibold text-lg mb-4 text-gray-900">Admin Notes</h3>
-                  <div className="p-4 border-l-4 border-gray-400">
-                    <p className="text-gray-700">{selectedPost.adminNotes}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              {selectedPost.status === 'pending' && (
-                <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => handleReviewPost(selectedPost._id, 'dismiss')}
-                    disabled={actionLoading}
-                    className="flex items-center justify-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <XCircle className="h-5 w-5 mr-2" />
-                    Dismiss Report
-                  </button>
-                  
-                  <button
-                    onClick={() => handleReviewPost(selectedPost._id, 'approve')}
-                    disabled={actionLoading}
-                    className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <CheckCircle className="h-5 w-5 mr-2" />
-                    Keep Post
-                  </button>
-                  
-                  <button
-                    onClick={() => handleReviewPost(selectedPost._id, 'delete')}
-                    disabled={actionLoading}
-                    className="flex items-center justify-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Trash2 className="h-5 w-5 mr-2" />
-                    Delete Post
-                  </button>
-                </div>
-              )}
-
-              {actionLoading && (
-                <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                  <span className="ml-2 text-gray-600">Processing...</span>
+              ) : (
+                <div className="p-6 border-2 border-dashed border-gray-300 rounded-lg text-center">
+                  <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">No media files</p>
                 </div>
               )}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Report Details */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="font-semibold text-lg mb-3 text-gray-900">Report Details</h3>
+              <div className="p-4 border-l-4 border-red-400 bg-red-50 space-y-2 text-sm">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-700 font-medium">Reason:</span>
+                  <span className="col-span-2 text-gray-900">{formatReason(selectedPost.reason)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-700 font-medium">Comment:</span>
+                  <span className="col-span-2 text-gray-900">"{selectedPost.comment}"</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-700 font-medium">Reported by:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.reportedBy.providerName}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-700 font-medium">Email:</span>
+                  <span className="col-span-2 text-gray-900">{selectedPost.reportedBy.providerEmail}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-gray-700 font-medium">Report Date:</span>
+                  <span className="col-span-2 text-gray-900">{formatDate(selectedPost.createdAt)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Admin Notes */}
+            {selectedPost.status === 'pending' ? (
+              <div className="border-t border-gray-200 pt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Admin Notes
+                </label>
+                <textarea
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="Add your notes about this review decision..."
+                />
+              </div>
+            ) : selectedPost.adminNotes && (
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="font-semibold text-lg mb-3 text-gray-900">Admin Notes</h3>
+                <div className="p-3 bg-gray-50 border-l-4 border-gray-400 rounded">
+                  <p className="text-gray-700 text-sm">{selectedPost.adminNotes}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            {selectedPost.status === 'pending' && (
+              <div className="flex gap-2 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => handleReviewPost(selectedPost._id, 'dismiss')}
+                  disabled={actionLoading}
+                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <XCircle className="h-4 w-4 mr-1.5" />
+                  Dismiss
+                </button>
+                
+                <button
+                  onClick={() => handleReviewPost(selectedPost._id, 'approve')}
+                  disabled={actionLoading}
+                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <CheckCircle className="h-4 w-4 mr-1.5" />
+                  Keep Post
+                </button>
+                
+                <button
+                  onClick={() => handleReviewPost(selectedPost._id, 'delete')}
+                  disabled={actionLoading}
+                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Delete Post
+                </button>
+              </div>
+            )}
+
+            {actionLoading && (
+              <div className="flex items-center justify-center py-4 border-t border-gray-200">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-gray-600 text-sm">Processing...</span>
+              </div>
+            )}
+          </div>
+        )}
+      </SideModal>
     </div>
   );
 };

@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -9,21 +9,51 @@ import {
   AlertTriangle,
   Activity,
   MessageCircleQuestion,
-  Shield
+  Shield,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
+  const location = useLocation();
+  const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/transactions')) {
+      setIsTransactionsOpen(true);
+    }
+  }, [location.pathname]);
+
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/users', icon: Users, label: 'Users' },
     { to: '/jobs', icon: Briefcase, label: 'Jobs' },
-    { to: '/transactions', icon: CreditCard, label: 'Transactions' },
+  ];
+
+  const transactionItems = [
+    { to: '/transactions/fee-records', label: 'Fee Records' },
+    { to: '/transactions/top-up', label: 'Top-up' },
+    { to: '/transactions/cashout', label: 'Cashout' },
+    { to: '/transactions/refund', label: 'Refund' }
+  ];
+
+  const bottomNavItems = [
     { to: '/verifications', icon: Shield, label: 'Verifications' },
+    { to: '/support', icon: MessageCircleQuestion, label: 'Support' },
     { to: '/activity', icon: Activity, label: 'Activity' },
     { to: '/alerts', icon: AlertTriangle, label: 'Alerts' },
-    { to: '/support', icon: MessageCircleQuestion, label: 'Support' },
     { to: '/settings', icon: Settings, label: 'Settings' }
   ];
+
+  const isTransactionPage = location.pathname.startsWith('/transactions');
+
+  const handleTransactionClick = () => {
+    console.log('Before toggle:', isTransactionsOpen);
+    setIsTransactionsOpen(prev => {
+      console.log('Toggling from:', prev, 'to:', !prev);
+      return !prev;
+    });
+  };
 
   return (
     <div className="bg-gray-900 text-white w-64 min-h-screen flex flex-col">
@@ -35,6 +65,67 @@ const Sidebar: React.FC = () => {
       <nav className="flex-1 px-4">
         <ul className="space-y-2">
           {navItems.map((item) => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  }`
+                }
+              >
+                <item.icon size={20} />
+                <span>{item.label}</span>
+              </NavLink>
+            </li>
+          ))}
+          
+          <li>
+            <button
+              type="button"
+              onClick={handleTransactionClick}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
+                isTransactionPage
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <CreditCard size={20} />
+                <span>Transactions</span>
+              </div>
+              {isTransactionsOpen ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )}
+            </button>
+            
+            {isTransactionsOpen && (
+              <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
+                {transactionItems.map((item) => (
+                  <li key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
+                          isActive
+                            ? 'bg-blue-500 text-white'
+                            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                        }`
+                      }
+                    >
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+          
+          {bottomNavItems.map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}

@@ -16,7 +16,6 @@ const getJobs = async (req, res) => {
     
     let query = {};
     
-    // Search functionality
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -25,39 +24,35 @@ const getJobs = async (req, res) => {
       ];
     }
     
-    // Filter by status
     if (status && status !== 'all') {
       query.status = status;
     }
     
-    // Filter by category
     if (category && category !== 'all') {
       query.category = { $regex: category, $options: 'i' };
     }
     
-    // Filter by payment method
     if (paymentMethod && paymentMethod !== 'all') {
       query.paymentMethod = paymentMethod;
     }
     
-    // Filter by urgency
     if (isUrgent === 'true') {
       query.isUrgent = true;
     }
     
-    console.log('Jobs query:', query); // Debug log
+    console.log('Jobs query:', query);
     
-    // Fetch jobs with populated user data
+    // Fetch jobs and populate user virtuals
     const jobs = await Job.find(query)
-      .populate('user', 'name email')
-      .populate('assignedTo', 'name email')
+      .populate('user', 'name email userType')
+      .populate('assignedTo', 'name email userType')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean();
+      .lean({ virtuals: true });
 
-    console.log(`Found ${jobs.length} jobs`); // Debug log
-
+    console.log(`Found ${jobs.length} jobs`);
+    
     // Get job IDs for application count
     const jobIds = jobs.map(job => job._id);
     
@@ -67,7 +62,7 @@ const getJobs = async (req, res) => {
       { $group: { _id: '$job', count: { $sum: 1 } } }
     ]);
     
-    console.log(`Found application counts for ${applicationCounts.length} jobs`); // Debug log
+    console.log(`Found application counts for ${applicationCounts.length} jobs`);
     
     // Create a map of job ID to application count
     const countMap = {};
@@ -79,7 +74,6 @@ const getJobs = async (req, res) => {
     const jobsWithData = jobs.map(job => ({
       ...job,
       applicationCount: countMap[job._id.toString()] || 0,
-      // Format location for display
       locationDisplay: typeof job.location === 'object' ? 
         job.location.address || job.location.city || 'Location not specified' : 
         job.location || 'Location not specified'
@@ -108,9 +102,9 @@ const getJobDetails = async (req, res) => {
     const { jobId } = req.params;
     
     const job = await Job.findById(jobId)
-      .populate('user', 'name email phone')
-      .populate('assignedTo', 'name email phone')
-      .lean();
+      .populate('user', 'name email phone userType')
+      .populate('assignedTo', 'name email phone userType')
+      .lean({ virtuals: true });
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -122,7 +116,6 @@ const getJobDetails = async (req, res) => {
       .sort({ appliedAt: -1 })
       .lean();
     
-    // Format location for display
     const locationDisplay = typeof job.location === 'object' ? 
       job.location.address || job.location.city || 'Location not specified' : 
       job.location || 'Location not specified';
@@ -153,7 +146,6 @@ const updateJobStatus = async (req, res) => {
     
     const updateData = { status };
     
-    // Set completion date if marking as completed
     if (status === 'completed') {
       updateData.completedAt = new Date();
     }
@@ -163,15 +155,14 @@ const updateJobStatus = async (req, res) => {
       updateData,
       { new: true }
     )
-    .populate('user', 'name email')
-    .populate('assignedTo', 'name email')
-    .lean();
+    .populate('user', 'name email userType')
+    .populate('assignedTo', 'name email userType')
+    .lean({ virtuals: true });
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
     
-    // Get application count
     const applicationCount = await Application.countDocuments({ job: jobId });
     
     const jobWithData = {
@@ -182,7 +173,6 @@ const updateJobStatus = async (req, res) => {
         job.location || 'Location not specified'
     };
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('job:updated', {
       job: jobWithData,
@@ -204,26 +194,24 @@ const assignJobToProvider = async (req, res) => {
     const job = await Job.findByIdAndUpdate(
       jobId,
       { 
-        assignedTo: providerId,
+        assignedToId: providerId,
         status: 'in_progress'
       },
       { new: true }
     )
-    .populate('user', 'name email')
-    .populate('assignedTo', 'name email')
-    .lean();
+    .populate('user', 'name email userType')
+    .populate('assignedTo', 'name email userType')
+    .lean({ virtuals: true });
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
     
-    // Update the accepted application
     await Application.findOneAndUpdate(
       { job: jobId, provider: providerId },
       { status: 'accepted' }
     );
     
-    // Reject other applications
     await Application.updateMany(
       { job: jobId, provider: { $ne: providerId } },
       { status: 'rejected' }
@@ -239,7 +227,6 @@ const assignJobToProvider = async (req, res) => {
         job.location || 'Location not specified'
     };
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('job:updated', {
       job: jobWithData,

@@ -159,7 +159,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
 
       {/* Image Container */}
       <div 
-        className="w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
+        className="w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing p-8"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -170,19 +170,23 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <img
-          src={imageUrl}
-          alt={alt}
-          className="max-w-none max-h-none transition-transform duration-200 select-none"
-          style={{
-            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-            cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default'
-          }}
-          draggable={false}
-          onError={(e) => {
-            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgY2xhc3M9Imx1Y2lkZSBsdWNpZGUtaW1hZ2Utb2ZmIiB2aWV3Qm94PSIwIDAgMjQgMjQiPjxsaW5lIHgxPSIyIiB4Mj0iMjIiIHkxPSIyIiB5Mj0iMjIiLz48cGF0aCBkPSJtMjEgMTUtMy0zSDVsLTEtMSIvPjxwYXRoIGQ9Im0yMSA5LTEtMWMtMS03LTQtNS02LTVzLTUgMi02IDVsLTEgMSIvPjwvc3ZnPg==';
-          }}
-        />
+        <div className="relative" style={{ maxWidth: '85vw', maxHeight: '85vh' }}>
+          <img
+            src={imageUrl}
+            alt={alt}
+            className="w-full h-full object-contain transition-transform duration-200 select-none"
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px) scale(${zoom}) rotate(${rotation}deg)`,
+              cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
+              maxWidth: '85vw',
+              maxHeight: '85vh'
+            }}
+            draggable={false}
+            onError={(e) => {
+              e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgY2xhc3M9Imx1Y2lkZSBsdWNpZGUtaW1hZ2Utb2ZmIiB2aWV3Qm94PSIwIDAgMjQgMjQiPjxsaW5lIHgxPSIyIiB4Mj0iMjIiIHkxPSIyIiB5Mj0iMjIiLz48cGF0aCBkPSJtMjEgMTUtMy0zSDVsLTEtMSIvPjxwYXRoIGQ9Im0yMSA5LTEtMWMtMS03LTQtNS02LTVzLTUgMi02IDVsLTEgMSIvPjwvc3ZnPg==';
+            }}
+          />
+        </div>
       </div>
 
       {/* Instructions */}

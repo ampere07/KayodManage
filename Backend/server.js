@@ -90,11 +90,42 @@ app.get('/api/health', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () => {
+const serverInstance = server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO server ready for connections`);
   console.log(`🌐 Admin panel available at http://localhost:5173`);
   console.log(`📱 Mobile app can connect from any localhost port`);
 });
+
+const gracefulShutdown = async () => {
+  console.log('\n🛑 Graceful shutdown initiated...');
+  
+  try {
+    const { closeChatSupportChangeStream } = require('./app/socket/socketHandlers');
+    
+    closeChatSupportChangeStream();
+    console.log('✅ Change streams closed');
+    
+    io.close(() => {
+      console.log('✅ Socket.IO connections closed');
+    });
+    
+    serverInstance.close(() => {
+      console.log('✅ HTTP server closed');
+    });
+    
+    const { disconnectDatabase } = require('./app/config/database');
+    await disconnectDatabase();
+    
+    console.log('✅ Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 module.exports = { io };
