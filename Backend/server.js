@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const { connectDatabase } = require('./app/config/database');
 const { sessionConfig } = require('./app/config/session');
 const { setupSocketHandlers } = require('./app/socket/socketHandlers');
+const { startAutoApprovalScheduler, stopAutoApprovalScheduler } = require('./app/utils/autoApproveTopups');
 
 // Routes
 const authRoutes = require('./app/routes/auth');
@@ -15,6 +16,7 @@ const jobRoutes = require('./app/routes/jobs');
 const transactionRoutes = require('./app/routes/transactions');
 const adminRoutes = require('./app/routes/admin');
 const supportRoutes = require('./app/routes/support');
+const debugRoutes = require('./app/routes/debug');
 
 // Load environment variables
 dotenv.config();
@@ -76,6 +78,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -92,35 +95,32 @@ const PORT = process.env.PORT || 5000;
 
 const serverInstance = server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Socket.IO server ready for connections`);
-  console.log(`🌐 Admin panel available at http://localhost:5173`);
-  console.log(`📱 Mobile app can connect from any localhost port`);
+  console.log(`📡 Socket.IO server ready`);
+  console.log(`🌐 Admin panel: http://localhost:5173`);
+  
+  // Start automatic top-up approval (runs every 5 minutes)
+  startAutoApprovalScheduler(5);
 });
 
 const gracefulShutdown = async () => {
-  console.log('\n🛑 Graceful shutdown initiated...');
+  console.log('\n🛑 Shutting down...');
   
   try {
+    stopAutoApprovalScheduler();
+    
     const { closeChatSupportChangeStream } = require('./app/socket/socketHandlers');
-    
     closeChatSupportChangeStream();
-    console.log('✅ Change streams closed');
     
-    io.close(() => {
-      console.log('✅ Socket.IO connections closed');
-    });
-    
-    serverInstance.close(() => {
-      console.log('✅ HTTP server closed');
-    });
+    io.close(() => {});
+    serverInstance.close(() => {});
     
     const { disconnectDatabase } = require('./app/config/database');
     await disconnectDatabase();
     
-    console.log('✅ Graceful shutdown completed');
+    console.log('✅ Shutdown complete');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error during shutdown:', error);
+    console.error('❌ Shutdown error:', error.message);
     process.exit(1);
   }
 };

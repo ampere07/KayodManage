@@ -1,4 +1,5 @@
 const CredentialVerification = require('../models/CredentialVerification');
+const { logActivity } = require('../utils/activityLogger');
 
 const getAllVerifications = async (req, res) => {
   try {
@@ -16,8 +17,6 @@ const getAllVerifications = async (req, res) => {
       .limit(parseInt(limit))
       .skip(parseInt(skip))
       .lean();
-
-    console.log(`✅ Retrieved ${verifications.length} verifications from database`);
 
     res.json({
       success: true,
@@ -49,8 +48,6 @@ const getVerificationById = async (req, res) => {
       });
     }
 
-    console.log(`✅ Retrieved verification ${verificationId} from database`);
-
     res.json({
       success: true,
       data: verification
@@ -70,18 +67,8 @@ const updateVerificationStatus = async (req, res) => {
     const { verificationId } = req.params;
     const { status, adminNotes, rejectionReason } = req.body;
 
-    console.log('========================================');
-    console.log('📝 UPDATE VERIFICATION STATUS REQUEST');
-    console.log('========================================');
-    console.log('Verification ID:', verificationId);
-    console.log('Status:', status);
-    console.log('Admin Notes:', adminNotes);
-    console.log('Rejection Reason:', rejectionReason);
-    console.log('========================================');
-
     const validStatuses = ['approved', 'rejected', 'under_review'];
     if (!validStatuses.includes(status)) {
-      console.log('❌ Invalid status value:', status);
       return res.status(400).json({
         success: false,
         message: 'Invalid status value'
@@ -89,7 +76,6 @@ const updateVerificationStatus = async (req, res) => {
     }
 
     if (status === 'rejected' && (!rejectionReason || rejectionReason.trim() === '')) {
-      console.log('❌ Missing rejection reason for rejected status');
       return res.status(400).json({
         success: false,
         message: 'Rejection reason is required when rejecting a verification'
@@ -124,6 +110,29 @@ const updateVerificationStatus = async (req, res) => {
     }
 
     console.log('✅ Verification status updated successfully');
+
+    if (status === 'approved' || status === 'rejected') {
+      const actionType = status === 'approved' ? 'verification_approved' : 'verification_rejected';
+      const description = status === 'approved' 
+        ? `Approved verification for ${verification.userId.name}`
+        : `Rejected verification for ${verification.userId.name}`;
+      
+      await logActivity(
+        req.user.id,
+        actionType,
+        description,
+        {
+          targetType: 'verification',
+          targetId: verification.userId._id,
+          targetModel: 'User',
+          metadata: {
+            verificationId: verification._id,
+            rejectionReason: rejectionReason || null
+          },
+          ipAddress: req.ip
+        }
+      );
+    }
 
     res.json({
       success: true,

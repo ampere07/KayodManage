@@ -2,6 +2,7 @@ const Transaction = require('../models/Transaction');
 const FeeRecord = require('../models/FeeRecord');
 const User = require('../models/User');
 const Job = require('../models/Job');
+const { logActivity } = require('../utils/activityLogger');
 
 const getTransactions = async (req, res) => {
   try {
@@ -60,8 +61,6 @@ const getTransactions = async (req, res) => {
       query.createdAt = dateQuery;
     }
     
-    console.log('Transactions query:', query); // Debug log
-    
     // Fetch regular transactions
     const transactions = await Transaction.find(query)
       .populate('fromUser', 'name email phone location')
@@ -73,8 +72,6 @@ const getTransactions = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .lean();
-
-    console.log(`Found ${transactions.length} transactions`); // Debug log
 
     // Transform transactions for frontend compatibility
     const transformedTransactions = transactions.map(tx => {
@@ -139,8 +136,6 @@ const getTransactions = async (req, res) => {
         feeQuery.createdAt = dateQuery;
       }
       
-      console.log('Fee records query:', feeQuery); // Debug log
-      
       const feeRecords = await FeeRecord.find(feeQuery)
         .populate({
           path: 'providerId',
@@ -162,19 +157,6 @@ const getTransactions = async (req, res) => {
         .skip(type === 'fee_record' ? skip : 0)
         .limit(type === 'fee_record' ? limit : 50)
         .lean();
-
-      console.log(`Found ${feeRecords.length} fee records`);
-      
-      feeRecords.forEach((fee, index) => {
-        console.log(`Fee Record ${index + 1}:`, {
-          feeId: fee._id,
-          provider: fee.providerId,
-          job: fee.jobId,
-          hasProvider: !!fee.providerId,
-          hasJob: !!fee.jobId,
-          hasAssignedTo: !!fee.jobId?.assignedToId
-        });
-      });
 
       const transformedFeeRecords = feeRecords.map(fee => {
         let description = fee.description;
@@ -358,14 +340,83 @@ const updateTransactionStatus = async (req, res) => {
       return res.status(403).json({ error: 'Fee records are read-only and cannot be updated from transactions' });
     }
     
-    // Check if it's a xendit_topup transaction
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
     
-    if (transaction.type === 'xendit_topup') {
-      return res.status(403).json({ error: 'Top-up transactions are read-only and cannot be manually updated' });
+    // Auto-approve all top-up transactions
+    if (transaction.type === 'xendit_topup' || transaction.type === 'wallet_topup') {
+      const approvedStatus = 'completed';
+      const updateData = { 
+        status: approvedStatus,
+        completedAt: new Date()
+      };
+      
+      const updatedTransaction = await Transaction.findByIdAndUpdate(
+        transactionId,
+        updateData,
+        { new: true }
+      )
+      .populate('fromUser', 'name email phone location')
+      .populate('toUser', 'name email phone location')
+      .populate('fromUserId', 'name email phone location')
+      .populate('toUserId', 'name email phone location')
+      .populate('jobId', 'title category')
+      .lean();
+      
+      if (updatedTransaction) {
+        const fromUserData = updatedTransaction.fromUser || updatedTransaction.fromUserId;
+        const toUserData = updatedTransaction.toUser || updatedTransaction.toUserId;
+        
+        // Extract xendit payment method from metadata if available
+        let displayPaymentMethod = updatedTransaction.paymentMethod;
+        if (updatedTransaction.type === 'xendit_topup' && updatedTransaction.metadata?.xenditPaymentMethod) {
+          displayPaymentMethod = updatedTransaction.metadata.xenditPaymentMethod;
+        }
+        
+        updatedTransaction.transactionType = 'transaction';
+        updatedTransaction.fromUserData = fromUserData;
+        updatedTransaction.toUserData = toUserData;
+        updatedTransaction.fromUser = fromUserData;
+        updatedTransaction.toUser = toUserData;
+        updatedTransaction.job = updatedTransaction.jobId;
+        updatedTransaction.userId = fromUserData;
+        updatedTransaction.paymentMethod = displayPaymentMethod;
+        
+        // Update user wallet
+        const User = require('../models/User');
+        if (fromUserData && fromUserData._id) {
+          await User.findByIdAndUpdate(
+            fromUserData._id,
+            { $inc: { 'wallet.balance': updatedTransaction.amount } }
+          );
+        }
+      }
+      
+      if (req.user && req.user.id) {
+        await logActivity(
+          req.user.id,
+          'transaction_completed',
+          `Auto-approved top-up transaction for ${updatedTransaction.fromUser?.name || 'user'}`,
+          {
+            targetType: 'transaction',
+            targetId: transactionId,
+            targetModel: 'Transaction',
+            metadata: { amount: updatedTransaction.amount, type: updatedTransaction.type },
+            ipAddress: req.ip
+          }
+        );
+      }
+      
+      // Emit socket event for real-time update
+      const { io } = require('../../server');
+      io.to('admin').emit('transaction:updated', {
+        transaction: updatedTransaction,
+        updateType: 'auto-approved top-up'
+      });
+      
+      return res.json(updatedTransaction);
     }
     
     const validStatuses = ['pending', 'completed', 'failed', 'cancelled'];
@@ -406,6 +457,27 @@ const updateTransactionStatus = async (req, res) => {
     
     if (!updatedTransaction) {
       return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (req.user && req.user.id && (status === 'completed' || status === 'failed')) {
+      const actionType = status === 'completed' ? 'transaction_completed' : 'transaction_failed';
+      const fromUser = updatedTransaction.fromUser || updatedTransaction.fromUserId;
+      const description = status === 'completed'
+        ? `Marked transaction as completed for ${fromUser?.name || 'user'}`
+        : `Marked transaction as failed for ${fromUser?.name || 'user'}`;
+      
+      await logActivity(
+        req.user.id,
+        actionType,
+        description,
+        {
+          targetType: 'transaction',
+          targetId: transactionId,
+          targetModel: 'Transaction',
+          metadata: { amount: updatedTransaction.amount, type: updatedTransaction.type },
+          ipAddress: req.ip
+        }
+      );
     }
     
     // Emit socket event for real-time update

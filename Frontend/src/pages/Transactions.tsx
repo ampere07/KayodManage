@@ -501,12 +501,32 @@ const Transactions: React.FC = () => {
   const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  
+  // Initialize status filter from URL on mount
+  const getInitialStatusFilter = () => {
+    const searchParams = new URLSearchParams(location.search);
+    return searchParams.get('status') || 'all';
+  };
+  
+  const [statusFilter, setStatusFilter] = useState(getInitialStatusFilter());
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [transactionModal, setTransactionModal] = useState({ isOpen: false });
+
+  // Handle query parameters when URL changes
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const status = searchParams.get('status');
+
+    // Update status filter when URL changes
+    if (status && status !== statusFilter) {
+      setStatusFilter(status);
+    } else if (!status && statusFilter !== 'all') {
+      setStatusFilter('all');
+    }
+  }, [location.search]);
 
   const getTransactionCategory = () => {
     const path = location.pathname;
@@ -725,29 +745,31 @@ const Transactions: React.FC = () => {
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getCategoryTitle()}</h1>
           </div>
           
-          <div className="hidden md:flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <span className="font-medium text-gray-600">Complete</span>
+          {(category !== 'fee_record' && category !== 'wallet_topup') && (
+            <div className="hidden md:flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <span className="font-medium text-gray-600">Complete</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <XCircle className="h-4 w-4 text-red-600" />
+                <span className="font-medium text-gray-600">Fail</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Eye className="h-4 w-4 text-blue-600" />
+                <span className="font-medium text-gray-600">View</span>
+              </div>
+              <button
+                onClick={fetchTransactions}
+                disabled={loading}
+                className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700"
+                title="Refresh"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <span className="font-medium text-gray-600">Refresh</span>
+              </button>
             </div>
-            <div className="flex items-center gap-1.5">
-              <XCircle className="h-4 w-4 text-red-600" />
-              <span className="font-medium text-gray-600">Fail</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Eye className="h-4 w-4 text-blue-600" />
-              <span className="font-medium text-gray-600">View</span>
-            </div>
-            <button
-              onClick={fetchTransactions}
-              disabled={loading}
-              className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700"
-              title="Refresh"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span className="font-medium text-gray-600">Refresh</span>
-            </button>
-          </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -841,9 +863,11 @@ const Transactions: React.FC = () => {
                   <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  {(category !== 'fee_record' && category !== 'wallet_topup') && (
+                    <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white">
@@ -871,7 +895,13 @@ const Transactions: React.FC = () => {
                                 <AlertTriangle className="h-3 w-3 text-red-500" title="Overdue" />
                               )}
                             </div>
-                            <p className="text-sm text-gray-900 line-clamp-2">{transaction.description}</p>
+                            {transaction.transactionType === 'fee_record' ? (
+                              <p className="text-sm text-gray-900 line-clamp-2">
+                                {transaction.description.replace(/^Platform fee for job:\s*/i, '')}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-gray-900 line-clamp-2">{transaction.description}</p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -944,52 +974,58 @@ const Transactions: React.FC = () => {
                           </p>
                           <div className="flex items-center gap-1 text-xs text-gray-400">
                             <Calendar className="h-3 w-3" />
-                            {new Date(transaction.createdAt).toLocaleDateString()}
+                            {new Date(transaction.createdAt).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          {transaction.status === 'pending' && transaction.transactionType !== 'fee_record' && transaction.type !== 'xendit_topup' && (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTransactionStatus(transaction._id, 'completed', transaction.transactionType);
-                                }}
-                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                title="Mark as completed"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTransactionStatus(transaction._id, 'failed', transaction.transactionType);
-                                }}
-                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                title="Mark as failed"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openTransactionModal(transaction);
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {(category !== 'fee_record' && category !== 'wallet_topup') && (
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            {transaction.status === 'pending' && transaction.transactionType !== 'fee_record' && transaction.type !== 'xendit_topup' && (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateTransactionStatus(transaction._id, 'completed', transaction.transactionType);
+                                  }}
+                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                  title="Mark as completed"
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateTransactionStatus(transaction._id, 'failed', transaction.transactionType);
+                                  }}
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Mark as failed"
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTransactionModal(transaction);
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                     {index < transactions.length - 1 && (
                       <tr>
-                        <td colSpan={7} className="p-0">
+                        <td colSpan={(category === 'fee_record' || category === 'wallet_topup') ? 6 : 7} className="p-0">
                           <div className="border-b border-gray-200" />
                         </td>
                       </tr>
@@ -1027,7 +1063,13 @@ const Transactions: React.FC = () => {
                                 <AlertTriangle className="h-3 w-3 text-red-500" title="Overdue" />
                               )}
                             </div>
-                            <p className="text-sm text-gray-900 line-clamp-2">{transaction.description}</p>
+                            {transaction.transactionType === 'fee_record' ? (
+                              <p className="text-sm text-gray-900 line-clamp-2">
+                                {transaction.description.replace(/^Platform fee for job:\s*/i, '')}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-gray-900 line-clamp-2">{transaction.description}</p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1099,42 +1141,44 @@ const Transactions: React.FC = () => {
                             <span>{formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {transaction.status === 'pending' && transaction.transactionType !== 'fee_record' && transaction.type !== 'xendit_topup' && (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTransactionStatus(transaction._id, 'completed', transaction.transactionType);
-                                }}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="Mark as completed"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTransactionStatus(transaction._id, 'failed', transaction.transactionType);
-                                }}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Mark as failed"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openTransactionModal(transaction);
-                            }}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </div>
+                        {(category !== 'fee_record' && category !== 'wallet_topup') && (
+                          <div className="flex items-center gap-2">
+                            {transaction.status === 'pending' && transaction.transactionType !== 'fee_record' && transaction.type !== 'xendit_topup' && (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateTransactionStatus(transaction._id, 'completed', transaction.transactionType);
+                                  }}
+                                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                  title="Mark as completed"
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateTransactionStatus(transaction._id, 'failed', transaction.transactionType);
+                                  }}
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Mark as failed"
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTransactionModal(transaction);
+                              }}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

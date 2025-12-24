@@ -1,6 +1,7 @@
 const ChatSupport = require('../models/ChatSupport');
 const User = require('../models/User');
 const { emitSupportUpdate, emitChatSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
+const { logActivity } = require('../utils/activityLogger');
 
 // Get all chat support conversations
 const getAllTickets = async (req, res) => {
@@ -476,6 +477,21 @@ const closeChatSupport = async (req, res) => {
     
     await chatSupport.save();
 
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'support_closed',
+        `Closed support ticket: ${chatSupport.subject}`,
+        {
+          targetType: 'support',
+          targetId: chatSupportId,
+          targetModel: 'ChatSupport',
+          metadata: { reason, userName: chatSupport.userName },
+          ipAddress: req.ip
+        }
+      );
+    }
+
     emitChatSupportUpdate(chatSupport, { status: 'closed', closedAt: chatSupport.closedAt });
 
     res.json({ success: true, chatSupport });
@@ -521,6 +537,21 @@ const reopenChatSupport = async (req, res) => {
     });
     
     await chatSupport.save();
+
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'support_reopened',
+        `Reopened support ticket: ${chatSupport.subject}`,
+        {
+          targetType: 'support',
+          targetId: chatSupportId,
+          targetModel: 'ChatSupport',
+          metadata: { userName: chatSupport.userName },
+          ipAddress: req.ip
+        }
+      );
+    }
 
     emitChatSupportUpdate(chatSupport, { status: 'open' });
 

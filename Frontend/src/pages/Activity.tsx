@@ -1,27 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, User, Briefcase, CreditCard, Calendar, Filter, RefreshCw } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { 
+  Search, 
+  Shield, 
+  UserCheck, 
+  UserX, 
+  Ban, 
+  Clock, 
+  CheckCircle, 
+  XCircle, 
+  MessageSquare, 
+  CreditCard,
+  Calendar,
+  Activity as ActivityIcon,
+  Eye,
+  RefreshCw
+} from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 
-interface ActivityItem {
+const getInitials = (name: string): string => {
+  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
+  if (nameParts.length === 0) return '?';
+  return nameParts[0][0].toUpperCase();
+};
+
+interface AdminInfo {
   _id: string;
-  type: 'user_registered' | 'job_posted' | 'job_applied' | 'payment_completed' | 'fee_paid' | 'user_login';
-  description: string;
-  timestamp: Date;
-  userId?: {
-    name: string;
-    email: string;
-  };
-  jobId?: {
-    title: string;
-  };
-  metadata?: any;
+  name: string;
+  email: string;
+  userType?: string;
 }
 
-const ActivityPage: React.FC = () => {
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+interface TargetInfo {
+  _id: string;
+  name?: string;
+  email?: string;
+  title?: string;
+  subject?: string;
+}
+
+interface ActivityLog {
+  _id: string;
+  adminId: AdminInfo;
+  actionType: 'verification_approved' | 'verification_rejected' | 'user_restricted' | 'user_suspended' | 'user_banned' | 'user_unrestricted' | 'transaction_completed' | 'transaction_failed' | 'support_closed' | 'support_reopened' | 'admin_login';
+  description: string;
+  targetType?: 'user' | 'transaction' | 'support' | 'verification';
+  targetId?: TargetInfo;
+  metadata?: any;
+  ipAddress?: string;
+  createdAt: Date;
+}
+
+const Activity: React.FC = () => {
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [actionFilter, setActionFilter] = useState('all');
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchActivities();
@@ -30,246 +65,325 @@ const ActivityPage: React.FC = () => {
   const fetchActivities = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/dashboard/activity', {
+      const response = await fetch('/api/admin/activity-logs', {
         credentials: 'include'
       });
       
       if (response.ok) {
         const data = await response.json();
-        setActivities(data || []);
+        setActivities(data.logs || []);
       } else {
-        console.error('Failed to fetch activities:', response.status);
-        toast.error('Failed to load activities');
+        console.error('Failed to fetch activity logs:', response.status);
       }
     } catch (error) {
-      console.error('Failed to fetch activities:', error);
-      toast.error('Error loading activities');
+      console.error('Failed to fetch activity logs:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'user_registered':
-      case 'user_login':
-        return <User className="h-5 w-5" />;
-      case 'job_posted':
-      case 'job_applied':
-        return <Briefcase className="h-5 w-5" />;
-      case 'payment_completed':
-      case 'fee_paid':
-        return <CreditCard className="h-5 w-5" />;
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchActivities();
+    setRefreshing(false);
+    toast.success('Activity logs refreshed');
+  };
+
+  const getActionIcon = (actionType: string) => {
+    switch (actionType) {
+      case 'verification_approved':
+        return <UserCheck className="h-4 w-4" />;
+      case 'verification_rejected':
+        return <UserX className="h-4 w-4" />;
+      case 'user_restricted':
+        return <Shield className="h-4 w-4" />;
+      case 'user_suspended':
+        return <Clock className="h-4 w-4" />;
+      case 'user_banned':
+        return <Ban className="h-4 w-4" />;
+      case 'user_unrestricted':
+        return <UserCheck className="h-4 w-4" />;
+      case 'transaction_completed':
+        return <CheckCircle className="h-4 w-4" />;
+      case 'transaction_failed':
+        return <XCircle className="h-4 w-4" />;
+      case 'support_closed':
+        return <MessageSquare className="h-4 w-4" />;
+      case 'support_reopened':
+        return <MessageSquare className="h-4 w-4" />;
+      case 'admin_login':
+        return <Shield className="h-4 w-4" />;
       default:
-        return <Activity className="h-5 w-5" />;
+        return <ActivityIcon className="h-4 w-4" />;
     }
   };
 
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'user_registered':
-        return 'bg-green-100 text-green-600 border-green-200';
-      case 'user_login':
-        return 'bg-blue-100 text-blue-600 border-blue-200';
-      case 'job_posted':
-        return 'bg-purple-100 text-purple-600 border-purple-200';
-      case 'job_applied':
-        return 'bg-indigo-100 text-indigo-600 border-indigo-200';
-      case 'payment_completed':
-        return 'bg-emerald-100 text-emerald-600 border-emerald-200';
-      case 'fee_paid':
-        return 'bg-yellow-100 text-yellow-600 border-yellow-200';
+  const getActionColor = (actionType: string) => {
+    switch (actionType) {
+      case 'verification_approved':
+      case 'user_unrestricted':
+      case 'transaction_completed':
+        return 'bg-green-100 text-green-700';
+      case 'verification_rejected':
+      case 'transaction_failed':
+        return 'bg-red-100 text-red-700';
+      case 'user_restricted':
+        return 'bg-orange-100 text-orange-700';
+      case 'user_suspended':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'user_banned':
+        return 'bg-red-100 text-red-700';
+      case 'support_closed':
+        return 'bg-gray-100 text-gray-700';
+      case 'support_reopened':
+        return 'bg-blue-100 text-blue-700';
+      case 'admin_login':
+        return 'bg-purple-100 text-purple-700';
       default:
-        return 'bg-gray-100 text-gray-600 border-gray-200';
+        return 'bg-gray-100 text-gray-700';
     }
   };
 
-  const filteredActivities = typeFilter === 'all' 
-    ? activities 
-    : activities.filter(activity => activity.type === typeFilter);
+  const getActionLabel = (actionType: string) => {
+    const labels: Record<string, string> = {
+      verification_approved: 'Verification Approved',
+      verification_rejected: 'Verification Rejected',
+      user_restricted: 'User Restricted',
+      user_suspended: 'User Suspended',
+      user_banned: 'User Banned',
+      user_unrestricted: 'User Unrestricted',
+      transaction_completed: 'Transaction Completed',
+      transaction_failed: 'Transaction Failed',
+      support_closed: 'Support Closed',
+      support_reopened: 'Support Reopened',
+      admin_login: 'Admin Login'
+    };
+    return labels[actionType] || actionType;
+  };
 
-  const activityTypes = [
-    { value: 'all', label: 'All Activities' },
-    { value: 'user_registered', label: 'User Registrations' },
-    { value: 'user_login', label: 'User Logins' },
-    { value: 'job_posted', label: 'Job Postings' },
-    { value: 'job_applied', label: 'Job Applications' },
-    { value: 'payment_completed', label: 'Payments' },
-    { value: 'fee_paid', label: 'Fee Payments' }
-  ];
+  const filteredActivities = activities.filter(activity => {
+    const matchesSearch = 
+      activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      activity.adminId.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
+    
+    return matchesSearch && matchesAction;
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Header and Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <h2 className="text-xl font-semibold text-gray-900">Activity Feed</h2>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-600">API Mode</span>
-              </div>
-            </div>
-            <p className="text-sm text-gray-500">
-              Platform activity and events
-            </p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Activity Logs</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">{activities.length} total actions</p>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={fetchActivities}
-              disabled={loading}
-              className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-            
-            <Filter className="h-5 w-5 text-gray-500" />
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {activityTypes.map(type => (
-                <option key={type.value} value={type.value}>{type.label}</option>
-              ))}
-            </select>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
+            <input
+              type="text"
+              placeholder="Search by admin, description, or target..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            />
           </div>
+          
+          <select
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+          >
+            <option value="all">All Actions</option>
+            <option value="verification_approved">Verification Approved</option>
+            <option value="verification_rejected">Verification Rejected</option>
+            <option value="user_restricted">User Restricted</option>
+            <option value="user_suspended">User Suspended</option>
+            <option value="user_banned">User Banned</option>
+            <option value="user_unrestricted">User Unrestricted</option>
+            <option value="transaction_completed">Transaction Completed</option>
+            <option value="transaction_failed">Transaction Failed</option>
+            <option value="support_closed">Support Closed</option>
+            <option value="support_reopened">Support Reopened</option>
+            <option value="admin_login">Admin Login</option>
+          </select>
         </div>
       </div>
 
-      {/* Activity Timeline */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Loading activity feed...</p>
-          </div>
-        ) : filteredActivities.length === 0 ? (
-          <div className="p-8 text-center">
-            <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Activity Found</h3>
-            <p className="text-gray-500">No activities match your current filter.</p>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="flow-root">
-              <ul className="-mb-8">
-                {filteredActivities.map((activity, index) => (
-                  <li key={activity._id}>
-                    <div className="relative pb-8">
-                      {index !== filteredActivities.length - 1 && (
-                        <span
-                          className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <div className="relative flex space-x-3">
-                        <div className={`h-8 w-8 rounded-full border-2 flex items-center justify-center ${getActivityColor(activity.type)}`}>
-                          {getActivityIcon(activity.type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <p className="text-sm text-gray-900">
-                                {activity.description}
-                              </p>
-                              {activity.userId && (
-                                <p className="text-xs text-gray-500 mt-1">
-                                  by {activity.userId.name} ({activity.userId.email})
-                                </p>
-                              )}
-                              {activity.jobId && (
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Related to job: {activity.jobId.title}
-                                </p>
-                              )}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Loading activity logs...</p>
+              </div>
+            </div>
+          ) : filteredActivities.length === 0 ? (
+            <div className="bg-white p-12 text-center">
+              <div className="text-gray-400 mb-4">
+                <ActivityIcon className="h-12 w-12 mx-auto" />
+              </div>
+              <p className="text-gray-600 font-medium">No activity logs found</p>
+              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+            </div>
+          ) : (
+            <>
+              <div className="hidden md:block bg-white overflow-hidden">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Admin
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Action
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Target
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Date
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredActivities.map((activity) => (
+                      <tr key={activity._id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                              <span className="text-sm font-semibold text-gray-700">
+                                {getInitials(activity.adminId.name)}
+                              </span>
                             </div>
-                            <div className="text-right">
-                              <time className="text-xs text-gray-500">
-                                {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
-                              </time>
-                              <div className="text-xs text-gray-400 mt-1">
-                                {format(new Date(activity.timestamp), 'MMM d, yyyy HH:mm')}
+                            <div className="ml-3">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-semibold text-gray-900">{activity.adminId.name}</div>
+                                {activity.adminId.userType === 'superadmin' && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                                    Super Admin
+                                  </span>
+                                )}
                               </div>
+                              <div className="text-xs text-gray-500 truncate max-w-[150px]">{activity.adminId.email}</div>
                             </div>
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getActionColor(activity.actionType)}`}>
+                            {getActionIcon(activity.actionType)}
+                            {getActionLabel(activity.actionType)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900 max-w-[300px]">{activity.description}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {activity.targetId && (
+                            <div className="text-sm">
+                              <div className="font-medium text-gray-900 truncate max-w-[200px]">
+                                {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
+                              </div>
+                              {activity.targetId.email && (
+                                <div className="text-xs text-gray-500 truncate max-w-[200px]">{activity.targetId.email}</div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-xs text-gray-500">
+                            {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(activity.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="md:hidden px-4 py-4 space-y-3">
+                {filteredActivities.map((activity) => (
+                  <div 
+                    key={activity._id}
+                    className="bg-white rounded-lg border border-gray-200 p-4"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                        <span className="text-base font-semibold text-gray-700">
+                          {getInitials(activity.adminId.name)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-gray-900 truncate">{activity.adminId.name}</h3>
+                          {activity.adminId.userType === 'superadmin' && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700 flex-shrink-0">
+                              Super Admin
+                            </span>
+                          )}
                         </div>
+                        <p className="text-xs text-gray-500 truncate">{activity.adminId.email}</p>
                       </div>
                     </div>
-                  </li>
+
+                    <div className="mb-3">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getActionColor(activity.actionType)}`}>
+                        {getActionIcon(activity.actionType)}
+                        {getActionLabel(activity.actionType)}
+                      </span>
+                    </div>
+
+                    <p className="text-sm text-gray-900 mb-3">{activity.description}</p>
+
+                    {activity.targetId && (
+                      <div className="mb-3 pb-3 border-b border-gray-100">
+                        <p className="text-xs text-gray-500 mb-1">Target:</p>
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
+                        </p>
+                        {activity.targetId.email && (
+                          <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <Calendar className="h-3 w-3" />
+                      <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                    </div>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Activity Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-lg bg-green-100">
-              <User className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">User Activities</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {activities.filter(a => a.type.includes('user')).length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-lg bg-purple-100">
-              <Briefcase className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Job Activities</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {activities.filter(a => a.type.includes('job')).length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-lg bg-emerald-100">
-              <CreditCard className="h-6 w-6 text-emerald-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Payment Activities</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {activities.filter(a => a.type.includes('payment') || a.type.includes('fee')).length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-lg bg-blue-100">
-              <Calendar className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Today's Activities</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {activities.filter(a => {
-                  const today = new Date();
-                  const activityDate = new Date(a.timestamp);
-                  return activityDate.toDateString() === today.toDateString();
-                }).length}
-              </p>
-            </div>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-export default ActivityPage;
+export default Activity;

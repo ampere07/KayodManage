@@ -20,11 +20,26 @@ import {
   AlertCircle,
   Users,
   X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
+
+interface Application {
+  _id: string;
+  provider: {
+    _id: string;
+    name: string;
+    email: string;
+    phone?: string;
+  };
+  status: 'pending' | 'accepted' | 'rejected';
+  appliedAt: Date | string;
+  message?: string;
+}
 
 interface Job {
   _id: string;
@@ -44,9 +59,16 @@ interface Job {
   user?: {
     _id: string;
     name: string;
+    firstName?: string;
+    lastName?: string;
     email: string;
+    phone?: string;
+    location?: string;
+    barangay?: string;
+    city?: string;
     isVerified?: boolean;
     userType?: 'client' | 'provider';
+    profileImage?: string;
   };
   assignedTo?: {
     _id: string;
@@ -59,6 +81,7 @@ interface Job {
   paidAmount: number;
   paidAt?: Date | string;
   applicationCount: number;
+  applications?: Application[];
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -70,6 +93,38 @@ interface JobModalProps {
 }
 
 const JobDetailsModal: React.FC<JobModalProps> = ({ isOpen, onClose, job }) => {
+  const [showMediaAttachments, setShowMediaAttachments] = useState(false);
+  const [showApplicants, setShowApplicants] = useState(false);
+  const [applicants, setApplicants] = useState<Application[]>([]);
+  const [loadingApplicants, setLoadingApplicants] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  
+  useEffect(() => {
+    if (isOpen && job) {
+      fetchApplicants();
+    }
+  }, [isOpen, job]);
+
+  const fetchApplicants = async () => {
+    if (!job) return;
+    
+    try {
+      setLoadingApplicants(true);
+      const response = await fetch(`/api/jobs/${job._id}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setApplicants(data.applications || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch applicants:', error);
+    } finally {
+      setLoadingApplicants(false);
+    }
+  };
+  
   if (!isOpen || !job) return null;
 
   console.log('Job data in modal:', job);
@@ -140,13 +195,26 @@ const JobDetailsModal: React.FC<JobModalProps> = ({ isOpen, onClose, job }) => {
             <div className="border-t border-gray-300 mb-6 -mx-6" />
 
             <div className="flex items-center gap-4 pb-6">
-              <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
-                <span className="text-2xl font-semibold text-gray-700">
-                  {getInitials(job.user?.name || 'U')}
-                </span>
-              </div>
+              {job.user?.profileImage ? (
+                <img
+                  src={job.user.profileImage}
+                  alt={job.user.name}
+                  className="w-16 h-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
+                  <span className="text-2xl font-semibold text-gray-700">
+                    {getInitials(job.user?.name || 'U')}
+                  </span>
+                </div>
+              )}
               <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-900 mb-1">{job.user?.name || 'Unknown User'}</h4>
+                <h4 className="text-lg font-bold text-gray-900 mb-1">{job.user?.name || 'Unknown User'}</h4>
+                {(job.user?.firstName || job.user?.lastName) && (
+                  <p className="text-sm text-gray-600 mb-1">
+                    {job.user?.firstName || ''} {job.user?.lastName || ''}
+                  </p>
+                )}
                 <p className="text-sm text-gray-600 inline">Email: </p>
                 <p className="text-sm text-gray-900 inline">{job.user?.email || 'No email'}</p>
                 <p className="text-sm text-gray-900 mt-1">KYD:{job.user?._id?.slice(-6) || '000000'}</p>
@@ -160,58 +228,209 @@ const JobDetailsModal: React.FC<JobModalProps> = ({ isOpen, onClose, job }) => {
             <div className="border-t border-gray-300 -mx-6" />
             <div className="flex -mx-6">
               <div className="flex-1 py-6 px-6">
-                <p className="text-base font-normal text-gray-900 mb-2">Budget:</p>
+                <p className="text-base font-semibold text-gray-900 mb-2">Budget:</p>
                 <p className="text-base text-gray-700">{job.budget ? formatCurrency(job.budget) : 'Not specified'}</p>
               </div>
               <div className="border-l border-gray-300 flex-1 py-6 pl-4 pr-6">
-                <p className="text-base font-normal text-gray-900 mb-2">Applications:</p>
+                <p className="text-base font-semibold text-gray-900 mb-2">Applicants:</p>
                 <p className="text-base text-gray-700">{job.applicationCount || 0}</p>
               </div>
             </div>
             <div className="border-t border-gray-300 -mx-6" />
 
             <div className="mb-6 mt-6">
-              <p className="text-base font-normal text-gray-900 mb-2">Location:</p>
-              <p className="text-base text-gray-700">{job.locationDisplay || 'Not specified'}</p>
+              <p className="text-base font-semibold text-gray-900 mb-3">Contact Information:</p>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Address</p>
+                  <p className="text-sm text-gray-900">{job.locationDisplay || 'Location not specified'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Brgy#</p>
+                  <p className="text-sm text-gray-900">{job.user?.barangay || 'Not specified'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">City</p>
+                  <p className="text-sm text-gray-900">{job.user?.city || 'Not specified'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Phone #</p>
+                  <p className="text-sm text-gray-900">{job.user?.phone || 'Not provided'}</p>
+                </div>
+              </div>
             </div>
 
-            <div className="mb-6">
-              <p className="text-base font-normal text-gray-900 mb-2">Payment Method:</p>
-              <p className="text-base text-gray-700 capitalize">{job.paymentMethod}</p>
+            <div className="border-t border-gray-300 mb-6 -mx-6" />
+
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Job Posted On:</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {new Date(job.createdAt).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Category:</p>
+                <p className="text-sm font-medium text-gray-900 capitalize">{job.category}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Budget:</p>
+                <p className="text-sm font-medium text-gray-900">{job.budget ? formatCurrency(job.budget) : 'Not specified'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Payment Method:</p>
+                <p className="text-sm font-medium text-gray-900 capitalize">{job.paymentMethod}</p>
+              </div>
             </div>
 
-            <div className="mb-6">
-              <p className="text-base font-normal text-gray-900 mb-2">Posted:</p>
-              <p className="text-base text-gray-700">
-                {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-              </p>
-            </div>
-
-            <div className="mb-6">
-              <p className="text-base font-normal text-gray-900 mb-2">Category:</p>
-              <p className="text-base text-gray-700 capitalize">{job.category}</p>
-            </div>
+            <div className="border-t border-gray-300 mb-6 -mx-6" />
 
             <div>
-              <p className="text-base font-normal text-gray-900 mb-3">Media Attachments:</p>
-              <div className="grid grid-cols-2 gap-3">
-                {job.media && job.media.length > 0 ? (
-                  job.media.map((url, index) => (
-                    <div key={index} className="aspect-video border border-gray-300 rounded-lg overflow-hidden">
-                      <img
-                        src={url}
-                        alt={`Job media ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ))
+              <button
+                onClick={() => setShowMediaAttachments(!showMediaAttachments)}
+                className="w-full flex items-center justify-between text-base font-semibold text-gray-900 mb-3 hover:text-gray-700 transition-colors"
+              >
+                <span>Media Attachments ({job.media && job.media.length > 0 ? job.media.length : 0})</span>
+                {showMediaAttachments ? (
+                  <ChevronUp className="h-5 w-5" />
                 ) : (
-                  <>
-                    <div className="aspect-video border border-gray-300 rounded-lg bg-gray-50" />
-                    <div className="aspect-video border border-gray-300 rounded-lg bg-gray-50" />
-                  </>
+                  <ChevronDown className="h-5 w-5" />
                 )}
-              </div>
+              </button>
+              
+              {showMediaAttachments && (
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  {job.media && job.media.length > 0 ? (
+                    job.media.map((url, index) => (
+                      <div 
+                        key={index} 
+                        className="aspect-video border border-gray-300 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity group relative"
+                        onClick={() => setSelectedImageIndex(index)}
+                      >
+                        <img
+                          src={url}
+                          alt={`Job media ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                          <Eye className="text-white opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8" />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-2 text-center py-4 text-sm text-gray-500">
+                      No media attachments
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-300 mb-6 mt-6 -mx-6" />
+
+            <div>
+              <button
+                onClick={() => setShowApplicants(!showApplicants)}
+                className="w-full flex items-center justify-between text-base font-semibold text-gray-900 mb-3 hover:text-gray-700 transition-colors"
+              >
+                <span>Applicants ({applicants.length})</span>
+                {showApplicants ? (
+                  <ChevronUp className="h-5 w-5" />
+                ) : (
+                  <ChevronDown className="h-5 w-5" />
+                )}
+              </button>
+              
+              {showApplicants && (
+                <div className="mt-3">
+                  {loadingApplicants ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    </div>
+                  ) : applicants.length > 0 ? (
+                    <div className="space-y-3">
+                      {applicants.map((application) => (
+                        <div 
+                          key={application._id} 
+                          className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                <span className="text-sm font-semibold text-blue-700">
+                                  {getInitials(application.provider?.name || 'P')}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-gray-900">
+                                  {application.provider?.name || 'Unknown Provider'}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {application.provider?.email || 'No email'}
+                                </p>
+                              </div>
+                            </div>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                                application.status === 'accepted'
+                                  ? 'bg-green-100 text-green-700'
+                                  : application.status === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}
+                            >
+                              {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
+                            </span>
+                          </div>
+                          
+                          {application.provider?.phone && (
+                            <div className="mb-2">
+                              <p className="text-xs text-gray-500">Phone:</p>
+                              <p className="text-sm text-gray-900">{application.provider.phone}</p>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-500">
+                              Applied {formatDistanceToNow(new Date(application.appliedAt), { addSuffix: true })}
+                            </p>
+                            {application.status === 'pending' && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    // Handle accept application
+                                    console.log('Accept application:', application._id);
+                                  }}
+                                  className="px-3 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-md transition-colors"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    // Handle reject application
+                                    console.log('Reject application:', application._id);
+                                  }}
+                                  className="px-3 py-1 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-sm text-gray-500 border border-gray-200 rounded-lg bg-gray-50">
+                      No applicants yet
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -247,6 +466,7 @@ const Jobs: React.FC = () => {
   const [urgentFilter, setUrgentFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -465,7 +685,7 @@ const Jobs: React.FC = () => {
                       Job Title
                     </th>
                     <th className="w-[20%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Client
+                      Customer
                     </th>
                     <th className="w-[15%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Budget
@@ -503,11 +723,19 @@ const Jobs: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-semibold text-gray-700">
-                              {getInitials(job.user?.name || 'Unknown')}
-                            </span>
-                          </div>
+                          {job.user?.profileImage ? (
+                            <img
+                              src={job.user.profileImage}
+                              alt={job.user.name}
+                              className="h-8 w-8 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-semibold text-gray-700">
+                                {getInitials(job.user?.name || 'Unknown')}
+                              </span>
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">
                               {job.user?.name || 'Unknown User'}
@@ -548,7 +776,7 @@ const Jobs: React.FC = () => {
                           </p>
                           <div className="flex items-center gap-1 text-xs text-gray-400">
                             <Calendar className="h-3 w-3" />
-                            {new Date(job.createdAt).toLocaleDateString()}
+                            {new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                           </div>
                         </div>
                       </td>
@@ -596,13 +824,28 @@ const Jobs: React.FC = () => {
                     <div className="space-y-2 mb-3">
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-gray-900 truncate">
-                            {job.user?.name || 'Unknown User'}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {job.user?.email || 'No email'}
-                          </p>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {job.user?.profileImage ? (
+                            <img
+                              src={job.user.profileImage}
+                              alt={job.user.name}
+                              className="h-6 w-6 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-6 w-6 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-semibold text-gray-700">
+                                {getInitials(job.user?.name || 'Unknown')}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-900 truncate">
+                              {job.user?.name || 'Unknown User'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {job.user?.email || 'No email'}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
@@ -728,6 +971,69 @@ const Jobs: React.FC = () => {
         onClose={closeJobModal}
         job={selectedJob}
       />
+
+      {/* Image Lightbox Modal */}
+      {selectedJob && selectedJob.media && selectedJob.media.length > 0 && selectedImageIndex !== null && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-90 z-[60] transition-opacity"
+            onClick={() => setSelectedImageIndex(null)}
+          />
+          
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <button
+              onClick={() => setSelectedImageIndex(null)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors p-2 bg-black bg-opacity-50 rounded-full"
+              aria-label="Close image viewer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            {selectedJob.media.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedImageIndex((prev) => 
+                      prev === 0 ? selectedJob.media.length - 1 : prev! - 1
+                    );
+                  }}
+                  className="absolute left-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
+                  aria-label="Previous image"
+                >
+                  <ChevronDown className="w-6 h-6 rotate-90" />
+                </button>
+                
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedImageIndex((prev) => 
+                      prev === selectedJob.media.length - 1 ? 0 : prev! + 1
+                    );
+                  }}
+                  className="absolute right-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
+                  aria-label="Next image"
+                >
+                  <ChevronDown className="w-6 h-6 -rotate-90" />
+                </button>
+              </>
+            )}
+
+            <div className="max-w-7xl max-h-full w-full h-full flex items-center justify-center">
+              <img
+                src={selectedJob.media[selectedImageIndex]}
+                alt={`Job media ${selectedImageIndex + 1}`}
+                className="max-w-full max-h-full object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">
+              {selectedImageIndex + 1} / {selectedJob.media.length}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

@@ -40,18 +40,14 @@ const getJobs = async (req, res) => {
       query.isUrgent = true;
     }
     
-    console.log('Jobs query:', query);
-    
     // Fetch jobs and populate user virtuals
     const jobs = await Job.find(query)
-      .populate('user', 'name email userType')
-      .populate('assignedTo', 'name email userType')
+      .populate('userId', 'name email userType profileImage')
+      .populate('assignedToId', 'name email userType profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean({ virtuals: true });
-
-    console.log(`Found ${jobs.length} jobs`);
+      .lean();
     
     // Get job IDs for application count
     const jobIds = jobs.map(job => job._id);
@@ -62,8 +58,6 @@ const getJobs = async (req, res) => {
       { $group: { _id: '$job', count: { $sum: 1 } } }
     ]);
     
-    console.log(`Found application counts for ${applicationCounts.length} jobs`);
-    
     // Create a map of job ID to application count
     const countMap = {};
     applicationCounts.forEach(item => {
@@ -71,13 +65,28 @@ const getJobs = async (req, res) => {
     });
     
     // Add application count to each job
-    const jobsWithData = jobs.map(job => ({
-      ...job,
-      applicationCount: countMap[job._id.toString()] || 0,
-      locationDisplay: typeof job.location === 'object' ? 
-        job.location.address || job.location.city || 'Location not specified' : 
-        job.location || 'Location not specified'
-    }));
+    const jobsWithData = jobs.map(job => {
+      let locationDisplay = 'Location not specified';
+      
+      try {
+        if (job.location && typeof job.location === 'object') {
+          locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+        } else if (job.location && typeof job.location === 'string') {
+          locationDisplay = job.location;
+        }
+      } catch (err) {
+        console.error('Error parsing location for job:', job._id, err);
+        locationDisplay = 'Location not specified';
+      }
+      
+      return {
+        ...job,
+        user: job.userId,
+        assignedTo: job.assignedToId,
+        applicationCount: countMap[job._id.toString()] || 0,
+        locationDisplay
+      };
+    });
     
     const total = await Job.countDocuments(query);
     const pages = Math.ceil(total / limit);
@@ -93,7 +102,8 @@ const getJobs = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching jobs:', error);
-    res.status(500).json({ error: 'Failed to fetch jobs' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to fetch jobs', message: error.message });
   }
 };
 
@@ -102,9 +112,9 @@ const getJobDetails = async (req, res) => {
     const { jobId } = req.params;
     
     const job = await Job.findById(jobId)
-      .populate('user', 'name email phone userType')
-      .populate('assignedTo', 'name email phone userType')
-      .lean({ virtuals: true });
+      .populate('userId', 'name firstName lastName email phone userType profileImage location barangay city isVerified')
+      .populate('assignedToId', 'name email phone userType profileImage')
+      .lean();
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -116,12 +126,21 @@ const getJobDetails = async (req, res) => {
       .sort({ appliedAt: -1 })
       .lean();
     
-    const locationDisplay = typeof job.location === 'object' ? 
-      job.location.address || job.location.city || 'Location not specified' : 
-      job.location || 'Location not specified';
+    let locationDisplay = 'Location not specified';
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', jobId, err);
+    }
     
     const jobWithData = {
       ...job,
+      user: job.userId,
+      assignedTo: job.assignedToId,
       applications,
       applicationCount: applications.length,
       locationDisplay
@@ -130,7 +149,8 @@ const getJobDetails = async (req, res) => {
     res.json(jobWithData);
   } catch (error) {
     console.error('Error fetching job details:', error);
-    res.status(500).json({ error: 'Failed to fetch job details' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to fetch job details', message: error.message });
   }
 };
 
@@ -155,9 +175,9 @@ const updateJobStatus = async (req, res) => {
       updateData,
       { new: true }
     )
-    .populate('user', 'name email userType')
-    .populate('assignedTo', 'name email userType')
-    .lean({ virtuals: true });
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -165,12 +185,23 @@ const updateJobStatus = async (req, res) => {
     
     const applicationCount = await Application.countDocuments({ job: jobId });
     
+    let locationDisplay = 'Location not specified';
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', jobId, err);
+    }
+    
     const jobWithData = {
       ...job,
+      user: job.userId,
+      assignedTo: job.assignedToId,
       applicationCount,
-      locationDisplay: typeof job.location === 'object' ? 
-        job.location.address || job.location.city || 'Location not specified' : 
-        job.location || 'Location not specified'
+      locationDisplay
     };
     
     const { io } = require('../../server');
@@ -182,7 +213,8 @@ const updateJobStatus = async (req, res) => {
     res.json(jobWithData);
   } catch (error) {
     console.error('Error updating job status:', error);
-    res.status(500).json({ error: 'Failed to update job status' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to update job status', message: error.message });
   }
 };
 
@@ -199,9 +231,9 @@ const assignJobToProvider = async (req, res) => {
       },
       { new: true }
     )
-    .populate('user', 'name email userType')
-    .populate('assignedTo', 'name email userType')
-    .lean({ virtuals: true });
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
     
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -219,12 +251,23 @@ const assignJobToProvider = async (req, res) => {
     
     const applicationCount = await Application.countDocuments({ job: jobId });
     
+    let locationDisplay = 'Location not specified';
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', jobId, err);
+    }
+    
     const jobWithData = {
       ...job,
+      user: job.userId,
+      assignedTo: job.assignedToId,
       applicationCount,
-      locationDisplay: typeof job.location === 'object' ? 
-        job.location.address || job.location.city || 'Location not specified' : 
-        job.location || 'Location not specified'
+      locationDisplay
     };
     
     const { io } = require('../../server');
@@ -236,7 +279,8 @@ const assignJobToProvider = async (req, res) => {
     res.json(jobWithData);
   } catch (error) {
     console.error('Error assigning job:', error);
-    res.status(500).json({ error: 'Failed to assign job' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to assign job', message: error.message });
   }
 };
 

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const FeeRecord = require('../models/FeeRecord');
 const mongoose = require('mongoose');
+const { logActivity } = require('../utils/activityLogger');
 
 const getUsers = async (req, res) => {
   try {
@@ -11,6 +12,8 @@ const getUsers = async (req, res) => {
     
     const search = req.query.search;
     const status = req.query.status;
+    const userType = req.query.userType;
+    const restricted = req.query.restricted;
     
     let query = {};
     
@@ -35,6 +38,21 @@ const getUsers = async (req, res) => {
       query.accountStatus = 'active';
     }
     
+    // Filter by user type
+    if (userType === 'client') {
+      query.userType = 'client';
+    } else if (userType === 'provider') {
+      query.userType = 'provider';
+    }
+    
+    // Filter by restricted status
+    if (restricted === 'true') {
+      query.$or = [
+        { accountStatus: { $in: ['restricted', 'suspended', 'banned'] } },
+        { isRestricted: true }
+      ];
+    }
+    
     // Fetch users first
     const users = await User.find(query)
       .sort({ createdAt: -1 })
@@ -42,18 +60,14 @@ const getUsers = async (req, res) => {
       .limit(limit)
       .lean();
 
-    console.log(`Found ${users.length} users`); // Debug log
-
     // Get all user IDs
     const userIds = users.map(user => user._id);
     
     // Fetch wallets for these users
     const wallets = await Wallet.find({ user: { $in: userIds } }).lean();
-    console.log(`Found ${wallets.length} wallets`); // Debug log
 
     // Fetch fee records for these users  
     const feeRecords = await FeeRecord.find({ provider: { $in: userIds } }).lean();
-    console.log(`Found ${feeRecords.length} fee records`); // Debug log
     
     // Create lookup maps
     const walletMap = {};
@@ -75,8 +89,6 @@ const getUsers = async (req, res) => {
       const userId = user._id.toString();
       const wallet = walletMap[userId];
       const userFees = feeMap[userId] || [];
-      
-      console.log(`User ${user.name}: wallet=${!!wallet}, fees=${userFees.length}`); // Debug log
       
       // Create wallet data structure
       const walletData = {
@@ -206,6 +218,20 @@ const restrictUser = async (req, res) => {
 
     const userWithData = await getUserWithData(userId);
     
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        restricted ? 'user_restricted' : 'user_unrestricted',
+        restricted ? `Restricted user ${user.name}` : `Removed restrictions from ${user.name}`,
+        {
+          targetType: 'user',
+          targetId: userId,
+          targetModel: 'User',
+          ipAddress: req.ip
+        }
+      );
+    }
+    
     // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
@@ -256,6 +282,21 @@ const banUser = async (req, res) => {
     }
 
     const userWithData = await getUserWithData(userId);
+    
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'user_banned',
+        `Banned user ${user.name}`,
+        {
+          targetType: 'user',
+          targetId: userId,
+          targetModel: 'User',
+          metadata: { reason },
+          ipAddress: req.ip
+        }
+      );
+    }
     
     // Emit socket event for real-time update
     const { io } = require('../../server');
@@ -316,6 +357,21 @@ const suspendUser = async (req, res) => {
 
     const userWithData = await getUserWithData(userId);
     
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'user_suspended',
+        `Suspended user ${user.name} for ${duration} days`,
+        {
+          targetType: 'user',
+          targetId: userId,
+          targetModel: 'User',
+          metadata: { reason, duration, suspendedUntil },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
     // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
@@ -349,6 +405,20 @@ const unrestrictUser = async (req, res) => {
     }
 
     const userWithData = await getUserWithData(userId);
+    
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'user_unrestricted',
+        `Removed restrictions from ${user.name}`,
+        {
+          targetType: 'user',
+          targetId: userId,
+          targetModel: 'User',
+          ipAddress: req.ip
+        }
+      );
+    }
     
     // Emit socket event for real-time update
     const { io } = require('../../server');

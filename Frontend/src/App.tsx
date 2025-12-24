@@ -60,7 +60,10 @@ const AppContent: React.FC = () => {
     <Router>
       <Routes>
         <Route path="/" element={<Layout title="Dashboard"><Dashboard /></Layout>} />
-        <Route path="/users" element={<Layout title="Users"><Users /></Layout>} />
+        <Route path="/users" element={<Layout title="All Users"><Users /></Layout>} />
+        <Route path="/users/customers" element={<Layout title="Customers"><Users /></Layout>} />
+        <Route path="/users/providers" element={<Layout title="Service Providers"><Users /></Layout>} />
+        <Route path="/users/flagged" element={<Layout title="Flagged & Suspended"><Users /></Layout>} />
         <Route path="/jobs" element={<Layout title="Jobs"><Jobs /></Layout>} />
         <Route path="/transactions/fee-records" element={<Layout title="Fee Records"><Transactions /></Layout>} />
         <Route path="/transactions/top-up" element={<Layout title="Top-up Transactions"><Transactions /></Layout>} />

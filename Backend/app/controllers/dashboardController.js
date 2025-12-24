@@ -25,8 +25,13 @@ const getStats = async (req, res) => {
       status: { $in: ['pending', 'overdue'] } 
     });
     const pendingFees = pendingFeeRecords.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+    const pendingFeesCount = pendingFeeRecords.length;
 
     const newUsersToday = await User.countDocuments({ createdAt: { $gte: today } });
+    const newProvidersToday = await User.countDocuments({ 
+      usertype: 'provider',
+      createdAt: { $gte: today } 
+    });
     const completedJobsToday = await Job.countDocuments({ 
       status: 'completed', 
       completedAt: { $gte: today } 
@@ -42,8 +47,10 @@ const getStats = async (req, res) => {
       activeJobs,
       totalRevenue,
       pendingFees,
+      pendingFeesCount,
       onlineUsers,
       newUsersToday,
+      newProvidersToday,
       completedJobsToday,
       revenueToday
     };
@@ -90,14 +97,12 @@ const generateActivitiesFromData = async () => {
     const recentJobs = await Job.find()
       .sort({ createdAt: -1 })
       .limit(10)
-      .populate('user', 'name email')
-      .select('_id title user createdAt status');
+      .select('_id title client provider createdAt status');
 
     const recentTransactions = await Transaction.find({ status: 'completed' })
       .sort({ completedAt: -1 })
       .limit(10)
-      .populate('userId', 'name email')
-      .select('_id amount userId completedAt');
+      .select('_id amount from to completedAt');
 
     const generatedActivities = [];
 
@@ -107,12 +112,18 @@ const generateActivitiesFromData = async () => {
         type: 'user_registered',
         description: `${user.name} registered on the platform`,
         timestamp: user.createdAt,
-        userId: user,
+        userId: {
+          _id: user._id,
+          name: user.name,
+          email: user.email
+        },
         metadata: { generatedFromData: true }
       });
     }
 
     for (const job of recentJobs) {
+      const clientUser = job.client ? await User.findById(job.client).select('name email') : null;
+      
       generatedActivities.push({
         _id: `job_${job._id}`,
         type: job.status === 'completed' ? 'job_completed' : 'job_posted',
@@ -120,20 +131,33 @@ const generateActivitiesFromData = async () => {
           ? `Job "${job.title}" was completed`
           : `New job posted: "${job.title}"`,
         timestamp: job.createdAt,
-        userId: job.user,
-        jobId: job,
+        userId: clientUser ? {
+          _id: clientUser._id,
+          name: clientUser.name,
+          email: clientUser.email
+        } : null,
+        jobId: {
+          _id: job._id,
+          title: job.title
+        },
         metadata: { generatedFromData: true }
       });
     }
 
     for (const transaction of recentTransactions) {
-      if (transaction.userId) {
+      const fromUser = transaction.from ? await User.findById(transaction.from).select('name email') : null;
+      
+      if (fromUser) {
         generatedActivities.push({
           _id: `transaction_${transaction._id}`,
           type: 'payment_completed',
           description: `Payment of ₱${transaction.amount.toLocaleString()} completed`,
           timestamp: transaction.completedAt || transaction.createdAt,
-          userId: transaction.userId,
+          userId: {
+            _id: fromUser._id,
+            name: fromUser.name,
+            email: fromUser.email
+          },
           transactionId: transaction._id,
           metadata: { generatedFromData: true }
         });
@@ -284,12 +308,6 @@ const getRevenueChart = async (req, res) => {
     const days = parseInt(req.query.days) || 7;
     const chartData = [];
 
-    console.log(`[Revenue Chart] Fetching data for ${days} days`);
-
-    // Check if there are any completed transactions at all
-    const totalCompleted = await Transaction.countDocuments({ status: 'completed' });
-    console.log(`[Revenue Chart] Total completed transactions: ${totalCompleted}`);
-
     if (days <= 31) {
       for (let i = days - 1; i >= 0; i--) {
         const startDate = new Date();
@@ -311,8 +329,6 @@ const getRevenueChart = async (req, res) => {
         });
 
         const revenue = dayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-
-        console.log(`[Revenue Chart] ${startDate.toLocaleDateString()}: ${dayTransactions.length} transactions, Revenue: ${revenue}`);
 
         chartData.push({
           name: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -346,8 +362,6 @@ const getRevenueChart = async (req, res) => {
 
         const weekLabel = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
-        console.log(`[Revenue Chart] Week ${weekLabel}: ${weekTransactions.length} transactions, Revenue: ${revenue}`);
-
         chartData.push({
           name: weekLabel,
           revenue: revenue,
@@ -356,7 +370,6 @@ const getRevenueChart = async (req, res) => {
       }
     }
 
-    console.log(`[Revenue Chart] Returning ${chartData.length} data points`);
     res.json(chartData);
   } catch (error) {
     console.error('Error fetching revenue chart data:', error);

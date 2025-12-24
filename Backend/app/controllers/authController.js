@@ -1,41 +1,65 @@
+const User = require('../models/User');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
-const mongoose = require('mongoose');
 
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Simple admin authentication
-    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
-
-    if (username === adminUsername && password === adminPassword) {
-      // Generate a consistent adminId - use a fixed string for simplicity
-      // Since we're not using ObjectIds for admin assignment, we can use any unique string
-      const adminId = process.env.ADMIN_ID || `admin_${username}`;
-      
-      req.session.isAuthenticated = true;
-      req.session.role = 'admin';
-      req.session.username = username;
-      req.session.adminId = adminId;
-      req.session.userId = adminId; // Set userId to be compatible with middleware
-
-      res.json({
-        success: true,
-        message: 'Login successful',
-        user: {
-          username: username,
-          role: 'admin',
-          adminId: adminId
-        }
-      });
-    } else {
-      res.status(401).json({
+    const admin = await User.findOne({ 
+      email: username,
+      userType: { $in: ['admin', 'superadmin'] }
+    });
+    
+    if (!admin) {
+      return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
       });
     }
+
+    if (!admin.password) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials'
+      });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, admin.password);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials'
+      });
+    }
+
+    if (admin.accountStatus !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: 'Account is disabled'
+      });
+    }
+
+    admin.lastLogin = new Date();
+    await admin.save();
+      
+    req.session.isAuthenticated = true;
+    req.session.role = 'admin';
+    req.session.username = admin.email;
+    req.session.adminId = admin._id.toString();
+    req.session.userId = admin._id.toString();
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: admin._id,
+        username: admin.email,
+        name: admin.name,
+        email: admin.email,
+        role: 'admin'
+      }
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
