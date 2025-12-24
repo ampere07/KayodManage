@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
@@ -101,15 +102,80 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
   const [loadingVerification, setLoadingVerification] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | null>(null);
+  const [penaltyData, setPenaltyData] = useState({
+    totalPenalties: 0,
+    activeWarnings: 0,
+    lastPenalty: null as Date | null
+  });
+  const [loadingPenalties, setLoadingPenalties] = useState(false);
 
   useEffect(() => {
     if (isOpen && user?.isVerified) {
       fetchVerificationDetails();
     }
+    if (isOpen && user) {
+      fetchPenaltyData();
+    }
     if (!isOpen) {
       setConfirmingAction(null);
     }
   }, [isOpen, user]);
+
+  const fetchPenaltyData = async () => {
+    if (!user?._id) return;
+    
+    setLoadingPenalties(true);
+    try {
+      const response = await fetch(`/api/admin/activity-logs?targetId=${user._id}&limit=1000`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const logs = data.logs || [];
+        
+        console.log('Fetching penalties for user ID:', user._id);
+        console.log('All logs returned:', logs.length);
+        console.log('Sample logs:', logs.slice(0, 3));
+        
+        // Double-check: filter logs by matching targetId._id with user._id
+        const userLogs = logs.filter((log: any) => 
+          log.targetId?._id === user._id
+        );
+        
+        console.log('Logs matching user ID:', userLogs.length);
+        
+        // Filter penalty-related actions from user-specific logs
+        const penaltyActions = userLogs.filter((log: any) => 
+          ['user_restricted', 'user_suspended', 'user_banned'].includes(log.actionType)
+        );
+        
+        console.log('Penalty actions for this user:', penaltyActions);
+        console.log('Penalty count:', penaltyActions.length);
+        
+        // Count total penalties
+        const totalPenalties = penaltyActions.length;
+        
+        // Count active warnings (current account status is restricted)
+        const activeWarnings = user.accountStatus !== 'active' ? 1 : 0;
+        
+        // Get last penalty date
+        const lastPenalty = penaltyActions.length > 0 
+          ? new Date(penaltyActions[0].createdAt) 
+          : null;
+        
+        setPenaltyData({
+          totalPenalties,
+          activeWarnings,
+          lastPenalty
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching penalty data:', error);
+    } finally {
+      setLoadingPenalties(false);
+    }
+  };
 
   const fetchVerificationDetails = async () => {
     if (!user?._id) return;
@@ -144,6 +210,10 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     if (confirmingAction) {
       onAction(user!, confirmingAction);
       setConfirmingAction(null);
+      // Refresh penalty data after action
+      setTimeout(() => {
+        fetchPenaltyData();
+      }, 1000);
     }
   };
 
@@ -250,11 +320,10 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
           <div className="flex-1 flex flex-col">
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
+              <div className="space-y-2.5">
                 <p className="text-base text-gray-900"><span className="text-gray-600">First Name:</span> {firstName}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Age:</span> 22</p>
                 <p className="text-base text-gray-900"><span className="text-gray-600">Last Name:</span> {lastName}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Birthdate:</span> December 7, 2003</p>
+                <p className="text-base text-gray-900"><span className="text-gray-600">Date of Birth:</span> December 7, 2003</p>
               </div>
             </div>
 
@@ -306,6 +375,49 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 </>
               )}
             </div>
+            </div>
+
+            <div className="border-t border-gray-300 mb-6 -mx-6" />
+
+            <div className="flex-1 mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Penalty Tracker</h3>
+              {loadingPenalties ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Total Penalties:</p>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                      penaltyData.totalPenalties > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {penaltyData.totalPenalties}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Active Warnings:</p>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                      penaltyData.activeWarnings > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {penaltyData.activeWarnings}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Last Penalty:</p>
+                    <p className="text-sm text-gray-900">
+                      {penaltyData.lastPenalty 
+                        ? new Date(penaltyData.lastPenalty).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })
+                        : 'None'
+                      }
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -373,6 +485,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 };
 
 const Users: React.FC = () => {
+  const location = useLocation();
   const [users, setUsers] = useState<User[]>([]);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -380,16 +493,55 @@ const Users: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    pages: 0
+  });
+  
+  const getUserType = () => {
+    const path = location.pathname;
+    if (path === '/users/customers') return 'customers';
+    if (path === '/users/providers') return 'providers';
+    if (path === '/users/flagged') return 'flagged';
+    return 'all';
+  };
+  
+  const getPageTitle = () => {
+    const type = getUserType();
+    if (type === 'customers') return 'Customers';
+    if (type === 'providers') return 'Service Providers';
+    if (type === 'flagged') return 'Flagged & Suspended Users';
+    return 'All Users';
+  };
   
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/users', { credentials: 'include' });
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        ...(searchTerm && { search: searchTerm }),
+        ...(statusFilter !== 'all' && { status: statusFilter })
+      });
+
+      const userType = getUserType();
+      if (userType === 'customers') params.append('userType', 'client');
+      if (userType === 'providers') params.append('userType', 'provider');
+      if (userType === 'flagged') params.append('restricted', 'true');
+
+      const response = await fetch(`/api/users?${params}`, { credentials: 'include' });
       
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users || []);
         setUserStats(data.stats || null);
+        setPagination(prev => ({ 
+          ...prev, 
+          total: data.pagination?.total || 0,
+          pages: data.pagination?.pages || 1
+        }));
       } else {
         toast.error('Failed to load users');
       }
@@ -401,8 +553,12 @@ const Users: React.FC = () => {
   };
 
   useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [location.pathname, searchTerm, statusFilter]);
+
+  useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [pagination.page, location.pathname, searchTerm, statusFilter]);
   
   const isUserRestricted = (user: User) => {
     if (user.accountStatus) return user.accountStatus !== 'active';
@@ -424,18 +580,6 @@ const Users: React.FC = () => {
     }
     return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
   };
-  
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = !searchTerm || 
-      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || 
-      (statusFilter === 'suspended' && user.accountStatus === 'suspended') ||
-      (statusFilter === 'banned' && user.accountStatus === 'banned');
-    
-    return matchesSearch && matchesStatus;
-  });
 
   const handleUserAction = async (actionType: string, data: any = {}) => {
     if (!selectedUser) return;
@@ -529,9 +673,9 @@ const Users: React.FC = () => {
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Users</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getPageTitle()}</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
-              {userStats ? userStats.totalUsers : filteredUsers.length} total users
+              {pagination.total} {pagination.total === 1 ? 'user' : 'users'}
             </p>
           </div>
           
@@ -592,7 +736,7 @@ const Users: React.FC = () => {
                 <p className="text-gray-500">Loading users...</p>
               </div>
             </div>
-          ) : filteredUsers.length === 0 ? (
+          ) : users.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
                 <Search className="h-12 w-12 mx-auto" />
@@ -630,7 +774,7 @@ const Users: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredUsers.map((user) => {
+                    {users.map((user) => {
                       const overdueFees = getOverdueFees(user.fees);
                       const totalOverdue = overdueFees.reduce((sum, fee) => sum + fee.amount, 0);
                       const isRestricted = isUserRestricted(user);
@@ -737,8 +881,8 @@ const Users: React.FC = () => {
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(user.createdAt).toLocaleDateString()}
+                            <Calendar className="h-3 w-3" />
+                            {new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -808,7 +952,7 @@ const Users: React.FC = () => {
               </div>
 
               <div className="md:hidden px-4 py-4 space-y-3">
-                {filteredUsers.map((user) => {
+                {users.map((user) => {
                   const overdueFees = getOverdueFees(user.fees);
                   const totalOverdue = overdueFees.reduce((sum, fee) => sum + fee.amount, 0);
                   const isRestricted = isUserRestricted(user);
@@ -954,6 +1098,43 @@ const Users: React.FC = () => {
                   );
                 })}
               </div>
+
+              {pagination.pages > 1 && (
+                <div className="bg-white px-4 md:px-6 py-4 border-t border-gray-200">
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
+                        Showing{' '}
+                        <span className="font-medium">
+                          {((pagination.page - 1) * pagination.limit) + 1}
+                        </span>{' '}
+                        to{' '}
+                        <span className="font-medium">
+                          {Math.min(pagination.page * pagination.limit, pagination.total)}
+                        </span>{' '}
+                        of{' '}
+                        <span className="font-medium">{pagination.total}</span> results
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                        disabled={pagination.page === 1}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
+                        disabled={pagination.page === pagination.pages}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

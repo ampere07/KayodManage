@@ -595,7 +595,7 @@ const Support: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-xs text-gray-500">
-                            {new Date(chat.createdAt).toLocaleDateString()}
+                            {new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                             <Calendar className="h-3 w-3" />
@@ -660,7 +660,7 @@ const Support: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        <span>{new Date(chat.createdAt).toLocaleDateString()}</span>
+                        <span>{new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                       </div>
                     </div>
                   </div>

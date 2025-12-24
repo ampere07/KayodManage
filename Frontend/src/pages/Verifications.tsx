@@ -776,7 +776,6 @@ const Verifications: React.FC = () => {
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Submissions</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Documents</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Submitted</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -818,60 +817,11 @@ const Verifications: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-xs text-gray-500">
-                              {new Date(latestVerification.submittedAt).toLocaleDateString()}
+                              {new Date(latestVerification.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                               <Calendar className="h-3 w-3" />
                               {new Date(latestVerification.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                              {latestVerification.status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={async () => {
-                                      if (!window.confirm(`Approve verification for ${user.name}?`)) return;
-                                      try {
-                                        await handleStatusUpdate(latestVerification._id, 'approved', 'Quick approved');
-                                        toast.success('Verification approved');
-                                      } catch (error) {
-                                        toast.error('Failed to approve');
-                                      }
-                                    }}
-                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                    title="Approve"
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={async () => {
-                                      const reason = window.prompt('Reason for rejection:');
-                                      if (!reason || reason.trim() === '') {
-                                        toast.error('Rejection reason required');
-                                        return;
-                                      }
-                                      try {
-                                        await handleStatusUpdate(latestVerification._id, 'rejected', 'Quick rejected', reason.trim());
-                                        toast.success('Verification rejected');
-                                      } catch (error) {
-                                        toast.error('Failed to reject');
-                                      }
-                                    }}
-                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Reject"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                onClick={() => openModal(latestVerification)}
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                title="View details"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -919,55 +869,8 @@ const Verifications: React.FC = () => {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Submitted:</span>
-                          <span>{new Date(latestVerification.submittedAt).toLocaleDateString()}</span>
+                          <span>{new Date(latestVerification.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                         </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex gap-2">
-                          {latestVerification.status === 'pending' && (
-                            <>
-                              <button
-                                onClick={async () => {
-                                  if (!window.confirm(`Approve verification for ${user.name}?`)) return;
-                                  try {
-                                    await handleStatusUpdate(latestVerification._id, 'approved', 'Quick approved');
-                                    toast.success('Verification approved');
-                                  } catch (error) {
-                                    toast.error('Failed to approve');
-                                  }
-                                }}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  const reason = window.prompt('Reason for rejection:');
-                                  if (!reason || reason.trim() === '') {
-                                    toast.error('Rejection reason required');
-                                    return;
-                                  }
-                                  try {
-                                    await handleStatusUpdate(latestVerification._id, 'rejected', 'Quick rejected', reason.trim());
-                                    toast.success('Verification rejected');
-                                  } catch (error) {
-                                    toast.error('Failed to reject');
-                                  }
-                                }}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => openModal(latestVerification)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
                       </div>
                     </div>
                   );

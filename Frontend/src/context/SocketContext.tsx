@@ -19,8 +19,10 @@ interface DashboardStats {
   totalJobs: number;
   totalRevenue: number;
   pendingFees: number;
+  pendingFeesCount: number;
   onlineUsers: number;
   newUsersToday: number;
+  newProvidersToday: number;
   completedJobsToday: number;
   revenueToday: number;
   pendingTransactions: number;
@@ -101,7 +103,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error);
       setIsConnected(false);
     });
 

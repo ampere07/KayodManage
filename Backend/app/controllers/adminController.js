@@ -14,8 +14,6 @@ const getReportedPosts = async (req, res) => {
       sortOrder = 'desc' 
     } = req.query;
 
-    console.log('Fetching reported posts with params:', { status, page, limit, sortBy, sortOrder });
-
     // Build filter query
     let filterQuery = {};
     if (status !== 'all') {
@@ -49,8 +47,6 @@ const getReportedPosts = async (req, res) => {
     
     // Get summary statistics
     const summary = await ReportedPost.getReportsSummary();
-
-    console.log(`Found ${reportedPosts.length} reported posts out of ${totalCount} total`);
 
     // Format response data
     const formattedPosts = reportedPosts.map(post => {

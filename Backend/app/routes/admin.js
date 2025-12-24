@@ -14,7 +14,11 @@ const {
   getVerificationStats,
   getUserImages
 } = require('../controllers/verificationController');
+const {
+  getActivityLogs
+} = require('../controllers/activityLogController');
 const { adminAuth, authMiddleware } = require('../middleware/auth');
+const { autoApproveTopups } = require('../utils/autoApproveTopups');
 
 const router = express.Router();
 
@@ -32,5 +36,22 @@ router.get('/verifications/:verificationId', adminAuth, getVerificationById);
 router.patch('/verifications/:verificationId', adminAuth, updateVerificationStatus);
 
 router.get('/users/:userId/images', adminAuth, getUserImages);
+
+router.get('/activity-logs', adminAuth, getActivityLogs);
+
+// Manual trigger for auto-approving top-ups
+router.post('/approve-topups-now', adminAuth, async (req, res) => {
+  try {
+    const result = await autoApproveTopups();
+    res.json(result);
+  } catch (error) {
+    console.error('Error manually triggering top-up approval:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to approve top-ups',
+      details: error.message
+    });
+  }
+});
 
 module.exports = router;

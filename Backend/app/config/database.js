@@ -16,12 +16,7 @@ const connectDatabase = async () => {
       w: 'majority'
     });
 
-    console.log('✅ Connected to MongoDB successfully');
-    
-    // Log database name for confirmation
-    const dbName = mongoose.connection.db?.databaseName;
-    console.log(`📊 Connected to database: ${dbName}`);
-    
+    console.log('✅ MongoDB connected');
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
     process.exit(1);
@@ -31,23 +26,14 @@ const connectDatabase = async () => {
 const disconnectDatabase = async () => {
   try {
     await mongoose.disconnect();
-    console.log('✅ Disconnected from MongoDB');
   } catch (error) {
-    console.error('❌ Error disconnecting from MongoDB:', error);
+    console.error('❌ Error disconnecting from MongoDB:', error.message);
   }
 };
 
 // Handle connection events
-mongoose.connection.on('connected', () => {
-  console.log('🔗 Mongoose connected to MongoDB');
-});
-
 mongoose.connection.on('error', (error) => {
-  console.error('❌ Mongoose connection error:', error);
-});
-
-mongoose.connection.on('disconnected', () => {
-  console.log('🔌 Mongoose disconnected from MongoDB');
+  console.error('❌ Mongoose error:', error.message);
 });
 
 module.exports = { connectDatabase, disconnectDatabase };

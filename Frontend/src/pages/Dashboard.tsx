@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Briefcase, DollarSign, AlertTriangle, TrendingUp, Activity, Wifi, WifiOff, RefreshCw, ArrowUpRight, Clock } from 'lucide-react';
+import { Users, Briefcase, DollarSign, AlertTriangle, TrendingUp, Activity, Wifi, WifiOff, RefreshCw, ArrowUpRight, Clock, User } from 'lucide-react';
 import StatsCard from '../components/Dashboard/StatsCard';
 import ActivityFeed from '../components/Dashboard/ActivityFeed';
 import RevenueChart from '../components/Dashboard/RevenueChart';
@@ -64,12 +64,16 @@ const Dashboard: React.FC = () => {
     activeJobs: 0,
     totalRevenue: 0,
     pendingFees: 0,
+    pendingFeesCount: 0,
     onlineUsers: 0,
     newUsersToday: 0,
+    newProvidersToday: 0,
     completedJobsToday: 0,
     revenueToday: 0,
     pendingTransactions: 0
   };
+
+  console.log('[Dashboard] Current stats:', { pendingFees: stats.pendingFees, pendingFeesCount: stats.pendingFeesCount });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -131,68 +135,82 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {/* Total Users */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Users</h3>
+              <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
+            </div>
             <div className="p-2 rounded-lg bg-blue-50">
               <Users className="h-4 md:h-5 w-4 md:w-5 text-blue-600" />
             </div>
-            {stats.newUsersToday > 0 && (
-              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
-                <ArrowUpRight className="h-3 w-3" />
-                <span>+{stats.newUsersToday}</span>
-              </div>
-            )}
           </div>
-          <h3 className="text-gray-600 text-xs font-medium">Total Users</h3>
-          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
-          <p className="text-xs text-gray-500 mt-1">New today: {stats.newUsersToday}</p>
+          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
+            <div>
+              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Customers</h4>
+              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.customers?.toLocaleString() || '0'}</p>
+            </div>
+            <div>
+              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Providers</h4>
+              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.providers?.toLocaleString() || '0'}</p>
+            </div>
+          </div>
         </div>
 
         {/* Active Jobs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
+        <div 
+          onClick={() => navigate('/jobs?status=active')}
+          className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-green-300"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Jobs</h3>
+              <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
+            </div>
             <div className="p-2 rounded-lg bg-green-50">
               <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-green-600" />
             </div>
-            {stats.completedJobsToday > 0 && (
-              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
-                <ArrowUpRight className="h-3 w-3" />
-                <span>{stats.completedJobsToday}</span>
-              </div>
-            )}
           </div>
-          <h3 className="text-gray-600 text-xs font-medium">Active Jobs</h3>
-          <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
-          <p className="text-xs text-gray-500 mt-1">Completed today: {stats.completedJobsToday}</p>
+          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
+            <div>
+              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Created Today</h4>
+              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.createdJobsToday?.toLocaleString() || '0'}</p>
+            </div>
+            <div>
+              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Completed Today</h4>
+              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.completedJobsToday?.toLocaleString() || '0'}</p>
+            </div>
+          </div>
         </div>
 
         {/* Total Revenue */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h3 className="text-gray-600 text-sm font-medium mb-2">Total Revenue</h3>
+              <p className="text-2xl md:text-3xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+            </div>
             <div className="p-2 rounded-lg bg-purple-50">
               <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-purple-600" />
             </div>
-            {stats.revenueToday > 0 && (
-              <div className="flex items-center space-x-0.5 text-green-600 text-xs font-medium">
-                <ArrowUpRight className="h-3 w-3" />
-                <span>{formatCurrency(stats.revenueToday)}</span>
-              </div>
-            )}
           </div>
-          <h3 className="text-gray-600 text-xs font-medium">Total Revenue</h3>
-          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
-          <p className="text-xs text-gray-500 mt-1">Today: {formatCurrency(stats.revenueToday)}</p>
+          <p className="text-sm text-gray-600">Revenue Today {formatCurrency(stats.revenueToday)}</p>
         </div>
 
         {/* Pending Fees */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
+        <div 
+          onClick={() => navigate('/transactions/fee-records?status=pending')}
+          className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-red-300"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Pending Fees</h3>
+              <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
+            </div>
             <div className="p-2 rounded-lg bg-red-50">
               <AlertTriangle className="h-4 md:h-5 w-4 md:w-5 text-red-600" />
             </div>
           </div>
-          <h3 className="text-gray-600 text-xs font-medium">Pending Fees</h3>
-          <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
-          <p className="text-xs text-gray-500 mt-1">Requires attention</p>
+          <p className="text-xs text-gray-500">Requires attention ({stats.pendingFeesCount || 0} pending)</p>
         </div>
       </div>
 
@@ -210,26 +228,26 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-3 md:p-4">
+        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-3 md:p-4">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-blue-500 shadow">
-              <TrendingUp className="h-4 md:h-5 w-4 md:w-5 text-white" />
+            <div className="p-2 rounded-lg bg-purple-500 shadow">
+              <User className="h-4 md:h-5 w-4 md:w-5 text-white" />
             </div>
             <div>
-              <h3 className="text-gray-600 text-xs font-medium">New Users Today</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newUsersToday.toLocaleString()}</p>
+              <h3 className="text-gray-600 text-xs font-medium">New Customers Today</h3>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newCustomersToday?.toLocaleString() || '0'}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-3 md:p-4">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-3 md:p-4">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-purple-500 shadow">
-              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-white" />
+            <div className="p-2 rounded-lg bg-blue-500 shadow">
+              <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-white" />
             </div>
             <div>
-              <h3 className="text-gray-600 text-xs font-medium">Revenue Today</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{formatCurrency(stats.revenueToday)}</p>
+              <h3 className="text-gray-600 text-xs font-medium">New Provider Applicants</h3>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{(stats.newProvidersToday || 0).toLocaleString()}</p>
             </div>
           </div>
         </div>

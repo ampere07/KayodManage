@@ -26,13 +26,20 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
+  const [isUsersOpen, setIsUsersOpen] = useState(false);
   const location = useLocation();
   const { logout, user } = useAuth();
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Users', href: '/users', icon: Users },
     { name: 'Jobs', href: '/jobs', icon: Briefcase },
+  ];
+
+  const userItems = [
+    { name: 'All Users', href: '/users' },
+    { name: 'Customers', href: '/users/customers' },
+    { name: 'Service Providers', href: '/users/providers' },
+    { name: 'Flagged & Suspended', href: '/users/flagged' }
   ];
 
   const transactionItems = [
@@ -54,6 +61,9 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     if (location.pathname.startsWith('/transactions')) {
       setIsTransactionsOpen(true);
     }
+    if (location.pathname.startsWith('/users')) {
+      setIsUsersOpen(true);
+    }
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -61,6 +71,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   };
 
   const isTransactionPage = location.pathname.startsWith('/transactions');
+  const isUserPage = location.pathname.startsWith('/users');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -94,6 +105,50 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsUsersOpen(!isUsersOpen)}
+                  className={`w-full group flex items-center justify-between px-2 py-2 text-base font-medium rounded-md transition-colors ${
+                    isUserPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Users className={`mr-4 h-6 w-6 ${isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Users</span>
+                  </div>
+                  {isUsersOpen ? (
+                    <ChevronDown className="h-5 w-5" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5" />
+                  )}
+                </button>
+                
+                {isUsersOpen && (
+                  <div className="ml-11 mt-1 space-y-1">
+                    {userItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                          onClick={() => setSidebarOpen(false)}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <button
@@ -204,6 +259,49 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsUsersOpen(!isUsersOpen)}
+                  className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isUserPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Users className={`mr-3 h-5 w-5 ${isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Users</span>
+                  </div>
+                  {isUsersOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+                
+                {isUsersOpen && (
+                  <div className="ml-10 mt-1 space-y-1">
+                    {userItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <button

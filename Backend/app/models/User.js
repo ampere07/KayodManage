@@ -14,10 +14,21 @@ const UserSchema = new Schema({
     lowercase: true,
     trim: true
   },
+  password: {
+    type: String,
+    required: function() { 
+      return this.userType === 'admin' || this.userType === 'superadmin';
+    }
+  },
   phone: {
     type: String,
     required: true,
     trim: true
+  },
+  userType: {
+    type: String,
+    enum: ['client', 'provider', 'admin', 'superadmin'],
+    default: 'client'
   },
   location: {
     type: String,
@@ -28,6 +39,14 @@ const UserSchema = new Schema({
     type: String,
     trim: true
   }],
+  profileImage: {
+    type: String,
+    default: null
+  },
+  profileImagePublicId: {
+    type: String,
+    default: null
+  },
   isVerified: {
     type: Boolean,
     default: false
@@ -50,7 +69,7 @@ const UserSchema = new Schema({
     },
     restrictedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'Admin',
+      ref: 'User',
       required: false
     },
     restrictedAt: {
