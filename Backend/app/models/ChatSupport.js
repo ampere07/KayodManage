@@ -29,6 +29,45 @@ const chatSupportSchema = new mongoose.Schema({
     enum: ['open', 'closed'],
     default: 'open'
   },
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null
+  },
+  acceptedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null
+  },
+  acceptedAt: {
+    type: Date,
+    default: null
+  },
+  closedAt: {
+    type: Date,
+    default: null
+  },
+  statusHistory: [{
+    status: {
+      type: String,
+      enum: ['resolved', 'reopened'],
+      required: true
+    },
+    performedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin'
+    },
+    performedByName: {
+      type: String
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    reason: {
+      type: String
+    }
+  }],
   messages: [{
     senderId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -57,6 +57,10 @@ const Activity: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20
+  });
 
   useEffect(() => {
     fetchActivities();
@@ -174,6 +178,19 @@ const Activity: React.FC = () => {
     return matchesSearch && matchesAction;
   });
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [searchTerm, actionFilter]);
+
+  // Paginate filtered activities
+  const paginatedActivities = filteredActivities.slice(
+    (pagination.page - 1) * pagination.limit,
+    pagination.page * pagination.limit
+  );
+
+  const totalPages = Math.ceil(filteredActivities.length / pagination.limit);
+
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
@@ -245,9 +262,9 @@ const Activity: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white overflow-hidden">
+              <div className="hidden md:block bg-white">
                 <table className="min-w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Admin
@@ -267,7 +284,7 @@ const Activity: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredActivities.map((activity) => (
+                    {paginatedActivities.map((activity) => (
                       <tr key={activity._id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -326,7 +343,7 @@ const Activity: React.FC = () => {
               </div>
 
               <div className="md:hidden px-4 py-4 space-y-3">
-                {filteredActivities.map((activity) => (
+                {paginatedActivities.map((activity) => (
                   <div 
                     key={activity._id}
                     className="bg-white rounded-lg border border-gray-200 p-4"
@@ -376,8 +393,46 @@ const Activity: React.FC = () => {
                       <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
                     </div>
                   </div>
-                ))}
+                ))}  
               </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
+                        Showing{' '}
+                        <span className="font-medium">
+                          {((pagination.page - 1) * pagination.limit) + 1}
+                        </span>{' '}
+                        to{' '}
+                        <span className="font-medium">
+                          {Math.min(pagination.page * pagination.limit, filteredActivities.length)}
+                        </span>{' '}
+                        of{' '}
+                        <span className="font-medium">{filteredActivities.length}</span> results
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                        disabled={pagination.page === 1}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+                        disabled={pagination.page === totalPages}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
