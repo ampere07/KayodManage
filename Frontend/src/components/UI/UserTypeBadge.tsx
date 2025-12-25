@@ -1,5 +1,5 @@
 import React from 'react';
-import { Briefcase, User } from 'lucide-react';
+import { Briefcase, User, Shield, Crown } from 'lucide-react';
 
 interface UserTypeBadgeProps {
   userType: string;
@@ -16,10 +16,20 @@ const UserTypeBadge: React.FC<UserTypeBadgeProps> = ({ userType }) => {
       bg: 'bg-purple-100',
       text: 'text-purple-700',
       icon: User
+    },
+    admin: {
+      bg: 'bg-orange-100',
+      text: 'text-orange-700',
+      icon: Shield
+    },
+    superadmin: {
+      bg: 'bg-red-100',
+      text: 'text-red-700',
+      icon: Crown
     }
   };
 
-  const config = configs[userType.toLowerCase() as keyof typeof configs] || configs.provider;
+  const config = configs[userType.toLowerCase() as keyof typeof configs] || configs.client;
   const Icon = config.icon;
 
   return (

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Shield, 
   User, 
@@ -8,61 +9,34 @@ import {
   Image,
   Calendar,
   AlertCircle,
-  Search,
-  RefreshCw,
-  ChevronLeft,
-  FileText,
-  X
+  Search
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import apiClient, { isNetworkError } from '../utils/apiClient';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import ClickableImage from '../components/UI/ClickableImage';
+import { isNetworkError } from '../utils/apiClient';
+import { verificationsService } from '../services';
+import { VerificationDetailsModal } from '../components/Modals';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
-import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
+import type { Verification, UserInfo } from '../types';
 
-interface UserInfo {
-  _id: string;
-  name: string;
-  email: string;
-  userType: string;
-  profileImage?: string;
-}
-
-interface VerificationDocument {
-  cloudinaryUrl: string;
-  publicId: string;
-  uploadedAt: string;
-  originalName?: string;
-  type?: string;
-}
-
-interface Verification {
-  _id: string;
-  userId: UserInfo;
-  faceVerification: VerificationDocument;
-  validId: VerificationDocument & { type: string };
-  credentials: VerificationDocument[];
-  status: 'approved' | 'rejected' | 'pending';
-  submittedAt: string;
-  reviewedAt?: string;
-  reviewedBy?: UserInfo;
-  adminNotes?: string;
-  rejectionReason?: string;
-  verificationAttempts: number;
-}
+const getInitials = (name: string): string => {
+  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
+  if (nameParts.length === 0) return '?';
+  return nameParts[0][0].toUpperCase();
+};
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const configs = {
     approved: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
     rejected: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
-    pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle }
+    pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
+    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle }
   };
 
   const config = configs[status as keyof typeof configs] || configs.pending;
   const Icon = config.icon;
 
-  const displayStatus = status.charAt(0).toUpperCase() + status.slice(1);
+  const displayStatus = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
@@ -70,12 +44,6 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
       {displayStatus}
     </span>
   );
-};
-
-const getInitials = (name: string): string => {
-  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
-  if (nameParts.length === 0) return '?';
-  return nameParts[0][0].toUpperCase();
 };
 
 const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
@@ -104,469 +72,63 @@ const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ u
   );
 };
 
-const UserDetailModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  verification: Verification | null;
-  onStatusUpdate: (verificationId: string, status: string, notes?: string, reason?: string) => Promise<void>;
-}> = ({ isOpen, onClose, verification, onStatusUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'face' | 'credentials'>('face');
-  const [updating, setUpdating] = useState(false);
-
-  if (!isOpen || !verification) return null;
-
-  const user = verification.userId;
-
-  const handleQuickApprove = async () => {
-    if (!window.confirm('Are you sure you want to approve this verification?')) {
-      return;
-    }
-
-    setUpdating(true);
-    try {
-      await onStatusUpdate(verification._id, 'approved', 'Approved by admin');
-      toast.success('Verification approved successfully');
-    } catch (error) {
-      toast.error('Failed to approve verification');
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const handleQuickReject = async () => {
-    const reason = window.prompt('Please provide a reason for rejection:');
-    if (!reason || reason.trim() === '') {
-      toast.error('Rejection reason is required');
-      return;
-    }
-
-    setUpdating(true);
-    try {
-      await onStatusUpdate(verification._id, 'rejected', 'Rejected by admin', reason.trim());
-      toast.success('Verification rejected');
-    } catch (error) {
-      toast.error('Failed to reject verification');
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const getIdTypeLabel = (type: string) => {
-    const types: Record<string, string> = {
-      national_id: 'National ID',
-      passport: 'Passport',
-      drivers_license: "Driver's License",
-      voter_id: "Voter's ID",
-      other: 'Other Government ID'
-    };
-    return types[type] || type;
-  };
-
-  const getValidIdType = () => {
-    if (Array.isArray(verification.validId)) {
-      return verification.validId[0]?.type || 'ID';
-    }
-    return verification.validId?.type || 'ID';
-  };
-
-  return (
-    <>
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
-        onClick={onClose}
-      />
-      
-      <div className={`fixed inset-0 md:left-64 bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}>
-        <div className="h-full flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-lg font-semibold text-gray-900">Verification Details</h3>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-hidden flex">
-            {/* Left Column - User Information */}
-            <div className="w-[400px] flex-shrink-0 border-r border-gray-200 bg-gray-50 overflow-y-auto">
-              <div className="p-6 flex flex-col h-full">
-                {/* User Avatar and Basic Info */}
-                <div className="mb-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex-shrink-0">
-                        <UserAvatar user={user} size="lg" />
-                      </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h4>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-600">KYD:</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(user._id);
-                              toast.success('KYD copied to clipboard');
-                            }}
-                            className="text-xs text-gray-600 hover:text-blue-600 cursor-pointer transition-colors truncate"
-                            title="Click to copy"
-                          >
-                            {user._id}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <VerificationStatusBadge isVerified={verification.status === 'approved'} size="md" />
-                      <UserTypeBadge userType={user.userType} size="md" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-                {/* Personal Information */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">First Name:</span> {user.name.split(' ')[0]}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Age:</span> N/A
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Last Name:</span> {user.name.split(' ').slice(1).join(' ') || user.name.split(' ')[0]}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Birthdate:</span> N/A
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-                {/* Contact */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact</h3>
-                  <div className="space-y-2.5">
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Email Address:</span> {user.email}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Contact Number:</span> N/A
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Location:</span> N/A
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-                {/* Other Information */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Other Information</h3>
-                  <div className="space-y-2.5">
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Verification Status:</span>{' '}
-                      {verification.status === 'approved' ? 'Verified' : verification.status === 'rejected' ? 'Rejected' : 'Pending'}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Verified By:</span>{' '}
-                      {verification.reviewedBy ? verification.reviewedBy.name : 'N/A'}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Verification Date:</span>{' '}
-                      {verification.reviewedAt ? new Date(verification.reviewedAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      }) : 'N/A'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="mt-auto pt-3">
-                  <div className="border-t border-gray-300 -mx-6 mb-6" />
-                  {verification.status === 'pending' ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleQuickApprove}
-                        disabled={updating}
-                        className="flex-1 px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                      >
-                        <CheckCircle className="inline-block w-5 h-5 mr-2" />
-                        Approve
-                      </button>
-                      <button
-                        onClick={handleQuickReject}
-                        disabled={updating}
-                        className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-                      >
-                        <XCircle className="inline-block w-5 h-5 mr-2" />
-                        Reject
-                      </button>
-                    </div>
-                  ) : verification.status === 'approved' ? (
-                    <div className="rounded-lg p-3 flex items-center justify-center gap-2.5">
-                      <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle className="w-5 h-5 text-green-600" strokeWidth={2.5} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-green-700">Verified and Approved</p>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Verification Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Top Navigation Tabs */}
-              <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-                <div className="grid grid-cols-2">
-                  <button
-                    onClick={() => setActiveTab('face')}
-                    className={`px-6 py-3 text-sm font-medium transition-colors ${
-                      activeTab === 'face'
-                        ? 'bg-gray-200 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    Face Verification
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('credentials')}
-                    className={`px-6 py-3 text-sm font-medium transition-colors ${
-                      activeTab === 'credentials'
-                        ? 'bg-gray-200 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    Certificates/Credentials ({verification.credentials.length})
-                  </button>
-                </div>
-              </div>
-
-              {/* Content Area - Images */}
-              <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-                <div className="max-w-3xl mx-auto">
-                  {activeTab === 'face' && (
-                    <div className="space-y-8">
-                      {/* Face Verification Images */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-4">
-                          <h3 className="text-base font-semibold text-gray-900">Face Verification</h3>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4">
-                          {Array.isArray(verification.faceVerification) && verification.faceVerification.length > 0 ? (
-                            <>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Left Side</p>
-                                {verification.faceVerification[0] ? (
-                                  <ClickableImage
-                                    src={verification.faceVerification[0].cloudinaryUrl}
-                                    alt="Face Left Side"
-                                    className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
-                                    imageType="face"
-                                    title={`Face Verification - ${user.name}`}
-                                  />
-                                ) : (
-                                  <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                    <p className="text-gray-400 text-sm">No image</p>
-                                  </div>
-                                )}
-                              </div>
-                              {/* Front */}
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Front</p>
-                                {verification.faceVerification[1] ? (
-                                  <ClickableImage
-                                    src={verification.faceVerification[1].cloudinaryUrl}
-                                    alt="Face Front"
-                                    className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
-                                    imageType="face"
-                                    title={`Face Verification - ${user.name}`}
-                                  />
-                                ) : (
-                                  <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                    <p className="text-gray-400 text-sm">No image</p>
-                                  </div>
-                                )}
-                              </div>
-                              {/* Right Side */}
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Right Side</p>
-                                {verification.faceVerification[2] ? (
-                                  <ClickableImage
-                                    src={verification.faceVerification[2].cloudinaryUrl}
-                                    alt="Face Right Side"
-                                    className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
-                                    imageType="face"
-                                    title={`Face Verification - ${user.name}`}
-                                  />
-                                ) : (
-                                  <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                    <p className="text-gray-400 text-sm">No image</p>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          ) : verification.faceVerification && !Array.isArray(verification.faceVerification) ? (
-                            <>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Left Side</p>
-                                <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                  <p className="text-gray-400 text-sm">No image</p>
-                                </div>
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Front</p>
-                                <ClickableImage
-                                  src={verification.faceVerification.cloudinaryUrl}
-                                  alt="Face Verification"
-                                  className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
-                                  imageType="face"
-                                  title={`Face Verification - ${user.name}`}
-                                />
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Right Side</p>
-                                <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                  <p className="text-gray-400 text-sm">No image</p>
-                                </div>
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-center py-12 text-gray-500 col-span-3">No face verification uploaded</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Identification Card */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-4">
-                          <h3 className="text-base font-semibold text-gray-900">Identification Card</h3>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          {Array.isArray(verification.validId) && verification.validId.length > 0 ? (
-                            <>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Front</p>
-                                {verification.validId[0] ? (
-                                  <ClickableImage
-                                    src={verification.validId[0].cloudinaryUrl}
-                                    alt="ID Front"
-                                    className="w-full h-64 object-cover rounded-lg shadow-md bg-gray-100"
-                                    imageType="id"
-                                    title={`Valid ID - ${user.name}`}
-                                  />
-                                ) : (
-                                  <div className="w-full h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                    <p className="text-gray-400 text-sm">No image</p>
-                                  </div>
-                                )}
-                              </div>
-                              {/* Back */}
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Back</p>
-                                {verification.validId[1] ? (
-                                  <ClickableImage
-                                    src={verification.validId[1].cloudinaryUrl}
-                                    alt="ID Back"
-                                    className="w-full h-64 object-cover rounded-lg shadow-md bg-gray-100"
-                                    imageType="id"
-                                    title={`Valid ID - ${user.name}`}
-                                  />
-                                ) : (
-                                  <div className="w-full h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                    <p className="text-gray-400 text-sm">No image</p>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          ) : verification.validId && !Array.isArray(verification.validId) ? (
-                            <>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Front</p>
-                                <ClickableImage
-                                  src={verification.validId.cloudinaryUrl}
-                                  alt="Valid ID"
-                                  className="w-full h-64 object-cover rounded-lg shadow-md bg-gray-100"
-                                  imageType="id"
-                                  title={`Valid ID - ${user.name}`}
-                                />
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Back</p>
-                                <div className="w-full h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                                  <p className="text-gray-400 text-sm">No image</p>
-                                </div>
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-center py-12 text-gray-500 col-span-2">No valid ID uploaded</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeTab === 'credentials' && (
-                    <div className="h-full">
-                      {verification.credentials.length > 0 ? (
-                        <div className="overflow-x-auto pb-4">
-                          <div className="flex gap-6 min-w-min">
-                            {verification.credentials.map((credential, index) => (
-                              <div key={index} className="flex-shrink-0" style={{ width: '500px' }}>
-                                <p className="text-sm font-medium text-gray-700 mb-2">{credential.originalName || `Credential ${index + 1}`}</p>
-                                <ClickableImage
-                                  src={credential.cloudinaryUrl}
-                                  alt={credential.originalName || `Credential ${index + 1}`}
-                                  className="w-full h-[600px] object-cover rounded-lg shadow-md bg-gray-100"
-                                  imageType="credential"
-                                  title={`${credential.originalName || `Credential ${index + 1}`} - ${user.name}`}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-center py-12 text-gray-500">No credentials uploaded</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
 const Verifications: React.FC = () => {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightedRowRef = useRef<HTMLTableRowElement>(null);
+  const [highlightedUserId, setHighlightedUserId] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20
+  });
 
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
       fetchVerifications();
     }
   }, [isAuthenticated, authLoading]);
+
+  // Handle id/verificationId from URL params
+  useEffect(() => {
+    const id = searchParams.get('id');
+    const verificationId = searchParams.get('verificationId');
+    const targetId = id || verificationId;
+    
+    if (targetId && verifications.length > 0) {
+      // Find verification by ID or by userId
+      const verification = verifications.find(v => 
+        v._id === targetId || v.userId?._id === targetId
+      );
+      
+      if (verification) {
+        // Set the highlighted user
+        setHighlightedUserId(verification.userId?._id || null);
+        
+        // Open the modal automatically
+        setSelectedVerification(verification);
+        setModalOpen(true);
+        
+        // Scroll to the highlighted row after a short delay
+        setTimeout(() => {
+          highlightedRowRef.current?.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }, 300);
+        
+        // Clear the URL parameter after processing
+        searchParams.delete('id');
+        searchParams.delete('verificationId');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [verifications, searchParams, setSearchParams]);
 
   const fetchVerifications = async () => {
     try {
@@ -576,10 +138,10 @@ const Verifications: React.FC = () => {
         return;
       }
 
-      const response = await apiClient.get('/api/admin/verifications');
+      const data = await verificationsService.getAllVerifications();
       
-      if (response.data.success) {
-        setVerifications(response.data.data || []);
+      if (data.success) {
+        setVerifications(data.data || []);
       }
     } catch (error: any) {
       const isNetworkErrorDetected = isNetworkError(error);
@@ -594,13 +156,6 @@ const Verifications: React.FC = () => {
     }
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchVerifications();
-    setRefreshing(false);
-    toast.success('Verifications refreshed');
-  };
-
   const handleStatusUpdate = async (
     verificationId: string, 
     status: string, 
@@ -612,20 +167,17 @@ const Verifications: React.FC = () => {
         throw new Error('Please login to perform this action');
       }
 
-      const response = await apiClient.patch(
-        `/api/admin/verifications/${verificationId}`,
-        {
-          status,
-          adminNotes: notes,
-          rejectionReason: reason
-        }
-      );
+      const response = await verificationsService.updateVerificationStatus(verificationId, {
+        status: status as any,
+        adminNotes: notes,
+        rejectionReason: reason
+      });
 
-      if (response.data.success) {
+      if (response.success) {
         await fetchVerifications();
         setModalOpen(false);
       } else {
-        throw new Error(response.data.message || 'Failed to update status');
+        throw new Error(response.message || 'Failed to update status');
       }
     } catch (error: any) {
       throw new Error(error.response?.data?.message || error.message || 'Failed to update status');
@@ -640,9 +192,13 @@ const Verifications: React.FC = () => {
   const closeModal = () => {
     setModalOpen(false);
     setTimeout(() => setSelectedVerification(null), 300);
+    // Keep the highlight for a few seconds after closing modal
+    setTimeout(() => {
+      setHighlightedUserId(null);
+    }, 3000);
   };
 
-  const userVerifications = React.useMemo(() => {
+  const userVerifications = useMemo(() => {
     const grouped = verifications.reduce((acc, verification) => {
       if (!verification.userId) return acc;
       
@@ -660,18 +216,37 @@ const Verifications: React.FC = () => {
     return Object.values(grouped);
   }, [verifications]);
 
-  const filteredUsers = React.useMemo(() => {
+  const filteredUsers = useMemo(() => {
     return userVerifications.filter(({ user, verifications }) => {
       const matchesSearch = 
         user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesStatus = statusFilter === 'all' || 
-        verifications.some(v => v.status === statusFilter);
+        verifications.some(v => {
+          if (statusFilter === 'under_review') {
+            return v.status === 'under_review' || v.status === 'pending';
+          }
+          return v.status === statusFilter;
+        });
       
       return matchesSearch && matchesStatus;
     });
   }, [userVerifications, searchTerm, statusFilter]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [searchTerm, statusFilter]);
+
+  // Paginate filtered users
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (pagination.page - 1) * pagination.limit;
+    const endIndex = startIndex + pagination.limit;
+    return filteredUsers.slice(startIndex, endIndex);
+  }, [filteredUsers, pagination.page, pagination.limit]);
+
+  const totalPages = Math.ceil(filteredUsers.length / pagination.limit);
 
   if (authLoading || loading) {
     return (
@@ -691,6 +266,49 @@ const Verifications: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">User Verifications</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">{filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'}</p>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="bg-blue-50 rounded-lg p-3">
+            <p className="text-xs text-gray-600 font-medium mb-1">Total Users</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{userVerifications.length}</p>
+            <p className="text-xs text-gray-500 mt-1">{verifications.length} submissions</p>
+          </div>
+          <div className="bg-yellow-50 rounded-lg p-3">
+            <p className="text-xs text-gray-600 font-medium mb-1">Pending Review</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">
+              {userVerifications.filter(({ verifications }) => 
+                verifications.some(v => v.status === 'pending' || v.status === 'under_review')
+              ).length}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {verifications.filter(v => v.status === 'pending' || v.status === 'under_review').length} items
+            </p>
+          </div>
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-xs text-gray-600 font-medium mb-1">Approved</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">
+              {userVerifications.filter(({ verifications }) => 
+                verifications.some(v => v.status === 'approved')
+              ).length}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {verifications.filter(v => v.status === 'approved').length} items
+            </p>
+          </div>
+          <div className="bg-red-50 rounded-lg p-3">
+            <p className="text-xs text-gray-600 font-medium mb-1">Rejected</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">
+              {userVerifications.filter(({ verifications }) => 
+                verifications.some(v => v.status === 'rejected')
+              ).length}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {verifications.filter(v => v.status === 'rejected').length} items
+            </p>
           </div>
         </div>
 
@@ -719,9 +337,9 @@ const Verifications: React.FC = () => {
               All Status
             </button>
             <button
-              onClick={() => setStatusFilter('pending')}
+              onClick={() => setStatusFilter('under_review')}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusFilter === 'pending'
+                statusFilter === 'under_review'
                   ? 'bg-yellow-50 text-yellow-700'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
@@ -766,9 +384,9 @@ const Verifications: React.FC = () => {
           ) : (
             <>
               {/* Desktop Table */}
-              <div className="hidden md:block bg-white overflow-hidden">
+              <div className="hidden md:block bg-white">
                 <table className="min-w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
@@ -779,17 +397,21 @@ const Verifications: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredUsers.map(({ user, verifications }) => {
+                    {paginatedUsers.map(({ user, verifications }) => {
                       const latestVerification = verifications[0];
                       const totalDocuments = verifications.reduce((sum, v) => 
                         sum + 1 + 1 + v.credentials.length, 0
                       );
+                      const isHighlighted = highlightedUserId === user._id;
 
                       return (
                         <tr 
                           key={user._id} 
+                          ref={isHighlighted ? highlightedRowRef : null}
                           onClick={() => openModal(latestVerification)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          className={`hover:bg-gray-50 transition-all duration-300 cursor-pointer ${
+                            isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
+                          }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
@@ -801,7 +423,7 @@ const Verifications: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <UserTypeBadge userType={user.userType} size="sm" />
+                            <UserTypeBadge userType={user.userType} />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <StatusBadge status={latestVerification.status} />
@@ -833,17 +455,20 @@ const Verifications: React.FC = () => {
 
               {/* Mobile Cards */}
               <div className="md:hidden px-4 py-4 space-y-3">
-                {filteredUsers.map(({ user, verifications }) => {
+                {paginatedUsers.map(({ user, verifications }) => {
                   const latestVerification = verifications[0];
                   const totalDocuments = verifications.reduce((sum, v) => 
                     sum + 1 + 1 + v.credentials.length, 0
                   );
+                  const isHighlighted = highlightedUserId === user._id;
 
                   return (
                     <div 
                       key={user._id} 
                       onClick={() => openModal(latestVerification)}
-                      className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-shadow"
+                      className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-all duration-300 ${
+                        isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 shadow-lg' : ''
+                      }`}
                     >
                       <div className="flex items-center gap-3 mb-3">
                         <UserAvatar user={user} size="md" />
@@ -854,7 +479,7 @@ const Verifications: React.FC = () => {
                       </div>
 
                       <div className="flex flex-wrap gap-2 mb-3">
-                        <UserTypeBadge userType={user.userType} size="sm" />
+                        <UserTypeBadge userType={user.userType} />
                         <StatusBadge status={latestVerification.status} />
                       </div>
 
@@ -876,13 +501,51 @@ const Verifications: React.FC = () => {
                   );
                 })}
               </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
+                        Showing{' '}
+                        <span className="font-medium">
+                          {((pagination.page - 1) * pagination.limit) + 1}
+                        </span>{' '}
+                        to{' '}
+                        <span className="font-medium">
+                          {Math.min(pagination.page * pagination.limit, filteredUsers.length)}
+                        </span>{' '}
+                        of{' '}
+                        <span className="font-medium">{filteredUsers.length}</span> results
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                        disabled={pagination.page === 1}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+                        disabled={pagination.page === totalPages}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
 
       {/* Modal */}
-      <UserDetailModal
+      <VerificationDetailsModal
         isOpen={modalOpen}
         onClose={closeModal}
         verification={selectedVerification}

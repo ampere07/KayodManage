@@ -215,7 +215,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             </nav>
           </div>
           
-          <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
+          <div className="flex border-t border-gray-200 p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
@@ -366,7 +366,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             </nav>
           </div>
           
-          <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
+          <div className="flex border-t border-gray-200 p-4">
             <div className="flex items-center w-full">
               <div className="flex-shrink-0">
                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">

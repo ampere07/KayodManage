@@ -63,10 +63,10 @@ const getTransactions = async (req, res) => {
     
     // Fetch regular transactions
     const transactions = await Transaction.find(query)
-      .populate('fromUser', 'name email phone location')
-      .populate('toUser', 'name email phone location')
-      .populate('fromUserId', 'name email phone location')
-      .populate('toUserId', 'name email phone location')
+      .populate('fromUser', 'name email phone location profileImage')
+      .populate('toUser', 'name email phone location profileImage')
+      .populate('fromUserId', 'name email phone location profileImage')
+      .populate('toUserId', 'name email phone location profileImage')
       .populate('jobId', 'title category')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -139,15 +139,21 @@ const getTransactions = async (req, res) => {
       const feeRecords = await FeeRecord.find(feeQuery)
         .populate({
           path: 'providerId',
-          select: 'name email phone location'
+          select: 'name email phone location profileImage'
         })
         .populate({
           path: 'jobId',
-          select: 'title category assignedToId',
-          populate: {
-            path: 'assignedToId',
-            select: 'name email phone location'
-          }
+          select: 'title category userId assignedToId budget',
+          populate: [
+            {
+              path: 'userId',
+              select: 'name email phone location userType profileImage'
+            },
+            {
+              path: 'assignedToId',
+              select: 'name email phone location userType profileImage'
+            }
+          ]
         })
         .populate({
           path: 'transaction',
@@ -168,6 +174,14 @@ const getTransactions = async (req, res) => {
           }
         }
         
+        // Customer is the client who created the job
+        const customerInfo = fee.jobId?.userId || {
+          _id: null,
+          name: 'Unknown Customer',
+          email: 'N/A'
+        };
+        
+        // Provider is the one assigned to the job
         const providerInfo = fee.jobId?.assignedToId || fee.providerId || {
           _id: null,
           name: 'Unknown Provider',
@@ -177,12 +191,12 @@ const getTransactions = async (req, res) => {
         return {
           _id: fee._id,
           transactionType: 'fee_record',
-          fromUser: providerInfo,
+          fromUser: customerInfo,
           toUser: providerInfo,
-          fromUserData: providerInfo,
+          fromUserData: customerInfo,
           toUserData: providerInfo,
-          user: providerInfo,
-          userId: providerInfo,
+          user: customerInfo,
+          userId: customerInfo,
           amount: fee.amount,
           type: 'fee_payment',
           status: fee.status === 'paid' ? 'completed' : 
@@ -246,15 +260,21 @@ const getTransactionDetails = async (req, res) => {
       transactionData = await FeeRecord.findById(transactionId)
         .populate({
           path: 'providerId',
-          select: 'name email phone location'
+          select: 'name email phone location profileImage'
         })
         .populate({
           path: 'jobId',
-          select: 'title description category assignedToId',
-          populate: {
-            path: 'assignedToId',
-            select: 'name email phone location'
-          }
+          select: 'title description category userId assignedToId budget',
+          populate: [
+            {
+              path: 'userId',
+              select: 'name email phone location userType profileImage'
+            },
+            {
+              path: 'assignedToId',
+              select: 'name email phone location userType profileImage'
+            }
+          ]
         })
         .populate({
           path: 'transaction',
@@ -272,6 +292,15 @@ const getTransactionDetails = async (req, res) => {
           }
         }
         
+        // Customer is the client who created the job
+        const customerInfo = transactionData.jobId?.userId || {
+          _id: null,
+          name: 'Unknown Customer',
+          email: 'N/A',
+          phone: 'N/A'
+        };
+        
+        // Provider is the one assigned to the job
         const providerInfo = transactionData.jobId?.assignedToId || transactionData.providerId || {
           _id: null,
           name: 'Unknown Provider',
@@ -282,8 +311,11 @@ const getTransactionDetails = async (req, res) => {
         transactionData = {
           ...transactionData,
           transactionType: 'fee_record',
-          fromUser: providerInfo,
+          fromUser: customerInfo,
           toUser: providerInfo,
+          fromUserData: customerInfo,
+          toUserData: providerInfo,
+          user: customerInfo,
           type: 'fee_payment',
           status: transactionData.status === 'paid' ? 'completed' : 
                   transactionData.status === 'cancelled' ? 'failed' : 'pending',
@@ -293,10 +325,10 @@ const getTransactionDetails = async (req, res) => {
       }
     } else {
       transactionData = await Transaction.findById(transactionId)
-        .populate('fromUser', 'name email phone location')
-        .populate('toUser', 'name email phone location')
-        .populate('fromUserId', 'name email phone location')
-        .populate('toUserId', 'name email phone location')
+        .populate('fromUser', 'name email phone location profileImage')
+        .populate('toUser', 'name email phone location profileImage')
+        .populate('fromUserId', 'name email phone location profileImage')
+        .populate('toUserId', 'name email phone location profileImage')
         .populate('jobId', 'title description category')
         .lean();
       

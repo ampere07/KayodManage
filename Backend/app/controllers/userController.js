@@ -1,7 +1,4 @@
-const User = require('../models/User');
-const Wallet = require('../models/Wallet');
-const FeeRecord = require('../models/FeeRecord');
-const mongoose = require('mongoose');
+const userService = require('../services/userService');
 const { logActivity } = require('../utils/activityLogger');
 
 const getUsers = async (req, res) => {
@@ -10,119 +7,21 @@ const getUsers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     
-    const search = req.query.search;
-    const status = req.query.status;
-    const userType = req.query.userType;
-    const restricted = req.query.restricted;
+    const filters = {
+      search: req.query.search,
+      status: req.query.status,
+      userType: req.query.userType,
+      restricted: req.query.restricted
+    };
     
-    let query = {};
+    const query = userService.buildUserQuery(filters);
+    const pagination = { skip, limit };
     
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
-      ];
-    }
-    
-    if (status === 'verified') {
-      query.isVerified = true;
-    } else if (status === 'restricted') {
-      query.accountStatus = { $in: ['restricted', 'suspended', 'banned'] };
-    } else if (status === 'online') {
-      query.isOnline = true;
-    } else if (status === 'banned') {
-      query.accountStatus = 'banned';
-    } else if (status === 'suspended') {
-      query.accountStatus = 'suspended';
-    } else if (status === 'active') {
-      query.accountStatus = 'active';
-    }
-    
-    // Filter by user type
-    if (userType === 'client') {
-      query.userType = 'client';
-    } else if (userType === 'provider') {
-      query.userType = 'provider';
-    }
-    
-    // Filter by restricted status
-    if (restricted === 'true') {
-      query.$or = [
-        { accountStatus: { $in: ['restricted', 'suspended', 'banned'] } },
-        { isRestricted: true }
-      ];
-    }
-    
-    // Fetch users first
-    const users = await User.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    // Get all user IDs
-    const userIds = users.map(user => user._id);
-    
-    // Fetch wallets for these users
-    const wallets = await Wallet.find({ user: { $in: userIds } }).lean();
-
-    // Fetch fee records for these users  
-    const feeRecords = await FeeRecord.find({ provider: { $in: userIds } }).lean();
-    
-    // Create lookup maps
-    const walletMap = {};
-    wallets.forEach(wallet => {
-      walletMap[wallet.user.toString()] = wallet;
-    });
-
-    const feeMap = {};
-    feeRecords.forEach(fee => {
-      const providerId = fee.provider.toString();
-      if (!feeMap[providerId]) {
-        feeMap[providerId] = [];
-      }
-      feeMap[providerId].push(fee);
-    });
-
-    // Combine data for each user
-    const usersWithData = users.map(user => {
-      const userId = user._id.toString();
-      const wallet = walletMap[userId];
-      const userFees = feeMap[userId] || [];
-      
-      // Create wallet data structure
-      const walletData = {
-        balance: wallet ? wallet.balance : 0,
-        availableBalance: wallet ? wallet.availableBalance : 0,
-        heldBalance: wallet ? wallet.heldBalance : 0,
-        currency: wallet ? wallet.currency : 'PHP',
-        isActive: wallet ? wallet.isActive : false,
-        isVerified: wallet ? wallet.isVerified : false
-      };
-
-      // Transform fee records
-      const feesData = userFees.map(fee => ({
-        _id: fee._id,
-        amount: fee.amount,
-        dueDate: fee.dueDate,
-        isPaid: fee.status === 'paid',
-        status: fee.status,
-        paymentMethod: fee.paymentMethod,
-        createdAt: fee.createdAt
-      }));
-
-      return {
-        ...user,
-        wallet: walletData,
-        fees: feesData
-      };
-    });
-    
-    const total = await User.countDocuments(query);
+    const { users, total } = await userService.getUsers(query, pagination);
     const pages = Math.ceil(total / limit);
     
     res.json({
-      users: usersWithData,
+      users,
       pagination: {
         page,
         limit,
@@ -136,47 +35,20 @@ const getUsers = async (req, res) => {
   }
 };
 
-const getUserWithData = async (userId) => {
+const getUserDetails = async (req, res) => {
   try {
-    // Fetch user
-    const user = await User.findById(userId).lean();
-    if (!user) return null;
-
-    // Fetch wallet
-    const wallet = await Wallet.findOne({ user: userId }).lean();
+    const { userId } = req.params;
     
-    // Fetch fee records
-    const feeRecords = await FeeRecord.find({ provider: userId }).lean();
-
-    // Create wallet data structure
-    const walletData = {
-      balance: wallet ? wallet.balance : 0,
-      availableBalance: wallet ? wallet.availableBalance : 0,
-      heldBalance: wallet ? wallet.heldBalance : 0,
-      currency: wallet ? wallet.currency : 'PHP',
-      isActive: wallet ? wallet.isActive : false,
-      isVerified: wallet ? wallet.isVerified : false
-    };
-
-    // Transform fee records
-    const feesData = feeRecords.map(fee => ({
-      _id: fee._id,
-      amount: fee.amount,
-      dueDate: fee.dueDate,
-      isPaid: fee.status === 'paid',
-      status: fee.status,
-      paymentMethod: fee.paymentMethod,
-      createdAt: fee.createdAt
-    }));
-
-    return {
-      ...user,
-      wallet: walletData,
-      fees: feesData
-    };
+    const user = await userService.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(user);
   } catch (error) {
-    console.error('Error fetching user with data:', error);
-    return null;
+    console.error('Error fetching user details:', error);
+    res.status(500).json({ error: 'Failed to fetch user details' });
   }
 };
 
@@ -185,38 +57,18 @@ const restrictUser = async (req, res) => {
     const { userId } = req.params;
     const { restricted } = req.body;
     
-    const updateData = { 
-      isRestricted: restricted,
-      accountStatus: restricted ? 'restricted' : 'active'
-    };
-
+    let user;
     if (restricted) {
-      updateData.restrictionDetails = {
-        type: 'restricted',
-        reason: 'Account restricted by admin',
-        restrictedAt: new Date(),
-        appealAllowed: true
-      };
-      
-      // Only add restrictedBy if we have a valid ObjectId
-      if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
-        updateData.restrictionDetails.restrictedBy = req.session.adminId;
-      }
+      user = await userService.restrictUser(userId, req.session.adminId);
     } else {
-      updateData.$unset = { restrictionDetails: 1 };
+      user = await userService.unrestrictUser(userId);
     }
-    
-    const user = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true }
-    );
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithData = await getUserWithData(userId);
+    const userWithData = await userService.getUserById(userId);
     
     if (req.user && req.user.id) {
       await logActivity(
@@ -232,7 +84,6 @@ const restrictUser = async (req, res) => {
       );
     }
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
       user: userWithData,
@@ -255,33 +106,13 @@ const banUser = async (req, res) => {
       return res.status(400).json({ error: 'Ban reason is required' });
     }
     
-    const restrictionDetails = {
-      type: 'banned',
-      reason: reason.trim(),
-      restrictedAt: new Date(),
-      appealAllowed: true
-    };
-    
-    // Only add restrictedBy if we have a valid ObjectId
-    if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
-      restrictionDetails.restrictedBy = req.session.adminId;
-    }
-    
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { 
-        accountStatus: 'banned',
-        isRestricted: true,
-        restrictionDetails
-      },
-      { new: true }
-    );
+    const user = await userService.banUser(userId, reason, req.session.adminId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithData = await getUserWithData(userId);
+    const userWithData = await userService.getUserById(userId);
     
     if (req.user && req.user.id) {
       await logActivity(
@@ -298,7 +129,6 @@ const banUser = async (req, res) => {
       );
     }
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
       user: userWithData,
@@ -325,37 +155,13 @@ const suspendUser = async (req, res) => {
       return res.status(400).json({ error: 'Valid suspension duration is required' });
     }
     
-    const suspendedUntil = new Date();
-    suspendedUntil.setDate(suspendedUntil.getDate() + duration);
-    
-    const restrictionDetails = {
-      type: 'suspended',
-      reason: reason.trim(),
-      restrictedAt: new Date(),
-      suspendedUntil,
-      appealAllowed: true
-    };
-    
-    // Only add restrictedBy if we have a valid ObjectId
-    if (req.session.adminId && mongoose.Types.ObjectId.isValid(req.session.adminId)) {
-      restrictionDetails.restrictedBy = req.session.adminId;
-    }
-    
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { 
-        accountStatus: 'suspended',
-        isRestricted: true,
-        restrictionDetails
-      },
-      { new: true }
-    );
+    const user = await userService.suspendUser(userId, reason, duration, req.session.adminId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithData = await getUserWithData(userId);
+    const userWithData = await userService.getUserById(userId);
     
     if (req.user && req.user.id) {
       await logActivity(
@@ -366,13 +172,12 @@ const suspendUser = async (req, res) => {
           targetType: 'user',
           targetId: userId,
           targetModel: 'User',
-          metadata: { reason, duration, suspendedUntil },
+          metadata: { reason, duration, suspendedUntil: user.restrictionDetails.suspendedUntil },
           ipAddress: req.ip
         }
       );
     }
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
       user: userWithData,
@@ -390,21 +195,13 @@ const unrestrictUser = async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { 
-        accountStatus: 'active',
-        isRestricted: false,
-        $unset: { restrictionDetails: 1 }
-      },
-      { new: true }
-    );
+    const user = await userService.unrestrictUser(userId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithData = await getUserWithData(userId);
+    const userWithData = await userService.getUserById(userId);
     
     if (req.user && req.user.id) {
       await logActivity(
@@ -420,7 +217,6 @@ const unrestrictUser = async (req, res) => {
       );
     }
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
       user: userWithData,
@@ -439,19 +235,14 @@ const verifyUser = async (req, res) => {
     const { userId } = req.params;
     const { verified } = req.body;
     
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { isVerified: verified },
-      { new: true }
-    );
+    const user = await userService.verifyUser(userId, verified);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithData = await getUserWithData(userId);
+    const userWithData = await userService.getUserById(userId);
     
-    // Emit socket event for real-time update
     const { io } = require('../../server');
     io.to('admin').emit('user:updated', {
       user: userWithData,
@@ -465,41 +256,11 @@ const verifyUser = async (req, res) => {
   }
 };
 
-const getUserDetails = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const userWithData = await getUserWithData(userId);
-    
-    if (!userWithData) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json(userWithData);
-  } catch (error) {
-    console.error('Error fetching user details:', error);
-    res.status(500).json({ error: 'Failed to fetch user details' });
-  }
-};
-
-// Utility function to check and auto-unsuspend users
 const checkSuspendedUsers = async () => {
   try {
-    const now = new Date();
-    const expiredSuspensions = await User.updateMany(
-      {
-        accountStatus: 'suspended',
-        'restrictionDetails.suspendedUntil': { $lte: now }
-      },
-      {
-        accountStatus: 'active',
-        isRestricted: false,
-        $unset: { restrictionDetails: 1 }
-      }
-    );
-    
-    if (expiredSuspensions.modifiedCount > 0) {
-      console.log(`Auto-unsuspended ${expiredSuspensions.modifiedCount} users`);
+    const count = await userService.checkSuspendedUsers();
+    if (count > 0) {
+      console.log(`Auto-unsuspended ${count} users`);
     }
   } catch (error) {
     console.error('Error checking suspended users:', error);

@@ -1,22 +1,15 @@
-const CredentialVerification = require('../models/CredentialVerification');
+const verificationService = require('../services/verificationService');
 const { logActivity } = require('../utils/activityLogger');
 
 const getAllVerifications = async (req, res) => {
   try {
     const { status, limit = 50, skip = 0 } = req.query;
     
-    const query = {};
-    if (status && status !== 'all') {
-      query.status = status;
-    }
-
-    const verifications = await CredentialVerification.find(query)
-      .populate('userId', 'name email userType profileImage')
-      .populate('reviewedBy', 'name email')
-      .sort({ submittedAt: -1 })
-      .limit(parseInt(limit))
-      .skip(parseInt(skip))
-      .lean();
+    const verifications = await verificationService.getAllVerifications({
+      status,
+      limit,
+      skip
+    });
 
     res.json({
       success: true,
@@ -36,10 +29,7 @@ const getVerificationById = async (req, res) => {
   try {
     const { verificationId } = req.params;
 
-    const verification = await CredentialVerification.findById(verificationId)
-      .populate('userId', 'name email userType profileImage')
-      .populate('reviewedBy', 'name email')
-      .lean();
+    const verification = await verificationService.getVerificationById(verificationId);
 
     if (!verification) {
       return res.status(404).json({
@@ -67,47 +57,11 @@ const updateVerificationStatus = async (req, res) => {
     const { verificationId } = req.params;
     const { status, adminNotes, rejectionReason } = req.body;
 
-    const validStatuses = ['approved', 'rejected', 'under_review'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status value'
-      });
-    }
-
-    if (status === 'rejected' && (!rejectionReason || rejectionReason.trim() === '')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Rejection reason is required when rejecting a verification'
-      });
-    }
-
-    const updateData = {
-      status,
-      adminNotes,
-      reviewedAt: new Date(),
-      reviewedBy: req.user?._id
-    };
-
-    if (status === 'rejected') {
-      updateData.rejectionReason = rejectionReason;
-    }
-
-    const verification = await CredentialVerification.findByIdAndUpdate(
+    const verification = await verificationService.updateVerificationStatus(
       verificationId,
-      updateData,
-      { new: true }
-    )
-      .populate('userId', 'name email userType profileImage')
-      .populate('reviewedBy', 'name email')
-      .lean();
-
-    if (!verification) {
-      return res.status(404).json({
-        success: false,
-        message: 'Verification not found'
-      });
-    }
+      { status, adminNotes, rejectionReason },
+      req.user?._id
+    );
 
     console.log('✅ Verification status updated successfully');
 
@@ -147,9 +101,11 @@ const updateVerificationStatus = async (req, res) => {
     console.error('Error stack:', error.stack);
     console.error('========================================');
     
-    res.status(500).json({
+    const statusCode = error.message.includes('Invalid') || error.message.includes('required') ? 400 : 500;
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Failed to update verification status',
+      message: error.message,
       error: error.message
     });
   }
@@ -157,42 +113,11 @@ const updateVerificationStatus = async (req, res) => {
 
 const getVerificationStats = async (req, res) => {
   try {
-    const stats = await CredentialVerification.aggregate([
-      {
-        $facet: {
-          statusCounts: [
-            {
-              $group: {
-                _id: '$status',
-                count: { $sum: 1 }
-              }
-            }
-          ],
-          total: [
-            {
-              $count: 'count'
-            }
-          ]
-        }
-      }
-    ]);
-
-    const statusCounts = stats[0].statusCounts.reduce((acc, item) => {
-      acc[item._id] = item.count;
-      return acc;
-    }, {});
-
-    const total = stats[0].total[0]?.count || 0;
+    const stats = await verificationService.getVerificationStats();
 
     res.json({
       success: true,
-      data: {
-        total,
-        pending: statusCounts.pending || 0,
-        approved: statusCounts.approved || 0,
-        rejected: statusCounts.rejected || 0,
-        under_review: statusCounts.under_review || 0
-      }
+      data: stats
     });
   } catch (error) {
     console.error('Error fetching verification stats:', error);
@@ -215,31 +140,18 @@ const getUserImages = async (req, res) => {
       });
     }
 
-    const verifications = await CredentialVerification.find({ userId })
-      .sort({ submittedAt: -1 })
-      .limit(1)
-      .lean();
+    const data = await verificationService.getUserImages(userId);
 
-    if (!verifications || verifications.length === 0) {
+    if (!data) {
       return res.status(404).json({
         success: false,
         message: 'No verifications found for this user'
       });
     }
 
-    const verification = verifications[0];
-    const images = {
-      faceVerification: verification.faceVerification,
-      validId: verification.validId,
-      credentials: verification.credentials
-    };
-
     res.json({
       success: true,
-      data: {
-        userId,
-        images
-      }
+      data
     });
   } catch (error) {
     console.error('Error fetching user images:', error);

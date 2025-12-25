@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-
-const getInitials = (name: string): string => {
-  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
-  if (nameParts.length === 0) return '?';
-  return nameParts[0][0].toUpperCase();
-};
 import { 
   Search, 
   UserCheck, 
@@ -15,473 +9,28 @@ import {
   Ban, 
   Clock, 
   Shield,
-  X,
-  WifiOff,
-  RefreshCw,
   Mail,
   MapPin,
   Wallet as WalletIcon,
   Calendar,
-  MoreHorizontal,
   Briefcase,
   User as UserIcon,
   Phone,
-  Tag,
   CheckCircle,
   XCircle
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
+import { usersService } from '../services';
+import { UserDetailsModal } from '../components/Modals';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
 import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
+import type { User, UserStats } from '../types';
 
-interface User {
-  _id: string;
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
-  categories: string[];
-  userType?: 'client' | 'provider';
-  profileImage?: string;
-  profileImagePublicId?: string;
-  isVerified: boolean;
-  isRestricted: boolean;
-  isOnline: boolean;
-  accountStatus?: 'active' | 'restricted' | 'suspended' | 'banned';
-  restrictionDetails?: {
-    type: 'restricted' | 'suspended' | 'banned';
-    reason: string;
-    restrictedAt: Date;
-    suspendedUntil?: Date;
-    appealAllowed: boolean;
-  };
-  wallet: {
-    balance: number;
-    currency: string;
-  };
-  fees: Array<{
-    amount: number;
-    dueDate: Date;
-    isPaid: boolean;
-  }>;
-  createdAt: Date;
-  lastLogin?: Date;
-}
-
-interface UserStats {
-  totalUsers: number;
-  onlineUsers: number;
-  verifiedUsers: number;
-  restrictedUsers: number;
-}
-
-interface VerificationDetails {
-  verifiedBy?: {
-    _id: string;
-    name: string;
-  };
-  verifiedAt?: Date;
-}
-
-interface UserDetailsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  user: User | null;
-  onVerify: (userId: string, isVerified: boolean) => void;
-  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => void;
-}
-
-const UserDetailsModal: React.FC<UserDetailsModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  user,
-  onVerify,
-  onAction
-}) => {
-  const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
-  const [loadingVerification, setLoadingVerification] = useState(false);
-  const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | null>(null);
-  const [penaltyData, setPenaltyData] = useState({
-    totalPenalties: 0,
-    activeWarnings: 0,
-    lastPenalty: null as Date | null
-  });
-  const [loadingPenalties, setLoadingPenalties] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && user?.isVerified) {
-      fetchVerificationDetails();
-    }
-    if (isOpen && user) {
-      fetchPenaltyData();
-    }
-    if (!isOpen) {
-      setConfirmingAction(null);
-    }
-  }, [isOpen, user]);
-
-  const fetchPenaltyData = async () => {
-    if (!user?._id) return;
-    
-    setLoadingPenalties(true);
-    try {
-      const response = await fetch(`/api/admin/activity-logs?targetId=${user._id}&limit=1000`, {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const logs = data.logs || [];
-        
-        console.log('Fetching penalties for user ID:', user._id);
-        console.log('All logs returned:', logs.length);
-        console.log('Sample logs:', logs.slice(0, 3));
-        
-        // Double-check: filter logs by matching targetId._id with user._id
-        const userLogs = logs.filter((log: any) => 
-          log.targetId?._id === user._id
-        );
-        
-        console.log('Logs matching user ID:', userLogs.length);
-        
-        // Filter penalty-related actions from user-specific logs
-        const penaltyActions = userLogs.filter((log: any) => 
-          ['user_restricted', 'user_suspended', 'user_banned'].includes(log.actionType)
-        );
-        
-        console.log('Penalty actions for this user:', penaltyActions);
-        console.log('Penalty count:', penaltyActions.length);
-        
-        // Count total penalties
-        const totalPenalties = penaltyActions.length;
-        
-        // Count active warnings (current account status is restricted)
-        const activeWarnings = user.accountStatus !== 'active' ? 1 : 0;
-        
-        // Get last penalty date
-        const lastPenalty = penaltyActions.length > 0 
-          ? new Date(penaltyActions[0].createdAt) 
-          : null;
-        
-        setPenaltyData({
-          totalPenalties,
-          activeWarnings,
-          lastPenalty
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching penalty data:', error);
-    } finally {
-      setLoadingPenalties(false);
-    }
-  };
-
-  const fetchVerificationDetails = async () => {
-    if (!user?._id) return;
-    
-    setLoadingVerification(true);
-    try {
-      const response = await fetch(`/api/verifications/${user._id}`, {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.reviewedBy && data.reviewedAt) {
-          setVerificationDetails({
-            verifiedBy: data.reviewedBy,
-            verifiedAt: data.reviewedAt
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching verification details:', error);
-    } finally {
-      setLoadingVerification(false);
-    }
-  };
-
-  const handleActionClick = (actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => {
-    setConfirmingAction(actionType);
-  };
-
-  const handleConfirmYes = () => {
-    if (confirmingAction) {
-      onAction(user!, confirmingAction);
-      setConfirmingAction(null);
-      // Refresh penalty data after action
-      setTimeout(() => {
-        fetchPenaltyData();
-      }, 1000);
-    }
-  };
-
-  const handleConfirmNo = () => {
-    setConfirmingAction(null);
-  };
-
-  const getActionText = () => {
-    switch (confirmingAction) {
-      case 'ban': return 'ban this user';
-      case 'suspend': return 'suspend this user';
-      case 'restrict': return 'restrict this user';
-      case 'unrestrict': return 'remove restrictions from this user';
-      default: return '';
-    }
-  };
-
-  if (!isOpen || !user) return null;
-
-  const isRestricted = user.accountStatus ? user.accountStatus !== 'active' : user.isRestricted;
-
-  const formatKYDNumber = (id: string) => {
-    return `KYD: ${id}`;
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success('KYD copied to clipboard');
-    }).catch(() => {
-      toast.error('Failed to copy KYD');
-    });
-  };
-
-  const parseFullName = (fullName: string) => {
-    const nameParts = fullName.trim().split(' ');
-    if (nameParts.length === 1) {
-      return { firstName: nameParts[0], lastName: nameParts[0] };
-    }
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ');
-    return { firstName, lastName };
-  };
-
-  const { firstName, lastName } = parseFullName(user.name);
-
-  return (
-    <>
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
-        onClick={onClose}
-      />
-      
-      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-50 shadow-2xl overflow-y-auto flex flex-col">
-        <button
-          onClick={onClose}
-          className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10"
-          aria-label="Close modal"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="p-6 flex-1 flex flex-col">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">User Information</h2>
-          <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-shrink-0">
-                {user.profileImage ? (
-                  <img
-                    src={user.profileImage}
-                    alt={user.name}
-                    className="w-16 h-16 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
-                    <span className="text-2xl font-semibold text-gray-700">
-                      {getInitials(user.name)}
-                    </span>
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h3>
-                <button
-                  onClick={() => copyToClipboard(user._id)}
-                  className="text-sm text-gray-600 hover:text-blue-600 cursor-pointer transition-colors"
-                  title="Click to copy"
-                >
-                  {formatKYDNumber(user._id)}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <VerificationStatusBadge isVerified={user.isVerified} />
-              {user.userType && <UserTypeBadge userType={user.userType} />}
-            </div>
-          </div>
-
-          <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-          <div className="flex-1 flex flex-col">
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
-              <div className="space-y-2.5">
-                <p className="text-base text-gray-900"><span className="text-gray-600">First Name:</span> {firstName}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Last Name:</span> {lastName}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Date of Birth:</span> December 7, 2003</p>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact</h3>
-              <div className="space-y-2.5">
-                <p className="text-base text-gray-900"><span className="text-gray-600">Email Address:</span> {user.email}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Contact Number:</span> {user.phone || 'N/A'}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Location:</span> {user.location || 'N/A'}</p>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-            <div className="flex-1 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Other Information</h3>
-            <div className="space-y-2.5">
-              <p className="text-base text-gray-900"><span className="text-gray-600">Verification Status:</span> {user.isVerified ? 'Verified' : 'Not Verified'}</p>
-              {user.isVerified && (
-                <>
-                  <p className="text-base text-gray-900">
-                    <span className="text-gray-600">Verified By:</span> {loadingVerification ? (
-                      <span>Loading...</span>
-                    ) : verificationDetails?.verifiedBy ? (
-                      <span>
-                        {verificationDetails.verifiedBy.name} ({formatKYDNumber(verificationDetails.verifiedBy._id)})
-                      </span>
-                    ) : (
-                      <span>N/A</span>
-                    )}
-                  </p>
-                  <p className="text-base text-gray-900">
-                    <span className="text-gray-600">Verification Date:</span> {loadingVerification ? (
-                      <span>Loading...</span>
-                    ) : verificationDetails?.verifiedAt ? (
-                      <span>
-                        {new Date(verificationDetails.verifiedAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    ) : (
-                      <span>N/A</span>
-                    )}
-                  </p>
-                </>
-              )}
-            </div>
-            </div>
-
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
-
-            <div className="flex-1 mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Penalty Tracker</h3>
-              {loadingPenalties ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Total Penalties:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                      penaltyData.totalPenalties > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {penaltyData.totalPenalties}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Active Warnings:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                      penaltyData.activeWarnings > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {penaltyData.activeWarnings}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Last Penalty:</p>
-                    <p className="text-sm text-gray-900">
-                      {penaltyData.lastPenalty 
-                        ? new Date(penaltyData.lastPenalty).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })
-                        : 'None'
-                      }
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center gap-2 justify-center mt-auto pt-6 -mx-6 px-6">
-            {confirmingAction ? (
-              <>
-                <p className="text-sm text-gray-700 mb-2">Are you sure you want to {getActionText()}?</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleConfirmNo}
-                    className="flex-1 px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                  >
-                    No
-                  </button>
-                  <button
-                    onClick={handleConfirmYes}
-                    className="flex-1 px-6 py-3 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                  >
-                    Yes
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="flex gap-2">
-            {!isRestricted ? (
-                <>
-                <button
-                  onClick={() => handleActionClick('restrict')}
-                  className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
-                >
-                  <Shield className="h-4 w-4" />
-                  Restrict
-                </button>
-                <button
-                  onClick={() => handleActionClick('suspend')}
-                  className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg transition-colors"
-                >
-                  <Clock className="h-4 w-4" />
-                  Suspend
-                </button>
-                <button
-                  onClick={() => handleActionClick('ban')}
-                  className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
-                >
-                  <Ban className="h-4 w-4" />
-                  Ban
-                </button>
-                </>
-            ) : (
-              <button
-                onClick={() => handleActionClick('unrestrict')}
-                className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors"
-              >
-                <UserX className="h-4 w-4" />
-                Remove Restrictions
-              </button>
-            )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
-  );
+const getInitials = (name: string): string => {
+  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
+  if (nameParts.length === 0) return '?';
+  return nameParts[0][0].toUpperCase();
 };
 
 const Users: React.FC = () => {
@@ -519,34 +68,31 @@ const Users: React.FC = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
+      
+      const params: any = {
+        page: pagination.page,
+        limit: pagination.limit,
         ...(searchTerm && { search: searchTerm }),
         ...(statusFilter !== 'all' && { status: statusFilter })
-      });
+      };
 
       const userType = getUserType();
-      if (userType === 'customers') params.append('userType', 'client');
-      if (userType === 'providers') params.append('userType', 'provider');
-      if (userType === 'flagged') params.append('restricted', 'true');
+      if (userType === 'customers') params.userType = 'client';
+      if (userType === 'providers') params.userType = 'provider';
+      if (userType === 'flagged') params.restricted = 'true';
 
-      const response = await fetch(`/api/users?${params}`, { credentials: 'include' });
+      const data = await usersService.getUsers(params);
       
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data.users || []);
-        setUserStats(data.stats || null);
-        setPagination(prev => ({ 
-          ...prev, 
-          total: data.pagination?.total || 0,
-          pages: data.pagination?.pages || 1
-        }));
-      } else {
-        toast.error('Failed to load users');
-      }
+      setUsers(data.users || []);
+      setUserStats(data.stats || null);
+      setPagination(prev => ({ 
+        ...prev, 
+        total: data.pagination?.total || 0,
+        pages: data.pagination?.pages || 1
+      }));
     } catch (error) {
       toast.error('Error loading users');
+      console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
     }
@@ -585,70 +131,48 @@ const Users: React.FC = () => {
     if (!selectedUser) return;
     
     try {
-      let endpoint = '';
-      let body = {};
+      let updatedUser: User;
       
       switch (actionType) {
         case 'ban':
-          endpoint = `/api/users/${selectedUser._id}/ban`;
-          body = { reason: data.reason };
+          updatedUser = await usersService.banUser(selectedUser._id, data.reason || 'No reason provided');
           break;
         case 'suspend':
-          endpoint = `/api/users/${selectedUser._id}/suspend`;
-          body = { reason: data.reason, duration: data.duration };
+          updatedUser = await usersService.suspendUser(selectedUser._id, data.reason || 'No reason provided', data.duration || 7);
           break;
         case 'restrict':
-          endpoint = `/api/users/${selectedUser._id}/restrict`;
-          body = { restricted: true };
+          updatedUser = await usersService.restrictUser(selectedUser._id, true);
           break;
         case 'unrestrict':
-          endpoint = `/api/users/${selectedUser._id}/unrestrict`;
+          updatedUser = await usersService.unrestrictUser(selectedUser._id);
           break;
         default:
           return;
       }
-      
-      const response = await fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body)
-      });
 
-      if (response.ok) {
-        const updatedUser = await response.json();
-        setUsers(prev => prev.map(user => 
-          user._id === selectedUser._id ? updatedUser : user
-        ));
-        setSelectedUser(updatedUser);
-        toast.success(`User ${actionType === 'unrestrict' ? 'unrestricted' : actionType + 'ned'} successfully`);
-      } else {
-        toast.error(`Failed to ${actionType} user`);
-      }
+      setUsers(prev => prev.map(user => 
+        user._id === selectedUser._id ? updatedUser : user
+      ));
+      setSelectedUser(updatedUser);
+      toast.success(`User ${actionType === 'unrestrict' ? 'unrestricted' : actionType + 'ned'} successfully`);
     } catch (error) {
       toast.error(`Failed to ${actionType} user`);
+      console.error(`Error ${actionType}ing user:`, error);
     }
   };
 
   const toggleUserVerification = async (userId: string, isVerified: boolean) => {
     try {
-      const response = await fetch(`/api/users/${userId}/verify`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ verified: !isVerified })
-      });
-
-      if (response.ok) {
-        const updatedUser = await response.json();
-        setUsers(prev => prev.map(user => 
-          user._id === userId ? updatedUser : user
-        ));
-        setSelectedUser(updatedUser);
-        toast.success(`User ${!isVerified ? 'verified' : 'unverified'} successfully`);
-      }
+      const updatedUser = await usersService.verifyUser(userId, !isVerified);
+      
+      setUsers(prev => prev.map(user => 
+        user._id === userId ? updatedUser : user
+      ));
+      setSelectedUser(updatedUser);
+      toast.success(`User ${!isVerified ? 'verified' : 'unverified'} successfully`);
     } catch (error) {
       toast.error('Failed to update verification');
+      console.error('Error updating verification:', error);
     }
   };
 
@@ -746,9 +270,9 @@ const Users: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white overflow-hidden">
+              <div className="hidden md:block bg-white">
                 <table className="min-w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         User
@@ -881,8 +405,8 @@ const Users: React.FC = () => {
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                              <Calendar className="h-3 w-3" />
+                              {new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -1049,7 +573,7 @@ const Users: React.FC = () => {
                           </div>
                         </div>
 
-                          <div className="flex items-center justify-between pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
                             {!isRestricted ? (
                               <>
@@ -1100,8 +624,8 @@ const Users: React.FC = () => {
               </div>
 
               {pagination.pages > 1 && (
-                <div className="bg-white px-4 md:px-6 py-4 border-t border-gray-200">
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
+                  <div className="flex items-center justify-between w-full">
                     <div>
                       <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
                         Showing{' '}

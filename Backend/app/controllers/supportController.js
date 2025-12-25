@@ -167,22 +167,38 @@ const rejectTicket = async (req, res) => {
     }
 
     chatSupport.status = 'closed';
+    chatSupport.closedAt = new Date();
     
-    if (reason) {
-      const mongoose = require('mongoose');
-      const adminId = req.user?.id || '000000000000000000000000';
-      const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-        ? new mongoose.Types.ObjectId(adminId)
-        : new mongoose.Types.ObjectId('000000000000000000000000');
-      
-      chatSupport.messages.push({
-        senderId: adminObjectId,
-        senderName: req.user?.username || 'Support Agent',
-        senderType: 'Admin',
-        message: `Chat closed: ${reason}`,
-        timestamp: new Date()
-      });
+    // Add to status history
+    if (!chatSupport.statusHistory) {
+      chatSupport.statusHistory = [];
     }
+    chatSupport.statusHistory.push({
+      status: 'resolved',
+      performedBy: req.user?.id,
+      performedByName: req.user?.username || 'Support Agent',
+      timestamp: new Date(),
+      reason: reason || 'Ticket resolved'
+    });
+    
+    // Always add a message to the chat when ticket is rejected/closed
+    const mongoose = require('mongoose');
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : new mongoose.Types.ObjectId('000000000000000000000000');
+    
+    const rejectMessage = reason 
+      ? `Ticket has been closed: ${reason}`
+      : 'Ticket has been closed';
+    
+    chatSupport.messages.push({
+      senderId: adminObjectId,
+      senderName: req.user?.username || 'Support Agent',
+      senderType: 'Admin',
+      message: rejectMessage,
+      timestamp: new Date()
+    });
     
     await chatSupport.save();
 
@@ -231,22 +247,38 @@ const resolveTicket = async (req, res) => {
     }
 
     chatSupport.status = 'closed';
+    chatSupport.closedAt = new Date();
     
-    if (resolution) {
-      const mongoose = require('mongoose');
-      const adminId = req.user?.id || '000000000000000000000000';
-      const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-        ? new mongoose.Types.ObjectId(adminId)
-        : new mongoose.Types.ObjectId('000000000000000000000000');
-      
-      chatSupport.messages.push({
-        senderId: adminObjectId,
-        senderName: req.user?.username || 'Support Agent',
-        senderType: 'Admin',
-        message: `Chat resolved: ${resolution}`,
-        timestamp: new Date()
-      });
+    // Add to status history
+    if (!chatSupport.statusHistory) {
+      chatSupport.statusHistory = [];
     }
+    chatSupport.statusHistory.push({
+      status: 'resolved',
+      performedBy: req.user?.id,
+      performedByName: req.user?.username || 'Support Agent',
+      timestamp: new Date(),
+      reason: resolution || 'Ticket resolved'
+    });
+    
+    // Always add a message to the chat when ticket is resolved
+    const mongoose = require('mongoose');
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : new mongoose.Types.ObjectId('000000000000000000000000');
+    
+    const resolveMessage = resolution 
+      ? `Ticket has been resolved: ${resolution}`
+      : 'Ticket has been resolved';
+    
+    chatSupport.messages.push({
+      senderId: adminObjectId,
+      senderName: req.user?.username || 'Support Agent',
+      senderType: 'Admin',
+      message: resolveMessage,
+      timestamp: new Date()
+    });
     
     await chatSupport.save();
 
@@ -400,13 +432,21 @@ const getAllChatSupports = async (req, res) => {
     const chatSupports = await ChatSupport.find(filters)
       .sort(sortOptions)
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .populate('userId', 'userType profileImage');
 
     const total = await ChatSupport.countDocuments(filters);
 
+    // Map and include userType and profileImage
+    const chatSupportsWithUserData = chatSupports.map(chat => ({
+      ...chat.toObject(),
+      userType: chat.userId?.userType || 'client',
+      userProfileImage: chat.userId?.profileImage || null
+    }));
+
     res.json({
       success: true,
-      chatSupports,
+      chatSupports: chatSupportsWithUserData,
       pagination: {
         current: parseInt(page),
         total: Math.ceil(total / limit),
@@ -424,16 +464,91 @@ const getChatSupport = async (req, res) => {
   try {
     const { chatSupportId } = req.params;
     
-    const chatSupport = await ChatSupport.findById(chatSupportId);
+    const chatSupport = await ChatSupport.findById(chatSupportId)
+      .populate('userId', 'userType profileImage');
 
     if (!chatSupport) {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
-    res.json({ success: true, chatSupport });
+    // Include userType and profileImage in response
+    const chatSupportWithUserData = {
+      ...chatSupport.toObject(),
+      userType: chatSupport.userId?.userType || 'client',
+      userProfileImage: chatSupport.userId?.profileImage || null
+    };
+
+    res.json({ success: true, chatSupport: chatSupportWithUserData });
   } catch (error) {
     console.error('Error fetching chat support:', error);
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Accept chat support
+const acceptChatSupport = async (req, res) => {
+  try {
+    const { chatSupportId } = req.params;
+    const adminId = req.user?.id || '000000000000000000000000';
+
+    const chatSupport = await ChatSupport.findById(chatSupportId);
+    
+    if (!chatSupport) {
+      return res.status(404).json({ success: false, message: 'Chat support not found' });
+    }
+
+    if (chatSupport.status !== 'open') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Only open chats can be accepted' 
+      });
+    }
+
+    // Check if already assigned
+    if (chatSupport.assignedTo || chatSupport.acceptedBy) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This ticket has already been accepted by another admin' 
+      });
+    }
+
+    const mongoose = require('mongoose');
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : new mongoose.Types.ObjectId('000000000000000000000000');
+
+    // Update chat support with admin assignment
+    chatSupport.assignedTo = adminObjectId;
+    chatSupport.acceptedBy = adminObjectId;
+    chatSupport.acceptedAt = new Date();
+    
+    await chatSupport.save();
+
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'support_accepted',
+        `Accepted support ticket: ${chatSupport.subject}`,
+        {
+          targetType: 'support',
+          targetId: chatSupportId,
+          targetModel: 'ChatSupport',
+          metadata: { userName: chatSupport.userName },
+          ipAddress: req.ip
+        }
+      );
+    }
+
+    emitChatSupportUpdate(chatSupport, { 
+      assignedTo: adminObjectId, 
+      acceptedBy: adminObjectId,
+      acceptedAt: chatSupport.acceptedAt 
+    });
+
+    res.json({ success: true, chatSupport });
+  } catch (error) {
+    console.error('Error accepting chat support:', error);
+    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };
 
@@ -459,21 +574,36 @@ const closeChatSupport = async (req, res) => {
     chatSupport.status = 'closed';
     chatSupport.closedAt = new Date();
     
-    if (reason) {
-      const mongoose = require('mongoose');
-      const adminId = req.user?.id || '000000000000000000000000';
-      const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-        ? new mongoose.Types.ObjectId(adminId)
-        : new mongoose.Types.ObjectId('000000000000000000000000');
-      
-      chatSupport.messages.push({
-        senderId: adminObjectId,
-        senderName: req.user?.username || 'Support Agent',
-        senderType: 'Admin',
-        message: `Chat closed: ${reason}`,
-        timestamp: new Date()
-      });
+    // Add to status history
+    if (!chatSupport.statusHistory) {
+      chatSupport.statusHistory = [];
     }
+    chatSupport.statusHistory.push({
+      status: 'resolved',
+      performedBy: req.user?.id,
+      performedByName: req.user?.username || 'Support Agent',
+      timestamp: new Date(),
+      reason: reason || 'Ticket closed'
+    });
+    
+    // Always add a message to the chat when ticket is closed
+    const mongoose = require('mongoose');
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : new mongoose.Types.ObjectId('000000000000000000000000');
+    
+    const closeMessage = reason 
+      ? `Ticket has been resolved: ${reason}`
+      : 'Ticket has been resolved';
+    
+    chatSupport.messages.push({
+      senderId: adminObjectId,
+      senderName: req.user?.username || 'Support Agent',
+      senderType: 'Admin',
+      message: closeMessage,
+      timestamp: new Date()
+    });
     
     await chatSupport.save();
 
@@ -520,7 +650,18 @@ const reopenChatSupport = async (req, res) => {
     }
 
     chatSupport.status = 'open';
-    chatSupport.closedAt = undefined;
+    // Keep closedAt to preserve history - don't set to undefined
+    
+    // Add to status history
+    if (!chatSupport.statusHistory) {
+      chatSupport.statusHistory = [];
+    }
+    chatSupport.statusHistory.push({
+      status: 'reopened',
+      performedBy: req.user?.id,
+      performedByName: req.user?.username || 'Support Agent',
+      timestamp: new Date()
+    });
     
     const mongoose = require('mongoose');
     const adminId = req.user?.id || '000000000000000000000000';
@@ -649,6 +790,7 @@ module.exports = {
   getSupportStats,
   getAllChatSupports,
   getChatSupport,
+  acceptChatSupport,
   closeChatSupport,
   reopenChatSupport,
   addChatSupportMessage,

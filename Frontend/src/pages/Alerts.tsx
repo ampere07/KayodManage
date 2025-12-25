@@ -1,10 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   AlertTriangle, 
   Eye, 
-  Trash2, 
-  CheckCircle, 
-  XCircle, 
   ChevronLeft,
   ChevronRight,
   Calendar,
@@ -12,84 +10,75 @@ import {
   Flag,
   Search,
   Image as ImageIcon,
-  Video
+  XCircle
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
-import SideModal from '../components/SideModal';
-
-interface ReportedPost {
-  _id: string;
-  jobId: {
-    _id: string;
-    title: string;
-    description: string;
-    category: string;
-    location: {
-      address: string;
-      city: string;
-      region: string;
-      country: string;
-    };
-    budget: number;
-    budgetType: string;
-    paymentMethod: string;
-    media?: any[];
-    isDeleted?: boolean;
-    createdAt: string;
-  };
-  reportedBy: {
-    _id: string;
-    providerId: string;
-    providerName: string;
-    providerEmail: string;
-  };
-  jobPosterId: string;
-  reason: string;
-  comment: string;
-  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
-  reviewedBy?: string;
-  reviewedAt?: string;
-  adminNotes: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import { alertsService } from '../services';
+import { ReviewReportModal } from '../components/Modals';
+import type { 
+  ReportedPost, 
+  ReportFilterStatus 
+} from '../types/alerts.types';
 
 const Alerts: React.FC = () => {
   const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<ReportedPost | null>(null);
-  const [adminNotes, setAdminNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed' | 'resolved' | 'dismissed'>('all');
+  const [filter, setFilter] = useState<ReportFilterStatus>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightedRowRef = useRef<HTMLTableRowElement>(null);
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchReportedPosts();
   }, []);
 
+  // Handle reportId from URL params
+  useEffect(() => {
+    const reportId = searchParams.get('reportId');
+    const alertId = searchParams.get('alertId');
+    const targetId = reportId || alertId;
+    
+    if (targetId && reportedPosts.length > 0) {
+      const post = reportedPosts.find(p => p._id === targetId);
+      if (post) {
+        // Set the highlighted post
+        setHighlightedPostId(targetId);
+        
+        // Open the modal automatically
+        setSelectedPost(post);
+        setIsModalOpen(true);
+        
+        // Scroll to the highlighted row after a short delay
+        setTimeout(() => {
+          highlightedRowRef.current?.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }, 300);
+        
+        // Clear the URL parameter after processing
+        searchParams.delete('reportId');
+        searchParams.delete('alertId');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [reportedPosts, searchParams, setSearchParams]);
+
   const fetchReportedPosts = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/admin/reported-posts', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch reported posts');
-      }
-
-      const data = await response.json();
+      const data = await alertsService.getReportedPosts();
       setReportedPosts(data.reportedPosts || []);
       setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+    } catch (err: any) {
+      setError(err?.message || 'An error occurred');
       console.error('Error fetching reported posts:', err);
     } finally {
       setLoading(false);
@@ -99,24 +88,10 @@ const Alerts: React.FC = () => {
   const handleReviewPost = async (postId: string, action: 'approve' | 'dismiss' | 'delete') => {
     setActionLoading(true);
     try {
-      const response = await fetch(`/api/admin/reported-posts/${postId}/review`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          action,
-          adminNotes: adminNotes.trim() || 'Action taken by admin'
-        })
+      const result = await alertsService.reviewReportedPost(postId, {
+        action,
+        adminNotes: 'Action taken by admin'
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to review post');
-      }
-
-      const result = await response.json();
       
       setReportedPosts(prev => 
         prev.map(post => 
@@ -128,7 +103,6 @@ const Alerts: React.FC = () => {
 
       setIsModalOpen(false);
       setSelectedPost(null);
-      setAdminNotes('');
       
       const actionMessages = {
         approve: 'Post approved and kept',
@@ -138,9 +112,9 @@ const Alerts: React.FC = () => {
       
       alert(actionMessages[action]);
       
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error reviewing post:', err);
-      alert(err instanceof Error ? err.message : 'An error occurred while reviewing the post');
+      alert(err?.response?.data?.message || err?.message || 'An error occurred while reviewing the post');
     } finally {
       setActionLoading(false);
     }
@@ -148,14 +122,16 @@ const Alerts: React.FC = () => {
 
   const handleViewPost = (post: ReportedPost) => {
     setSelectedPost(post);
-    setAdminNotes(post.adminNotes || '');
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedPost(null);
-    setAdminNotes('');
+    // Keep the highlight for a few seconds after closing modal
+    setTimeout(() => {
+      setHighlightedPostId(null);
+    }, 3000);
   };
 
   const getStatusBadge = (status: string) => {
@@ -267,7 +243,7 @@ const Alerts: React.FC = () => {
               <button
                 key={tab.key}
                 onClick={() => {
-                  setFilter(tab.key as any);
+                  setFilter(tab.key as ReportFilterStatus);
                   setCurrentPage(1);
                 }}
                 className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
@@ -333,9 +309,17 @@ const Alerts: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  {paginatedPosts.map((post, index) => (
+                  {paginatedPosts.map((post, index) => {
+                    const isHighlighted = highlightedPostId === post._id;
+                    
+                    return (
                     <React.Fragment key={post._id}>
-                      <tr className="hover:bg-gray-50 transition-colors">
+                      <tr 
+                        ref={isHighlighted ? highlightedRowRef : null}
+                        className={`hover:bg-gray-50 transition-all duration-300 ${
+                          isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
+                        }`}
+                      >
                         <td className="px-6 py-4">
                           <div className="max-w-xs">
                             <div className="text-sm font-medium text-gray-900 truncate">
@@ -423,7 +407,8 @@ const Alerts: React.FC = () => {
                         </tr>
                       )}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
 
@@ -499,232 +484,14 @@ const Alerts: React.FC = () => {
         </div>
       </div>
 
-      {/* Side Modal */}
-      <SideModal
+      {/* Review Report Modal */}
+      <ReviewReportModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        title="Review Reported Post"
-        width="2xl"
-      >
-        {selectedPost && (
-          <div className="p-6 space-y-6">
-            {/* Status Badge */}
-            <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-              <span className="text-sm text-gray-600">Current Status</span>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedPost.status)}`}>
-                {selectedPost.status.charAt(0).toUpperCase() + selectedPost.status.slice(1)}
-              </span>
-            </div>
-
-            {/* Job Details */}
-            <div>
-              <h3 className="font-semibold text-lg mb-3 text-gray-900">Job Details</h3>
-              <div className="space-y-2 text-sm">
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Title:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.title}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Description:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.description}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Category:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.category}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Budget:</span>
-                  <span className="col-span-2 text-gray-900">{formatBudgetWithType(selectedPost.jobId.budget, selectedPost.jobId.budgetType)}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Payment:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.paymentMethod}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Location:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.jobId.location.address}, {selectedPost.jobId.location.city}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-600 font-medium">Posted:</span>
-                  <span className="col-span-2 text-gray-900">{formatDate(selectedPost.jobId.createdAt)}</span>
-                </div>
-                {selectedPost.jobId.isDeleted && (
-                  <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-400 flex items-start">
-                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
-                    <p className="text-red-800 text-sm font-medium">This job has been deleted</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Job Media */}
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="font-semibold text-lg mb-3 text-gray-900">
-                Job Media
-                {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 && (
-                  <span className="ml-2 text-sm font-normal text-gray-600">
-                    ({selectedPost.jobId.media.length} file{selectedPost.jobId.media.length !== 1 ? 's' : ''})
-                  </span>
-                )}
-              </h3>
-              
-              {selectedPost.jobId.media && selectedPost.jobId.media.length > 0 ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {selectedPost.jobId.media.map((mediaItem, index) => {
-                    const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.type;
-                    const mediaType = typeof mediaItem === 'string' 
-                      ? (mediaUrl.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
-                      : mediaItem.mediaType || 'image';
-                    const fileName = typeof mediaItem === 'string'
-                      ? mediaUrl.split('/').pop() || 'Unknown file'
-                      : mediaItem.originalName || 'Unknown file';
-                    
-                    return (
-                      <div key={index} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            mediaType === 'video' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-green-100 text-green-800'
-                          }`}>
-                            {mediaType === 'video' ? (
-                              <><Video className="h-3 w-3 inline mr-1" />Video</>
-                            ) : (
-                              <><ImageIcon className="h-3 w-3 inline mr-1" />Image</>
-                            )}
-                          </span>
-                        </div>
-                        
-                        {mediaType === 'image' ? (
-                          <img
-                            src={mediaUrl}
-                            alt={fileName}
-                            className="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => window.open(mediaUrl, '_blank')}
-                          />
-                        ) : (
-                          <video
-                            src={mediaUrl}
-                            className="w-full h-24 object-cover rounded border"
-                            controls
-                            preload="metadata"
-                          />
-                        )}
-                        
-                        <div className="mt-2">
-                          <a
-                            href={mediaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
-                          >
-                            <Eye className="h-3 w-3 mr-1" />
-                            View
-                          </a>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-6 border-2 border-dashed border-gray-300 rounded-lg text-center">
-                  <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">No media files</p>
-                </div>
-              )}
-            </div>
-
-            {/* Report Details */}
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="font-semibold text-lg mb-3 text-gray-900">Report Details</h3>
-              <div className="p-4 border-l-4 border-red-400 bg-red-50 space-y-2 text-sm">
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-700 font-medium">Reason:</span>
-                  <span className="col-span-2 text-gray-900">{formatReason(selectedPost.reason)}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-700 font-medium">Comment:</span>
-                  <span className="col-span-2 text-gray-900">"{selectedPost.comment}"</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-700 font-medium">Reported by:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.reportedBy.providerName}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-700 font-medium">Email:</span>
-                  <span className="col-span-2 text-gray-900">{selectedPost.reportedBy.providerEmail}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="text-gray-700 font-medium">Report Date:</span>
-                  <span className="col-span-2 text-gray-900">{formatDate(selectedPost.createdAt)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Admin Notes */}
-            {selectedPost.status === 'pending' ? (
-              <div className="border-t border-gray-200 pt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Admin Notes
-                </label>
-                <textarea
-                  value={adminNotes}
-                  onChange={(e) => setAdminNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows={3}
-                  placeholder="Add your notes about this review decision..."
-                />
-              </div>
-            ) : selectedPost.adminNotes && (
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="font-semibold text-lg mb-3 text-gray-900">Admin Notes</h3>
-                <div className="p-3 bg-gray-50 border-l-4 border-gray-400 rounded">
-                  <p className="text-gray-700 text-sm">{selectedPost.adminNotes}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            {selectedPost.status === 'pending' && (
-              <div className="flex gap-2 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => handleReviewPost(selectedPost._id, 'dismiss')}
-                  disabled={actionLoading}
-                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <XCircle className="h-4 w-4 mr-1.5" />
-                  Dismiss
-                </button>
-                
-                <button
-                  onClick={() => handleReviewPost(selectedPost._id, 'approve')}
-                  disabled={actionLoading}
-                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <CheckCircle className="h-4 w-4 mr-1.5" />
-                  Keep Post
-                </button>
-                
-                <button
-                  onClick={() => handleReviewPost(selectedPost._id, 'delete')}
-                  disabled={actionLoading}
-                  className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Trash2 className="h-4 w-4 mr-1.5" />
-                  Delete Post
-                </button>
-              </div>
-            )}
-
-            {actionLoading && (
-              <div className="flex items-center justify-center py-4 border-t border-gray-200">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                <span className="ml-2 text-gray-600 text-sm">Processing...</span>
-              </div>
-            )}
-          </div>
-        )}
-      </SideModal>
+        reportedPost={selectedPost}
+        onReview={handleReviewPost}
+        isLoading={actionLoading}
+      />
     </div>
   );
 };

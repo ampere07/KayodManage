@@ -87,13 +87,13 @@ const Dashboard: React.FC = () => {
 
   const handleAlertClick = (alert: any) => {
     if (alert.category === 'reported_post' || alert.reportId) {
-      navigate(`/jobs?reportId=${alert.reportId || alert._id.replace('report_', '')}`);
+      navigate(`/alerts?reportId=${alert.reportId || alert._id.replace('report_', '')}`);
     } else if (alert.category === 'verification_request' || alert.verificationId) {
       navigate(`/verifications?id=${alert.verificationId || alert._id.replace('verification_', '')}`);
     } else if (alert.category === 'support_ticket' || alert.supportId) {
       navigate(`/support?id=${alert.supportId || alert._id.replace('support_', '')}`);
     } else {
-      navigate('/alerts');
+      navigate(`/alerts?alertId=${alert._id}`);
     }
   };
 

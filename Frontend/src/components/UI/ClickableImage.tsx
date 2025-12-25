@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { getPlaceholderImage } from '../../utils/imageUtils';
-import FullscreenImageModal from './FullscreenImageModal';
+import FullscreenImageModal from '../Modals/FullscreenImageModal';
 
 interface ClickableImageProps {
   src: string;

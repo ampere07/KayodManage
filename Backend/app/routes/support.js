@@ -10,6 +10,7 @@ const {
   getSupportStats,
   getAllChatSupports,
   getChatSupport,
+  acceptChatSupport,
   closeChatSupport,
   reopenChatSupport,
   addChatSupportMessage,
@@ -67,6 +68,7 @@ router.post('/tickets/:ticketId/messages', addMessage);
 // ChatSupport Routes (admin only)
 router.get('/chatsupports', getAllChatSupports);
 router.get('/chatsupports/:chatSupportId', getChatSupport);
+router.put('/chatsupports/:chatSupportId/accept', acceptChatSupport);
 router.put('/chatsupports/:chatSupportId/close', closeChatSupport);
 router.put('/chatsupports/:chatSupportId/reopen', reopenChatSupport);
 router.post('/chatsupports/:chatSupportId/messages', addChatSupportMessage);
