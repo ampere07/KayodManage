@@ -275,7 +275,6 @@ const Verifications: React.FC = () => {
           <div className="bg-blue-50 rounded-lg p-3">
             <p className="text-xs text-gray-600 font-medium mb-1">Total Users</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{userVerifications.length}</p>
-            <p className="text-xs text-gray-500 mt-1">{verifications.length} submissions</p>
           </div>
           <div className="bg-yellow-50 rounded-lg p-3">
             <p className="text-xs text-gray-600 font-medium mb-1">Pending Review</p>
@@ -283,9 +282,6 @@ const Verifications: React.FC = () => {
               {userVerifications.filter(({ verifications }) => 
                 verifications.some(v => v.status === 'pending' || v.status === 'under_review')
               ).length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {verifications.filter(v => v.status === 'pending' || v.status === 'under_review').length} items
             </p>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
@@ -295,9 +291,6 @@ const Verifications: React.FC = () => {
                 verifications.some(v => v.status === 'approved')
               ).length}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {verifications.filter(v => v.status === 'approved').length} items
-            </p>
           </div>
           <div className="bg-red-50 rounded-lg p-3">
             <p className="text-xs text-gray-600 font-medium mb-1">Rejected</p>
@@ -305,9 +298,6 @@ const Verifications: React.FC = () => {
               {userVerifications.filter(({ verifications }) => 
                 verifications.some(v => v.status === 'rejected')
               ).length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {verifications.filter(v => v.status === 'rejected').length} items
             </p>
           </div>
         </div>

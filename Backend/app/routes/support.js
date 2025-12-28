@@ -68,7 +68,10 @@ router.post('/tickets/:ticketId/messages', addMessage);
 // ChatSupport Routes (admin only)
 router.get('/chatsupports', getAllChatSupports);
 router.get('/chatsupports/:chatSupportId', getChatSupport);
-router.put('/chatsupports/:chatSupportId/accept', acceptChatSupport);
+router.put('/chatsupports/:chatSupportId/accept', (req, res, next) => {
+  console.log('🎯 Accept endpoint hit:', req.params.chatSupportId);
+  acceptChatSupport(req, res, next);
+});
 router.put('/chatsupports/:chatSupportId/close', closeChatSupport);
 router.put('/chatsupports/:chatSupportId/reopen', reopenChatSupport);
 router.post('/chatsupports/:chatSupportId/messages', addChatSupportMessage);

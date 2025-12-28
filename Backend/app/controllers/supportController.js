@@ -1,5 +1,6 @@
 const ChatSupport = require('../models/ChatSupport');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 const { emitSupportUpdate, emitChatSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
 const { logActivity } = require('../utils/activityLogger');
 
@@ -169,31 +170,43 @@ const rejectTicket = async (req, res) => {
     chatSupport.status = 'closed';
     chatSupport.closedAt = new Date();
     
-    // Add to status history
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : null;
+    
+    if (!chatSupport.assignedTo && adminObjectId) {
+      chatSupport.assignedTo = adminObjectId;
+      chatSupport.assignedToName = req.user?.username || 'Support Agent';
+    }
+    
+    if (chatSupport.ticketHistory && chatSupport.ticketHistory.length > 0) {
+      const lastTicket = chatSupport.ticketHistory[chatSupport.ticketHistory.length - 1];
+      if (!lastTicket.closedAt) {
+        lastTicket.closedAt = new Date();
+        lastTicket.resolvedBy = adminObjectId;
+      }
+    }
+    
     if (!chatSupport.statusHistory) {
       chatSupport.statusHistory = [];
     }
     chatSupport.statusHistory.push({
       status: 'resolved',
-      performedBy: req.user?.id,
+      performedBy: adminObjectId,
       performedByName: req.user?.username || 'Support Agent',
       timestamp: new Date(),
       reason: reason || 'Ticket resolved'
     });
     
-    // Always add a message to the chat when ticket is rejected/closed
-    const mongoose = require('mongoose');
-    const adminId = req.user?.id || '000000000000000000000000';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-      ? new mongoose.Types.ObjectId(adminId)
-      : new mongoose.Types.ObjectId('000000000000000000000000');
+    const adminMsgObjectId = adminObjectId || new mongoose.Types.ObjectId('000000000000000000000000');
     
     const rejectMessage = reason 
       ? `Ticket has been closed: ${reason}`
       : 'Ticket has been closed';
     
     chatSupport.messages.push({
-      senderId: adminObjectId,
+      senderId: adminMsgObjectId,
       senderName: req.user?.username || 'Support Agent',
       senderType: 'Admin',
       message: rejectMessage,
@@ -201,6 +214,33 @@ const rejectTicket = async (req, res) => {
     });
     
     await chatSupport.save();
+    console.log(`✅ Ticket ${ticketId} rejected - status: ${chatSupport.status}`);
+
+    if (adminObjectId) {
+      try {
+        await User.findByIdAndUpdate(
+          adminObjectId,
+          { $inc: { ticketsResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating admin ticketsResolved:', updateError);
+      }
+    }
+
+    if (chatSupport.userId) {
+      try {
+        await User.findByIdAndUpdate(
+          chatSupport.userId,
+          { $inc: { ticketsSubmittedResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
+      }
+    }
 
     const ticket = {
       _id: chatSupport._id,
@@ -249,31 +289,35 @@ const resolveTicket = async (req, res) => {
     chatSupport.status = 'closed';
     chatSupport.closedAt = new Date();
     
-    // Add to status history
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : null;
+    
+    if (!chatSupport.assignedTo && adminObjectId) {
+      chatSupport.assignedTo = adminObjectId;
+      chatSupport.assignedToName = req.user?.username || 'Support Agent';
+    }
+    
     if (!chatSupport.statusHistory) {
       chatSupport.statusHistory = [];
     }
     chatSupport.statusHistory.push({
       status: 'resolved',
-      performedBy: req.user?.id,
+      performedBy: adminObjectId,
       performedByName: req.user?.username || 'Support Agent',
       timestamp: new Date(),
       reason: resolution || 'Ticket resolved'
     });
     
-    // Always add a message to the chat when ticket is resolved
-    const mongoose = require('mongoose');
-    const adminId = req.user?.id || '000000000000000000000000';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-      ? new mongoose.Types.ObjectId(adminId)
-      : new mongoose.Types.ObjectId('000000000000000000000000');
+    const adminMsgObjectId = adminObjectId || new mongoose.Types.ObjectId('000000000000000000000000');
     
     const resolveMessage = resolution 
       ? `Ticket has been resolved: ${resolution}`
       : 'Ticket has been resolved';
     
     chatSupport.messages.push({
-      senderId: adminObjectId,
+      senderId: adminMsgObjectId,
       senderName: req.user?.username || 'Support Agent',
       senderType: 'Admin',
       message: resolveMessage,
@@ -281,6 +325,33 @@ const resolveTicket = async (req, res) => {
     });
     
     await chatSupport.save();
+    console.log(`✅ Ticket ${ticketId} resolved - status: ${chatSupport.status}`);
+
+    if (adminObjectId) {
+      try {
+        await User.findByIdAndUpdate(
+          adminObjectId,
+          { $inc: { ticketsResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating admin ticketsResolved:', updateError);
+      }
+    }
+
+    if (chatSupport.userId) {
+      try {
+        await User.findByIdAndUpdate(
+          chatSupport.userId,
+          { $inc: { ticketsSubmittedResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
+      }
+    }
 
     const ticket = {
       _id: chatSupport._id,
@@ -332,8 +403,6 @@ const addMessage = async (req, res) => {
     }
 
     const adminName = req.user?.username || 'Support Agent';
-    
-    const mongoose = require('mongoose');
     const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
       ? new mongoose.Types.ObjectId(adminId)
       : new mongoose.Types.ObjectId('000000000000000000000000');
@@ -420,7 +489,51 @@ const getAllChatSupports = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    const filters = {};
+    const adminId = req.user.id;
+    const adminRole = req.user.role;
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : null;
+
+    if (!adminObjectId) {
+      return res.status(400).json({ success: false, message: 'Invalid admin ID' });
+    }
+
+    console.log('Fetching tickets for admin:', adminObjectId.toString(), 'Role:', adminRole);
+
+    let baseFilters;
+    
+    if (adminRole === 'superadmin') {
+      baseFilters = {
+        assignedTo: adminObjectId
+      };
+    } else {
+      baseFilters = {
+        $or: [
+          { assignedTo: { $exists: false } },
+          { assignedTo: null },
+          { assignedTo: adminObjectId }
+        ]
+      };
+    }
+    
+    const myTickets = await ChatSupport.find(baseFilters).select('userId');
+    const userIds = [...new Set(myTickets.map(t => t.userId.toString()))];
+    
+    let filters;
+    if (adminRole === 'superadmin') {
+      filters = baseFilters;
+    } else {
+      filters = {
+        $or: [
+          { assignedTo: { $exists: false } },
+          { assignedTo: null },
+          { assignedTo: adminObjectId },
+          { userId: { $in: userIds.map(id => new mongoose.Types.ObjectId(id)) } },
+          { 'ticketHistory.resolvedBy': adminObjectId }
+        ]
+      };
+    }
     
     if (status && status !== 'all') filters.status = status;
     if (category && category !== 'all') filters.category = category;
@@ -437,12 +550,27 @@ const getAllChatSupports = async (req, res) => {
 
     const total = await ChatSupport.countDocuments(filters);
 
-    // Map and include userType and profileImage
-    const chatSupportsWithUserData = chatSupports.map(chat => ({
-      ...chat.toObject(),
-      userType: chat.userId?.userType || 'client',
-      userProfileImage: chat.userId?.profileImage || null
-    }));
+    console.log(`Found ${chatSupports.length} tickets for admin ${adminObjectId.toString()}`);
+    chatSupports.forEach(ticket => {
+      console.log(`Ticket ${ticket._id}: assignedTo=${ticket.assignedTo ? ticket.assignedTo.toString() : 'null'}, acceptedBy=${ticket.acceptedBy ? ticket.acceptedBy.toString() : 'null'}`);
+    });
+
+    // Map and include userType, profileImage, and displayStatus
+    const chatSupportsWithUserData = chatSupports.map(chat => {
+      let displayStatus = 'open';
+      if (chat.status === 'closed') {
+        displayStatus = 'resolved';
+      } else if (chat.status === 'open') {
+        displayStatus = chat.acceptedBy ? 'pending' : 'open';
+      }
+
+      return {
+        ...chat.toObject(),
+        userType: chat.userId?.userType || 'client',
+        userProfileImage: chat.userId?.profileImage || null,
+        displayStatus
+      };
+    });
 
     res.json({
       success: true,
@@ -471,11 +599,19 @@ const getChatSupport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
-    // Include userType and profileImage in response
+    // Include userType, profileImage, and displayStatus in response
+    let displayStatus = 'open';
+    if (chatSupport.status === 'closed') {
+      displayStatus = 'resolved';
+    } else if (chatSupport.status === 'open') {
+      displayStatus = chatSupport.acceptedBy ? 'pending' : 'open';
+    }
+
     const chatSupportWithUserData = {
       ...chatSupport.toObject(),
       userType: chatSupport.userId?.userType || 'client',
-      userProfileImage: chatSupport.userId?.profileImage || null
+      userProfileImage: chatSupport.userId?.profileImage || null,
+      displayStatus
     };
 
     res.json({ success: true, chatSupport: chatSupportWithUserData });
@@ -491,61 +627,129 @@ const acceptChatSupport = async (req, res) => {
     const { chatSupportId } = req.params;
     const adminId = req.user?.id || '000000000000000000000000';
 
+    console.log('🔍 Accepting ticket:', { chatSupportId, adminId, user: req.user });
+
     const chatSupport = await ChatSupport.findById(chatSupportId);
     
+    console.log('📝 Found chat support:', chatSupport ? 'YES' : 'NO');
+    
     if (!chatSupport) {
+      console.log('❌ Chat support not found');
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
     if (chatSupport.status !== 'open') {
+      console.log('❌ Status not open:', chatSupport.status);
       return res.status(400).json({ 
         success: false, 
         message: 'Only open chats can be accepted' 
       });
     }
 
-    // Check if already assigned
-    if (chatSupport.assignedTo || chatSupport.acceptedBy) {
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : null;
+
+    console.log('🔑 Admin ObjectId:', adminObjectId?.toString());
+
+    if (!adminObjectId) {
+      console.log('❌ Invalid admin ID');
       return res.status(400).json({ 
         success: false, 
-        message: 'This ticket has already been accepted by another admin' 
+        message: 'Invalid admin ID' 
       });
     }
 
-    const mongoose = require('mongoose');
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
-      ? new mongoose.Types.ObjectId(adminId)
-      : new mongoose.Types.ObjectId('000000000000000000000000');
+    // Check if user is an admin (allow both admin and superadmin)
+    const adminRole = req.user?.role;
+    const adminUsername = req.user?.username;
+    
+    console.log('👤 Admin from session:', { username: adminUsername, role: adminRole });
+    
+    if (!adminUsername || !adminRole) {
+      console.log('❌ Admin session data incomplete');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Admin session data incomplete' 
+      });
+    }
 
-    // Update chat support with admin assignment
+    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
+      console.log('❌ Not an admin or superadmin:', adminRole);
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only admins can accept tickets.' 
+      });
+    }
+
+    if (chatSupport.assignedTo && !chatSupport.assignedTo.equals(adminObjectId)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'This ticket is already assigned to another admin' 
+      });
+    }
+
+    // Check if already accepted
+    if (chatSupport.acceptedBy) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This ticket has already been accepted' 
+      });
+    }
+
+    // Accept the ticket
     chatSupport.assignedTo = adminObjectId;
+    chatSupport.assignedToName = adminUsername;
     chatSupport.acceptedBy = adminObjectId;
+    chatSupport.acceptedByName = adminUsername;
     chatSupport.acceptedAt = new Date();
     
     await chatSupport.save();
 
-    if (req.user && req.user.id) {
+    console.log(`✅ Ticket ${chatSupportId} accepted by admin ${adminObjectId.toString()} (${adminUsername})`);
+    console.log(`Ticket assignedTo: ${chatSupport.assignedTo.toString()}, acceptedBy: ${chatSupport.acceptedBy.toString()}`);
+
+    // Log activity - ALWAYS log this action
+    try {
       await logActivity(
-        req.user.id,
+        adminObjectId.toString(),
         'support_accepted',
         `Accepted support ticket: ${chatSupport.subject}`,
         {
           targetType: 'support',
           targetId: chatSupportId,
           targetModel: 'ChatSupport',
-          metadata: { userName: chatSupport.userName },
+          metadata: { 
+            ticketId: chatSupport.ticketId,
+            userName: chatSupport.userName,
+            adminUsername: adminUsername,
+            subject: chatSupport.subject
+          },
           ipAddress: req.ip
         }
       );
+      console.log('✅ Activity logged successfully');
+    } catch (activityError) {
+      console.error('❌ Error logging activity:', activityError);
+      // Continue even if activity logging fails
     }
 
-    emitChatSupportUpdate(chatSupport, { 
-      assignedTo: adminObjectId, 
-      acceptedBy: adminObjectId,
-      acceptedAt: chatSupport.acceptedAt 
+    const freshChatSupport = await ChatSupport.findById(chatSupportId)
+      .populate('userId', 'userType profileImage')
+      .lean();
+
+    console.log('Emitting socket update with status:', freshChatSupport.status);
+    emitChatSupportUpdate(freshChatSupport._id, { 
+      status: freshChatSupport.status,
+      assignedTo: freshChatSupport.assignedTo,
+      assignedToName: freshChatSupport.assignedToName,
+      acceptedBy: freshChatSupport.acceptedBy,
+      acceptedByName: freshChatSupport.acceptedByName,
+      acceptedAt: freshChatSupport.acceptedAt,
+      updatedAt: freshChatSupport.updatedAt
     });
 
-    res.json({ success: true, chatSupport });
+    res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
     console.error('Error accepting chat support:', error);
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
@@ -557,6 +761,14 @@ const closeChatSupport = async (req, res) => {
   try {
     const { chatSupportId } = req.params;
     const { reason } = req.body;
+    const adminRole = req.user?.role;
+
+    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only admins can close tickets' 
+      });
+    }
 
     const chatSupport = await ChatSupport.findById(chatSupportId);
     
@@ -571,25 +783,31 @@ const closeChatSupport = async (req, res) => {
       });
     }
 
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+      ? new mongoose.Types.ObjectId(adminId)
+      : null;
+
     chatSupport.status = 'closed';
     chatSupport.closedAt = new Date();
     
-    // Add to status history
+    if (!chatSupport.assignedTo && adminObjectId) {
+      chatSupport.assignedTo = adminObjectId;
+      chatSupport.assignedToName = req.user?.username || 'Support Agent';
+    }
+    
     if (!chatSupport.statusHistory) {
       chatSupport.statusHistory = [];
     }
     chatSupport.statusHistory.push({
       status: 'resolved',
-      performedBy: req.user?.id,
+      performedBy: adminObjectId,
       performedByName: req.user?.username || 'Support Agent',
       timestamp: new Date(),
       reason: reason || 'Ticket closed'
     });
     
-    // Always add a message to the chat when ticket is closed
-    const mongoose = require('mongoose');
-    const adminId = req.user?.id || '000000000000000000000000';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
+    const adminMsgObjectId = mongoose.Types.ObjectId.isValid(adminId) 
       ? new mongoose.Types.ObjectId(adminId)
       : new mongoose.Types.ObjectId('000000000000000000000000');
     
@@ -598,7 +816,7 @@ const closeChatSupport = async (req, res) => {
       : 'Ticket has been resolved';
     
     chatSupport.messages.push({
-      senderId: adminObjectId,
+      senderId: adminMsgObjectId,
       senderName: req.user?.username || 'Support Agent',
       senderType: 'Admin',
       message: closeMessage,
@@ -606,8 +824,35 @@ const closeChatSupport = async (req, res) => {
     });
     
     await chatSupport.save();
+    console.log(`✅ Ticket ${chatSupportId} closed - status: ${chatSupport.status}`);
 
-    if (req.user && req.user.id) {
+    if (adminObjectId) {
+      try {
+        await User.findByIdAndUpdate(
+          adminObjectId,
+          { $inc: { ticketsResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating admin ticketsResolved:', updateError);
+      }
+    }
+
+    if (chatSupport.userId) {
+      try {
+        await User.findByIdAndUpdate(
+          chatSupport.userId,
+          { $inc: { ticketsSubmittedResolved: 1 } },
+          { new: true }
+        );
+        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
+      } catch (updateError) {
+        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
+      }
+    }
+
+    try {
       await logActivity(
         req.user.id,
         'support_closed',
@@ -620,11 +865,25 @@ const closeChatSupport = async (req, res) => {
           ipAddress: req.ip
         }
       );
+      console.log('✅ Activity logged: Ticket closed');
+    } catch (activityError) {
+      console.error('❌ Error logging activity:', activityError);
     }
 
-    emitChatSupportUpdate(chatSupport, { status: 'closed', closedAt: chatSupport.closedAt });
+    const freshChatSupport = await ChatSupport.findById(chatSupportId)
+      .populate('userId', 'userType profileImage')
+      .lean();
 
-    res.json({ success: true, chatSupport });
+    console.log('Emitting socket update with status:', freshChatSupport.status);
+    emitChatSupportUpdate(freshChatSupport._id, { 
+      status: freshChatSupport.status, 
+      closedAt: freshChatSupport.closedAt,
+      updatedAt: freshChatSupport.updatedAt,
+      messages: freshChatSupport.messages,
+      statusHistory: freshChatSupport.statusHistory
+    });
+
+    res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
     console.error('Error closing chat:', error);
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
@@ -635,6 +894,14 @@ const closeChatSupport = async (req, res) => {
 const reopenChatSupport = async (req, res) => {
   try {
     const { chatSupportId } = req.params;
+    const adminRole = req.user?.role;
+
+    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only admins can reopen tickets' 
+      });
+    }
 
     const chatSupport = await ChatSupport.findById(chatSupportId);
     
@@ -650,9 +917,8 @@ const reopenChatSupport = async (req, res) => {
     }
 
     chatSupport.status = 'open';
-    // Keep closedAt to preserve history - don't set to undefined
+    chatSupport.closedAt = null;
     
-    // Add to status history
     if (!chatSupport.statusHistory) {
       chatSupport.statusHistory = [];
     }
@@ -663,7 +929,6 @@ const reopenChatSupport = async (req, res) => {
       timestamp: new Date()
     });
     
-    const mongoose = require('mongoose');
     const adminId = req.user?.id || '000000000000000000000000';
     const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
       ? new mongoose.Types.ObjectId(adminId)
@@ -678,8 +943,9 @@ const reopenChatSupport = async (req, res) => {
     });
     
     await chatSupport.save();
+    console.log(`✅ Ticket ${chatSupportId} reopened - status: ${chatSupport.status}`);
 
-    if (req.user && req.user.id) {
+    try {
       await logActivity(
         req.user.id,
         'support_reopened',
@@ -692,11 +958,25 @@ const reopenChatSupport = async (req, res) => {
           ipAddress: req.ip
         }
       );
+      console.log('✅ Activity logged: Ticket reopened');
+    } catch (activityError) {
+      console.error('❌ Error logging activity:', activityError);
     }
 
-    emitChatSupportUpdate(chatSupport, { status: 'open' });
+    const freshChatSupport = await ChatSupport.findById(chatSupportId)
+      .populate('userId', 'userType profileImage')
+      .lean();
 
-    res.json({ success: true, chatSupport });
+    console.log('Emitting socket update with status:', freshChatSupport.status);
+    emitChatSupportUpdate(freshChatSupport._id, { 
+      status: freshChatSupport.status,
+      closedAt: freshChatSupport.closedAt,
+      updatedAt: freshChatSupport.updatedAt,
+      messages: freshChatSupport.messages,
+      statusHistory: freshChatSupport.statusHistory
+    });
+
+    res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
     console.error('Error reopening chat:', error);
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
@@ -709,9 +989,18 @@ const addChatSupportMessage = async (req, res) => {
     const { chatSupportId } = req.params;
     const { message } = req.body;
     const adminId = req.user?.id || '000000000000000000000000';
+    const adminRole = req.user?.role;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ success: false, message: 'Message is required' });
+    }
+
+    // Allow both admin and superadmin to send messages
+    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only admins can send messages to tickets' 
+      });
     }
 
     const chatSupport = await ChatSupport.findById(chatSupportId);
@@ -728,8 +1017,6 @@ const addChatSupportMessage = async (req, res) => {
     }
 
     const adminName = req.user?.username || 'Support Agent';
-    
-    const mongoose = require('mongoose');
     const adminObjectId = mongoose.Types.ObjectId.isValid(adminId) 
       ? new mongoose.Types.ObjectId(adminId)
       : new mongoose.Types.ObjectId('000000000000000000000000');

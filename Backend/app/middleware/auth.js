@@ -17,7 +17,7 @@ const authMiddleware = (req, res, next) => {
 };
 
 const adminAuth = (req, res, next) => {
-  if (req.session && req.session.isAuthenticated && req.session.role === 'admin') {
+  if (req.session && req.session.isAuthenticated && (req.session.role === 'admin' || req.session.role === 'superadmin')) {
     // Attach admin user data to request object
     req.user = {
       id: req.session.userId || req.session.adminId || 'admin',

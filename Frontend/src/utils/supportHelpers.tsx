@@ -26,15 +26,18 @@ export const getPriorityBadge = (priority: string): JSX.Element => {
 };
 
 /**
- * Get status badge component based on status and assignment
+ * Get status badge component
  */
 export const getStatusBadge = (
   status: string,
   assignedTo?: string,
-  acceptedBy?: string
+  acceptedBy?: string,
+  displayStatus?: string
 ): JSX.Element => {
-  // Open = no admin has accepted (unassigned)
-  if (status === 'open' && !assignedTo && !acceptedBy) {
+  // Use displayStatus if provided (from backend)
+  const effectiveStatus = displayStatus || (status === 'open' && !acceptedBy ? 'open' : status === 'open' && acceptedBy ? 'pending' : 'resolved');
+  
+  if (effectiveStatus === 'open') {
     return (
       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
         <Clock className="w-3 h-3 mr-1" />
@@ -42,8 +45,7 @@ export const getStatusBadge = (
       </span>
     );
   }
-  // Pending = accepted by an admin (assigned but not closed)
-  else if (status === 'open' && (assignedTo || acceptedBy)) {
+  else if (effectiveStatus === 'pending') {
     return (
       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
         <Clock className="w-3 h-3 mr-1" />
@@ -51,8 +53,7 @@ export const getStatusBadge = (
       </span>
     );
   }
-  // Resolved = closed by admin
-  else if (status === 'closed') {
+  else if (effectiveStatus === 'resolved' || status === 'closed') {
     return (
       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
         <CheckCircle className="w-3 h-3 mr-1" />

@@ -2,8 +2,14 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 interface User {
+  id?: string;
+  _id?: string;
   username: string;
   role: string;
+  adminId?: string;
+  userId?: string;
+  name?: string;
+  email?: string;
 }
 
 interface AuthState {

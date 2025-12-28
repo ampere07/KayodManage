@@ -51,6 +51,7 @@ export interface User {
   isVerified: boolean;
   isRestricted: boolean;
   isOnline: boolean;
+  dateOfBirth?: string;
   accountStatus?: AccountStatus;
   restrictionDetails?: RestrictionDetails;
   wallet: UserWallet;
