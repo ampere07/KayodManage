@@ -416,15 +416,32 @@ const emitChatSupportUpdate = (chatSupport, updates) => {
   if (adminNamespace && chatSupport) {
     const chatSupportId = chatSupport._id.toString();
     
+    // Calculate displayStatus
+    let displayStatus = 'open';
+    const effectiveStatus = updates.status || chatSupport.status;
+    const effectiveAcceptedBy = updates.acceptedBy !== undefined ? updates.acceptedBy : chatSupport.acceptedBy;
+    
+    if (effectiveStatus === 'closed') {
+      displayStatus = 'resolved';
+    } else if (effectiveStatus === 'open') {
+      displayStatus = effectiveAcceptedBy ? 'pending' : 'open';
+    }
+    
+    // Include displayStatus in updates
+    const updatesWithDisplay = {
+      ...updates,
+      displayStatus
+    };
+    
     adminNamespace.to('admin').emit('support:chat_updated', {
       chatSupportId,
-      updates,
+      updates: updatesWithDisplay,
       timestamp: new Date()
     });
     
     adminNamespace.to(`support:${chatSupportId}`).emit('support:chat_updated', {
       chatSupportId,
-      updates,
+      updates: updatesWithDisplay,
       timestamp: new Date()
     });
   }
@@ -529,6 +546,15 @@ const setupChatSupportChangeStream = () => {
               if (chatSupport.closedAt) {
                 updates.closedAt = chatSupport.closedAt;
               }
+              
+              // Calculate displayStatus
+              let displayStatus = 'open';
+              if (chatSupport.status === 'closed') {
+                displayStatus = 'resolved';
+              } else if (chatSupport.status === 'open') {
+                displayStatus = chatSupport.acceptedBy ? 'pending' : 'open';
+              }
+              updates.displayStatus = displayStatus;
               
               if (adminNamespace) {
                 adminNamespace.to('admin').emit('support:chat_updated', {

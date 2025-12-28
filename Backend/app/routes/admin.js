@@ -5,7 +5,8 @@ const {
   reviewReportedPost,
   createReport,
   getReportsSummary,
-  bulkUpdateReports
+  bulkUpdateReports,
+  getAdminStats
 } = require('../controllers/adminController');
 const {
   getAllVerifications,
@@ -38,6 +39,8 @@ router.patch('/verifications/:verificationId', adminAuth, updateVerificationStat
 router.get('/users/:userId/images', adminAuth, getUserImages);
 
 router.get('/activity-logs', adminAuth, getActivityLogs);
+
+router.get('/stats', adminAuth, getAdminStats);
 
 // Manual trigger for auto-approving top-ups
 router.post('/approve-topups-now', adminAuth, async (req, res) => {

@@ -211,6 +211,18 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               <div className="space-y-2.5">
                 <p className="text-base text-gray-900"><span className="text-gray-600">First Name:</span> {firstName}</p>
                 <p className="text-base text-gray-900"><span className="text-gray-600">Last Name:</span> {lastName}</p>
+                <p className="text-base text-gray-900">
+                  <span className="text-gray-600">Date of Birth:</span>{' '}
+                  {user.dateOfBirth ? (
+                    new Date(user.dateOfBirth).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })
+                  ) : (
+                    'N/A'
+                  )}
+                </p>
               </div>
             </div>
 

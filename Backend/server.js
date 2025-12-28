@@ -80,6 +80,18 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/debug', debugRoutes);
 
+// Log registered routes for debugging
+console.log('\n📡 Registered support routes:');
+const supportRouter = require('./app/routes/support');
+if (supportRouter && supportRouter.stack) {
+  supportRouter.stack.forEach((layer) => {
+    if (layer.route) {
+      const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+      console.log(`  ${methods} /api/support${layer.route.path}`);
+    }
+  });
+}
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const mongoose = require('mongoose');

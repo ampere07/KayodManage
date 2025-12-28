@@ -13,6 +13,7 @@ export interface Message {
 
 export interface ChatSupport {
   _id: string;
+  ticketId?: string;
   userId: string;
   userEmail?: string;
   userName?: string;
@@ -22,6 +23,7 @@ export interface ChatSupport {
   category: string;
   description?: string;
   status: 'open' | 'closed';
+  displayStatus?: 'open' | 'pending' | 'resolved';
   priority: 'urgent' | 'high' | 'medium' | 'low';
   messages?: Message[];
   createdAt: string;
@@ -29,7 +31,9 @@ export interface ChatSupport {
   closedAt?: string;
   unreadCount?: number;
   assignedTo?: string;
+  assignedToName?: string;
   acceptedBy?: string;
+  acceptedByName?: string;
   acceptedAt?: string;
   statusHistory?: Array<{
     status: 'resolved' | 'reopened';
@@ -37,6 +41,15 @@ export interface ChatSupport {
     performedByName?: string;
     timestamp: string;
     reason?: string;
+  }>;
+  ticketHistory?: Array<{
+    ticketNumber: number;
+    subject: string;
+    category: string;
+    openedAt: string;
+    closedAt?: string;
+    resolvedBy?: string;
+    messageCount: number;
   }>;
 }
 

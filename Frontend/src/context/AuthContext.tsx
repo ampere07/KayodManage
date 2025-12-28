@@ -2,8 +2,14 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import apiClient from '../utils/apiClient';
 
 interface User {
+  id?: string;
+  _id?: string;
   username: string;
   role: string;
+  adminId?: string;
+  userId?: string;
+  name?: string;
+  email?: string;
 }
 
 interface AuthContextType {

@@ -522,11 +522,50 @@ const bulkUpdateReports = async (req, res) => {
   }
 };
 
+const getAdminStats = async (req, res) => {
+  try {
+    const adminId = req.user?.id || req.session?.adminId;
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin ID not found'
+      });
+    }
+
+    const admin = await User.findById(adminId).select('name email ticketsResolved userType');
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      stats: {
+        name: admin.name,
+        email: admin.email,
+        ticketsResolved: admin.ticketsResolved || 0,
+        userType: admin.userType
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getReportedPosts,
   getReportedPostById,
   reviewReportedPost,
   createReport,
   getReportsSummary,
-  bulkUpdateReports
+  bulkUpdateReports,
+  getAdminStats
 };

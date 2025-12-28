@@ -17,6 +17,7 @@ import { SupportChatModal } from '../components/Modals';
 
 // Service imports
 import { supportService } from '../services';
+import { useAuth } from '../context/AuthContext';
 
 // Type imports
 import type { ChatSupport, Message } from '../types';
@@ -29,6 +30,8 @@ import { getInitials, getPriorityBadge, getStatusBadge } from '../utils';
  * Manages support tickets and live chat with socket.io
  */
 const Support: React.FC = () => {
+  const { user } = useAuth();
+  
   // State management
   const [chatSupports, setChatSupports] = useState<ChatSupport[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSupport | null>(null);
@@ -229,16 +232,35 @@ const Support: React.FC = () => {
   const handleChatUpdate = (data: any) => {
     const { chatSupportId, updates } = data;
 
-    setChatSupports(prev => prev.map(chat =>
-      chat._id === chatSupportId
-        ? { ...chat, ...updates, updatedAt: data.timestamp }
-        : chat
-    ));
+    console.log('Socket update received:', { chatSupportId, updates });
+
+    setChatSupports(prev => {
+      const chat = prev.find(c => c._id === chatSupportId);
+      if (!chat) return prev;
+
+      if (chat.status === updates.status && chat.updatedAt === updates.updatedAt) {
+        console.log('Socket update ignored - data already current');
+        return prev;
+      }
+
+      return prev.map(c => {
+        if (c._id === chatSupportId) {
+          const updatedChat = { ...c, ...updates, updatedAt: updates.updatedAt || data.timestamp || new Date().toISOString() };
+          console.log('Updated chat status:', updatedChat.status);
+          return updatedChat;
+        }
+        return c;
+      });
+    });
 
     if (selectedChatIdRef.current === chatSupportId) {
-      setSelectedChat(prev =>
-        prev ? { ...prev, ...updates, updatedAt: data.timestamp } : prev
-      );
+      setSelectedChat(prev => {
+        if (!prev) return prev;
+        if (prev.status === updates.status && prev.updatedAt === updates.updatedAt) {
+          return prev;
+        }
+        return { ...prev, ...updates, updatedAt: updates.updatedAt || data.timestamp || new Date().toISOString() };
+      });
     }
   };
 
@@ -274,10 +296,7 @@ const Support: React.FC = () => {
       setSelectedChat(data.chatSupport);
       setIsChatModalOpen(true);
 
-      // Auto-accept ticket when admin opens it (if not already assigned)
-      if (data.chatSupport.status === 'open' && !data.chatSupport.assignedTo && !data.chatSupport.acceptedBy) {
-        handleAcceptTicket(data.chatSupport._id);
-      }
+      // Don't auto-accept - admin must click Accept button
     } catch (error) {
       console.error('Error fetching chat details:', error);
       setSelectedChat(chat);
@@ -303,12 +322,21 @@ const Support: React.FC = () => {
     try {
       const result = await supportService.performAction(chatSupportId, action);
 
-      if (selectedChatIdRef.current === chatSupportId) {
-        setSelectedChat(result.chatSupport);
-      }
+      console.log(`Action '${action}' completed:`, result.chatSupport.status, result.chatSupport);
+
+      const updatedChatSupport = result.chatSupport;
+
       setChatSupports(prev => prev.map(chat =>
-        chat._id === chatSupportId ? result.chatSupport : chat
+        chat._id === chatSupportId ? updatedChatSupport : chat
       ));
+
+      if (selectedChatIdRef.current === chatSupportId) {
+        setSelectedChat(updatedChatSupport);
+      }
+
+      if (action === 'close') {
+        closeChatModal();
+      }
     } catch (error) {
       console.error(`Error ${action} chat:`, error);
     }
@@ -321,12 +349,17 @@ const Support: React.FC = () => {
     try {
       const result = await supportService.acceptTicket(chatSupportId);
 
-      if (selectedChatIdRef.current === chatSupportId) {
-        setSelectedChat(result.chatSupport);
-      }
+      console.log('Ticket accepted:', result.chatSupport.status, result.chatSupport);
+
+      const updatedChatSupport = result.chatSupport;
+
       setChatSupports(prev => prev.map(chat =>
-        chat._id === chatSupportId ? result.chatSupport : chat
+        chat._id === chatSupportId ? updatedChatSupport : chat
       ));
+
+      if (selectedChatIdRef.current === chatSupportId) {
+        setSelectedChat(updatedChatSupport);
+      }
     } catch (error) {
       console.error('Error accepting ticket:', error);
     }
@@ -422,6 +455,22 @@ const Support: React.FC = () => {
   };
 
   /**
+   * Check if current admin has previously resolved this ticket
+   */
+  const hasPreviouslyResolved = (chat: ChatSupport): boolean => {
+    if (!user || !chat.ticketHistory || chat.ticketHistory.length === 0) {
+      return false;
+    }
+    
+    const currentUserId = user.id || user._id || user.adminId || user.userId;
+    if (!currentUserId) return false;
+    
+    return chat.ticketHistory.some((ticket: any) => 
+      ticket.resolvedBy && ticket.resolvedBy.toString() === currentUserId.toString()
+    );
+  };
+
+  /**
    * Filter chat supports based on search and filters
    */
   const filteredChatSupports = chatSupports.filter((chat) => {
@@ -435,14 +484,13 @@ const Support: React.FC = () => {
     // Tab filtering
     let matchesTab = true;
     if (activeTab === 'open') {
-      // Open = tickets no admin has accepted yet (unassigned)
       matchesTab = chat.status === 'open' && !chat.assignedTo && !chat.acceptedBy;
     } else if (activeTab === 'pending') {
-      // Pending = tickets accepted by an admin (assigned but not closed)
       matchesTab = chat.status === 'open' && (chat.assignedTo || chat.acceptedBy);
     } else if (activeTab === 'resolved') {
-      // Resolved = tickets closed by an admin
-      matchesTab = chat.status === 'closed';
+      const hasResolvedInHistory = chat.ticketHistory && chat.ticketHistory.some(t => t.closedAt);
+      const isCurrentlyClosed = chat.status === 'closed';
+      matchesTab = hasResolvedInHistory || isCurrentlyClosed;
     }
 
     return matchesSearch && matchesStatus && matchesPriority && matchesTab;
@@ -501,7 +549,13 @@ const Support: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <div className="bg-purple-50 rounded-lg p-3">
             <p className="text-xs text-gray-600 font-medium mb-1">Total Tickets</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{chatSupports.length}</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">
+              {chatSupports.reduce((sum, chat) => {
+                const historyCount = chat.ticketHistory?.length || 0;
+                const currentTicket = 1;
+                return sum + historyCount + currentTicket;
+              }, 0)}
+            </p>
             <p className="text-xs text-gray-500 mt-1">
               {chatSupports.reduce((sum, chat) => sum + (chat.messages?.length || 0), 0)} messages
             </p>
@@ -528,15 +582,36 @@ const Support: React.FC = () => {
           <div className="bg-green-50 rounded-lg p-3">
             <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {chatSupports.filter(chat => chat.status === 'closed').length}
+              {chatSupports.reduce((sum, chat) => {
+                const resolvedInHistory = chat.ticketHistory?.filter(t => t.closedAt).length || 0;
+                const currentResolved = chat.status === 'closed' ? 1 : 0;
+                console.log('Calculating resolved - Chat:', chat._id, 'InHistory:', resolvedInHistory, 'Current:', currentResolved);
+                return sum + resolvedInHistory + currentResolved;
+              }, 0)}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              {chatSupports.filter(chat => {
-                if (!chat.closedAt) return false;
-                const closedDate = new Date(chat.closedAt);
+              {chatSupports.reduce((sum, chat) => {
                 const today = new Date();
-                return closedDate.toDateString() === today.toDateString();
-              }).length} today
+                today.setHours(0, 0, 0, 0);
+                
+                const resolvedTodayInHistory = chat.ticketHistory?.filter(t => {
+                  if (!t.closedAt) return false;
+                  const closedDate = new Date(t.closedAt);
+                  closedDate.setHours(0, 0, 0, 0);
+                  return closedDate.getTime() === today.getTime();
+                }).length || 0;
+                
+                let currentResolvedToday = 0;
+                if (chat.status === 'closed' && chat.closedAt) {
+                  const closedDate = new Date(chat.closedAt);
+                  closedDate.setHours(0, 0, 0, 0);
+                  if (closedDate.getTime() === today.getTime()) {
+                    currentResolvedToday = 1;
+                  }
+                }
+                
+                return sum + resolvedTodayInHistory + currentResolvedToday;
+              }, 0)} today
             </p>
           </div>
         </div>
@@ -577,7 +652,11 @@ const Support: React.FC = () => {
                 : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
               }`}
           >
-            Resolved ({chatSupports.filter(chat => chat.status === 'closed').length})
+            Resolved ({chatSupports.reduce((sum, chat) => {
+              const resolvedInHistory = chat.ticketHistory?.filter(t => t.closedAt).length || 0;
+              const currentResolved = chat.status === 'closed' ? 1 : 0;
+              return sum + resolvedInHistory + currentResolved;
+            }, 0)})
           </button>
         </div>
 
@@ -662,7 +741,15 @@ const Support: React.FC = () => {
                           {getPriorityBadge(chat.priority)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy)}
+                          <div className="flex items-center justify-center gap-2">
+                            {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
+                            {hasPreviouslyResolved(chat) && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Prev. Resolved
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="flex items-center justify-center gap-1">
@@ -735,7 +822,13 @@ const Support: React.FC = () => {
 
                     <div className="flex flex-wrap gap-2 mb-3">
                       {getPriorityBadge(chat.priority)}
-                      {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy)}
+                      {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
+                      {hasPreviouslyResolved(chat) && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Prev. Resolved
+                        </span>
+                      )}
                       {(chat.unreadCount || 0) > 0 && (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
                           {chat.unreadCount} new
@@ -809,6 +902,7 @@ const Support: React.FC = () => {
         sendMessage={sendMessage}
         sendingMessage={sendingMessage}
         handleChatAction={handleChatAction}
+        handleAcceptTicket={handleAcceptTicket}
         chatSupports={chatSupports}
       />
     </div>

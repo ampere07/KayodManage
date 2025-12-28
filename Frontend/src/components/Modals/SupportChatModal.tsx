@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle, RefreshCw, MessageSquare } from 'lucide-react';
 import { getPriorityBadge, getStatusBadge } from '../../utils/supportHelpers';
 import UserTypeBadge from '../UI/UserTypeBadge';
+import { useAuth } from '../../context/AuthContext';
 
 interface Message {
   _id?: string;
@@ -14,6 +15,7 @@ interface Message {
 
 interface ChatSupport {
   _id: string;
+  ticketId?: string;
   userId: string;
   userEmail?: string;
   userName?: string;
@@ -30,7 +32,9 @@ interface ChatSupport {
   closedAt?: string;
   unreadCount?: number;
   assignedTo?: string;
+  assignedToName?: string;
   acceptedBy?: string;
+  acceptedByName?: string;
   acceptedAt?: string;
   statusHistory?: Array<{
     status: 'resolved' | 'reopened';
@@ -50,6 +54,7 @@ interface SupportChatModalProps {
   sendMessage: () => void;
   sendingMessage: boolean;
   handleChatAction: (chatSupportId: string, action: string) => void;
+  handleAcceptTicket: (chatSupportId: string) => void;
   chatSupports: ChatSupport[];
 }
 
@@ -85,8 +90,10 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   sendMessage,
   sendingMessage,
   handleChatAction,
+  handleAcceptTicket,
   chatSupports
 }) => {
+  const { user } = useAuth();
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
@@ -146,7 +153,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
           <div className="flex-shrink-0 px-6 py-5 border-b bg-white">
             <div className="flex items-start justify-between mb-3">
               <div className="flex-1">
-                <p className="text-sm text-gray-600 mb-1">TICKET ID: {selectedChat._id}</p>
+                <p className="text-sm text-gray-600 mb-1">TICKET ID: {selectedChat.ticketId || selectedChat._id}</p>
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">
                   {selectedChat.subject}
                 </h3>
@@ -160,22 +167,35 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               </div>
               
               <div className="flex items-start gap-2">
-                {selectedChat.status === 'open' ? (
+                {selectedChat.status === 'open' && !selectedChat.acceptedBy && (user?.role === 'admin' || user?.role === 'superadmin') && (
                   <button
-                    onClick={() => handleChatAction(selectedChat._id, 'close')}
-                    className="flex items-center gap-2 px-4 py-2 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+                    onClick={() => handleAcceptTicket(selectedChat._id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
                   >
                     <CheckCircle className="h-4 w-4" />
-                    Resolve
+                    Accept Ticket
                   </button>
+                )}
+                {selectedChat.status === 'open' ? (
+                  (user?.role === 'admin' || user?.role === 'superadmin') && (
+                    <button
+                      onClick={() => handleChatAction(selectedChat._id, 'close')}
+                      className="flex items-center gap-2 px-4 py-2 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Resolve
+                    </button>
+                  )
                 ) : (
-                  <button
-                    onClick={() => handleChatAction(selectedChat._id, 'reopen')}
-                    className="flex items-center gap-2 px-4 py-2 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Reopen
-                  </button>
+                  (user?.role === 'admin' || user?.role === 'superadmin') && (
+                    <button
+                      onClick={() => handleChatAction(selectedChat._id, 'reopen')}
+                      className="flex items-center gap-2 px-4 py-2 bg-white text-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Reopen
+                    </button>
+                  )
                 )}
                 <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
@@ -205,12 +225,13 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 const previousDate = index > 0 ? new Date(selectedChat.messages![index - 1].timestamp) : null;
                 
                 // Check if this is a system message
+                const isTicketSummary = msg.message.includes('PREVIOUS TICKET RESOLVED') || msg.message.includes('Previous Ticket Summary');
                 const messageText = msg.message.toLowerCase();
-                const isSystemMessage = isAdmin && (
-                  messageText.includes('reopened') || 
-                  messageText.includes('resolved') || 
-                  messageText.includes('closed') ||
-                  messageText.includes('accepted')
+                const isSystemMessage = !isTicketSummary && isAdmin && (
+                  messageText.includes('ticket has been') ||
+                  messageText.includes('chat has been') ||
+                  messageText.includes('ticket reopened') ||
+                  messageText.includes('chat reopened')
                 );
                 
                 const showDateSeparator = !previousDate || 
@@ -261,19 +282,126 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 if (isResolvedMessage) messageId = `resolved-${msg.timestamp}`;
                 if (isReopenedMessage) messageId = `reopened-${msg.timestamp}`;
                 
-                // Render system message differently
-                if (isSystemMessage) {
+                // Render ticket summary message differently
+                if (isTicketSummary) {
+                  const parseSummary = (text: string) => {
+                    const sections = text.split(/(?=✓|⚡)/).filter(s => s.trim());
+                    return sections.map(section => {
+                      const lines = section.split('\n').filter(l => l.trim());
+                      const title = lines[0];
+                      const details: { [key: string]: string } = {};
+                      
+                      lines.slice(1).forEach(line => {
+                        const colonIndex = line.indexOf(':');
+                        if (colonIndex > -1) {
+                          const key = line.substring(0, colonIndex).trim();
+                          const value = line.substring(colonIndex + 1).trim();
+                          details[key] = value;
+                        }
+                      });
+                      
+                      return { title, details };
+                    });
+                  };
+                  
+                  const sections = parseSummary(msg.message);
+                  
                   return (
                     <React.Fragment key={msg._id || index}>
-                      {showDateSeparator && (
-                        <div className="flex items-center my-4">
-                          <div className="flex-1 border-t border-gray-300"></div>
-                          <div className="text-xs text-gray-500 bg-white px-3 py-1 mx-3">
-                            {getDateLabel(currentDate)}
+                      <div className="flex items-center justify-center my-6">
+                        <div className="max-w-2xl w-full space-y-4">
+                          {sections.map((section, sectionIndex) => {
+                            const isResolved = section.title.includes('✓');
+                            const isNewTicket = section.title.includes('⚡');
+                            
+                            return (
+                              <div
+                                key={sectionIndex}
+                                className={`rounded-lg border-2 p-5 ${
+                                  isResolved
+                                    ? 'bg-green-50 border-green-300'
+                                    : isNewTicket
+                                    ? 'bg-blue-50 border-blue-300'
+                                    : 'bg-gray-50 border-gray-300'
+                                }`}
+                              >
+                                <div className="mb-4">
+                                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                                    {section.title.replace(/^[✓⚡📋]\s*/, '')}
+                                  </h3>
+                                </div>
+                                
+                                {Object.keys(section.details).length > 0 && (
+                                  <div className="space-y-2.5">
+                                    {Object.entries(section.details).map(([key, value], detailIndex) => (
+                                      <div key={detailIndex} className="flex justify-between items-start">
+                                        <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                                          {key}
+                                        </span>
+                                        <span className="text-sm font-semibold text-gray-900 text-right max-w-xs">
+                                          {value}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500">
+                              {new Date(msg.timestamp).toLocaleDateString('en-US', {
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })} at {new Date(msg.timestamp).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })}
+                            </p>
                           </div>
-                          <div className="flex-1 border-t border-gray-300"></div>
                         </div>
-                      )}
+                      </div>
+                    </React.Fragment>
+                  );
+                }
+
+                // Render system message differently
+                if (isSystemMessage) {
+                  // Check if this is a resolved/closed message
+                  const isResolvedOrClosed = messageText.includes('resolved') || messageText.includes('closed');
+                  
+                  if (isResolvedOrClosed) {
+                    // Display as a centered message like image 2
+                    const adminName = msg.senderName || 'admin';
+                    return (
+                      <React.Fragment key={msg._id || index}>
+                        <div className="flex items-center justify-center my-3">
+                          <div className="flex flex-col items-center">
+                            <div 
+                              ref={(el) => { messageRefs.current[messageId] = el; }}
+                              className="text-sm text-gray-600 font-medium"
+                            >
+                              Ticket resolved by {adminName}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {new Date(msg.timestamp).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  }
+                  
+                  // For other system messages (reopened, etc)
+                  return (
+                    <React.Fragment key={msg._id || index}>
                       <div className="flex items-center justify-center my-3">
                         <div className="flex flex-col items-center">
                           <div 
@@ -320,15 +448,6 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 
                 return (
                   <React.Fragment key={msg._id || index}>
-                    {showDateSeparator && (
-                      <div className="flex items-center my-4">
-                        <div className="flex-1 border-t border-gray-300"></div>
-                        <div className="text-xs text-gray-500 bg-white px-3 py-1 mx-3">
-                          {getDateLabel(currentDate)}
-                        </div>
-                        <div className="flex-1 border-t border-gray-300"></div>
-                      </div>
-                    )}
                     <div
                       className={`flex ${isAdmin ? 'justify-end' : 'justify-start'} ${isGroupedWithNext ? 'mb-1' : 'mb-3'}`}
                     >
@@ -384,30 +503,44 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
           {/* Message Input */}
           {selectedChat.status === 'open' ? (
-            <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Write a message..."
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !sendingMessage) {
-                      sendMessage();
-                    }
-                  }}
-                  disabled={sendingMessage}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!message.trim() || sendingMessage}
-                  className="px-8 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-all"
-                >
-                  Send
-                </button>
+            !selectedChat.acceptedBy ? (
+              <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
+                <div className="flex items-center justify-center">
+                  <p className="text-sm font-medium text-gray-600">You must accept this ticket before sending messages</p>
+                </div>
               </div>
-            </div>
+            ) : (user?.role !== 'admin' && user?.role !== 'superadmin') ? (
+              <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
+                <div className="flex items-center justify-center">
+                  <p className="text-sm font-medium text-gray-600">Only admins can send messages to tickets</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Write a message..."
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !sendingMessage) {
+                        sendMessage();
+                      }
+                    }}
+                    disabled={sendingMessage}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={!message.trim() || sendingMessage}
+                    className="px-8 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-all"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            )
           ) : (
             <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
               <div className="flex items-center justify-center">
@@ -497,7 +630,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
             <div className="space-y-3">
               <div>
                 <span className="text-sm text-gray-600">Ticket ID: </span>
-                <span className="text-sm font-semibold text-gray-900">{selectedChat._id}</span>
+                <span className="text-sm font-semibold text-gray-900">{selectedChat.ticketId || selectedChat._id}</span>
               </div>
               <div>
                 <span className="text-sm text-gray-600">Created At: </span>
@@ -530,7 +663,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               <div>
                 <span className="text-sm text-gray-600">Assigned To: </span>
                 <span className="text-sm font-semibold text-gray-900">
-                  {selectedChat.assignedTo || selectedChat.acceptedBy ? 'Support Agent' : 'Unassigned'}
+                  {selectedChat.assignedToName || selectedChat.acceptedByName || 'Unassigned'}
                 </span>
               </div>
             </div>

@@ -97,6 +97,17 @@ const UserSchema = new Schema({
   },
   lastLogin: {
     type: Date
+  },
+  ticketsResolved: {
+    type: Number,
+    default: 0,
+    required: function() {
+      return this.userType === 'admin' || this.userType === 'superadmin';
+    }
+  },
+  ticketsSubmittedResolved: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true,
