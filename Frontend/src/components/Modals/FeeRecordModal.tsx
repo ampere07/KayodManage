@@ -83,7 +83,7 @@ const FeeRecordModal: React.FC<FeeRecordModalProps> = ({ isOpen, onClose, transa
           <h2 className="text-xl font-semibold text-gray-900">Fee Record Details</h2>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
           </button>

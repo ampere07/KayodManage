@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const ReportedPost = require('../models/ReportedPost');
 const Job = require('../models/Job');
 const User = require('../models/User');
@@ -560,6 +561,277 @@ const getAdminStats = async (req, res) => {
   }
 };
 
+const getAllAdmins = async (req, res) => {
+  try {
+    const admins = await User.find({
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+    }).select('name email userType accountStatus createdAt lastLogin permissions');
+
+    const formattedAdmins = admins.map(admin => ({
+      _id: admin._id,
+      uid: `KYD-${admin._id.toString().slice(-6).toUpperCase()}`,
+      fullName: admin.name,
+      email: admin.email,
+      role: admin.userType.charAt(0).toUpperCase() + admin.userType.slice(1),
+      permissions: admin.permissions || {
+        dashboard: true,
+        users: true,
+        jobs: true,
+        transactions: true,
+        verifications: true,
+        support: true,
+        activity: true,
+        flagged: true,
+        settings: false
+      },
+      accountStatus: admin.accountStatus,
+      createdAt: admin.createdAt,
+      lastLogin: admin.lastLogin
+    }));
+
+    res.json({
+      success: true,
+      admins: formattedAdmins
+    });
+  } catch (error) {
+    console.error('Error fetching admins:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const updateAdminPermissions = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    const { permissions } = req.body;
+
+    if (!permissions) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permissions are required'
+      });
+    }
+
+    const admin = await User.findOne({
+      _id: adminId,
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    admin.permissions = permissions;
+    await admin.save();
+
+    res.json({
+      success: true,
+      message: 'Permissions updated successfully',
+      admin: {
+        _id: admin._id,
+        permissions: admin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Error updating admin permissions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const createAdmin = async (req, res) => {
+  try {
+    const { name, email, password, phone, userType, location, permissions } = req.body;
+
+    if (!name || !email || !password || !phone || !location) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newAdmin = new User({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      userType: userType || 'admin',
+      location,
+      categories: [],
+      isVerified: true,
+      accountStatus: 'active',
+      restrictionDetails: {
+        isRestricted: false,
+        appealAllowed: true
+      },
+      isOnline: false,
+      ticketsResolved: 0,
+      ticketsSubmittedResolved: 0,
+      permissions: permissions || {
+        dashboard: false,
+        users: false,
+        jobs: false,
+        transactions: false,
+        verifications: false,
+        support: false,
+        activity: false,
+        flagged: false,
+        settings: false
+      }
+    });
+
+    await newAdmin.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Admin created successfully',
+      admin: {
+        _id: newAdmin._id,
+        uid: `KYD-${newAdmin._id.toString().slice(-6).toUpperCase()}`,
+        name: newAdmin.name,
+        email: newAdmin.email,
+        userType: newAdmin.userType,
+        permissions: newAdmin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Error creating admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const getAdminById = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+
+    const admin = await User.findOne({
+      _id: adminId,
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+    }).select('name email phone userType location accountStatus createdAt lastLogin permissions');
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        phone: admin.phone,
+        userType: admin.userType,
+        location: admin.location,
+        permissions: admin.permissions,
+        accountStatus: admin.accountStatus,
+        createdAt: admin.createdAt,
+        lastLogin: admin.lastLogin
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const updateAdmin = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    const { name, email, phone, userType, location, permissions, newPassword } = req.body;
+
+    if (!name || !email || !phone || !location) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+
+    const admin = await User.findOne({
+      _id: adminId,
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    if (email !== admin.email) {
+      const existingUser = await User.findOne({ email, _id: { $ne: adminId } });
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email already exists'
+        });
+      }
+    }
+
+    admin.name = name;
+    admin.email = email;
+    admin.phone = phone;
+    admin.userType = userType;
+    admin.location = location;
+    if (permissions) {
+      admin.permissions = permissions;
+    }
+
+    if (newPassword && newPassword.trim() !== '') {
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      admin.password = hashedPassword;
+    }
+
+    await admin.save();
+
+    res.json({
+      success: true,
+      message: 'Admin updated successfully',
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        phone: admin.phone,
+        userType: admin.userType,
+        location: admin.location,
+        permissions: admin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Error updating admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getReportedPosts,
   getReportedPostById,
@@ -567,5 +839,10 @@ module.exports = {
   createReport,
   getReportsSummary,
   bulkUpdateReports,
-  getAdminStats
+  getAdminStats,
+  getAllAdmins,
+  getAdminById,
+  createAdmin,
+  updateAdmin,
+  updateAdminPermissions
 };

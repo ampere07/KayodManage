@@ -148,8 +148,8 @@ const Jobs: React.FC = () => {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3">
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
@@ -160,51 +160,53 @@ const Jobs: React.FC = () => {
             />
           </div>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+            >
+              <option value="all">All Status</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
 
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Categories</option>
-            {JOB_CATEGORIES.map(category => (
-              <option key={category} value={category} className="capitalize">
-                {category}
-              </option>
-            ))}
-          </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+            >
+              <option value="all">All Categories</option>
+              {JOB_CATEGORIES.map(category => (
+                <option key={category} value={category} className="capitalize">
+                  {category}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={paymentMethodFilter}
-            onChange={(e) => setPaymentMethodFilter(e.target.value)}
-            className="hidden md:block px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Payment Methods</option>
-            <option value="wallet">Wallet</option>
-            <option value="cash">Cash</option>
-            <option value="xendit">Xendit</option>
-          </select>
+            <select
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+            >
+              <option value="all">Payment Method</option>
+              <option value="wallet">Wallet</option>
+              <option value="cash">Cash</option>
+              <option value="xendit">Xendit</option>
+            </select>
 
-          <select
-            value={urgentFilter}
-            onChange={(e) => setUrgentFilter(e.target.value)}
-            className="hidden md:block px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Priority</option>
-            <option value="true">Urgent Only</option>
-            <option value="false">Normal Priority</option>
-          </select>
+            <select
+              value={urgentFilter}
+              onChange={(e) => setUrgentFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+            >
+              <option value="all">All Priority</option>
+              <option value="true">Urgent Only</option>
+              <option value="false">Normal Priority</option>
+            </select>
+          </div>
         </div>
       </div>
 

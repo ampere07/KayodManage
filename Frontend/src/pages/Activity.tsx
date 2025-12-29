@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
   Shield, 
@@ -13,10 +14,14 @@ import {
   Calendar,
   Activity as ActivityIcon,
   Eye,
-  RefreshCw
+  RefreshCw,
+  MousePointerClick
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
+import { usersService, transactionsService } from '../services';
+import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals';
+import type { User, Transaction } from '../types';
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
@@ -52,15 +57,22 @@ interface ActivityLog {
 }
 
 const Activity: React.FC = () => {
+  const navigate = useNavigate();
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'system'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20
   });
+  
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
   useEffect(() => {
     fetchActivities();
@@ -91,6 +103,44 @@ const Activity: React.FC = () => {
     await fetchActivities();
     setRefreshing(false);
     toast.success('Activity logs refreshed');
+  };
+
+  const handleActivityClick = async (activity: ActivityLog) => {
+    if (!activity.targetId || !activity.targetType) return;
+
+    try {
+      switch (activity.targetType) {
+        case 'user':
+          const user = await usersService.getUserById(activity.targetId._id);
+          if (user) {
+            setSelectedUser(user);
+            setUserModalOpen(true);
+          }
+          break;
+          
+        case 'transaction':
+          const transactionResponse = await transactionsService.getTransactionById(activity.targetId._id);
+          if (transactionResponse?.transaction) {
+            setSelectedTransaction(transactionResponse.transaction);
+            setTransactionModalOpen(true);
+          }
+          break;
+          
+        case 'support':
+          navigate('/support');
+          break;
+          
+        case 'verification':
+          navigate('/verifications');
+          break;
+          
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error('Error fetching activity target:', error);
+      toast.error('Failed to load details');
+    }
   };
 
   const getActionIcon = (actionType: string) => {
@@ -165,6 +215,27 @@ const Activity: React.FC = () => {
     return labels[actionType] || actionType;
   };
 
+  const isUserAction = (actionType: string) => {
+    return [
+      'verification_approved',
+      'verification_rejected',
+      'user_restricted',
+      'user_suspended',
+      'user_banned',
+      'user_unrestricted'
+    ].includes(actionType);
+  };
+
+  const isSystemAction = (actionType: string) => {
+    return [
+      'transaction_completed',
+      'transaction_failed',
+      'support_closed',
+      'support_reopened',
+      'admin_login'
+    ].includes(actionType);
+  };
+
   const filteredActivities = activities.filter(activity => {
     const matchesSearch = 
       activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -175,13 +246,18 @@ const Activity: React.FC = () => {
     
     const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
     
-    return matchesSearch && matchesAction;
+    const matchesType = 
+      typeFilter === 'all' ||
+      (typeFilter === 'user' && isUserAction(activity.actionType)) ||
+      (typeFilter === 'system' && isSystemAction(activity.actionType));
+    
+    return matchesSearch && matchesAction && matchesType;
   });
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, actionFilter]);
+  }, [searchTerm, actionFilter, typeFilter]);
 
   // Paginate filtered activities
   const paginatedActivities = filteredActivities.slice(
@@ -197,7 +273,9 @@ const Activity: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Activity Logs</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">{activities.length} total actions</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">
+              {activities.length} total actions • Click on any activity to view details
+            </p>
           </div>
           
           <button
@@ -207,6 +285,39 @@ const Activity: React.FC = () => {
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
+          </button>
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              typeFilter === 'all'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setTypeFilter('user')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              typeFilter === 'user'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            User
+          </button>
+          <button
+            onClick={() => setTypeFilter('system')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              typeFilter === 'system'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            System
           </button>
         </div>
 
@@ -285,7 +396,15 @@ const Activity: React.FC = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedActivities.map((activity) => (
-                      <tr key={activity._id} className="hover:bg-gray-50 transition-colors">
+                      <tr 
+                        key={activity._id} 
+                        onClick={() => handleActivityClick(activity)}
+                        className={`transition-colors ${
+                          activity.targetId && activity.targetType 
+                            ? 'hover:bg-blue-50 cursor-pointer' 
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
@@ -318,8 +437,11 @@ const Activity: React.FC = () => {
                         <td className="px-6 py-4">
                           {activity.targetId && (
                             <div className="text-sm">
-                              <div className="font-medium text-gray-900 truncate max-w-[200px]">
+                              <div className="font-medium text-gray-900 truncate max-w-[200px] flex items-center gap-2">
                                 {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
+                                {activity.targetType && (
+                                  <MousePointerClick className="h-3 w-3 text-blue-600" />
+                                )}
                               </div>
                               {activity.targetId.email && (
                                 <div className="text-xs text-gray-500 truncate max-w-[200px]">{activity.targetId.email}</div>
@@ -346,7 +468,12 @@ const Activity: React.FC = () => {
                 {paginatedActivities.map((activity) => (
                   <div 
                     key={activity._id}
-                    className="bg-white rounded-lg border border-gray-200 p-4"
+                    onClick={() => handleActivityClick(activity)}
+                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-colors ${
+                      activity.targetId && activity.targetType 
+                        ? 'hover:bg-blue-50 cursor-pointer' 
+                        : ''
+                    }`}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
@@ -379,8 +506,11 @@ const Activity: React.FC = () => {
                     {activity.targetId && (
                       <div className="mb-3 pb-3 border-b border-gray-100">
                         <p className="text-xs text-gray-500 mb-1">Target:</p>
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2">
                           {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
+                          {activity.targetType && (
+                            <MousePointerClick className="h-3 w-3 text-blue-600" />
+                          )}
                         </p>
                         {activity.targetId.email && (
                           <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
@@ -437,6 +567,57 @@ const Activity: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* User Details Modal */}
+      <UserDetailsModal
+        isOpen={userModalOpen}
+        onClose={() => {
+          setUserModalOpen(false);
+          setTimeout(() => setSelectedUser(null), 300);
+        }}
+        user={selectedUser}
+        onVerify={async (userId: string, verified: boolean) => {
+          try {
+            await usersService.verifyUser(userId, verified);
+            toast.success(`User ${verified ? 'verified' : 'unverified'} successfully`);
+            fetchActivities();
+          } catch (error) {
+            toast.error('Failed to update verification');
+          }
+        }}
+        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => {
+          try {
+            switch (actionType) {
+              case 'ban':
+                await usersService.banUser(user._id, 'Banned by admin', duration);
+                break;
+              case 'suspend':
+                await usersService.suspendUser(user._id, 'Suspended by admin', duration || 7);
+                break;
+              case 'restrict':
+                await usersService.restrictUser(user._id, duration);
+                break;
+              case 'unrestrict':
+                await usersService.unrestrictUser(user._id);
+                break;
+            }
+            toast.success(`User ${actionType}ed successfully`);
+            fetchActivities();
+          } catch (error) {
+            toast.error(`Failed to ${actionType} user`);
+          }
+        }}
+      />
+
+      {/* Transaction Details Modal */}
+      <TransactionDetailsModal
+        isOpen={transactionModalOpen}
+        onClose={() => {
+          setTransactionModalOpen(false);
+          setTimeout(() => setSelectedTransaction(null), 300);
+        }}
+        transaction={selectedTransaction}
+      />
     </div>
   );
 };

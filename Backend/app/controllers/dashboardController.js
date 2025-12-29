@@ -15,6 +15,8 @@ const getStats = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const totalUsers = await User.countDocuments();
+    const customers = await User.countDocuments({ userType: 'client' });
+    const providers = await User.countDocuments({ userType: 'provider' });
     const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
     const onlineUsers = await User.countDocuments({ isOnline: true });
     
@@ -27,9 +29,15 @@ const getStats = async (req, res) => {
     const pendingFees = pendingFeeRecords.reduce((sum, fee) => sum + (fee.amount || 0), 0);
     const pendingFeesCount = pendingFeeRecords.length;
 
-    const newUsersToday = await User.countDocuments({ createdAt: { $gte: today } });
+    const newUsersToday = await User.countDocuments({ 
+      userType: 'client',
+      createdAt: { $gte: today } 
+    });
     const newProvidersToday = await User.countDocuments({ 
-      usertype: 'provider',
+      userType: 'provider',
+      createdAt: { $gte: today } 
+    });
+    const jobsCreatedToday = await Job.countDocuments({ 
       createdAt: { $gte: today } 
     });
     const completedJobsToday = await Job.countDocuments({ 
@@ -44,6 +52,8 @@ const getStats = async (req, res) => {
 
     const stats = {
       totalUsers,
+      customers,
+      providers,
       activeJobs,
       totalRevenue,
       pendingFees,
@@ -51,6 +61,7 @@ const getStats = async (req, res) => {
       onlineUsers,
       newUsersToday,
       newProvidersToday,
+      jobsCreatedToday,
       completedJobsToday,
       revenueToday
     };

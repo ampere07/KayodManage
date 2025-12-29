@@ -12,8 +12,9 @@ export interface RestrictionDetails {
   reason: string;
   restrictedAt: Date;
   suspendedUntil?: Date;
+  expiresAt?: Date;
   appealAllowed: boolean;
-  restrictedBy?: {
+  restrictedBy?: string | {
     _id: string;
     name: string;
   };

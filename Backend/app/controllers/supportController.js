@@ -503,11 +503,11 @@ const getAllChatSupports = async (req, res) => {
 
     let baseFilters;
     
+    // Superadmins can see ALL tickets
     if (adminRole === 'superadmin') {
-      baseFilters = {
-        assignedTo: adminObjectId
-      };
+      baseFilters = {};
     } else {
+      // Regular admins can only see unassigned tickets or tickets assigned to them
       baseFilters = {
         $or: [
           { assignedTo: { $exists: false } },
@@ -521,9 +521,11 @@ const getAllChatSupports = async (req, res) => {
     const userIds = [...new Set(myTickets.map(t => t.userId.toString()))];
     
     let filters;
+    // Superadmins see everything
     if (adminRole === 'superadmin') {
-      filters = baseFilters;
+      filters = {};
     } else {
+      // Regular admins see unassigned, assigned to them, or from users they've helped
       filters = {
         $or: [
           { assignedTo: { $exists: false } },
@@ -535,6 +537,7 @@ const getAllChatSupports = async (req, res) => {
       };
     }
     
+    // Apply additional filters (status, category, priority) for all roles
     if (status && status !== 'all') filters.status = status;
     if (category && category !== 'all') filters.category = category;
     if (priority && priority !== 'all') filters.priority = priority;
@@ -682,7 +685,8 @@ const acceptChatSupport = async (req, res) => {
       });
     }
 
-    if (chatSupport.assignedTo && !chatSupport.assignedTo.equals(adminObjectId)) {
+    // Regular admins cannot take tickets assigned to others, but superadmins can
+    if (adminRole !== 'superadmin' && chatSupport.assignedTo && !chatSupport.assignedTo.equals(adminObjectId)) {
       return res.status(403).json({ 
         success: false, 
         message: 'This ticket is already assigned to another admin' 

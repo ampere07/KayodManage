@@ -6,7 +6,12 @@ const {
   createReport,
   getReportsSummary,
   bulkUpdateReports,
-  getAdminStats
+  getAdminStats,
+  getAllAdmins,
+  getAdminById,
+  createAdmin,
+  updateAdmin,
+  updateAdminPermissions
 } = require('../controllers/adminController');
 const {
   getAllVerifications,
@@ -41,6 +46,16 @@ router.get('/users/:userId/images', adminAuth, getUserImages);
 router.get('/activity-logs', adminAuth, getActivityLogs);
 
 router.get('/stats', adminAuth, getAdminStats);
+
+router.get('/admins', adminAuth, getAllAdmins);
+
+router.get('/admins/:adminId', adminAuth, getAdminById);
+
+router.post('/admins', adminAuth, createAdmin);
+
+router.patch('/admins/:adminId', adminAuth, updateAdmin);
+
+router.patch('/admins/:adminId/permissions', adminAuth, updateAdminPermissions);
 
 // Manual trigger for auto-approving top-ups
 router.post('/approve-topups-now', adminAuth, async (req, res) => {

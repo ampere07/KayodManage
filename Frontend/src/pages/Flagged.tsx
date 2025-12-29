@@ -13,14 +13,14 @@ import {
   XCircle
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
-import { alertsService } from '../services';
+import { flaggedService } from '../services';
 import { ReviewReportModal } from '../components/Modals';
 import type { 
   ReportedPost, 
   ReportFilterStatus 
-} from '../types/alerts.types';
+} from '../types/flagged.types';
 
-const Alerts: React.FC = () => {
+const Flagged: React.FC = () => {
   const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +74,7 @@ const Alerts: React.FC = () => {
   const fetchReportedPosts = async () => {
     setLoading(true);
     try {
-      const data = await alertsService.getReportedPosts();
+      const data = await flaggedService.getReportedPosts();
       setReportedPosts(data.reportedPosts || []);
       setError(null);
     } catch (err: any) {
@@ -88,7 +88,7 @@ const Alerts: React.FC = () => {
   const handleReviewPost = async (postId: string, action: 'approve' | 'dismiss' | 'delete') => {
     setActionLoading(true);
     try {
-      const result = await alertsService.reviewReportedPost(postId, {
+      const result = await flaggedService.reviewReportedPost(postId, {
         action,
         adminNotes: 'Action taken by admin'
       });
@@ -203,7 +203,7 @@ const Alerts: React.FC = () => {
           <div className="flex items-center">
             <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Alerts</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Flagged</h1>
             </div>
           </div>
           
@@ -496,4 +496,4 @@ const Alerts: React.FC = () => {
   );
 };
 
-export default Alerts;
+export default Flagged;

@@ -13,7 +13,11 @@ const connectDatabase = async () => {
 
     await mongoose.connect(mongoUri, {
       retryWrites: true,
-      w: 'majority'
+      w: 'majority',
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 2
     });
 
     console.log('✅ MongoDB connected');
@@ -34,6 +38,14 @@ const disconnectDatabase = async () => {
 // Handle connection events
 mongoose.connection.on('error', (error) => {
   console.error('❌ Mongoose error:', error.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️  MongoDB disconnected');
+});
+
+mongoose.connection.on('reconnected', () => {
+  console.log('✅ MongoDB reconnected');
 });
 
 module.exports = { connectDatabase, disconnectDatabase };

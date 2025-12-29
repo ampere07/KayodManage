@@ -30,9 +30,15 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const location = useLocation();
   const { logout, user } = useAuth();
 
+  const hasPermission = (permission: string) => {
+    if (user?.role === 'superadmin') return true;
+    if (!user?.permissions) return true;
+    return user.permissions[permission as keyof typeof user.permissions] || false;
+  };
+
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Jobs', href: '/jobs', icon: Briefcase },
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard' },
+    { name: 'Jobs', href: '/jobs', icon: Briefcase, permission: 'jobs' },
   ];
 
   const userItems = [
@@ -50,11 +56,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   ];
 
   const bottomNavigation = [
-    { name: 'Verifications', href: '/verifications', icon: Shield },
-    { name: 'Support', href: '/support', icon: MessageSquare },
-    { name: 'Activity', href: '/activity', icon: Activity },
-    { name: 'Alerts', href: '/alerts', icon: AlertTriangle },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Verifications', href: '/verifications', icon: Shield, permission: 'verifications' },
+    { name: 'Support', href: '/support', icon: MessageSquare, permission: 'support' },
+    { name: 'Activity', href: '/activity', icon: Activity, permission: 'activity' },
+    { name: 'Flagged', href: '/flagged', icon: AlertTriangle, permission: 'flagged' },
+    { name: 'Settings', href: '/settings', icon: Settings, permission: 'settings' },
   ];
 
   React.useEffect(() => {
@@ -89,18 +95,27 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             <nav className="mt-5 px-2 space-y-1">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href;
+                const allowed = hasPermission(item.permission);
                 return (
                   <Link
                     key={item.name}
                     to={item.href}
+                    onClick={(e) => {
+                      if (!allowed) {
+                        e.preventDefault();
+                      } else {
+                        setSidebarOpen(false);
+                      }
+                    }}
                     className={`group flex items-center px-2 py-2 text-base font-medium rounded-md transition-colors ${
-                      isActive
+                      !allowed
+                        ? 'opacity-40 cursor-not-allowed text-gray-400'
+                        : isActive
                         ? 'bg-blue-100 text-blue-900'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
-                    onClick={() => setSidebarOpen(false)}
                   >
-                    <item.icon className={`mr-4 h-6 w-6 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <item.icon className={`mr-4 h-6 w-6 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                     {item.name}
                   </Link>
                 );
@@ -109,15 +124,18 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <div>
                 <button
                   type="button"
-                  onClick={() => setIsUsersOpen(!isUsersOpen)}
+                  onClick={() => hasPermission('users') && setIsUsersOpen(!isUsersOpen)}
+                  disabled={!hasPermission('users')}
                   className={`w-full group flex items-center justify-between px-2 py-2 text-base font-medium rounded-md transition-colors ${
-                    isUserPage
+                    !hasPermission('users')
+                      ? 'opacity-40 cursor-not-allowed text-gray-400'
+                      : isUserPage
                       ? 'bg-blue-100 text-blue-900'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <div className="flex items-center">
-                    <Users className={`mr-4 h-6 w-6 ${isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <Users className={`mr-4 h-6 w-6 ${!hasPermission('users') ? 'text-gray-300' : isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                     <span>Users</span>
                   </div>
                   {isUsersOpen ? (
@@ -127,7 +145,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   )}
                 </button>
                 
-                {isUsersOpen && (
+                {isUsersOpen && hasPermission('users') && (
                   <div className="ml-11 mt-1 space-y-1">
                     {userItems.map((item) => {
                       const isActive = location.pathname === item.href;
@@ -153,15 +171,18 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <div>
                 <button
                   type="button"
-                  onClick={() => setIsTransactionsOpen(!isTransactionsOpen)}
+                  onClick={() => hasPermission('transactions') && setIsTransactionsOpen(!isTransactionsOpen)}
+                  disabled={!hasPermission('transactions')}
                   className={`w-full group flex items-center justify-between px-2 py-2 text-base font-medium rounded-md transition-colors ${
-                    isTransactionPage
+                    !hasPermission('transactions')
+                      ? 'opacity-40 cursor-not-allowed text-gray-400'
+                      : isTransactionPage
                       ? 'bg-blue-100 text-blue-900'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <div className="flex items-center">
-                    <CreditCard className={`mr-4 h-6 w-6 ${isTransactionPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <CreditCard className={`mr-4 h-6 w-6 ${!hasPermission('transactions') ? 'text-gray-300' : isTransactionPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                     <span>Transactions</span>
                   </div>
                   {isTransactionsOpen ? (
@@ -171,7 +192,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   )}
                 </button>
                 
-                {isTransactionsOpen && (
+                {isTransactionsOpen && hasPermission('transactions') && (
                   <div className="ml-11 mt-1 space-y-1">
                     {transactionItems.map((item) => {
                       const isActive = location.pathname === item.href;
@@ -348,17 +369,25 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
               {bottomNavigation.map((item) => {
                 const isActive = location.pathname === item.href;
+                const allowed = hasPermission(item.permission);
                 return (
                   <Link
                     key={item.name}
                     to={item.href}
+                    onClick={(e) => {
+                      if (!allowed) {
+                        e.preventDefault();
+                      }
+                    }}
                     className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                      isActive
+                      !allowed
+                        ? 'opacity-40 cursor-not-allowed text-gray-400'
+                        : isActive
                         ? 'bg-blue-100 text-blue-900'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
                   >
-                    <item.icon className={`mr-3 h-5 w-5 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <item.icon className={`mr-3 h-5 w-5 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                     {item.name}
                   </Link>
                 );

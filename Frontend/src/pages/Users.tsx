@@ -39,9 +39,15 @@ const Users: React.FC = () => {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'suspended' | 'banned' | 'restricted'>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
+  const [statusCounts, setStatusCounts] = useState({
+    all: 0,
+    suspended: 0,
+    banned: 0,
+    restricted: 0
+  });
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -72,14 +78,19 @@ const Users: React.FC = () => {
       const params: any = {
         page: pagination.page,
         limit: pagination.limit,
-        ...(searchTerm && { search: searchTerm }),
-        ...(statusFilter !== 'all' && { status: statusFilter })
+        ...(searchTerm && { search: searchTerm })
       };
 
+      // Handle sidebar navigation (user type)
       const userType = getUserType();
       if (userType === 'customers') params.userType = 'client';
       if (userType === 'providers') params.userType = 'provider';
       if (userType === 'flagged') params.restricted = 'true';
+
+      // Handle tab filtering (status)
+      if (statusFilter === 'suspended') params.status = 'suspended';
+      if (statusFilter === 'banned') params.status = 'banned';
+      if (statusFilter === 'restricted') params.status = 'restricted';
 
       const data = await usersService.getUsers(params);
       
@@ -98,9 +109,42 @@ const Users: React.FC = () => {
     }
   };
 
+  const fetchStatusCounts = async () => {
+    try {
+      const userType = getUserType();
+      const baseParams: any = {};
+      
+      if (userType === 'customers') baseParams.userType = 'client';
+      if (userType === 'providers') baseParams.userType = 'provider';
+      if (userType === 'flagged') baseParams.restricted = 'true';
+
+      // Fetch counts for each status
+      const [allData, suspendedData, bannedData, restrictedData] = await Promise.all([
+        usersService.getUsers({ ...baseParams, limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'suspended', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'banned', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'restricted', limit: 1, page: 1 })
+      ]);
+
+      setStatusCounts({
+        all: allData.pagination?.total || 0,
+        suspended: suspendedData.pagination?.total || 0,
+        banned: bannedData.pagination?.total || 0,
+        restricted: restrictedData.pagination?.total || 0
+      });
+    } catch (error) {
+      console.error('Error fetching status counts:', error);
+    }
+  };
+
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [location.pathname, searchTerm, statusFilter]);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    setStatusFilter('all'); // Reset status filter when changing user type
+    fetchStatusCounts(); // Fetch counts when user type changes
+  }, [location.pathname]);
 
   useEffect(() => {
     fetchUsers();
@@ -127,21 +171,26 @@ const Users: React.FC = () => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
   };
 
-  const handleUserAction = async (actionType: string, data: any = {}) => {
+  const handleUserAction = async (actionType: string, duration?: number) => {
     if (!selectedUser) return;
+    
+    console.log('handleUserAction called:', { actionType, duration, userId: selectedUser._id });
     
     try {
       let updatedUser: User;
       
       switch (actionType) {
         case 'ban':
-          updatedUser = await usersService.banUser(selectedUser._id, data.reason || 'No reason provided');
+          console.log('Calling banUser with duration:', duration);
+          updatedUser = await usersService.banUser(selectedUser._id, 'Banned by admin', duration);
           break;
         case 'suspend':
-          updatedUser = await usersService.suspendUser(selectedUser._id, data.reason || 'No reason provided', data.duration || 7);
+          console.log('Calling suspendUser with duration:', duration);
+          updatedUser = await usersService.suspendUser(selectedUser._id, 'Suspended by admin', duration || 7);
           break;
         case 'restrict':
-          updatedUser = await usersService.restrictUser(selectedUser._id, true);
+          console.log('Calling restrictUser with duration:', duration);
+          updatedUser = await usersService.restrictUser(selectedUser._id, duration);
           break;
         case 'unrestrict':
           updatedUser = await usersService.unrestrictUser(selectedUser._id);
@@ -149,6 +198,8 @@ const Users: React.FC = () => {
         default:
           return;
       }
+
+      console.log('Updated user received:', updatedUser);
 
       setUsers(prev => prev.map(user => 
         user._id === selectedUser._id ? updatedUser : user
@@ -186,10 +237,9 @@ const Users: React.FC = () => {
     setTimeout(() => setSelectedUser(null), 300);
   };
 
-  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => {
-    closeDetailsModal();
+  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => {
     setSelectedUser(user);
-    await handleUserAction(actionType, {});
+    await handleUserAction(actionType, duration);
   };
 
   return (
@@ -227,7 +277,7 @@ const Users: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
@@ -239,15 +289,28 @@ const Users: React.FC = () => {
             />
           </div>
           
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Users</option>
-            <option value="suspended">Suspended</option>
-            <option value="banned">Banned</option>
-          </select>
+          {getUserType() === 'all' && (
+            <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+              {[
+                { key: 'all', label: 'All', count: statusCounts.all },
+                { key: 'suspended', label: 'Suspended', count: statusCounts.suspended },
+                { key: 'banned', label: 'Banned', count: statusCounts.banned },
+                { key: 'restricted', label: 'Restricted', count: statusCounts.restricted }
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setStatusFilter(tab.key as typeof statusFilter)}
+                  className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                    statusFilter === tab.key
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -270,30 +333,27 @@ const Users: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white">
-                <table className="min-w-full">
+              <div className="hidden md:block bg-white overflow-x-auto">
+                <table className="min-w-full table-auto">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[200px]">
                         User
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[180px]">
                         Contact
                       </th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[120px]">
                         Type
                       </th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[130px]">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[120px]">
                         Wallet
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[150px]">
                         Joined
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -309,7 +369,7 @@ const Users: React.FC = () => {
                           onClick={() => openDetailsModal(user)}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                         >
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div className="relative flex-shrink-0 mr-3">
                                 {user.profileImage ? (
@@ -329,25 +389,25 @@ const Users: React.FC = () => {
                                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                                 )}
                               </div>
-                              <div>
-                                <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                                <div className="text-xs text-gray-500">{user.location || 'No location'}</div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 truncate">{user.name}</div>
+                                <div className="text-xs text-gray-500 truncate">{user.location || 'No location'}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-4 lg:px-6 py-4">
                             <div className="text-xs text-gray-900 flex items-center gap-1">
                               <Mail className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                              <span className="truncate max-w-[200px]">{user.email}</span>
+                              <span className="truncate max-w-[150px] lg:max-w-[200px]">{user.email}</span>
                             </div>
                             {user.phone && (
                               <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                                 <Phone className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                                {user.phone}
+                                <span className="truncate">{user.phone}</span>
                               </div>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-center">
+                          <td className="px-4 lg:px-6 py-4 text-center">
                             {user.userType && (
                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                                 user.userType === 'provider'
@@ -359,11 +419,11 @@ const Users: React.FC = () => {
                                 ) : (
                                   <UserIcon className="h-3 w-3" />
                                 )}
-                                {user.userType === 'provider' ? 'Provider' : 'Client'}
+                                {user.userType === 'provider' ? 'Provider' : 'Customer'}
                               </span>
                             )}
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-4 lg:px-6 py-4">
                             <div className="flex flex-col items-center gap-1">
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                                 user.isVerified 
@@ -389,83 +449,24 @@ const Users: React.FC = () => {
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-bold text-gray-900">
                               {formatCurrency(user.wallet.balance, user.wallet.currency)}
                             </div>
                             {overdueFees.length > 0 && (
                               <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
-                                <AlertCircle className="h-3 w-3" />
+                                <AlertCircle className="h-3 w-3 flex-shrink-0" />
                                 <span>{formatCurrency(totalOverdue, 'PHP')}</span>
                               </div>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
                             <div className="text-xs text-gray-500">
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {!isRestricted ? (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openDetailsModal(user);
-                                    }}
-                                    className="p-1.5 text-orange-600 hover:bg-orange-50 rounded transition-colors"
-                                    title="Restrict"
-                                  >
-                                    <Shield className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openDetailsModal(user);
-                                    }}
-                                    className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors"
-                                    title="Suspend"
-                                  >
-                                    <Clock className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openDetailsModal(user);
-                                    }}
-                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Ban"
-                                  >
-                                    <Ban className="h-4 w-4" />
-                                  </button>
-                                </>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openDetailsModal(user);
-                                  }}
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                  title="Remove restrictions"
-                                >
-                                  <UserX className="h-4 w-4" />
-                                </button>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openDetailsModal(user);
-                                }}
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                title="View details"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
+                              <Calendar className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">{new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                             </div>
                           </td>
                         </tr>
@@ -534,7 +535,7 @@ const Users: React.FC = () => {
                               ) : (
                                 <UserIcon className="h-3 w-3" />
                               )}
-                              {user.userType === 'provider' ? 'Provider' : 'Client'}
+                              {user.userType === 'provider' ? 'Provider' : 'Customer'}
                             </span>
                           )}
                           {isRestricted && (
@@ -544,7 +545,7 @@ const Users: React.FC = () => {
                           )}
                         </div>
 
-                        <div className="space-y-2 mb-3">
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-gray-500 flex items-center gap-1">
                               <WalletIcon className="h-3 w-3" />
@@ -571,51 +572,6 @@ const Users: React.FC = () => {
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
                             </span>
                           </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center gap-2">
-                            {!isRestricted ? (
-                              <>
-                                <button
-                                  onClick={() => openDetailsModal(user)}
-                                  className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                                  title="Restrict"
-                                >
-                                  <Shield className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => openDetailsModal(user)}
-                                  className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                  title="Suspend"
-                                >
-                                  <Clock className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => openDetailsModal(user)}
-                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Ban"
-                                >
-                                  <Ban className="h-4 w-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => openDetailsModal(user)}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="Remove restrictions"
-                              >
-                                <UserX className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => openDetailsModal(user)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
                         </div>
                       </div>
                     </div>
