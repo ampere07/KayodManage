@@ -25,7 +25,7 @@ interface UserDetailsModalProps {
   onClose: () => void;
   user: User | null;
   onVerify: (userId: string, isVerified: boolean) => void;
-  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => void;
+  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => void;
 }
 
 const UserDetailsModal: React.FC<UserDetailsModalProps> = ({ 
@@ -38,12 +38,55 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
   const [loadingVerification, setLoadingVerification] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | null>(null);
+  const [durationDays, setDurationDays] = useState<number>(0);
+  const [durationHours, setDurationHours] = useState<number>(0);
+  const [durationMinutes, setDurationMinutes] = useState<number>(0);
   const [penaltyData, setPenaltyData] = useState<PenaltyData>({
     totalPenalties: 0,
     activeWarnings: 0,
     lastPenalty: null
   });
   const [loadingPenalties, setLoadingPenalties] = useState(false);
+  const [restrictionTimer, setRestrictionTimer] = useState<string | null>(null);
+  const [restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
+  const [loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
+
+  // Calculate remaining restriction time
+  useEffect(() => {
+    if (!user || !user.restrictionDetails?.expiresAt) {
+      setRestrictionTimer(null);
+      return;
+    }
+
+    const calculateTimeRemaining = () => {
+      const expiresAt = new Date(user.restrictionDetails.expiresAt);
+      const now = new Date();
+      const diffMs = expiresAt.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setRestrictionTimer('Expired');
+        return;
+      }
+
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+      let timeString = '';
+      if (days > 0) timeString += `${days}d `;
+      if (hours > 0) timeString += `${hours}h `;
+      if (minutes > 0) timeString += `${minutes}m `;
+      if (seconds > 0 && days === 0) timeString += `${seconds}s`;
+
+      setRestrictionTimer(timeString.trim());
+    };
+
+    calculateTimeRemaining();
+    const interval = setInterval(calculateTimeRemaining, 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     if (isOpen && user?.isVerified) {
@@ -51,9 +94,19 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     }
     if (isOpen && user) {
       fetchPenaltyData();
+      if (user.restrictionDetails?.restrictedBy) {
+        const restrictedById = typeof user.restrictionDetails.restrictedBy === 'string' 
+          ? user.restrictionDetails.restrictedBy 
+          : user.restrictionDetails.restrictedBy._id;
+        fetchRestrictedByAdmin(restrictedById);
+      }
     }
     if (!isOpen) {
       setConfirmingAction(null);
+      setDurationDays(0);
+      setDurationHours(0);
+      setDurationMinutes(0);
+      setRestrictedByAdmin(null);
     }
   }, [isOpen, user]);
 
@@ -64,10 +117,22 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     try {
       const details = await usersService.getVerificationDetails(user._id);
       setVerificationDetails(details);
-    } catch (error) {
-      console.error('Error fetching verification details:', error);
     } finally {
       setLoadingVerification(false);
+    }
+  };
+
+  const fetchRestrictedByAdmin = async (adminId: string) => {
+    setLoadingRestrictedBy(true);
+    try {
+      const admin = await usersService.getUserById(adminId);
+      if (admin) {
+        setRestrictedByAdmin({ _id: admin._id, name: admin.name });
+      }
+    } catch (error) {
+      console.error('Error fetching restricted by admin:', error);
+    } finally {
+      setLoadingRestrictedBy(false);
     }
   };
 
@@ -97,8 +162,29 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const handleConfirmYes = () => {
     if (confirmingAction && user) {
-      onAction(user, confirmingAction);
+      // Calculate total duration in days
+      const totalDays = durationDays + (durationHours / 24) + (durationMinutes / (24 * 60));
+      
+      console.log('Restriction details:', {
+        action: confirmingAction,
+        durationDays,
+        durationHours,
+        durationMinutes,
+        totalDays
+      });
+      
+      // Validate that duration is provided for restrictions
+      if (confirmingAction !== 'unrestrict' && totalDays <= 0) {
+        toast.error('Please enter a duration for the restriction');
+        return;
+      }
+      
+      console.log('Calling onAction with duration:', totalDays);
+      onAction(user, confirmingAction, confirmingAction === 'unrestrict' ? undefined : totalDays);
       setConfirmingAction(null);
+      setDurationDays(0);
+      setDurationHours(0);
+      setDurationMinutes(0);
       setTimeout(() => {
         fetchPenaltyData();
       }, 1000);
@@ -107,6 +193,9 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const handleConfirmNo = () => {
     setConfirmingAction(null);
+    setDurationDays(0);
+    setDurationHours(0);
+    setDurationMinutes(0);
   };
 
   const getActionText = () => {
@@ -155,18 +244,33 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       />
       
       <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-50 shadow-2xl overflow-y-auto flex flex-col">
-        <button
-          onClick={onClose}
-          className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10"
-          aria-label="Close modal"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Mobile Top Bar with Close Button */}
+        <div className="md:hidden flex items-center justify-end px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-        <div className="p-6 flex-1 flex flex-col">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">User Information</h2>
-          <div className="border-t border-gray-300 mb-6 -mx-6" />
+        {/* Desktop Header with Title and Close Button */}
+        <div className="hidden md:flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 sticky top-0 z-20">
+          <h2 className="text-xl font-semibold text-gray-900">User Information</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
+        <div className="px-4 md:px-6 py-6 flex-1 flex flex-col">
+          {/* Mobile Title */}
+          <h2 className="md:hidden text-xl font-semibold text-gray-900 mb-6">User Information</h2>
+          
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="relative flex-shrink-0">
@@ -203,7 +307,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
             </div>
           </div>
 
-          <div className="border-t border-gray-300 mb-6 -mx-6" />
+          <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
 
           <div className="flex-1 flex flex-col">
             <div className="mb-6">
@@ -226,7 +330,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
+            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
 
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact</h3>
@@ -237,7 +341,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
+            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
 
             <div className="flex-1 mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Other Information</h3>
@@ -276,7 +380,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
+            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
 
             <div className="flex-1 mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Penalty Tracker</h3>
@@ -315,62 +419,131 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                       }
                     </p>
                   </div>
+                  {isRestricted && restrictionTimer && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm font-semibold text-red-900 mb-1">Restriction Time Remaining:</p>
+                      <p className="text-2xl font-bold text-red-600">{restrictionTimer}</p>
+                      {user.restrictionDetails?.type && (
+                        <p className="text-xs text-red-700 mt-1 capitalize">{user.restrictionDetails.type}</p>
+                      )}
+                      {user.restrictionDetails?.restrictedBy && (
+                        <div className="mt-2 pt-2 border-t border-red-200">
+                          <p className="text-xs text-red-700">
+                            <span className="font-semibold">Restricted By:</span>{' '}
+                            {loadingRestrictedBy ? (
+                              <span>Loading...</span>
+                            ) : restrictedByAdmin ? (
+                              <span>
+                                {restrictedByAdmin.name} ({formatKYDNumber(restrictedByAdmin._id)})
+                              </span>
+                            ) : (
+                              <span>N/A</span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col items-center gap-2 justify-center mt-auto pt-6 -mx-6 px-6">
+          <div className="flex flex-col items-center gap-2 justify-center mt-auto pt-6 -mx-4 md:-mx-6 px-4 md:px-6">
             {confirmingAction ? (
               <>
-                <p className="text-sm text-gray-700 mb-2">Are you sure you want to {getActionText()}?</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleConfirmNo}
-                    className="flex-1 px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                  >
-                    No
-                  </button>
-                  <button
-                    onClick={handleConfirmYes}
-                    className="flex-1 px-6 py-3 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                  >
-                    Yes
-                  </button>
+                {confirmingAction !== 'unrestrict' && (
+                  <div className="w-full mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Restrict for:</label>
+                    <div className="flex gap-3 mb-4">
+                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
+                        <div className="text-xs text-gray-600 mb-1">Days</div>
+                        <input
+                          type="number"
+                          min="0"
+                          value={durationDays}
+                          onChange={(e) => setDurationDays(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
+                          placeholder="1"
+                        />
+                      </div>
+                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
+                        <div className="text-xs text-gray-600 mb-1">Hours</div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="23"
+                          value={durationHours}
+                          onChange={(e) => setDurationHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
+                          placeholder="1"
+                        />
+                      </div>
+                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
+                        <div className="text-xs text-gray-600 mb-1">Minutes</div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={durationMinutes}
+                          onChange={(e) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
+                          placeholder="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="w-full flex items-center gap-3">
+                  <p className="text-sm font-medium text-gray-700 whitespace-nowrap">Confirm Restriction:</p>
+                  <div className="flex gap-2 flex-1">
+                    <button
+                      onClick={handleConfirmYes}
+                      className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                    >
+                      confirm
+                    </button>
+                    <button
+                      onClick={handleConfirmNo}
+                      className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 justify-center">
                 {!isRestricted ? (
                   <>
                     <button
                       onClick={() => handleActionClick('restrict')}
-                      className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
+                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
                     >
-                      <Shield className="h-4 w-4" />
+                      <Shield className="h-3.5 w-3.5 md:h-4 md:w-4" />
                       Restrict
                     </button>
                     <button
                       onClick={() => handleActionClick('suspend')}
-                      className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg transition-colors"
+                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg transition-colors"
                     >
-                      <Clock className="h-4 w-4" />
+                      <Clock className="h-3.5 w-3.5 md:h-4 md:w-4" />
                       Suspend
                     </button>
                     <button
                       onClick={() => handleActionClick('ban')}
-                      className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
                     >
-                      <Ban className="h-4 w-4" />
+                      <Ban className="h-3.5 w-3.5 md:h-4 md:w-4" />
                       Ban
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={() => handleActionClick('unrestrict')}
-                    className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors"
+                    className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors"
                   >
-                    <UserX className="h-4 w-4" />
+                    <UserX className="h-3.5 w-3.5 md:h-4 md:w-4" />
                     Remove Restrictions
                   </button>
                 )}

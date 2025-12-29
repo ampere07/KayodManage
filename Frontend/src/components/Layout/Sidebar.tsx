@@ -1,4 +1,3 @@
-// Updated: 2024-12-21
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { 
@@ -15,7 +14,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+import { useAuth } from '../../context/AuthContext';
+
 const Sidebar: React.FC = () => {
+  const { user } = useAuth();
   const location = useLocation();
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [isUsersOpen, setIsUsersOpen] = useState(false);
@@ -29,12 +31,16 @@ const Sidebar: React.FC = () => {
     }
   }, [location.pathname]);
 
-  const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/jobs', icon: Briefcase, label: 'Jobs' },
-  ];
+  const hasPermission = (permission: string) => {
+    if (user?.role === 'superadmin') return true;
+    if (!user?.permissions) return true;
+    return user.permissions[permission as keyof typeof user.permissions] || false;
+  };
 
-  console.log('Sidebar v2 loaded - Users dropdown enabled');
+  const navItems = [
+    { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard' },
+    { to: '/jobs', icon: Briefcase, label: 'Jobs', permission: 'jobs' },
+  ];
 
   const userItems = [
     { to: '/users', label: 'All Users' },
@@ -51,11 +57,11 @@ const Sidebar: React.FC = () => {
   ];
 
   const bottomNavItems = [
-    { to: '/verifications', icon: Shield, label: 'Verifications' },
-    { to: '/support', icon: MessageCircleQuestion, label: 'Support' },
-    { to: '/activity', icon: Activity, label: 'Activity' },
-    { to: '/alerts', icon: AlertTriangle, label: 'Alerts' },
-    { to: '/settings', icon: Settings, label: 'Settings' }
+    { to: '/verifications', icon: Shield, label: 'Verifications', permission: 'verifications' },
+    { to: '/support', icon: MessageCircleQuestion, label: 'Support', permission: 'support' },
+    { to: '/activity', icon: Activity, label: 'Activity', permission: 'activity' },
+    { to: '/flagged', icon: AlertTriangle, label: 'Flagged', permission: 'flagged' },
+    { to: '/settings', icon: Settings, label: 'Settings', permission: 'settings' }
   ];
 
   const isTransactionPage = location.pathname.startsWith('/transactions');
@@ -66,8 +72,13 @@ const Sidebar: React.FC = () => {
   };
 
   const handleUsersClick = () => {
-    console.log('Users dropdown clicked');
     setIsUsersOpen(prev => !prev);
+  };
+
+  const handleNavClick = (e: React.MouseEvent, hasPermission: boolean) => {
+    if (!hasPermission) {
+      e.preventDefault();
+    }
   };
 
   return (
@@ -77,32 +88,42 @@ const Sidebar: React.FC = () => {
         <p className="text-gray-400 text-sm mt-1">Service Platform</p>
       </div>
       
-      <nav className="flex-1 px-4">
-        <ul className="space-y-2">
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                    isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                  }`
-                }
-              >
-                <item.icon size={20} />
-                <span>{item.label}</span>
-              </NavLink>
-            </li>
-          ))}
+      <nav className="flex-1 px-4 py-4 overflow-y-auto">
+        <ul className="space-y-2 pb-4">
+          {navItems.map((item) => {
+            const allowed = hasPermission(item.permission);
+            return (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  onClick={(e) => handleNavClick(e, allowed)}
+                  className={({ isActive }) => {
+                    if (!allowed) {
+                      return 'flex items-center space-x-3 px-4 py-3 rounded-lg opacity-40 cursor-not-allowed text-gray-500';
+                    }
+                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
+                      isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                    }`;
+                  }}
+                >
+                  <item.icon size={20} />
+                  <span>{item.label}</span>
+                </NavLink>
+              </li>
+            );
+          })}
           
           <li>
             <button
               type="button"
               onClick={handleUsersClick}
+              disabled={!hasPermission('users')}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                isUserPage
+                !hasPermission('users')
+                  ? 'opacity-40 cursor-not-allowed text-gray-500'
+                  : isUserPage
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
@@ -120,23 +141,30 @@ const Sidebar: React.FC = () => {
             
             {isUsersOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
-                {userItems.map((item) => (
-                  <li key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      end={item.to === '/users'}
-                      className={({ isActive }) =>
-                        `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                          isActive
-                            ? 'bg-blue-500 text-white'
-                            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                        }`
-                      }
-                    >
-                      {item.label}
-                    </NavLink>
-                  </li>
-                ))}
+                {userItems.map((item) => {
+                  const allowed = hasPermission('users');
+                  return (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/users'}
+                        onClick={(e) => handleNavClick(e, allowed)}
+                        className={({ isActive }) => {
+                          if (!allowed) {
+                            return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
+                          }
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
+                            isActive
+                              ? 'bg-blue-500 text-white'
+                              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                          }`;
+                        }}
+                      >
+                        {item.label}
+                      </NavLink>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </li>
@@ -145,8 +173,11 @@ const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={handleTransactionClick}
+              disabled={!hasPermission('transactions')}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                isTransactionPage
+                !hasPermission('transactions')
+                  ? 'opacity-40 cursor-not-allowed text-gray-500'
+                  : isTransactionPage
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
@@ -164,43 +195,61 @@ const Sidebar: React.FC = () => {
             
             {isTransactionsOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
-                {transactionItems.map((item) => (
-                  <li key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      className={({ isActive }) =>
-                        `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                          isActive
-                            ? 'bg-blue-500 text-white'
-                            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                        }`
-                      }
-                    >
-                      {item.label}
-                    </NavLink>
-                  </li>
-                ))}
+                {transactionItems.map((item) => {
+                  const allowed = hasPermission('transactions');
+                  return (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        onClick={(e) => handleNavClick(e, allowed)}
+                        className={({ isActive }) => {
+                          if (!allowed) {
+                            return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
+                          }
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
+                            isActive
+                              ? 'bg-blue-500 text-white'
+                              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                          }`;
+                        }}
+                      >
+                        {item.label}
+                      </NavLink>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </li>
           
-          {bottomNavItems.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                    isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                  }`
-                }
-              >
-                <item.icon size={20} />
-                <span>{item.label}</span>
-              </NavLink>
-            </li>
-          ))}
+          <li className="pt-4 mt-4 border-t border-gray-700">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2 px-4">Management</div>
+          </li>
+          
+          {bottomNavItems.map((item) => {
+            const allowed = hasPermission(item.permission);
+            return (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  onClick={(e) => handleNavClick(e, allowed)}
+                  className={({ isActive }) => {
+                    if (!allowed) {
+                      return 'flex items-center space-x-3 px-4 py-3 rounded-lg opacity-40 cursor-not-allowed text-gray-500';
+                    }
+                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
+                      isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                    }`;
+                  }}
+                >
+                  <item.icon size={20} />
+                  <span>{item.label}</span>
+                </NavLink>
+              </li>
+            );
+          })}
         </ul>
       </nav>
       

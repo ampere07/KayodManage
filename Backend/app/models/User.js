@@ -17,7 +17,7 @@ const UserSchema = new Schema({
   password: {
     type: String,
     required: function() { 
-      return this.userType === 'admin' || this.userType === 'superadmin';
+      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support';
     }
   },
   phone: {
@@ -27,7 +27,7 @@ const UserSchema = new Schema({
   },
   userType: {
     type: String,
-    enum: ['client', 'provider', 'admin', 'superadmin'],
+    enum: ['client', 'provider', 'admin', 'superadmin', 'finance', 'customer support'],
     default: 'client'
   },
   location: {
@@ -81,6 +81,10 @@ const UserSchema = new Schema({
       type: Date,
       required: function() { return this.accountStatus === 'suspended'; }
     },
+    expiresAt: {
+      type: Date,
+      required: false
+    },
     appealAllowed: {
       type: Boolean,
       default: true
@@ -102,12 +106,23 @@ const UserSchema = new Schema({
     type: Number,
     default: 0,
     required: function() {
-      return this.userType === 'admin' || this.userType === 'superadmin';
+      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support';
     }
   },
   ticketsSubmittedResolved: {
     type: Number,
     default: 0
+  },
+  permissions: {
+    dashboard: { type: Boolean, default: true },
+    users: { type: Boolean, default: true },
+    jobs: { type: Boolean, default: true },
+    transactions: { type: Boolean, default: true },
+    verifications: { type: Boolean, default: true },
+    support: { type: Boolean, default: true },
+    activity: { type: Boolean, default: true },
+    flagged: { type: Boolean, default: true },
+    settings: { type: Boolean, default: false }
   }
 }, {
   timestamps: true,
@@ -162,6 +177,7 @@ UserSchema.index({ email: 1 });
 UserSchema.index({ isVerified: 1 });
 UserSchema.index({ accountStatus: 1 });
 UserSchema.index({ 'restrictionDetails.suspendedUntil': 1 });
+UserSchema.index({ 'restrictionDetails.expiresAt': 1 });
 UserSchema.index({ isOnline: 1 });
 UserSchema.index({ createdAt: -1 });
 

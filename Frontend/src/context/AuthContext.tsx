@@ -10,6 +10,17 @@ interface User {
   userId?: string;
   name?: string;
   email?: string;
+  permissions?: {
+    dashboard: boolean;
+    users: boolean;
+    jobs: boolean;
+    transactions: boolean;
+    verifications: boolean;
+    support: boolean;
+    activity: boolean;
+    flagged: boolean;
+    settings: boolean;
+  };
 }
 
 interface AuthContextType {

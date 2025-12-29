@@ -55,11 +55,11 @@ const getUserDetails = async (req, res) => {
 const restrictUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { restricted } = req.body;
+    const { restricted, duration } = req.body;
     
     let user;
     if (restricted) {
-      user = await userService.restrictUser(userId, req.session.adminId);
+      user = await userService.restrictUser(userId, req.session.adminId, duration);
     } else {
       user = await userService.unrestrictUser(userId);
     }
@@ -100,13 +100,13 @@ const restrictUser = async (req, res) => {
 const banUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { reason } = req.body;
+    const { reason, duration } = req.body;
     
     if (!reason || reason.trim().length === 0) {
       return res.status(400).json({ error: 'Ban reason is required' });
     }
     
-    const user = await userService.banUser(userId, reason, req.session.adminId);
+    const user = await userService.banUser(userId, reason, req.session.adminId, duration);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

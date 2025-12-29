@@ -39,7 +39,14 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('[API] Response error:', error);
+    // Silent 404 handling for specific endpoints
+    const silent404Endpoints = ['/api/verifications/'];
+    const isSilent404 = error.response?.status === 404 && 
+      silent404Endpoints.some(endpoint => error.config?.url?.includes(endpoint));
+    
+    if (!isSilent404) {
+      console.error('[API] Response error:', error);
+    }
     
     // Handle network errors
     if (isNetworkError(error)) {
@@ -78,7 +85,7 @@ apiClient.interceptors.response.use(
     }
     
     // Handle other client errors (400-499)
-    if (error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 401) {
+    if (error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 401 && !isSilent404) {
       const message = error.response?.data?.message || 'Request failed';
       if (!error.config?.url?.includes('/api/auth/check')) {
         toast.error(message);

@@ -59,21 +59,32 @@ class UserService {
   /**
    * Restrict a user
    */
-  async restrictUser(userId, restrictedBy) {
+  async restrictUser(userId, restrictedBy, duration) {
+    const restrictionDetails = {
+      type: 'restricted',
+      reason: 'Account restricted by admin',
+      restrictedAt: new Date(),
+      appealAllowed: true
+    };
+
+    // Add expiration if duration is provided
+    if (duration && duration > 0) {
+      const expiresAt = new Date();
+      // Convert days (including fractional) to milliseconds
+      const durationMs = duration * 24 * 60 * 60 * 1000;
+      expiresAt.setTime(expiresAt.getTime() + durationMs);
+      restrictionDetails.expiresAt = expiresAt;
+    }
+
+    if (restrictedBy && mongoose.Types.ObjectId.isValid(restrictedBy)) {
+      restrictionDetails.restrictedBy = restrictedBy;
+    }
+
     const updateData = { 
       isRestricted: true,
       accountStatus: 'restricted',
-      restrictionDetails: {
-        type: 'restricted',
-        reason: 'Account restricted by admin',
-        restrictedAt: new Date(),
-        appealAllowed: true
-      }
+      restrictionDetails
     };
-
-    if (restrictedBy && mongoose.Types.ObjectId.isValid(restrictedBy)) {
-      updateData.restrictionDetails.restrictedBy = restrictedBy;
-    }
     
     return await User.findByIdAndUpdate(userId, updateData, { new: true });
   }
@@ -96,13 +107,22 @@ class UserService {
   /**
    * Ban a user
    */
-  async banUser(userId, reason, restrictedBy) {
+  async banUser(userId, reason, restrictedBy, duration) {
     const restrictionDetails = {
       type: 'banned',
       reason: reason.trim(),
       restrictedAt: new Date(),
       appealAllowed: true
     };
+
+    // Add expiration if duration is provided
+    if (duration && duration > 0) {
+      const expiresAt = new Date();
+      // Convert days (including fractional) to milliseconds
+      const durationMs = duration * 24 * 60 * 60 * 1000;
+      expiresAt.setTime(expiresAt.getTime() + durationMs);
+      restrictionDetails.expiresAt = expiresAt;
+    }
     
     if (restrictedBy && mongoose.Types.ObjectId.isValid(restrictedBy)) {
       restrictionDetails.restrictedBy = restrictedBy;
@@ -123,14 +143,17 @@ class UserService {
    * Suspend a user
    */
   async suspendUser(userId, reason, duration, restrictedBy) {
-    const suspendedUntil = new Date();
-    suspendedUntil.setDate(suspendedUntil.getDate() + duration);
+    const expiresAt = new Date();
+    // Convert days (including fractional) to milliseconds
+    const durationMs = (duration || 7) * 24 * 60 * 60 * 1000;
+    expiresAt.setTime(expiresAt.getTime() + durationMs);
     
     const restrictionDetails = {
       type: 'suspended',
       reason: reason.trim(),
       restrictedAt: new Date(),
-      suspendedUntil,
+      suspendedUntil: expiresAt,
+      expiresAt: expiresAt,
       appealAllowed: true
     };
     
@@ -212,14 +235,15 @@ class UserService {
   }
 
   /**
-   * Check and auto-unsuspend users
+   * Check and auto-unsuspend/unrestrict users
    */
   async checkSuspendedUsers() {
     const now = new Date();
+    // Check for users with expired restrictions (any type)
     const result = await User.updateMany(
       {
-        accountStatus: 'suspended',
-        'restrictionDetails.suspendedUntil': { $lte: now }
+        accountStatus: { $in: ['restricted', 'suspended', 'banned'] },
+        'restrictionDetails.expiresAt': { $lte: now }
       },
       {
         accountStatus: 'active',

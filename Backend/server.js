@@ -7,6 +7,7 @@ const { connectDatabase } = require('./app/config/database');
 const { sessionConfig } = require('./app/config/session');
 const { setupSocketHandlers } = require('./app/socket/socketHandlers');
 const { startAutoApprovalScheduler, stopAutoApprovalScheduler } = require('./app/utils/autoApproveTopups');
+const { startRestrictionScheduler } = require('./app/utils/restrictionScheduler');
 
 // Routes
 const authRoutes = require('./app/routes/auth');
@@ -112,6 +113,9 @@ const serverInstance = server.listen(PORT, () => {
   
   // Start automatic top-up approval (runs every 5 minutes)
   startAutoApprovalScheduler(5);
+  
+  // Start restriction expiration scheduler (runs every hour)
+  startRestrictionScheduler();
 });
 
 const gracefulShutdown = async () => {

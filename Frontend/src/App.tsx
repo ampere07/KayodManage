@@ -12,7 +12,7 @@ import Jobs from './pages/Jobs';
 import Transactions from './pages/Transactions';
 import Verifications from './pages/Verifications';
 import Activity from './pages/Activity';
-import Alerts from './pages/Alerts';
+import Flagged from './pages/Flagged';
 import Support from './pages/Support';
 import Settings from './pages/Settings';
 import LoadingSpinner from './components/UI/LoadingSpinner';
@@ -71,7 +71,7 @@ const AppContent: React.FC = () => {
         <Route path="/transactions/refund" element={<Layout title="Refund Transactions"><Transactions /></Layout>} />
         <Route path="/verifications" element={<Layout title="User Verifications"><Verifications /></Layout>} />
         <Route path="/activity" element={<Layout title="Activity Feed"><Activity /></Layout>} />
-        <Route path="/alerts" element={<Layout title="Alerts"><Alerts /></Layout>} />
+        <Route path="/flagged" element={<Layout title="Flagged"><Flagged /></Layout>} />
         <Route path="/support" element={<Layout title="Support Center"><Support /></Layout>} />
         <Route path="/settings" element={<Layout title="Settings"><Settings /></Layout>} />
         <Route path="*" element={<Navigate to="/" replace />} />

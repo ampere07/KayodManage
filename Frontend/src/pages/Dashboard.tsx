@@ -4,8 +4,9 @@ import StatsCard from '../components/Dashboard/StatsCard';
 import ActivityFeed from '../components/Dashboard/ActivityFeed';
 import RevenueChart from '../components/Dashboard/RevenueChart';
 import RealtimeStats from '../components/Dashboard/RealtimeStats';
-import AlertsWidget from '../components/Dashboard/AlertsWidget';
+import FlaggedWidget from '../components/Dashboard/FlaggedWidget';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 interface ActivityItem {
@@ -26,6 +27,7 @@ interface ActivityItem {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     isConnected,
     dashboardStats,
@@ -61,6 +63,8 @@ const Dashboard: React.FC = () => {
 
   const stats = dashboardStats || {
     totalUsers: 0,
+    customers: 0,
+    providers: 0,
     activeJobs: 0,
     totalRevenue: 0,
     pendingFees: 0,
@@ -68,6 +72,7 @@ const Dashboard: React.FC = () => {
     onlineUsers: 0,
     newUsersToday: 0,
     newProvidersToday: 0,
+    jobsCreatedToday: 0,
     completedJobsToday: 0,
     revenueToday: 0,
     pendingTransactions: 0
@@ -115,20 +120,35 @@ const Dashboard: React.FC = () => {
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 overflow-hidden">
       <div className="flex-1 overflow-y-auto dashboard-scroll pt-14 md:pt-0">
       <div className="p-3 md:p-4 space-y-3 md:space-y-4">
-      {/* Compact Header */}
-      <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-100 rounded-lg md:rounded-xl shadow-lg px-3 md:px-6 py-2.5 md:py-4 border border-amber-200">
-        <div className="space-y-0.5">
-          <h1 className="text-sm md:text-2xl font-bold text-gray-800 leading-tight">{greeting}, Admin</h1>
-          <p className="text-xs md:text-sm text-gray-600 leading-tight">
-            {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-          </p>
-        </div>  
-        {dashboardStats?.timestamp && (
-          <p className="text-xs text-gray-600 mt-1.5 md:mt-2 flex items-center space-x-1">
-            <Clock className="h-3 w-3 flex-shrink-0" />
-            <span className="truncate">Last updated: {new Date(dashboardStats.timestamp).toLocaleTimeString()}</span>
-          </p>
-        )}
+      {/* Welcome Header */}
+      <div className="bg-gradient-to-r from-white/95 via-blue-50/90 to-blue-100/85 rounded-xl shadow-lg px-6 py-4 border border-blue-200/50 backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">{greeting}, {user?.name || 'Admin'}</h1>
+            <p className="text-gray-600 text-xs flex items-center gap-2">
+              <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            </p>
+          </div>
+          <div className="hidden md:flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-gray-600 font-medium">System Status</p>
+              <div className="flex items-center gap-2 mt-1">
+                {isConnected ? (
+                  <>
+                    <Wifi className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-semibold text-gray-900">Connected</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="h-4 w-4 text-red-600" />
+                    <span className="text-sm font-semibold text-gray-900">Disconnected</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Compact Stats Grid */}
@@ -145,11 +165,17 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
-            <div>
+            <div 
+              onClick={() => navigate('/users/customers')}
+              className="cursor-pointer hover:bg-purple-50 rounded-lg p-2 transition-colors"
+            >
               <h4 className="text-gray-500 text-xs font-medium mb-0.5">Customers</h4>
               <p className="text-base md:text-lg font-semibold text-gray-900">{stats.customers?.toLocaleString() || '0'}</p>
             </div>
-            <div>
+            <div 
+              onClick={() => navigate('/users/providers')}
+              className="cursor-pointer hover:bg-blue-50 rounded-lg p-2 transition-colors"
+            >
               <h4 className="text-gray-500 text-xs font-medium mb-0.5">Providers</h4>
               <p className="text-base md:text-lg font-semibold text-gray-900">{stats.providers?.toLocaleString() || '0'}</p>
             </div>
@@ -173,7 +199,7 @@ const Dashboard: React.FC = () => {
           <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
             <div>
               <h4 className="text-gray-500 text-xs font-medium mb-0.5">Created Today</h4>
-              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.createdJobsToday?.toLocaleString() || '0'}</p>
+              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.jobsCreatedToday?.toLocaleString() || '0'}</p>
             </div>
             <div>
               <h4 className="text-gray-500 text-xs font-medium mb-0.5">Completed Today</h4>
@@ -235,7 +261,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div>
               <h3 className="text-gray-600 text-xs font-medium">New Customers Today</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newCustomersToday?.toLocaleString() || '0'}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newUsersToday?.toLocaleString() || '0'}</p>
             </div>
           </div>
         </div>

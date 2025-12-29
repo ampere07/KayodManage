@@ -8,18 +8,18 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ title, alertCount = 0 }) => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const handleLogout = () => {
     logout();
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+    <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-2">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">
             {new Date().toLocaleDateString('en-US', { 
               weekday: 'long', 
               year: 'numeric', 
@@ -44,7 +44,7 @@ const Header: React.FC<HeaderProps> = ({ title, alertCount = 0 }) => {
               <User size={16} className="text-gray-600" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-sm font-medium text-gray-900">Admin</p>
+              <p className="text-sm font-medium text-gray-900">{user?.name || 'Admin'}</p>
               <p className="text-xs text-gray-500">Administrator</p>
             </div>
           </div>

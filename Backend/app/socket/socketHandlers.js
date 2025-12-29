@@ -226,7 +226,7 @@ const sendInitialData = async (socket) => {
     const alerts = await getActiveAlerts();
     socket.emit('alerts:initial', alerts);
   } catch (error) {
-    console.error('❌ Error sending initial data:', error);
+    // Silently handle errors
   }
 };
 
@@ -249,18 +249,29 @@ const setupRealtimeIntervals = (socket) => {
 const broadcastDashboardStats = async () => {
   try {
     const stats = await getRealtimeStats();
-    adminNamespace.to('admin').emit('stats:update', stats);
+    if (adminNamespace) {
+      adminNamespace.to('admin').emit('stats:update', stats);
+    }
   } catch (error) {
-    console.error('❌ Error broadcasting dashboard stats:', error);
+    // Silently handle errors to avoid console spam
   }
 };
 
 const getRealtimeStats = async () => {
   try {
+    const mongoose = require('mongoose');
+    
+    // Check if database is connected before querying
+    if (mongoose.connection.readyState !== 1) {
+      return { timestamp: new Date() };
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const totalUsers = await User.countDocuments();
+    const customers = await User.countDocuments({ userType: 'client' });
+    const providers = await User.countDocuments({ userType: 'provider' });
     const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
     const onlineUsers = await User.countDocuments({ isOnline: true });
     const completedTransactions = await Transaction.find({ status: 'completed' });
@@ -270,9 +281,15 @@ const getRealtimeStats = async () => {
       status: { $in: ['pending', 'overdue'] } 
     });
     
-    const newUsersToday = await User.countDocuments({ createdAt: { $gte: today } });
+    const newUsersToday = await User.countDocuments({ 
+      userType: 'client',
+      createdAt: { $gte: today } 
+    });
     const newProvidersToday = await User.countDocuments({ 
-      usertype: 'provider',
+      userType: 'provider',
+      createdAt: { $gte: today } 
+    });
+    const jobsCreatedToday = await Job.countDocuments({ 
       createdAt: { $gte: today } 
     });
     const completedJobsToday = await Job.countDocuments({ 
@@ -293,6 +310,8 @@ const getRealtimeStats = async () => {
 
     return {
       totalUsers,
+      customers,
+      providers,
       activeJobs,
       totalJobs,
       totalRevenue,
@@ -301,13 +320,20 @@ const getRealtimeStats = async () => {
       onlineUsers,
       newUsersToday,
       newProvidersToday,
+      jobsCreatedToday,
       completedJobsToday,
       revenueToday,
       pendingTransactions,
       timestamp: new Date()
     };
   } catch (error) {
-    console.error('Error getting realtime stats:', error);
+    // Silently handle session and connection errors
+    if (error.name === 'MongoExpiredSessionError' || 
+        error.name === 'MongoNotConnectedError' ||
+        error.name === 'MongoServerError' ||
+        error.message?.includes('session')) {
+      return { timestamp: new Date() };
+    }
     return { timestamp: new Date() };
   }
 };
@@ -316,17 +342,26 @@ const broadcastAlertUpdates = async () => {
   try {
     const alerts = await getActiveAlerts();
     
-    adminNamespace.to('admin').emit('alerts:update', {
-      alerts,
-      timestamp: new Date()
-    });
+    if (adminNamespace) {
+      adminNamespace.to('admin').emit('alerts:update', {
+        alerts,
+        timestamp: new Date()
+      });
+    }
   } catch (error) {
-    console.error('❌ Error broadcasting alert updates:', error);
+    // Silently handle errors to avoid console spam
   }
 };
 
 const getActiveAlerts = async () => {
   try {
+    const mongoose = require('mongoose');
+    
+    // Check if database is connected before querying
+    if (mongoose.connection.readyState !== 1) {
+      return [];
+    }
+
     let alerts = await Alert.find({ isActive: true })
       .sort({ priority: -1, createdAt: -1 })
       .limit(10)
@@ -388,7 +423,13 @@ const getActiveAlerts = async () => {
 
     return alerts;
   } catch (error) {
-    console.error('Error getting active alerts:', error);
+    // Silently handle session and connection errors
+    if (error.name === 'MongoExpiredSessionError' || 
+        error.name === 'MongoNotConnectedError' ||
+        error.name === 'MongoServerError' ||
+        error.message?.includes('session')) {
+      return [];
+    }
     return [];
   }
 };

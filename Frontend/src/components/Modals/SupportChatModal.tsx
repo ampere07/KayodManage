@@ -557,9 +557,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
             <h3 className="text-lg font-bold text-gray-900">User Information</h3>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-full transition-colors"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
             >
-              <X className="h-6 w-6" />
+              <X className="h-5 w-5" />
             </button>
           </div>
 
@@ -671,9 +671,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
           <div className="border-t border-gray-300 my-4"></div>
 
-          {/* Recent Activity */}
+          {/* Activity History */}
           <div className="px-6 pb-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Recent activity</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Activity History</h3>
             <div className="space-y-4">
               {(() => {
                 const events = [];

@@ -44,7 +44,7 @@ const login = async (req, res) => {
     await admin.save();
       
     req.session.isAuthenticated = true;
-    req.session.role = 'admin';
+    req.session.role = admin.userType;
     req.session.username = admin.email;
     req.session.adminId = admin._id.toString();
     req.session.userId = admin._id.toString();
@@ -57,7 +57,7 @@ const login = async (req, res) => {
         username: admin.email,
         name: admin.name,
         email: admin.email,
-        role: 'admin'
+        role: admin.userType
       }
     });
   } catch (error) {
@@ -84,23 +84,54 @@ const logout = (req, res) => {
   });
 };
 
-const checkAuth = (req, res) => {
+const checkAuth = async (req, res) => {
   if (req.session && req.session.isAuthenticated) {
-    // Ensure userId is set for backward compatibility
     if (!req.session.userId && req.session.adminId) {
       req.session.userId = req.session.adminId;
     }
     
-    res.json({
-      success: true,
-      isAuthenticated: true,
-      user: {
-        username: req.session.username,
-        role: req.session.role,
-        adminId: req.session.adminId,
-        userId: req.session.userId
-      }
-    });
+    try {
+      const User = require('../models/User');
+      const user = await User.findById(req.session.userId).select('permissions userType name email');
+      
+      const permissions = user?.permissions || {
+        dashboard: true,
+        users: true,
+        jobs: true,
+        transactions: true,
+        verifications: true,
+        support: true,
+        activity: true,
+        flagged: true,
+        settings: user?.userType === 'superadmin'
+      };
+
+      res.json({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          username: req.session.username,
+          name: user?.name,
+          email: user?.email,
+          role: req.session.role,
+          adminId: req.session.adminId,
+          userId: req.session.userId,
+          permissions: permissions
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching user permissions:', error);
+      res.json({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          username: req.session.username,
+          role: req.session.role,
+          adminId: req.session.adminId,
+          userId: req.session.userId
+        }
+      });
+    }
   } else {
     res.json({
       success: false,

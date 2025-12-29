@@ -149,11 +149,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
                 <button
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                  aria-label="Close modal"
+                onClick={onClose}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                aria-label="Close modal"
                 >
-                  <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-4">

@@ -15,6 +15,8 @@ interface Alert {
 
 interface DashboardStats {
   totalUsers: number;
+  customers: number;
+  providers: number;
   activeJobs: number;
   totalJobs: number;
   totalRevenue: number;
@@ -23,6 +25,7 @@ interface DashboardStats {
   onlineUsers: number;
   newUsersToday: number;
   newProvidersToday: number;
+  jobsCreatedToday: number;
   completedJobsToday: number;
   revenueToday: number;
   pendingTransactions: number;

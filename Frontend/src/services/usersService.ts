@@ -49,21 +49,27 @@ class UsersService {
   /**
    * Restrict a user
    */
-  async restrictUser(userId: string, restricted: boolean): Promise<UserActionResponse> {
+  async restrictUser(userId: string, duration?: number): Promise<UserActionResponse> {
+    console.log('usersService.restrictUser called:', { userId, duration });
+    const payload = { restricted: true, duration };
+    console.log('Sending payload:', payload);
+    
     const response = await apiClient.patch<UserActionResponse>(
       `${this.baseUrl}/${userId}/restrict`,
-      { restricted }
+      payload
     );
+    
+    console.log('restrictUser response:', response.data);
     return response.data;
   }
 
   /**
    * Ban a user
    */
-  async banUser(userId: string, reason: string): Promise<UserActionResponse> {
+  async banUser(userId: string, reason: string, duration?: number): Promise<UserActionResponse> {
     const response = await apiClient.patch<UserActionResponse>(
       `${this.baseUrl}/${userId}/ban`,
-      { reason }
+      { reason, duration }
     );
     return response.data;
   }
@@ -74,11 +80,11 @@ class UsersService {
   async suspendUser(
     userId: string,
     reason: string,
-    duration: number
+    duration?: number
   ): Promise<UserActionResponse> {
     const response = await apiClient.patch<UserActionResponse>(
       `${this.baseUrl}/${userId}/suspend`,
-      { reason, duration }
+      { reason, duration: duration || 7 }
     );
     return response.data;
   }
@@ -108,7 +114,10 @@ class UsersService {
         };
       }
       return null;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return null;
+      }
       console.error('Error fetching verification details:', error);
       return null;
     }
