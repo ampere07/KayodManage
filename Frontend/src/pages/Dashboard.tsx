@@ -1,84 +1,101 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Briefcase, DollarSign, AlertTriangle, TrendingUp, Activity, Wifi, WifiOff, RefreshCw, ArrowUpRight, Clock, User } from 'lucide-react';
-import StatsCard from '../components/Dashboard/StatsCard';
-import ActivityFeed from '../components/Dashboard/ActivityFeed';
-import RevenueChart from '../components/Dashboard/RevenueChart';
-import RealtimeStats from '../components/Dashboard/RealtimeStats';
-import FlaggedWidget from '../components/Dashboard/FlaggedWidget';
+import { useState, useEffect } from 'react';
+import { 
+  Users, 
+  Briefcase, 
+  DollarSign, 
+  AlertCircle,
+  TrendingUp
+} from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import apiClient from '../utils/apiClient';
 
-interface ActivityItem {
-  _id: string;
-  type: string;
-  description: string;
-  timestamp?: Date;
-  createdAt?: Date;
-  userId?: {
-    name: string;
-    email: string;
-  };
-  jobId?: {
-    title: string;
-  };
-  metadata?: any;
+function Header() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  
+  const currentDate = new Date();
+  const dateString = currentDate.toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    month: 'long', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+  const timeString = currentDate.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+  
+  const greeting = currentDate.getHours() < 12 
+    ? 'Good Morning' 
+    : currentDate.getHours() < 18 
+    ? 'Good Afternoon' 
+    : 'Good Evening';
+  
+  return (
+    <div className="mb-2 md:mb-3">
+      <h1 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-0.5">
+        {greeting}, {user?.name || 'Admin'}
+      </h1>
+      <p className="text-xs text-gray-500 mb-1.5 md:mb-2">
+        <span className="hidden sm:inline">{dateString} · </span>{timeString}
+      </p>
+      
+      <div className="flex gap-1.5 md:gap-2 flex-wrap">
+        <button 
+          onClick={() => navigate('/verifications')}
+          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
+        >
+          <span className="hidden sm:inline">View Verifications</span>
+          <span className="sm:hidden">Verify</span>
+        </button>
+        <button 
+          onClick={() => navigate('/jobs')}
+          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
+        >
+          <span className="hidden sm:inline">Review Flagged Jobs</span>
+          <span className="sm:hidden">Flagged</span>
+        </button>
+        <button 
+          onClick={() => navigate('/support')}
+          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
+        >
+          <span className="hidden sm:inline">Manage Customer Service</span>
+          <span className="sm:hidden">Support</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
-const Dashboard: React.FC = () => {
+function StatCards() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const {
-    isConnected,
-    dashboardStats,
-    alerts,
-    refreshDashboard,
-    refreshAlerts
-  } = useSocket();
+  const { dashboardStats } = useSocket();
+  const [comparison, setComparison] = useState<any>(null);
 
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(true);
+  useEffect(() => {
+    fetchComparison();
+  }, []);
 
-  const fetchActivities = async () => {
+  const fetchComparison = async () => {
     try {
-      setLoadingActivities(true);
-      const response = await fetch('/api/dashboard/activity', {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data: ActivityItem[] = await response.json();
-        setActivities(data || []);
-      }
+      const response = await apiClient.get('/api/dashboard/stats-comparison');
+      setComparison(response.data);
     } catch (error) {
-      console.error('Error fetching activities:', error);
-    } finally {
-      setLoadingActivities(false);
+      console.error('Error fetching stats comparison:', error);
     }
   };
 
-  useEffect(() => {
-    fetchActivities();
-  }, []);
-
   const stats = dashboardStats || {
     totalUsers: 0,
-    customers: 0,
-    providers: 0,
+    totalJobs: 0,
     activeJobs: 0,
     totalRevenue: 0,
     pendingFees: 0,
-    pendingFeesCount: 0,
-    onlineUsers: 0,
-    newUsersToday: 0,
-    newProvidersToday: 0,
-    jobsCreatedToday: 0,
-    completedJobsToday: 0,
-    revenueToday: 0,
-    pendingTransactions: 0
+    pendingFeesCount: 0
   };
-
-  console.log('[Dashboard] Current stats:', { pendingFees: stats.pendingFees, pendingFeesCount: stats.pendingFeesCount });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -90,276 +107,394 @@ const Dashboard: React.FC = () => {
     }).format(amount).replace('PHP', '₱');
   };
 
-  const handleAlertClick = (alert: any) => {
+  const formatPercentage = (percentage: number) => {
+    if (percentage === 0) return '0% vs Last Month';
+    const sign = percentage > 0 ? '+' : '';
+    return `${sign}${percentage}% vs Last Month`;
+  };
+
+  const getChangeType = (percentage: number) => {
+    if (percentage > 0) return 'positive' as const;
+    if (percentage < 0) return 'negative' as const;
+    return 'neutral' as const;
+  };
+
+  const statCards = [
+    {
+      icon: Users,
+      label: 'Total Users',
+      value: stats.totalUsers.toLocaleString(),
+      change: comparison ? formatPercentage(comparison.users.percentage) : 'Loading...',
+      changeType: comparison ? getChangeType(comparison.users.percentage) : 'neutral' as const,
+      onClick: () => navigate('/users')
+    },
+    {
+      icon: Briefcase,
+      label: 'Total Jobs',
+      value: stats.totalJobs.toLocaleString(),
+      change: comparison ? formatPercentage(comparison.jobs.percentage) : 'Loading...',
+      changeType: comparison ? getChangeType(comparison.jobs.percentage) : 'neutral' as const,
+      onClick: () => navigate('/jobs')
+    },
+    {
+      icon: DollarSign,
+      label: 'Total Revenue',
+      value: formatCurrency(stats.totalRevenue),
+      change: comparison ? formatPercentage(comparison.revenue.percentage) : 'Loading...',
+      changeType: comparison ? getChangeType(comparison.revenue.percentage) : 'neutral' as const,
+      onClick: () => navigate('/transactions')
+    },
+    {
+      icon: AlertCircle,
+      label: 'Pending Fees',
+      value: stats.pendingFeesCount?.toLocaleString() || '0',
+      change: `Requires Attention (${stats.pendingFeesCount || 0} Pending)`,
+      changeType: 'neutral' as const,
+      onClick: () => navigate('/transactions/fee-records?status=pending')
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2 mb-2 md:mb-3">
+      {statCards.map((stat) => (
+        <div 
+          key={stat.label} 
+          onClick={stat.onClick}
+          className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between mb-1 md:mb-1.5">
+            <span className="text-xs text-gray-600">{stat.label}</span>
+            <stat.icon className="w-3 sm:w-4 h-3 sm:h-4 text-gray-400" />
+          </div>
+          
+          <div className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-0.5 md:mb-1">
+            {stat.value}
+          </div>
+          
+          <div className={`text-xs flex items-center gap-1 ${
+            stat.changeType === 'positive' ? 'text-green-600' : 
+            stat.changeType === 'negative' ? 'text-red-600' : 'text-gray-600'
+          }`}>
+            {stat.changeType === 'positive' && <TrendingUp className="w-3 h-3 hidden sm:inline" />}
+            <span className="truncate text-xs">{stat.change}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface RevenueChartData {
+  name: string;
+  revenue: number;
+  transactions: number;
+}
+
+function RevenueChart() {
+  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
+  const [chartData, setChartData] = useState<RevenueChartData[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchRevenueData();
+  }, [period]);
+
+  const fetchRevenueData = async () => {
+    try {
+      setLoading(true);
+      const days = period === 'week' ? 7 : period === 'month' ? 30 : 365;
+      const response = await apiClient.get(`/api/dashboard/revenue-chart?days=${days}`);
+      setChartData(response.data);
+    } catch (error) {
+      console.error('Error fetching revenue chart data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value).replace('PHP', '₱');
+  };
+
+  return (
+    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-1.5 md:mb-2">
+        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Revenue Overview</h3>
+        
+        <div className="flex gap-1 md:gap-1.5">
+          <button
+            onClick={() => setPeriod('week')}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
+              period === 'week' 
+                ? 'bg-gray-900 text-white' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            Week
+          </button>
+          <button
+            onClick={() => setPeriod('month')}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
+              period === 'month' 
+                ? 'bg-gray-900 text-white' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            Month
+          </button>
+          <button
+            onClick={() => setPeriod('year')}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
+              period === 'year' 
+                ? 'bg-gray-900 text-white' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            Year
+          </button>
+        </div>
+      </div>
+      
+      <div className="flex-1" style={{ minHeight: '180px', maxHeight: '280px' }}>
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-xs text-gray-500">Loading...</div>
+          </div>
+        ) : chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis 
+                dataKey="name" 
+                tick={{ fontSize: 9, fill: '#6b7280' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis 
+                tick={{ fontSize: 9, fill: '#6b7280' }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: 'white', 
+                  border: '1px solid #e5e7eb', 
+                  borderRadius: '8px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  fontSize: '11px'
+                }}
+                formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="revenue" 
+                stroke="#3b82f6" 
+                strokeWidth={2}
+                fill="url(#colorValue)" 
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-xs text-gray-500">No data available</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActiveAlerts() {
+  const navigate = useNavigate();
+  const { alerts } = useSocket();
+
+  const handleReview = (alert: any) => {
     if (alert.category === 'reported_post' || alert.reportId) {
-      navigate(`/alerts?reportId=${alert.reportId || alert._id.replace('report_', '')}`);
+      navigate(`/flagged?reportId=${alert.reportId || alert._id.replace('report_', '')}`);
     } else if (alert.category === 'verification_request' || alert.verificationId) {
       navigate(`/verifications?id=${alert.verificationId || alert._id.replace('verification_', '')}`);
     } else if (alert.category === 'support_ticket' || alert.supportId) {
       navigate(`/support?id=${alert.supportId || alert._id.replace('support_', '')}`);
     } else {
-      navigate(`/alerts?alertId=${alert._id}`);
+      navigate(`/flagged?alertId=${alert._id}`);
     }
   };
 
-  const getCategoryIcon = (category: string) => {
-    if (category === 'reported_post') {
-      return <AlertTriangle className="h-4 w-4" />;
-    } else if (category === 'verification_request') {
-      return <Users className="h-4 w-4" />;
-    } else if (category === 'support_ticket') {
-      return <Activity className="h-4 w-4" />;
+  const getAlertStyle = (type: string) => {
+    switch (type) {
+      case 'critical':
+        return 'border-l-4 border-l-red-500 bg-red-50';
+      case 'warning':
+        return 'border-l-4 border-l-yellow-500 bg-yellow-50';
+      case 'info':
+        return 'border-l-4 border-l-blue-500 bg-blue-50';
+      default:
+        return 'border-l-4 border-l-gray-500 bg-gray-50';
     }
-    return <AlertTriangle className="h-4 w-4" />;
   };
 
-  const currentDate = new Date();
-  const greeting = currentDate.getHours() < 12 ? 'Good Morning' : currentDate.getHours() < 18 ? 'Good Afternoon' : 'Good Evening';
+  const displayAlerts = alerts?.slice(0, 6) || [];
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 overflow-hidden">
-      <div className="flex-1 overflow-y-auto dashboard-scroll pt-14 md:pt-0">
-      <div className="p-3 md:p-4 space-y-3 md:space-y-4">
-      {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-white/95 via-blue-50/90 to-blue-100/85 rounded-xl shadow-lg px-6 py-4 border border-blue-200/50 backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">{greeting}, {user?.name || 'Admin'}</h1>
-            <p className="text-gray-600 text-xs flex items-center gap-2">
-              <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-              {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-          </div>
-          <div className="hidden md:flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs text-gray-600 font-medium">System Status</p>
-              <div className="flex items-center gap-2 mt-1">
-                {isConnected ? (
-                  <>
-                    <Wifi className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-semibold text-gray-900">Connected</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="h-4 w-4 text-red-600" />
-                    <span className="text-sm font-semibold text-gray-900">Disconnected</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Compact Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {/* Total Users */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Users</h3>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
-            </div>
-            <div className="p-2 rounded-lg bg-blue-50">
-              <Users className="h-4 md:h-5 w-4 md:w-5 text-blue-600" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
+    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
+      <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2">Active Alerts</h3>
+      
+      <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2" style={{ minHeight: '180px', maxHeight: '280px' }}>
+        {displayAlerts.length > 0 ? (
+          displayAlerts.map((alert) => (
             <div 
-              onClick={() => navigate('/users/customers')}
-              className="cursor-pointer hover:bg-purple-50 rounded-lg p-2 transition-colors"
+              key={alert._id}
+              className={`border border-gray-200 rounded-lg p-2 md:p-2.5 ${getAlertStyle(alert.type)}`}
             >
-              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Customers</h4>
-              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.customers?.toLocaleString() || '0'}</p>
-            </div>
-            <div 
-              onClick={() => navigate('/users/providers')}
-              className="cursor-pointer hover:bg-blue-50 rounded-lg p-2 transition-colors"
-            >
-              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Providers</h4>
-              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.providers?.toLocaleString() || '0'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Active Jobs */}
-        <div 
-          onClick={() => navigate('/jobs?status=active')}
-          className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-green-300"
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Jobs</h3>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeJobs.toLocaleString()}</p>
-            </div>
-            <div className="p-2 rounded-lg bg-green-50">
-              <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-green-600" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-200">
-            <div>
-              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Created Today</h4>
-              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.jobsCreatedToday?.toLocaleString() || '0'}</p>
-            </div>
-            <div>
-              <h4 className="text-gray-500 text-xs font-medium mb-0.5">Completed Today</h4>
-              <p className="text-base md:text-lg font-semibold text-gray-900">{stats.completedJobsToday?.toLocaleString() || '0'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Total Revenue */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="text-gray-600 text-sm font-medium mb-2">Total Revenue</h3>
-              <p className="text-2xl md:text-3xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
-            </div>
-            <div className="p-2 rounded-lg bg-purple-50">
-              <DollarSign className="h-4 md:h-5 w-4 md:w-5 text-purple-600" />
-            </div>
-          </div>
-          <p className="text-sm text-gray-600">Revenue Today {formatCurrency(stats.revenueToday)}</p>
-        </div>
-
-        {/* Pending Fees */}
-        <div 
-          onClick={() => navigate('/transactions/fee-records?status=pending')}
-          className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-red-300"
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium mb-1">Total Pending Fees</h3>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(stats.pendingFees)}</p>
-            </div>
-            <div className="p-2 rounded-lg bg-red-50">
-              <AlertTriangle className="h-4 md:h-5 w-4 md:w-5 text-red-600" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500">Requires attention ({stats.pendingFeesCount || 0} pending)</p>
-        </div>
-      </div>
-
-      {/* Compact Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 p-3 md:p-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-green-500 shadow">
-              <Activity className="h-4 md:h-5 w-4 md:w-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium">Online Users</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.onlineUsers.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200 p-3 md:p-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-purple-500 shadow">
-              <User className="h-4 md:h-5 w-4 md:w-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium">New Customers Today</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{stats.newUsersToday?.toLocaleString() || '0'}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-3 md:p-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-blue-500 shadow">
-              <Briefcase className="h-4 md:h-5 w-4 md:w-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-gray-600 text-xs font-medium">New Provider Applicants</h3>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{(stats.newProvidersToday || 0).toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts and Alerts - Compact Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
-        <div className="lg:col-span-2">
-          <RevenueChart />
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 md:p-4 flex flex-col" style={{ height: '410px' }}>
-          <div className="flex items-center justify-between mb-4 flex-shrink-0">
-            <div>
-              <h3 className="text-base font-bold text-gray-900">Active Alerts</h3>
-              <p className="text-xs text-gray-500">
-                {alerts && alerts.length > 0 ? `${alerts.length} pending` : 'No alerts'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="space-y-2 flex-1 overflow-y-auto dashboard-scroll">
-            {alerts && alerts.length > 0 ? (
-              alerts.slice(0, 10).map((alert) => (
-                <div
-                  key={alert._id}
-                  onClick={() => handleAlertClick(alert)}
-                  className={`p-2 rounded-lg border-l-4 transition-all hover:shadow-md cursor-pointer ${
-                    alert.priority >= 4
-                      ? 'border-red-500 bg-gradient-to-br from-red-50 to-red-100/50 hover:from-red-100 hover:to-red-200/50'
-                      : alert.priority === 3
-                      ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 to-yellow-100/50 hover:from-yellow-100 hover:to-yellow-200/50'
-                      : 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex items-center space-x-1.5">
-                      <div className={`p-1 rounded ${
-                        alert.priority >= 4 ? 'bg-red-100 text-red-600' : alert.priority === 3 ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {getCategoryIcon(alert.category)}
-                      </div>
-                      <h4 className="font-semibold text-gray-900 text-xs line-clamp-1">{alert.title}</h4>
-                    </div>
-                    {alert.priority >= 4 && (
-                      <span className="px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full flex-shrink-0">!</span>
-                    )}
-                  </div>
-                  
-                  <p className="text-xs text-gray-700 leading-tight mb-1 line-clamp-1">{alert.message}</p>
-                  
-                  <div className="flex items-center justify-between pt-1 border-t border-gray-200/50">
-                    <p className="text-xs text-gray-500">
-                      {new Date(alert.createdAt).toLocaleString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })}
-                    </p>
-                    <span className="text-xs font-semibold text-gray-500 hover:text-gray-700">
-                      View →
-                    </span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-8">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-2">
-                  <AlertTriangle className="h-6 w-6 text-green-600" />
-                </div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-1">All Clear!</h4>
-                <p className="text-xs text-gray-500">
-                  {isConnected ? 'No active alerts' : 'Connecting...'}
+              <div className="mb-1 md:mb-1.5">
+                <h4 className="text-xs font-semibold text-gray-900 mb-0.5">
+                  {alert.title || 'New Post Reported'}
+                </h4>
+                <p className="text-xs text-gray-600 line-clamp-1 md:line-clamp-2">
+                  {alert.message || `Job "${alert.jobTitle || 'Test'}" reported for inappropriate content`}
                 </p>
               </div>
-            )}
+              
+              <div className="flex gap-1 md:gap-1.5">
+                <button 
+                  onClick={() => handleReview(alert)}
+                  className="px-2 md:px-2.5 py-0.5 md:py-1 bg-gray-900 text-white text-xs rounded hover:bg-gray-800 transition-colors"
+                >
+                  Review
+                </button>
+                <button className="px-2 md:px-2.5 py-0.5 md:py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50 transition-colors">
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-6 md:py-8">
+            <div className="inline-flex items-center justify-center w-8 md:w-10 h-8 md:h-10 rounded-full bg-gray-100 mb-1.5 md:mb-2">
+              <AlertCircle className="h-4 md:h-5 w-4 md:w-5 text-gray-400" />
+            </div>
+            <p className="text-xs text-gray-600">No active alerts</p>
           </div>
-        </div>
-      </div>
-
-      </div>
+        )}
       </div>
     </div>
   );
-};
+}
 
-export default Dashboard;
+function ActivityBreakdown() {
+  const { dashboardStats } = useSocket();
+
+  const stats = dashboardStats || {
+    newUsersToday: 0,
+    newProvidersToday: 0,
+    jobsCreatedToday: 0,
+    completedJobsToday: 0,
+    onlineUsers: 0,
+    customers: 0,
+    providers: 0,
+    verifiedProviders: 0,
+    pendingVerifications: 0,
+    averageRating: 0
+  };
+
+  const todayActivity = [
+    { label: 'New Customers', value: stats.newUsersToday || 0 },
+    { label: 'New Providers', value: stats.newProvidersToday || 0 },
+    { label: 'Jobs Created', value: stats.jobsCreatedToday || 0 },
+    { label: 'Jobs Completed', value: stats.completedJobsToday || 0 },
+    { label: 'Online Users', value: stats.onlineUsers || 0, highlight: true },
+  ];
+
+  const verificationRate = stats.providers > 0 
+    ? Math.round((stats.verifiedProviders / stats.providers) * 100)
+    : 0;
+
+  const userBreakdown = [
+    { label: 'Total Customers', value: stats.customers?.toLocaleString() || '0' },
+    { label: 'Total Providers', value: stats.providers?.toLocaleString() || '0' },
+    { 
+      label: 'Verified Providers', 
+      value: `${stats.verifiedProviders || 0} (${verificationRate}%)` 
+    },
+    { label: 'Pending Verifications', value: stats.pendingVerifications?.toLocaleString() || '0' },
+    { label: 'Average Rating', value: `${stats.averageRating || '0.0'} ★` },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+      <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
+        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">Today's Activity</h3>
+        
+        <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
+          {todayActivity.map((item) => (
+            <div 
+              key={item.label} 
+              className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
+            >
+              <span className="text-xs text-gray-600">{item.label}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-gray-900">
+                  {item.value.toLocaleString()}
+                </span>
+                {item.highlight && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
+        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">User Breakdown</h3>
+        
+        <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
+          {userBreakdown.map((item) => (
+            <div 
+              key={item.label} 
+              className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
+            >
+              <span className="text-xs text-gray-600">{item.label}</span>
+              <span className="text-xs font-semibold text-gray-900">
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <div className="h-full flex flex-col overflow-hidden px-1 sm:px-0">
+      <Header />
+      <StatCards />
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 md:mb-3">
+        <div className="lg:col-span-2">
+          <RevenueChart />
+        </div>
+        <div>
+          <ActiveAlerts />
+        </div>
+      </div>
+      
+      <ActivityBreakdown />
+    </div>
+  );
+}

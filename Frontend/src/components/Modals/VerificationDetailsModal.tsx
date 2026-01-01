@@ -62,6 +62,15 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
   const user = verification.userId;
 
+  // Count submitted documents
+  const hasFaceVerification = verification.faceVerification && 
+    (Array.isArray(verification.faceVerification) ? verification.faceVerification.length > 0 : true);
+  const hasValidId = verification.validId && 
+    (Array.isArray(verification.validId) ? verification.validId.length > 0 : true);
+  const hasCredentials = verification.credentials && verification.credentials.length > 0;
+  
+  const documentsSubmitted = [hasFaceVerification, hasValidId, hasCredentials].filter(Boolean).length;
+
   const handleQuickApprove = async () => {
     if (!window.confirm('Are you sure you want to approve this verification?')) {
       return;
@@ -108,8 +117,31 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
       }`}>
         <div className="h-full flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-lg font-semibold text-gray-900">Verification Details</h3>
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white">
+            <div className="flex items-center gap-4">
+              <div className="relative flex-shrink-0">
+                <UserAvatar user={user} size="lg" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-bold text-gray-900">{user.name}</h3>
+                  <VerificationStatusBadge isVerified={verification.status === 'approved'} size="md" />
+                  <UserTypeBadge userType={user.userType} size="md" />
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(user._id);
+                      toast.success('KYD copied to clipboard');
+                    }}
+                    className="hover:text-blue-600 cursor-pointer transition-colors"
+                    title="Click to copy"
+                  >
+                    KYD: {user._id}
+                  </button>
+                </div>
+              </div>
+            </div>
             <button
               onClick={onClose}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
@@ -121,40 +153,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
           <div className="flex-1 overflow-hidden flex">
             {/* Left Column - User Information */}
             <div className="w-[400px] flex-shrink-0 border-r border-gray-200 bg-gray-50 overflow-y-auto">
-              <div className="p-6 flex flex-col h-full">
-                {/* User Avatar and Basic Info */}
-                <div className="mb-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex-shrink-0">
-                        <UserAvatar user={user} size="lg" />
-                      </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h4>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-600">KYD:</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(user._id);
-                              toast.success('KYD copied to clipboard');
-                            }}
-                            className="text-xs text-gray-600 hover:text-blue-600 cursor-pointer transition-colors truncate"
-                            title="Click to copy"
-                          >
-                            {user._id}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <VerificationStatusBadge isVerified={verification.status === 'approved'} size="md" />
-                      <UserTypeBadge userType={user.userType} size="md" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-300 mb-6 -mx-6" />
-
+              <div className="p-6">
                 {/* Personal Information */}
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
@@ -194,9 +193,9 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
                 <div className="border-t border-gray-300 mb-6 -mx-6" />
 
-                {/* Other Information */}
+                {/* Verification Details */}
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Other Information</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Verification Details</h3>
                   <div className="space-y-2.5">
                     <p className="text-base text-gray-900">
                       <span className="text-gray-600">Verification Status:</span>{' '}
@@ -214,41 +213,100 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                         day: 'numeric'
                       }) : 'N/A'}
                     </p>
+                    <p className="text-base text-gray-900">
+                      <span className="text-gray-600">Attempts:</span> 1
+                    </p>
+                    <p className="text-base text-gray-900">
+                      <span className="text-gray-600">Documents Uploaded:</span> {documentsSubmitted} out of 3
+                    </p>
+                    <div className="mt-2 ml-4">
+                      <ul className="list-disc text-sm text-gray-700 space-y-1">
+                        {hasFaceVerification && <li>Face Verification</li>}
+                        {hasValidId && <li>Identification Card</li>}
+                        {hasCredentials && <li>Certificate/Credentials</li>}
+                      </ul>
+                    </div>
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="mt-auto pt-3">
-                  <div className="border-t border-gray-300 -mx-6 mb-6" />
-                  {verification.status === 'pending' || verification.status === 'under_review' ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleQuickApprove}
-                        disabled={updating}
-                        className="flex-1 px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                      >
-                        <CheckCircle className="inline-block w-5 h-5 mr-2" />
-                        Approve
-                      </button>
-                      <button
-                        onClick={handleQuickReject}
-                        disabled={updating}
-                        className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-                      >
-                        <XCircle className="inline-block w-5 h-5 mr-2" />
-                        Reject
-                      </button>
-                    </div>
-                  ) : verification.status === 'approved' ? (
-                    <div className="rounded-lg p-3 flex items-center justify-center gap-2.5">
-                      <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle className="w-5 h-5 text-green-600" strokeWidth={2.5} />
+                <div className="border-t border-gray-300 mb-6 -mx-6" />
+
+                {/* Submission History */}
+                <div className="mb-6">
+                  <h3 className="text-xs font-semibold text-gray-500 tracking-wider mb-4">SUBMISSION HISTORY</h3>
+                  <div className="space-y-4 relative">
+                    {/* Vertical line */}
+                    <div className="absolute left-4 top-8 bottom-8 w-0.5 bg-gray-300" />
+                    
+                    {verification.status === 'approved' && verification.reviewedAt && (
+                      <div className="flex items-start gap-3 relative">
+                        <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center z-10">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Verification Approved</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(verification.reviewedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })} - {verification.reviewedBy?.name || 'System Auto-Approval'}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-green-700">Verified and Approved</p>
+                    )}
+                    {verification.status === 'rejected' && verification.reviewedAt && (
+                      <div className="flex items-start gap-3 relative">
+                        <div className="flex-shrink-0 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center z-10">
+                          <XCircle className="w-4 h-4 text-red-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Verification Rejected</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(verification.reviewedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })} - {verification.reviewedBy?.name || 'Admin'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-3 relative">
+                      <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center z-10">
+                        <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">Documents Submitted</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(verification.submittedAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })} - {documentsSubmitted} document{documentsSubmitted !== 1 ? 's' : ''} uploaded
+                        </p>
                       </div>
                     </div>
-                  ) : null}
+                    <div className="flex items-start gap-3 relative">
+                      <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center z-10">
+                        <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">Account Created</p>
+                        <p className="text-xs text-gray-500">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          }) : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -467,6 +525,57 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex-shrink-0 border-t border-gray-200 bg-white p-6">
+                {verification.status === 'pending' || verification.status === 'under_review' ? (
+                  <div className="max-w-5xl mx-auto flex gap-3">
+                    <button
+                      onClick={handleQuickReject}
+                      disabled={updating}
+                      className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Reject & Ban
+                    </button>
+                    <button
+                      disabled={updating}
+                      className="flex-1 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Request Resubmission
+                    </button>
+                    <button
+                      disabled={updating}
+                      className="flex-1 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                      </svg>
+                      Flag for Review
+                    </button>
+                    <button
+                      onClick={handleQuickApprove}
+                      disabled={updating}
+                      className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Approve Verification
+                    </button>
+                  </div>
+                ) : verification.status === 'approved' ? (
+                  <div className="max-w-3xl mx-auto rounded-lg p-3 bg-green-50 flex items-center justify-center gap-2">
+                    <div className="flex-shrink-0 w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                      <CheckCircle className="w-4 h-4 text-green-600" strokeWidth={2.5} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-green-700">Verified and Approved</p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

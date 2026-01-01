@@ -13,6 +13,9 @@ import {
   Users,
   X,
   ChevronDown,
+  Briefcase,
+  FolderOpen,
+  DollarSign,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -25,7 +28,7 @@ import { JobDetailsModal } from '../components/Modals';
 // Service imports
 import { jobsService } from '../services';
 
-// Type imports
+// Tpye imports
 import type { Job, JobsPagination } from '../types';
 
 // Utility imports
@@ -59,11 +62,23 @@ const Jobs: React.FC = () => {
     total: 0,
     pages: 0
   });
+  const [jobCounts, setJobCounts] = useState({
+    total: 0,
+    open: 0,
+    assigned: 0,
+    completed: 0,
+    totalValue: 0
+  });
 
   // Fetch jobs on mount and when filters change
   useEffect(() => {
     fetchJobs();
   }, [searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter, pagination.page]);
+
+  // Fetch job counts on mount
+  useEffect(() => {
+    fetchJobCounts();
+  }, []);
 
   /**
    * Fetch jobs from API
@@ -88,6 +103,32 @@ const Jobs: React.FC = () => {
       toast.error('Failed to load jobs');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Fetch job counts and total value
+   */
+  const fetchJobCounts = async () => {
+    try {
+      const [totalData, openData, assignedData, completedData] = await Promise.all([
+        jobsService.getJobs({ limit: 1, page: 1 }),
+        jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
+        jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
+        jobsService.getJobs({ status: 'completed', limit: 1, page: 1 })
+      ]);
+
+      const totalValue = totalData.stats?.totalValue || 0;
+
+      setJobCounts({
+        total: totalData.pagination?.total || 0,
+        open: openData.pagination?.total || 0,
+        assigned: assignedData.pagination?.total || 0,
+        completed: completedData.pagination?.total || 0,
+        totalValue
+      });
+    } catch (error) {
+      console.error('Error fetching job counts:', error);
     }
   };
 
@@ -130,6 +171,9 @@ const Jobs: React.FC = () => {
    * Format currency with zero decimals
    */
   const formatCurrency = (amount: number) => {
+    if (!amount || isNaN(amount)) {
+      return '₱0';
+    }
     return formatPHPCurrency(amount, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
@@ -143,13 +187,67 @@ const Jobs: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Jobs</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">{pagination.total} total jobs</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">Manage and monitor all job listings</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
+          <div 
+            onClick={() => setStatusFilter('all')}
+            className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-blue-600">Total Jobs</span>
+              <Briefcase className="h-4 w-4 text-blue-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-blue-900">{jobCounts.total.toLocaleString()}</p>
+          </div>
+
+          <div 
+            onClick={() => setStatusFilter('open')}
+            className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border border-green-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-green-600">Open Jobs</span>
+              <FolderOpen className="h-4 w-4 text-green-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-green-900">{jobCounts.open.toLocaleString()}</p>
+          </div>
+
+          <div 
+            onClick={() => setStatusFilter('in_progress')}
+            className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border border-yellow-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-yellow-600">Assigned Jobs</span>
+              <Clock className="h-4 w-4 text-yellow-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-yellow-900">{jobCounts.assigned.toLocaleString()}</p>
+          </div>
+
+          <div 
+            onClick={() => setStatusFilter('completed')}
+            className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-purple-600">Completed</span>
+              <CheckCircle className="h-4 w-4 text-purple-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-purple-900">{jobCounts.completed.toLocaleString()}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-indigo-600">Total Value</span>
+              <DollarSign className="h-4 w-4 text-indigo-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-indigo-900">{formatCurrency(jobCounts.totalValue)}</p>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-3">
-          <div className="relative w-full">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
@@ -160,53 +258,39 @@ const Jobs: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-            >
-              <option value="all">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
+          >
+            <option value="all">All Categories</option>
+            {JOB_CATEGORIES.map(category => (
+              <option key={category} value={category} className="capitalize">
+                {category}
+              </option>
+            ))}
+          </select>
 
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-            >
-              <option value="all">All Categories</option>
-              {JOB_CATEGORIES.map(category => (
-                <option key={category} value={category} className="capitalize">
-                  {category}
-                </option>
-              ))}
-            </select>
+          <select
+            value={paymentMethodFilter}
+            onChange={(e) => setPaymentMethodFilter(e.target.value)}
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
+          >
+            <option value="all">Payment Method</option>
+            <option value="wallet">Wallet</option>
+            <option value="cash">Cash</option>
+            <option value="xendit">Xendit</option>
+          </select>
 
-            <select
-              value={paymentMethodFilter}
-              onChange={(e) => setPaymentMethodFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-            >
-              <option value="all">Payment Method</option>
-              <option value="wallet">Wallet</option>
-              <option value="cash">Cash</option>
-              <option value="xendit">Xendit</option>
-            </select>
-
-            <select
-              value={urgentFilter}
-              onChange={(e) => setUrgentFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-            >
-              <option value="all">All Priority</option>
-              <option value="true">Urgent Only</option>
-              <option value="false">Normal Priority</option>
-            </select>
-          </div>
+          <select
+            value={urgentFilter}
+            onChange={(e) => setUrgentFilter(e.target.value)}
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
+          >
+            <option value="all">All Priority</option>
+            <option value="true">Urgent Only</option>
+            <option value="false">Normal Priority</option>
+          </select>
         </div>
       </div>
 
@@ -302,7 +386,7 @@ const Jobs: React.FC = () => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="space-y-1">
-                              <p className="text-sm font-bold text-gray-900">{job.budget ? formatCurrency(job.budget) : '₱NaN'}</p>
+                              <p className="text-sm font-bold text-gray-900">{formatCurrency(job.budget)}</p>
                               <div className="flex items-center gap-1 text-xs text-gray-500">
                                 <Wallet className="h-3 w-3" />
                                 <span className="capitalize">{job.paymentMethod}</span>

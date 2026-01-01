@@ -19,7 +19,9 @@ class SupportService {
    * Fetch all chat supports
    */
   async getChatSupports(): Promise<ChatSupportsResponse> {
-    const response = await apiClient.get<ChatSupportsResponse>(this.baseUrl);
+    const response = await apiClient.get<ChatSupportsResponse>(this.baseUrl, {
+      timeout: 30000 // 30 second timeout for support tickets
+    });
     return response.data;
   }
 

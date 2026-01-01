@@ -17,6 +17,7 @@ const getStats = async (req, res) => {
     const totalUsers = await User.countDocuments();
     const customers = await User.countDocuments({ userType: 'client' });
     const providers = await User.countDocuments({ userType: 'provider' });
+    const totalJobs = await Job.countDocuments();
     const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
     const onlineUsers = await User.countDocuments({ isOnline: true });
     
@@ -50,10 +51,32 @@ const getStats = async (req, res) => {
     });
     const revenueToday = todayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
+    const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
+      status: 'approved' 
+    });
+    const verifiedProviders = verifiedProviderIds.length;
+    
+    const pendingVerifications = await CredentialVerification.countDocuments({ 
+      status: 'pending' 
+    });
+
+    const completedJobs = await Job.find({ 
+      status: 'completed',
+      'rating.stars': { $exists: true, $ne: null }
+    }).select('rating.stars');
+    
+    const totalRatings = completedJobs.reduce((sum, job) => {
+      return sum + (job.rating?.stars || 0);
+    }, 0);
+    const averageRating = completedJobs.length > 0 
+      ? (totalRatings / completedJobs.length).toFixed(1)
+      : '0.0';
+
     const stats = {
       totalUsers,
       customers,
       providers,
+      totalJobs,
       activeJobs,
       totalRevenue,
       pendingFees,
@@ -63,7 +86,10 @@ const getStats = async (req, res) => {
       newProvidersToday,
       jobsCreatedToday,
       completedJobsToday,
-      revenueToday
+      revenueToday,
+      verifiedProviders,
+      pendingVerifications,
+      averageRating
     };
 
     res.json(stats);
@@ -388,4 +414,95 @@ const getRevenueChart = async (req, res) => {
   }
 };
 
-module.exports = { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart };
+const getStatsComparison = async (req, res) => {
+  try {
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const totalUsersNow = await User.countDocuments();
+    const totalUsersLastMonth = await User.countDocuments({ 
+      createdAt: { $lte: lastMonthEnd } 
+    });
+
+    const totalJobsNow = await Job.countDocuments();
+    const totalJobsLastMonth = await Job.countDocuments({ 
+      createdAt: { $lte: lastMonthEnd } 
+    });
+
+    const currentMonthRevenueDocs = await Transaction.find({
+      status: 'completed',
+      $or: [
+        { completedAt: { $gte: currentMonthStart } },
+        { completedAt: null, createdAt: { $gte: currentMonthStart } }
+      ]
+    });
+    const currentMonthRevenue = currentMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    const lastMonthRevenueDocs = await Transaction.find({
+      status: 'completed',
+      $or: [
+        { completedAt: { $gte: lastMonthStart, $lte: lastMonthEnd } },
+        { completedAt: null, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }
+      ]
+    });
+    const lastMonthRevenue = lastMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    const currentPendingFeesTotal = await FeeRecord.countDocuments({
+      status: { $in: ['pending', 'overdue'] }
+    });
+    
+    const pendingFeesResolvedThisMonth = await FeeRecord.countDocuments({
+      status: { $nin: ['pending', 'overdue'] },
+      updatedAt: { $gte: currentMonthStart }
+    });
+    const pendingFeesCreatedThisMonth = await FeeRecord.countDocuments({
+      status: { $in: ['pending', 'overdue'] },
+      createdAt: { $gte: currentMonthStart }
+    });
+    const lastMonthPendingFees = currentPendingFeesTotal - pendingFeesCreatedThisMonth + pendingFeesResolvedThisMonth;
+
+    const currentAlerts = await Alert.countDocuments({ isActive: true });
+    const lastMonthAlerts = await Alert.countDocuments({
+      isActive: true,
+      createdAt: { $lte: lastMonthEnd }
+    });
+
+    const calculatePercentage = (current, previous) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return Math.round(((current - previous) / previous) * 100);
+    };
+
+    res.json({
+      users: {
+        current: totalUsersNow,
+        previous: totalUsersLastMonth,
+        percentage: calculatePercentage(totalUsersNow, totalUsersLastMonth)
+      },
+      jobs: {
+        current: totalJobsNow,
+        previous: totalJobsLastMonth,
+        percentage: calculatePercentage(totalJobsNow, totalJobsLastMonth)
+      },
+      revenue: {
+        current: currentMonthRevenue,
+        previous: lastMonthRevenue,
+        percentage: calculatePercentage(currentMonthRevenue, lastMonthRevenue)
+      },
+      pendingFees: {
+        current: currentPendingFeesTotal,
+        percentage: calculatePercentage(currentPendingFeesTotal, lastMonthPendingFees)
+      },
+      alerts: {
+        current: currentAlerts,
+        percentage: calculatePercentage(currentAlerts, lastMonthAlerts)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching stats comparison:', error);
+    res.status(500).json({ error: 'Failed to fetch stats comparison' });
+  }
+};
+
+module.exports = { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison };

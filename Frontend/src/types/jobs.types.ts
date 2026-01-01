@@ -78,6 +78,9 @@ export interface JobsResponse {
   success: boolean;
   jobs: Job[];
   pagination: JobsPagination;
+  stats?: {
+    totalValue: number;
+  };
 }
 
 export interface JobDetailsResponse {

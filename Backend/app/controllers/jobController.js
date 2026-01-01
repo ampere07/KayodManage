@@ -91,6 +91,12 @@ const getJobs = async (req, res) => {
     const total = await Job.countDocuments(query);
     const pages = Math.ceil(total / limit);
     
+    // Calculate total value of ALL jobs (not filtered)
+    const totalValueResult = await Job.aggregate([
+      { $group: { _id: null, totalValue: { $sum: '$budget' } } }
+    ]);
+    const totalValue = totalValueResult.length > 0 ? totalValueResult[0].totalValue : 0;
+    
     res.json({
       jobs: jobsWithData,
       pagination: {
@@ -98,6 +104,9 @@ const getJobs = async (req, res) => {
         limit,
         total,
         pages
+      },
+      stats: {
+        totalValue
       }
     });
   } catch (error) {

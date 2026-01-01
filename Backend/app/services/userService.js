@@ -187,7 +187,7 @@ class UserService {
    * Build query for user filtering
    */
   buildUserQuery(filters) {
-    const { search, status, userType, restricted } = filters;
+    const { search, status, userType, restricted, isVerified } = filters;
     const query = {};
     
     if (search) {
@@ -218,6 +218,10 @@ class UserService {
           query.accountStatus = 'active';
           break;
       }
+    }
+    
+    if (isVerified !== undefined) {
+      query.isVerified = isVerified === 'true' || isVerified === true;
     }
     
     if (userType === 'client' || userType === 'provider') {

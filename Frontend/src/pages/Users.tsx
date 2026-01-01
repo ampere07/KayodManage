@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Search, 
   UserCheck, 
@@ -17,7 +17,8 @@ import {
   User as UserIcon,
   Phone,
   CheckCircle,
-  XCircle
+  XCircle,
+  Users as UsersIcon
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -35,18 +36,34 @@ const getInitials = (name: string): string => {
 
 const Users: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'suspended' | 'banned' | 'restricted'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'unverified' | 'suspended' | 'restricted' | 'banned'>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
+    verified: 0,
+    unverified: 0
+  });
+  const [flaggedUserTypeFilter, setFlaggedUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
+  const [userTypeCounts, setUserTypeCounts] = useState({
+    total: 0,
+    customers: 0,
+    providers: 0,
     suspended: 0,
+    restricted: 0,
     banned: 0,
-    restricted: 0
+    verified: 0,
+    unverified: 0
+  });
+  const [flaggedUserCounts, setFlaggedUserCounts] = useState({
+    total: 0,
+    customers: 0,
+    providers: 0
   });
   const [pagination, setPagination] = useState({
     page: 1,
@@ -71,6 +88,14 @@ const Users: React.FC = () => {
     return 'All Users';
   };
   
+  const getPageDescription = () => {
+    const type = getUserType();
+    if (type === 'customers') return 'Manage customer accounts and their service requests';
+    if (type === 'providers') return 'Manage service providers and their verification status';
+    if (type === 'flagged') return 'Review and manage restricted, suspended, and banned user accounts';
+    return 'Manage and monitor all user accounts, including customers and service providers';
+  };
+  
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -81,16 +106,21 @@ const Users: React.FC = () => {
         ...(searchTerm && { search: searchTerm })
       };
 
-      // Handle sidebar navigation (user type)
       const userType = getUserType();
       if (userType === 'customers') params.userType = 'client';
       if (userType === 'providers') params.userType = 'provider';
-      if (userType === 'flagged') params.restricted = 'true';
+      if (userType === 'flagged') {
+        params.restricted = 'true';
+        if (flaggedUserTypeFilter !== 'all') {
+          params.userType = flaggedUserTypeFilter;
+        }
+      }
 
-      // Handle tab filtering (status)
+      if (statusFilter === 'verified') params.isVerified = 'true';
+      if (statusFilter === 'unverified') params.isVerified = 'false';
       if (statusFilter === 'suspended') params.status = 'suspended';
-      if (statusFilter === 'banned') params.status = 'banned';
       if (statusFilter === 'restricted') params.status = 'restricted';
+      if (statusFilter === 'banned') params.status = 'banned';
 
       const data = await usersService.getUsers(params);
       
@@ -118,37 +148,85 @@ const Users: React.FC = () => {
       if (userType === 'providers') baseParams.userType = 'provider';
       if (userType === 'flagged') baseParams.restricted = 'true';
 
-      // Fetch counts for each status
-      const [allData, suspendedData, bannedData, restrictedData] = await Promise.all([
+      const [allData, verifiedData, unverifiedData] = await Promise.all([
         usersService.getUsers({ ...baseParams, limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'suspended', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'banned', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'restricted', limit: 1, page: 1 })
+        usersService.getUsers({ ...baseParams, isVerified: 'true', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, isVerified: 'false', limit: 1, page: 1 })
       ]);
 
       setStatusCounts({
         all: allData.pagination?.total || 0,
-        suspended: suspendedData.pagination?.total || 0,
-        banned: bannedData.pagination?.total || 0,
-        restricted: restrictedData.pagination?.total || 0
+        verified: verifiedData.pagination?.total || 0,
+        unverified: unverifiedData.pagination?.total || 0
       });
     } catch (error) {
       console.error('Error fetching status counts:', error);
     }
   };
 
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter]);
+  const fetchUserTypeCounts = async () => {
+    try {
+      const userType = getUserType();
+      const baseParams: any = {};
+      
+      if (userType === 'customers') {
+        baseParams.userType = 'client';
+      } else if (userType === 'providers') {
+        baseParams.userType = 'provider';
+      }
+
+      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData] = await Promise.all([
+        usersService.getUsers({ limit: 1, page: 1 }),
+        usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
+        usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'suspended', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'restricted', limit: 1, page: 1 }),
+        usersService.getUsers({ ...baseParams, status: 'banned', limit: 1, page: 1 })
+      ]);
+
+      setUserTypeCounts({
+        total: totalData.pagination?.total || 0,
+        customers: customersData.pagination?.total || 0,
+        providers: providersData.pagination?.total || 0,
+        suspended: suspendedData.pagination?.total || 0,
+        restricted: restrictedData.pagination?.total || 0,
+        banned: bannedData.pagination?.total || 0,
+        verified: 0,
+        unverified: 0
+      });
+
+      if (userType === 'flagged') {
+        const [flaggedTotalData, flaggedCustomersData, flaggedProvidersData] = await Promise.all([
+          usersService.getUsers({ restricted: 'true', limit: 1, page: 1 }),
+          usersService.getUsers({ restricted: 'true', userType: 'client', limit: 1, page: 1 }),
+          usersService.getUsers({ restricted: 'true', userType: 'provider', limit: 1, page: 1 })
+        ]);
+
+        setFlaggedUserCounts({
+          total: flaggedTotalData.pagination?.total || 0,
+          customers: flaggedCustomersData.pagination?.total || 0,
+          providers: flaggedProvidersData.pagination?.total || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user type counts:', error);
+    }
+  };
 
   useEffect(() => {
-    setStatusFilter('all'); // Reset status filter when changing user type
-    fetchStatusCounts(); // Fetch counts when user type changes
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [searchTerm, statusFilter, flaggedUserTypeFilter]);
+
+  useEffect(() => {
+    setStatusFilter('all');
+    setFlaggedUserTypeFilter('all');
+    fetchStatusCounts();
+    fetchUserTypeCounts();
   }, [location.pathname]);
 
   useEffect(() => {
     fetchUsers();
-  }, [pagination.page, location.pathname, searchTerm, statusFilter]);
+  }, [pagination.page, location.pathname, searchTerm, statusFilter, flaggedUserTypeFilter]);
   
   const isUserRestricted = (user: User) => {
     if (user.accountStatus) return user.accountStatus !== 'active';
@@ -242,6 +320,19 @@ const Users: React.FC = () => {
     await handleUserAction(actionType, duration);
   };
 
+  const handleCounterClick = (type: 'all' | 'customers' | 'providers' | 'suspended' | 'restricted' | 'banned') => {
+    if (type === 'all') {
+      navigate('/users');
+    } else if (type === 'customers') {
+      navigate('/users/customers');
+    } else if (type === 'providers') {
+      navigate('/users/providers');
+    } else {
+      setStatusFilter(type);
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  };
+
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
@@ -249,33 +340,287 @@ const Users: React.FC = () => {
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getPageTitle()}</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
-              {pagination.total} {pagination.total === 1 ? 'user' : 'users'}
+              {getPageDescription()}
             </p>
           </div>
-          
-          <div className="hidden md:flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-1.5">
-              <Shield className="h-4 w-4 text-orange-600" />
-              <span className="font-medium text-gray-600">Restrict</span>
+        </div>
+
+        {getUserType() === 'all' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div 
+              onClick={() => handleCounterClick('all')}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <UsersIcon className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{userTypeCounts.total.toLocaleString()}</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4 text-yellow-600" />
-              <span className="font-medium text-gray-600">Suspend</span>
+
+            <div 
+              onClick={() => handleCounterClick('customers')}
+              className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-purple-600">Customers</span>
+                <UserIcon className="h-4 w-4 text-purple-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Ban className="h-4 w-4 text-red-600" />
-              <span className="font-medium text-gray-600">Ban</span>
+
+            <div 
+              onClick={() => handleCounterClick('providers')}
+              className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-indigo-600">Providers</span>
+                <Briefcase className="h-4 w-4 text-indigo-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <UserX className="h-4 w-4 text-green-600" />
-              <span className="font-medium text-gray-600">Remove Restriction</span>
+
+            <div 
+              onClick={() => handleCounterClick('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'suspended' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Eye className="h-4 w-4 text-blue-600" />
-              <span className="font-medium text-gray-600">View</span>
+
+            <div 
+              onClick={() => handleCounterClick('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'restricted' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => handleCounterClick('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'banned' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
             </div>
           </div>
-        </div>
+        )}
+
+        {getUserType() === 'customers' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div 
+              onClick={() => navigate('/users')}
+              className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <UsersIcon className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{userTypeCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/customers')}
+              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-purple-600">Total Customers</span>
+                <UserIcon className="h-4 w-4 text-purple-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/providers')}
+              className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-indigo-600">Total Providers</span>
+                <Briefcase className="h-4 w-4 text-indigo-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'suspended' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'restricted' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'banned' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {getUserType() === 'flagged' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('all')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                flaggedUserTypeFilter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-red-600">Total Flagged Users</span>
+                <AlertCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-red-900">{flaggedUserCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('client')}
+              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                flaggedUserTypeFilter === 'client' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-purple-600">Customer</span>
+                <UserIcon className="h-5 w-5 text-purple-600" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-purple-900">{flaggedUserCounts.customers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('provider')}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                flaggedUserTypeFilter === 'provider' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-600">Provider</span>
+                <Briefcase className="h-5 w-5 text-blue-600" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-blue-900">{flaggedUserCounts.providers.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {getUserType() === 'providers' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div 
+              onClick={() => navigate('/users')}
+              className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <UsersIcon className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{userTypeCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/customers')}
+              className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-purple-600">Total Customers</span>
+                <UserIcon className="h-4 w-4 text-purple-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/providers')}
+              className={`bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'all' ? 'border-indigo-500 ring-2 ring-indigo-400 shadow-lg' : 'border-indigo-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-indigo-600">Total Providers</span>
+                <Briefcase className="h-4 w-4 text-indigo-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'suspended' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'restricted' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'banned' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
@@ -289,28 +634,25 @@ const Users: React.FC = () => {
             />
           </div>
           
-          {getUserType() === 'all' && (
-            <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
-              {[
-                { key: 'all', label: 'All', count: statusCounts.all },
-                { key: 'suspended', label: 'Suspended', count: statusCounts.suspended },
-                { key: 'banned', label: 'Banned', count: statusCounts.banned },
-                { key: 'restricted', label: 'Restricted', count: statusCounts.restricted }
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setStatusFilter(tab.key as typeof statusFilter)}
-                  className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                    statusFilter === tab.key
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  {tab.label} ({tab.count})
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+            {[
+              { key: 'all', label: 'All', count: statusCounts.all },
+              { key: 'verified', label: 'Verified', count: statusCounts.verified },
+              { key: 'unverified', label: 'Unverified', count: statusCounts.unverified }
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key as typeof statusFilter)}
+                className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                  statusFilter === tab.key
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

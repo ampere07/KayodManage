@@ -37,7 +37,8 @@ const getAllTickets = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
-    const total = await ChatSupport.countDocuments(filters);
+    const totalPromise = ChatSupport.countDocuments(filters);
+    const total = await totalPromise;
 
     const tickets = chatSupports.map(chat => ({
       _id: chat._id,
@@ -549,7 +550,8 @@ const getAllChatSupports = async (req, res) => {
       .sort(sortOptions)
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .populate('userId', 'userType profileImage');
+      .populate('userId', 'userType profileImage')
+      .lean();
 
     const total = await ChatSupport.countDocuments(filters);
 
@@ -568,7 +570,7 @@ const getAllChatSupports = async (req, res) => {
       }
 
       return {
-        ...chat.toObject(),
+        ...chat,
         userType: chat.userId?.userType || 'client',
         userProfileImage: chat.userId?.profileImage || null,
         displayStatus
@@ -610,8 +612,9 @@ const getChatSupport = async (req, res) => {
       displayStatus = chatSupport.acceptedBy ? 'pending' : 'open';
     }
 
+    const chatSupportObj = chatSupport.toObject ? chatSupport.toObject() : chatSupport;
     const chatSupportWithUserData = {
-      ...chatSupport.toObject(),
+      ...chatSupportObj,
       userType: chatSupport.userId?.userType || 'client',
       userProfileImage: chatSupport.userId?.profileImage || null,
       displayStatus

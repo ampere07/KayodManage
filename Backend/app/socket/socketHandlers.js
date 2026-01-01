@@ -303,6 +303,27 @@ const getRealtimeStats = async () => {
     const pendingTransactions = await Transaction.countDocuments({ status: 'pending' });
     const totalJobs = await Job.countDocuments();
 
+    const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
+      status: 'approved' 
+    });
+    const verifiedProviders = verifiedProviderIds.length;
+    
+    const pendingVerifications = await CredentialVerification.countDocuments({ 
+      status: 'pending' 
+    });
+
+    const completedJobs = await Job.find({ 
+      status: 'completed',
+      'rating.stars': { $exists: true, $ne: null }
+    }).select('rating.stars');
+    
+    const totalRatings = completedJobs.reduce((sum, job) => {
+      return sum + (job.rating?.stars || 0);
+    }, 0);
+    const averageRating = completedJobs.length > 0 
+      ? (totalRatings / completedJobs.length).toFixed(1)
+      : '0.0';
+
     const totalRevenue = completedTransactions.reduce((sum, t) => sum + t.amount, 0);
     const pendingFees = pendingFeeRecords.reduce((sum, fee) => sum + (fee.amount || 0), 0);
     const pendingFeesCount = pendingFeeRecords.length;
@@ -324,6 +345,9 @@ const getRealtimeStats = async () => {
       completedJobsToday,
       revenueToday,
       pendingTransactions,
+      verifiedProviders,
+      pendingVerifications,
+      averageRating,
       timestamp: new Date()
     };
   } catch (error) {
@@ -387,6 +411,8 @@ const getActiveAlerts = async () => {
           priority: 4,
           isActive: true,
           isRead: false,
+          reportId: report._id,
+          jobId: report.jobId?._id,
           createdAt: report.createdAt
         });
       }
@@ -407,8 +433,38 @@ const getActiveAlerts = async () => {
           priority: 3,
           isActive: true,
           isRead: false,
+          verificationId: verification._id,
+          userId: verification.userId?._id,
           createdAt: verification.submittedAt
         });
+      }
+
+      const openSupportTickets = await ChatSupport.find({ status: 'open' })
+        .populate('userId', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
+
+      for (const ticket of openSupportTickets) {
+        const hasUnreadMessages = ticket.messages.some(msg => 
+          msg.senderType === 'User' && !msg.isRead
+        );
+
+        if (hasUnreadMessages) {
+          generatedAlerts.push({
+            _id: `support_${ticket._id}`,
+            type: 'info',
+            category: 'support_ticket',
+            title: 'New Support Message',
+            message: `${ticket.userName} sent a message in ${ticket.subject}`,
+            priority: 2,
+            isActive: true,
+            isRead: false,
+            supportId: ticket._id,
+            userId: ticket.userId,
+            createdAt: ticket.lastMessage?.timestamp || ticket.createdAt
+          });
+        }
       }
 
       generatedAlerts.sort((a, b) => {
