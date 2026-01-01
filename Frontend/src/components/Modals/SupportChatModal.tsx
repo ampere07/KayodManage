@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle, RefreshCw, MessageSquare } from 'lucide-react';
-import { getPriorityBadge, getStatusBadge } from '../../utils/supportHelpers';
+import { getPriorityBadge, getStatusBadge } from '../../utils';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import { useAuth } from '../../context/AuthContext';
 

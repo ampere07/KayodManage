@@ -10,10 +10,8 @@ import {
   CheckCircle, 
   XCircle, 
   MessageSquare, 
-  CreditCard,
   Calendar,
   Activity as ActivityIcon,
-  Eye,
   RefreshCw,
   MousePointerClick
 } from 'lucide-react';
@@ -21,13 +19,8 @@ import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { usersService, transactionsService } from '../services';
 import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals';
+import { getInitials } from '../utils';
 import type { User, Transaction } from '../types';
-
-const getInitials = (name: string): string => {
-  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
-  if (nameParts.length === 0) return '?';
-  return nameParts[0][0].toUpperCase();
-};
 
 interface AdminInfo {
   _id: string;
@@ -55,6 +48,65 @@ interface ActivityLog {
   ipAddress?: string;
   createdAt: Date;
 }
+
+const ACTION_ICONS: Record<string, React.ReactNode> = {
+  verification_approved: <UserCheck className="h-4 w-4" />,
+  verification_rejected: <UserX className="h-4 w-4" />,
+  user_restricted: <Shield className="h-4 w-4" />,
+  user_suspended: <Clock className="h-4 w-4" />,
+  user_banned: <Ban className="h-4 w-4" />,
+  user_unrestricted: <UserCheck className="h-4 w-4" />,
+  transaction_completed: <CheckCircle className="h-4 w-4" />,
+  transaction_failed: <XCircle className="h-4 w-4" />,
+  support_closed: <MessageSquare className="h-4 w-4" />,
+  support_reopened: <MessageSquare className="h-4 w-4" />,
+  admin_login: <Shield className="h-4 w-4" />
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  verification_approved: 'bg-green-100 text-green-700',
+  verification_rejected: 'bg-red-100 text-red-700',
+  user_restricted: 'bg-orange-100 text-orange-700',
+  user_suspended: 'bg-yellow-100 text-yellow-700',
+  user_banned: 'bg-red-100 text-red-700',
+  user_unrestricted: 'bg-green-100 text-green-700',
+  transaction_completed: 'bg-green-100 text-green-700',
+  transaction_failed: 'bg-red-100 text-red-700',
+  support_closed: 'bg-gray-100 text-gray-700',
+  support_reopened: 'bg-blue-100 text-blue-700',
+  admin_login: 'bg-purple-100 text-purple-700'
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  verification_approved: 'Verification Approved',
+  verification_rejected: 'Verification Rejected',
+  user_restricted: 'User Restricted',
+  user_suspended: 'User Suspended',
+  user_banned: 'User Banned',
+  user_unrestricted: 'User Unrestricted',
+  transaction_completed: 'Transaction Completed',
+  transaction_failed: 'Transaction Failed',
+  support_closed: 'Support Closed',
+  support_reopened: 'Support Reopened',
+  admin_login: 'Admin Login'
+};
+
+const USER_ACTIONS = [
+  'verification_approved',
+  'verification_rejected',
+  'user_restricted',
+  'user_suspended',
+  'user_banned',
+  'user_unrestricted'
+];
+
+const SYSTEM_ACTIONS = [
+  'transaction_completed',
+  'transaction_failed',
+  'support_closed',
+  'support_reopened',
+  'admin_login'
+];
 
 const Activity: React.FC = () => {
   const navigate = useNavigate();
@@ -88,8 +140,6 @@ const Activity: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         setActivities(data.logs || []);
-      } else {
-        console.error('Failed to fetch activity logs:', response.status);
       }
     } catch (error) {
       console.error('Failed to fetch activity logs:', error);
@@ -133,107 +183,11 @@ const Activity: React.FC = () => {
         case 'verification':
           navigate('/verifications');
           break;
-          
-        default:
-          break;
       }
     } catch (error) {
       console.error('Error fetching activity target:', error);
       toast.error('Failed to load details');
     }
-  };
-
-  const getActionIcon = (actionType: string) => {
-    switch (actionType) {
-      case 'verification_approved':
-        return <UserCheck className="h-4 w-4" />;
-      case 'verification_rejected':
-        return <UserX className="h-4 w-4" />;
-      case 'user_restricted':
-        return <Shield className="h-4 w-4" />;
-      case 'user_suspended':
-        return <Clock className="h-4 w-4" />;
-      case 'user_banned':
-        return <Ban className="h-4 w-4" />;
-      case 'user_unrestricted':
-        return <UserCheck className="h-4 w-4" />;
-      case 'transaction_completed':
-        return <CheckCircle className="h-4 w-4" />;
-      case 'transaction_failed':
-        return <XCircle className="h-4 w-4" />;
-      case 'support_closed':
-        return <MessageSquare className="h-4 w-4" />;
-      case 'support_reopened':
-        return <MessageSquare className="h-4 w-4" />;
-      case 'admin_login':
-        return <Shield className="h-4 w-4" />;
-      default:
-        return <ActivityIcon className="h-4 w-4" />;
-    }
-  };
-
-  const getActionColor = (actionType: string) => {
-    switch (actionType) {
-      case 'verification_approved':
-      case 'user_unrestricted':
-      case 'transaction_completed':
-        return 'bg-green-100 text-green-700';
-      case 'verification_rejected':
-      case 'transaction_failed':
-        return 'bg-red-100 text-red-700';
-      case 'user_restricted':
-        return 'bg-orange-100 text-orange-700';
-      case 'user_suspended':
-        return 'bg-yellow-100 text-yellow-700';
-      case 'user_banned':
-        return 'bg-red-100 text-red-700';
-      case 'support_closed':
-        return 'bg-gray-100 text-gray-700';
-      case 'support_reopened':
-        return 'bg-blue-100 text-blue-700';
-      case 'admin_login':
-        return 'bg-purple-100 text-purple-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  const getActionLabel = (actionType: string) => {
-    const labels: Record<string, string> = {
-      verification_approved: 'Verification Approved',
-      verification_rejected: 'Verification Rejected',
-      user_restricted: 'User Restricted',
-      user_suspended: 'User Suspended',
-      user_banned: 'User Banned',
-      user_unrestricted: 'User Unrestricted',
-      transaction_completed: 'Transaction Completed',
-      transaction_failed: 'Transaction Failed',
-      support_closed: 'Support Closed',
-      support_reopened: 'Support Reopened',
-      admin_login: 'Admin Login'
-    };
-    return labels[actionType] || actionType;
-  };
-
-  const isUserAction = (actionType: string) => {
-    return [
-      'verification_approved',
-      'verification_rejected',
-      'user_restricted',
-      'user_suspended',
-      'user_banned',
-      'user_unrestricted'
-    ].includes(actionType);
-  };
-
-  const isSystemAction = (actionType: string) => {
-    return [
-      'transaction_completed',
-      'transaction_failed',
-      'support_closed',
-      'support_reopened',
-      'admin_login'
-    ].includes(actionType);
   };
 
   const filteredActivities = activities.filter(activity => {
@@ -248,24 +202,26 @@ const Activity: React.FC = () => {
     
     const matchesType = 
       typeFilter === 'all' ||
-      (typeFilter === 'user' && isUserAction(activity.actionType)) ||
-      (typeFilter === 'system' && isSystemAction(activity.actionType));
+      (typeFilter === 'user' && USER_ACTIONS.includes(activity.actionType)) ||
+      (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
     
     return matchesSearch && matchesAction && matchesType;
   });
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, [searchTerm, actionFilter, typeFilter]);
 
-  // Paginate filtered activities
   const paginatedActivities = filteredActivities.slice(
     (pagination.page - 1) * pagination.limit,
     pagination.page * pagination.limit
   );
 
   const totalPages = Math.ceil(filteredActivities.length / pagination.limit);
+
+  const totalActivityLogs = activities.length;
+  const userActivityLogs = activities.filter(activity => USER_ACTIONS.includes(activity.actionType)).length;
+  const systemActivityLogs = activities.filter(activity => SYSTEM_ACTIONS.includes(activity.actionType)).length;
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
@@ -274,7 +230,7 @@ const Activity: React.FC = () => {
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Activity Logs</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
-              {activities.length} total actions • Click on any activity to view details
+              Track and monitor all administrative actions and system events across the platform
             </p>
           </div>
           
@@ -286,6 +242,26 @@ const Activity: React.FC = () => {
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200">
+            <p className="text-xs text-gray-600 font-medium mb-1">Total Activity Logs</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{totalActivityLogs}</p>
+            <p className="text-xs text-gray-500 mt-1">All actions</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200">
+            <p className="text-xs text-gray-600 font-medium mb-1">User Actions</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{userActivityLogs}</p>
+            <p className="text-xs text-gray-500 mt-1">User management</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border border-green-200">
+            <p className="text-xs text-gray-600 font-medium mb-1">System Actions</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{systemActivityLogs}</p>
+            <p className="text-xs text-gray-500 mt-1">System events</p>
+          </div>
         </div>
 
         <div className="flex gap-2 mb-4">
@@ -377,21 +353,11 @@ const Activity: React.FC = () => {
                 <table className="min-w-full">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Admin
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Action
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Target
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Date
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Admin</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Target</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -426,9 +392,11 @@ const Activity: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getActionColor(activity.actionType)}`}>
-                            {getActionIcon(activity.actionType)}
-                            {getActionLabel(activity.actionType)}
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                            ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
+                            {ACTION_LABELS[activity.actionType] || activity.actionType}
                           </span>
                         </td>
                         <td className="px-6 py-4">
@@ -495,9 +463,11 @@ const Activity: React.FC = () => {
                     </div>
 
                     <div className="mb-3">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getActionColor(activity.actionType)}`}>
-                        {getActionIcon(activity.actionType)}
-                        {getActionLabel(activity.actionType)}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                        ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
+                        {ACTION_LABELS[activity.actionType] || activity.actionType}
                       </span>
                     </div>
 
@@ -526,7 +496,6 @@ const Activity: React.FC = () => {
                 ))}  
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
                   <div className="flex items-center justify-between w-full">
@@ -568,7 +537,6 @@ const Activity: React.FC = () => {
         </div>
       </div>
 
-      {/* User Details Modal */}
       <UserDetailsModal
         isOpen={userModalOpen}
         onClose={() => {
@@ -609,7 +577,6 @@ const Activity: React.FC = () => {
         }}
       />
 
-      {/* Transaction Details Modal */}
       <TransactionDetailsModal
         isOpen={transactionModalOpen}
         onClose={() => {

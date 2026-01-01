@@ -29,6 +29,9 @@ interface DashboardStats {
   completedJobsToday: number;
   revenueToday: number;
   pendingTransactions: number;
+  verifiedProviders: number;
+  pendingVerifications: number;
+  averageRating: string;
   timestamp: Date;
 }
 

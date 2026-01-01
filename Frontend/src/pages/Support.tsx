@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Search,
   MessageSquare,
-  Clock,
   CheckCircle,
   Calendar,
   MessageCircleQuestion,
@@ -10,304 +9,94 @@ import {
   WifiOff,
   Eye
 } from 'lucide-react';
-import io, { Socket } from 'socket.io-client';
-
-// Component imports
 import { SupportChatModal } from '../components/Modals';
-
-// Service imports
 import { supportService } from '../services';
 import { useAuth } from '../context/AuthContext';
-
-// Type imports
+import { useSupportTickets } from '../hooks/useSupportTickets';
+import { useSupportSocket } from '../hooks/useSupportSocket';
+import { getInitials, getPriorityBadge, getStatusBadge } from '../utils';
+import { hasPreviouslyResolved, calculateTicketStats } from '../utils/supportHelpers';
 import type { ChatSupport, Message } from '../types';
 
-// Utility imports
-import { getInitials, getPriorityBadge, getStatusBadge } from '../utils';
-
-/**
- * Support Center Page
- * Manages support tickets and live chat with socket.io
- */
 const Support: React.FC = () => {
   const { user } = useAuth();
-  
-  // State management
-  const [chatSupports, setChatSupports] = useState<ChatSupport[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSupport | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterPriority, setFilterPriority] = useState('all');
-  const [activeTab, setActiveTab] = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [sendingMessage, setSendingMessage] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20
-  });
+  const [message, setMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
-  // Refs
-  const messageEndRef = useRef<HTMLDivElement>(null);
-  const joinedChats = useRef<Set<string>>(new Set());
-  const selectedChatIdRef = useRef<string | null>(null);
+  const {
+    tickets,
+    paginatedTickets,
+    filteredTickets,
+    loading,
+    filters,
+    pagination,
+    totalPages,
+    setFilters,
+    setPagination,
+    fetchTickets,
+    updateTicket,
+    acceptTicket,
+    closeTicket,
+    reopenTicket
+  } = useSupportTickets();
 
-  // Update selected chat ID ref
-  useEffect(() => {
-    if (selectedChat) {
-      selectedChatIdRef.current = selectedChat._id;
-    } else {
-      selectedChatIdRef.current = null;
-    }
-  }, [selectedChat?._id]);
-
-  // Initialize
-  useEffect(() => {
-    fetchChatSupports();
-    setupSocket();
-  }, []);
-
-  // Cleanup socket on unmount
-  useEffect(() => {
-    return () => {
-      cleanupSocket();
-    };
-  }, [socket]);
-
-  // Handle socket room management
-  useEffect(() => {
-    if (socket && isConnected) {
-      joinedChats.current.forEach(chatId => {
-        socket.emit('support:leave_chat', { chatSupportId: chatId });
-      });
-      joinedChats.current.clear();
-
-      if (selectedChat) {
-        socket.emit('support:join_chat', { chatSupportId: selectedChat._id });
-        joinedChats.current.add(selectedChat._id);
-      }
-    }
-  }, [selectedChat, socket, isConnected]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    scrollToBottom();
-  }, [selectedChat?.messages]);
-
-  /**
-   * Scroll to bottom of messages
-   */
-  const scrollToBottom = () => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  /**
-   * Cleanup socket connections
-   */
-  const cleanupSocket = () => {
-    if (socket) {
-      joinedChats.current.forEach(chatId => {
-        socket.emit('support:leave_chat', { chatSupportId: chatId });
-      });
-      joinedChats.current.clear();
-
-      socket.disconnect();
-      setSocket(null);
-      setIsConnected(false);
-    }
-  };
-
-  /**
-   * Setup socket.io connection
-   */
-  const setupSocket = () => {
-    const newSocket = io('http://localhost:5000/admin', {
-      transports: ['websocket', 'polling'],
-      withCredentials: true
-    });
-
-    newSocket.on('connect', () => {
-      setIsConnected(true);
-
-      if (selectedChatIdRef.current) {
-        newSocket.emit('support:join_chat', { chatSupportId: selectedChatIdRef.current });
-      }
-    });
-
-    newSocket.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    newSocket.on('connect_error', () => {
-      setIsConnected(false);
-    });
-
-    newSocket.on('connection:status', (status: string) => {
-      setIsConnected(status === 'connected');
-    });
-
-    newSocket.on('support:new_message', (data: any) => {
-      handleNewMessage(data);
-    });
-
-    newSocket.on('support:chat_updated', (data: any) => {
-      handleChatUpdate(data);
-    });
-
-    newSocket.on('support:new_chat', () => {
-      fetchChatSupports();
-    });
-
-    newSocket.on('support:message_error', () => {
-      setSendingMessage(false);
-    });
-
-    setSocket(newSocket);
-  };
-
-  /**
-   * Handle incoming new message
-   */
-  const handleNewMessage = (data: any) => {
+  const handleNewMessage = useCallback((data: any) => {
     const { chatSupportId, message: newMessage } = data;
-
     if (!newMessage) return;
 
     setSendingMessage(false);
-
-    setChatSupports(prevChats => {
-      return prevChats.map(chat => {
-        if (chat._id === chatSupportId) {
-          const currentMessages = chat.messages || [];
-          const messageExists = currentMessages.some(
-            (m: Message) => m._id === newMessage._id
-          );
-
-          if (messageExists) return chat;
-
-          const filteredMessages = currentMessages.filter(
-            (m: Message) => !m._id?.startsWith('temp-')
-          );
-
-          return {
-            ...chat,
-            messages: [...filteredMessages, newMessage],
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return chat;
-      });
+    updateTicket(chatSupportId, {
+      messages: [...(tickets.find(t => t._id === chatSupportId)?.messages?.filter(m => !m._id?.startsWith('temp-')) || []), newMessage],
+      updatedAt: new Date().toISOString()
     });
 
-    if (selectedChatIdRef.current === chatSupportId) {
-      setSelectedChat(prevChat => {
-        if (!prevChat || prevChat._id !== chatSupportId) return prevChat;
-
-        const currentMessages = prevChat.messages || [];
-        const messageExists = currentMessages.some(
-          (m: Message) => m._id === newMessage._id
-        );
-
-        if (messageExists) return prevChat;
-
-        const filteredMessages = currentMessages.filter(
-          (m: Message) => !m._id?.startsWith('temp-')
-        );
-
+    if (selectedChat?._id === chatSupportId) {
+      setSelectedChat(prev => {
+        if (!prev) return prev;
+        const filteredMessages = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
         return {
-          ...prevChat,
+          ...prev,
           messages: [...filteredMessages, newMessage],
           updatedAt: new Date().toISOString()
         };
       });
     }
-  };
+  }, [updateTicket, selectedChat, tickets]);
 
-  /**
-   * Handle chat update
-   */
-  const handleChatUpdate = (data: any) => {
+  const handleChatUpdate = useCallback((data: any) => {
     const { chatSupportId, updates } = data;
-
-    console.log('Socket update received:', { chatSupportId, updates });
-
-    setChatSupports(prev => {
-      const chat = prev.find(c => c._id === chatSupportId);
-      if (!chat) return prev;
-
-      if (chat.status === updates.status && chat.updatedAt === updates.updatedAt) {
-        console.log('Socket update ignored - data already current');
-        return prev;
-      }
-
-      return prev.map(c => {
-        if (c._id === chatSupportId) {
-          const updatedChat = { ...c, ...updates, updatedAt: updates.updatedAt || data.timestamp || new Date().toISOString() };
-          console.log('Updated chat status:', updatedChat.status);
-          return updatedChat;
-        }
-        return c;
-      });
-    });
-
-    if (selectedChatIdRef.current === chatSupportId) {
-      setSelectedChat(prev => {
-        if (!prev) return prev;
-        if (prev.status === updates.status && prev.updatedAt === updates.updatedAt) {
-          return prev;
-        }
-        return { ...prev, ...updates, updatedAt: updates.updatedAt || data.timestamp || new Date().toISOString() };
-      });
+    updateTicket(chatSupportId, updates);
+    
+    if (selectedChat?._id === chatSupportId) {
+      setSelectedChat(prev => prev ? { ...prev, ...updates } : prev);
     }
-  };
+  }, [updateTicket, selectedChat]);
 
-  /**
-   * Fetch all chat supports from API
-   */
-  const fetchChatSupports = async () => {
-    try {
-      setLoading(true);
-      const data = await supportService.getChatSupports();
-      const chats = data.chatSupports || [];
-      setChatSupports(chats);
+  const {
+    isConnected,
+    sendMessage: socketSendMessage,
+    joinChat,
+    leaveChat
+  } = useSupportSocket(handleNewMessage, handleChatUpdate, fetchTickets);
 
-      if (selectedChatIdRef.current) {
-        const updatedChat = chats.find((c: ChatSupport) => c._id === selectedChatIdRef.current);
-        if (updatedChat) {
-          setSelectedChat(updatedChat);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching chat supports:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Handle selecting a chat
-   */
   const handleSelectChat = async (chat: ChatSupport) => {
     try {
       const data = await supportService.getChatSupportById(chat._id);
       setSelectedChat(data.chatSupport);
       setIsChatModalOpen(true);
-
-      // Don't auto-accept - admin must click Accept button
+      joinChat(chat._id);
     } catch (error) {
-      console.error('Error fetching chat details:', error);
       setSelectedChat(chat);
       setIsChatModalOpen(true);
     }
   };
 
-  /**
-   * Close chat modal
-   */
   const closeChatModal = () => {
+    if (selectedChat) {
+      leaveChat(selectedChat._id);
+    }
     setIsChatModalOpen(false);
     setTimeout(() => {
       setSelectedChat(null);
@@ -315,60 +104,7 @@ const Support: React.FC = () => {
     }, 300);
   };
 
-  /**
-   * Handle chat actions (close, reopen, etc)
-   */
-  const handleChatAction = async (chatSupportId: string, action: string) => {
-    try {
-      const result = await supportService.performAction(chatSupportId, action);
-
-      console.log(`Action '${action}' completed:`, result.chatSupport.status, result.chatSupport);
-
-      const updatedChatSupport = result.chatSupport;
-
-      setChatSupports(prev => prev.map(chat =>
-        chat._id === chatSupportId ? updatedChatSupport : chat
-      ));
-
-      if (selectedChatIdRef.current === chatSupportId) {
-        setSelectedChat(updatedChatSupport);
-      }
-
-      if (action === 'close') {
-        closeChatModal();
-      }
-    } catch (error) {
-      console.error(`Error ${action} chat:`, error);
-    }
-  };
-
-  /**
-   * Handle accepting a ticket
-   */
-  const handleAcceptTicket = async (chatSupportId: string) => {
-    try {
-      const result = await supportService.acceptTicket(chatSupportId);
-
-      console.log('Ticket accepted:', result.chatSupport.status, result.chatSupport);
-
-      const updatedChatSupport = result.chatSupport;
-
-      setChatSupports(prev => prev.map(chat =>
-        chat._id === chatSupportId ? updatedChatSupport : chat
-      ));
-
-      if (selectedChatIdRef.current === chatSupportId) {
-        setSelectedChat(updatedChatSupport);
-      }
-    } catch (error) {
-      console.error('Error accepting ticket:', error);
-    }
-  };
-
-  /**
-   * Send a message
-   */
-  const sendMessage = async () => {
+  const handleSendMessage = async () => {
     if (!message.trim() || !selectedChat || sendingMessage) return;
 
     const messageText = message.trim();
@@ -405,29 +141,12 @@ const Support: React.FC = () => {
     }, 10000);
 
     try {
-      if (socket && isConnected) {
-        socket.emit('support:send_message', {
-          chatSupportId: selectedChat._id,
-          message: messageText,
-          senderName: 'Support Agent',
-          senderType: 'Admin'
-        });
-
-        const messageHandler = (data: any) => {
-          if (data.chatSupportId === selectedChat._id) {
-            clearTimeout(timeoutId);
-            socket.off('support:new_message', messageHandler);
-          }
-        };
-
-        socket.on('support:new_message', messageHandler);
+      if (isConnected) {
+        socketSendMessage(selectedChat._id, messageText, 'Support Agent');
       } else {
-        const result = await supportService.sendMessage(selectedChat._id, {
-          message: messageText
-        });
-
+        const result = await supportService.sendMessage(selectedChat._id, { message: messageText });
         clearTimeout(timeoutId);
-
+        
         setSelectedChat(prev => {
           if (!prev) return prev;
           const filtered = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
@@ -436,12 +155,11 @@ const Support: React.FC = () => {
             messages: [...filtered, result.message]
           };
         });
-
+        
         setSendingMessage(false);
       }
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Error sending message:', error);
       setSelectedChat(prev => {
         if (!prev) return prev;
         return {
@@ -454,62 +172,29 @@ const Support: React.FC = () => {
     }
   };
 
-  /**
-   * Check if current admin has previously resolved this ticket
-   */
-  const hasPreviouslyResolved = (chat: ChatSupport): boolean => {
-    if (!user || !chat.ticketHistory || chat.ticketHistory.length === 0) {
-      return false;
+  const handleChatAction = async (chatSupportId: string, action: string) => {
+    try {
+      if (action === 'close') {
+        await closeTicket(chatSupportId);
+        closeChatModal();
+      } else if (action === 'reopen') {
+        await reopenTicket(chatSupportId);
+      }
+    } catch (error) {
+      console.error(`Error ${action} ticket:`, error);
     }
-    
-    const currentUserId = user.id || user._id || user.adminId || user.userId;
-    if (!currentUserId) return false;
-    
-    return chat.ticketHistory.some((ticket: any) => 
-      ticket.resolvedBy && ticket.resolvedBy.toString() === currentUserId.toString()
-    );
   };
 
-  /**
-   * Filter chat supports based on search and filters
-   */
-  const filteredChatSupports = chatSupports.filter((chat) => {
-    const matchesSearch = chat.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      chat.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (chat.userEmail && chat.userEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (chat.userName && chat.userName.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesStatus = filterStatus === 'all' || chat.status === filterStatus;
-    const matchesPriority = filterPriority === 'all' || chat.priority === filterPriority;
-
-    // Tab filtering
-    let matchesTab = true;
-    if (activeTab === 'open') {
-      matchesTab = chat.status === 'open' && !chat.assignedTo && !chat.acceptedBy;
-    } else if (activeTab === 'pending') {
-      matchesTab = chat.status === 'open' && (chat.assignedTo || chat.acceptedBy);
-    } else if (activeTab === 'resolved') {
-      const hasResolvedInHistory = chat.ticketHistory && chat.ticketHistory.some(t => t.closedAt);
-      const isCurrentlyClosed = chat.status === 'closed';
-      matchesTab = hasResolvedInHistory || isCurrentlyClosed;
+  const handleAcceptTicket = async (chatSupportId: string) => {
+    try {
+      await acceptTicket(chatSupportId);
+    } catch (error) {
+      console.error('Error accepting ticket:', error);
     }
+  };
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesTab;
-  });
+  const stats = calculateTicketStats(tickets);
 
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchQuery, filterStatus, filterPriority, activeTab]);
-
-  // Paginate filtered chats
-  const paginatedChats = filteredChatSupports.slice(
-    (pagination.page - 1) * pagination.limit,
-    pagination.page * pagination.limit
-  );
-
-  const totalPages = Math.ceil(filteredChatSupports.length / pagination.limit);
-
-  // Loading state
   if (loading) {
     return (
       <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
@@ -523,11 +208,13 @@ const Support: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Support Center</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">
+              Manage and respond to user support tickets, inquiries, and technical assistance requests
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -545,140 +232,123 @@ const Support: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div className="bg-purple-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'all' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              filters.activeTab === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Total Tickets</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {chatSupports.reduce((sum, chat) => {
-                const historyCount = chat.ticketHistory?.length || 0;
-                const currentTicket = 1;
-                return sum + historyCount + currentTicket;
-              }, 0)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {chatSupports.reduce((sum, chat) => sum + (chat.messages?.length || 0), 0)} messages
-            </p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalTickets}</p>
+            <p className="text-xs text-gray-500 mt-1">{stats.totalMessages} messages</p>
           </div>
 
-          <div className="bg-blue-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'open' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              filters.activeTab === 'open' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Open Tickets</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {chatSupports.filter(chat => chat.status === 'open' && !chat.assignedTo && !chat.acceptedBy).length}
-            </p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.openTickets}</p>
             <p className="text-xs text-gray-500 mt-1">Awaiting assignment</p>
           </div>
 
-          <div className="bg-yellow-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'pending' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              filters.activeTab === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Pending Response</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {chatSupports.filter(chat => chat.status === 'open' && (chat.assignedTo || chat.acceptedBy)).length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {chatSupports.filter(chat => (chat.unreadCount || 0) > 0).length} with unread
-            </p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.pendingTickets}</p>
+            <p className="text-xs text-gray-500 mt-1">{stats.unreadTickets} with unread</p>
           </div>
 
-          <div className="bg-green-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'resolved' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              filters.activeTab === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {chatSupports.reduce((sum, chat) => {
-                const resolvedInHistory = chat.ticketHistory?.filter(t => t.closedAt).length || 0;
-                const currentResolved = chat.status === 'closed' ? 1 : 0;
-                console.log('Calculating resolved - Chat:', chat._id, 'InHistory:', resolvedInHistory, 'Current:', currentResolved);
-                return sum + resolvedInHistory + currentResolved;
-              }, 0)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {chatSupports.reduce((sum, chat) => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
-                const resolvedTodayInHistory = chat.ticketHistory?.filter(t => {
-                  if (!t.closedAt) return false;
-                  const closedDate = new Date(t.closedAt);
-                  closedDate.setHours(0, 0, 0, 0);
-                  return closedDate.getTime() === today.getTime();
-                }).length || 0;
-                
-                let currentResolvedToday = 0;
-                if (chat.status === 'closed' && chat.closedAt) {
-                  const closedDate = new Date(chat.closedAt);
-                  closedDate.setHours(0, 0, 0, 0);
-                  if (closedDate.getTime() === today.getTime()) {
-                    currentResolvedToday = 1;
-                  }
-                }
-                
-                return sum + resolvedTodayInHistory + currentResolvedToday;
-              }, 0)} today
-            </p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.resolvedTickets}</p>
+            <p className="text-xs text-gray-500 mt-1">{stats.resolvedToday} today</p>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-          >
-            All Tickets
-          </button>
-          <button
-            onClick={() => setActiveTab('open')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'open'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-          >
-            Open ({chatSupports.filter(chat => chat.status === 'open' && !chat.assignedTo && !chat.acceptedBy).length})
-          </button>
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'pending'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-          >
-            Pending ({chatSupports.filter(chat => chat.status === 'open' && (chat.assignedTo || chat.acceptedBy)).length})
-          </button>
-          <button
-            onClick={() => setActiveTab('resolved')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'resolved'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-          >
-            Resolved ({chatSupports.reduce((sum, chat) => {
-              const resolvedInHistory = chat.ticketHistory?.filter(t => t.closedAt).length || 0;
-              const currentResolved = chat.status === 'closed' ? 1 : 0;
-              return sum + resolvedInHistory + currentResolved;
-            }, 0)})
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="flex flex-col md:flex-row gap-3 mb-4">
+        <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
               placeholder="Search tickets by subject, user, or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={filters.searchQuery}
+              onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
               className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
+          </div>
+
+          <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
+            <button
+              onClick={() => {
+                setFilters(prev => ({ ...prev, userTypeFilter: 'all' }));
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                filters.userTypeFilter === 'all'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => {
+                setFilters(prev => ({ ...prev, userTypeFilter: 'client' }));
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                filters.userTypeFilter === 'client'
+                  ? 'bg-purple-50 text-purple-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Customer
+            </button>
+            <button
+              onClick={() => {
+                setFilters(prev => ({ ...prev, userTypeFilter: 'provider' }));
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                filters.userTypeFilter === 'provider'
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Provider
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
-          {filteredChatSupports.length === 0 ? (
+          {filteredTickets.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
                 <MessageCircleQuestion className="h-12 w-12 mx-auto" />
@@ -688,7 +358,6 @@ const Support: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Desktop Table */}
               <div className="hidden md:block bg-white">
                 <table className="min-w-full">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
@@ -704,7 +373,7 @@ const Support: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedChats.map((chat) => (
+                    {paginatedTickets.map((chat) => (
                       <tr
                         key={chat._id}
                         onClick={() => handleSelectChat(chat)}
@@ -743,7 +412,7 @@ const Support: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="flex items-center justify-center gap-2">
                             {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
-                            {hasPreviouslyResolved(chat) && (
+                            {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
                                 <CheckCircle className="w-3 h-3 mr-1" />
                                 Prev. Resolved
@@ -789,9 +458,8 @@ const Support: React.FC = () => {
                 </table>
               </div>
 
-              {/* Mobile Cards */}
               <div className="md:hidden px-4 py-4 space-y-3">
-                {paginatedChats.map((chat) => (
+                {paginatedTickets.map((chat) => (
                   <div
                     key={chat._id}
                     onClick={() => handleSelectChat(chat)}
@@ -823,7 +491,7 @@ const Support: React.FC = () => {
                     <div className="flex flex-wrap gap-2 mb-3">
                       {getPriorityBadge(chat.priority)}
                       {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
-                      {hasPreviouslyResolved(chat) && (
+                      {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
                           <CheckCircle className="w-3 h-3 mr-1" />
                           Prev. Resolved
@@ -850,7 +518,6 @@ const Support: React.FC = () => {
                 ))}  
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
                   <div className="flex items-center justify-between w-full">
@@ -862,10 +529,10 @@ const Support: React.FC = () => {
                         </span>{' '}
                         to{' '}
                         <span className="font-medium">
-                          {Math.min(pagination.page * pagination.limit, filteredChatSupports.length)}
+                          {Math.min(pagination.page * pagination.limit, filteredTickets.length)}
                         </span>{' '}
                         of{' '}
-                        <span className="font-medium">{filteredChatSupports.length}</span> results
+                        <span className="font-medium">{filteredTickets.length}</span> results
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -892,18 +559,17 @@ const Support: React.FC = () => {
         </div>
       </div>
 
-      {/* Chat Modal */}
       <SupportChatModal
         isOpen={isChatModalOpen}
         onClose={closeChatModal}
         selectedChat={selectedChat}
         message={message}
         setMessage={setMessage}
-        sendMessage={sendMessage}
+        sendMessage={handleSendMessage}
         sendingMessage={sendingMessage}
         handleChatAction={handleChatAction}
         handleAcceptTicket={handleAcceptTicket}
-        chatSupports={chatSupports}
+        chatSupports={tickets}
       />
     </div>
   );

@@ -11,3 +11,6 @@ export { default as apiClient } from './apiClient';
 
 // Image utilities
 export * from './imageUtils';
+
+// Support helpers with React components
+export * from './supportHelpers.tsx';

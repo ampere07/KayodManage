@@ -67,6 +67,13 @@ const Transactions: React.FC = () => {
     total: 0,
     pages: 0
   });
+  const [statusCounts, setStatusCounts] = useState({
+    total: 0,
+    pending: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0
+  });
 
   // Handle query parameters when URL changes
   useEffect(() => {
@@ -130,6 +137,34 @@ const Transactions: React.FC = () => {
         total: data.pagination?.total || 0,
         pages: data.pagination?.pages || 1
       }));
+
+      // Calculate status counts for fee records - only fetch when no status filter applied
+      if (category === 'fee_record' && statusFilter === 'all') {
+        const countParams = { type: 'fee_record', includeFees: 'true', limit: 10000, page: 1 };
+        const countData = await transactionsService.getTransactions(countParams);
+        const allTransactions = countData.transactions || [];
+        setStatusCounts({
+          total: allTransactions.length,
+          pending: allTransactions.filter((t: Transaction) => t.status === 'pending').length,
+          completed: allTransactions.filter((t: Transaction) => t.status === 'completed').length,
+          failed: allTransactions.filter((t: Transaction) => t.status === 'failed').length,
+          cancelled: allTransactions.filter((t: Transaction) => t.status === 'cancelled').length
+        });
+      }
+
+      // Calculate status counts for top-up transactions
+      if (category === 'wallet_topup' && statusFilter === 'all') {
+        const countParams = { type: 'xendit_topup', limit: 10000, page: 1 };
+        const countData = await transactionsService.getTransactions(countParams);
+        const allTransactions = countData.transactions || [];
+        setStatusCounts({
+          total: allTransactions.length,
+          pending: allTransactions.filter((t: Transaction) => t.status === 'pending').length,
+          completed: allTransactions.filter((t: Transaction) => t.status === 'completed').length,
+          failed: allTransactions.filter((t: Transaction) => t.status === 'failed').length,
+          cancelled: allTransactions.filter((t: Transaction) => t.status === 'cancelled').length
+        });
+      }
     } catch (error) {
       console.error('Error fetching transactions:', error);
       toast.error('Error loading transactions');
@@ -217,7 +252,14 @@ const Transactions: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getCategoryTitle(category)}</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">{pagination.total} total transactions</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">
+              {category === 'fee_record' 
+                ? 'Track and manage platform service fees collected from completed job transactions'
+                : category === 'wallet_topup'
+                ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
+                : `${pagination.total} total transactions`
+              }
+            </p>
           </div>
 
           {category !== 'fee_record' && category !== 'wallet_topup' && (
@@ -277,6 +319,176 @@ const Transactions: React.FC = () => {
           </div>
         )}
 
+        {/* Fee Records Status Counters */}
+        {category === 'fee_record' && (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            <div 
+              onClick={() => {
+                setStatusFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Transactions</span>
+                <CreditCard className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{statusCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('pending');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Pending</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('completed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-green-600">Completed</span>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('failed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Failed</span>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('cancelled');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-gray-600">Cancelled</span>
+                <XCircle className="h-4 w-4 text-gray-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{statusCounts.cancelled.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Top-up Status Counters */}
+        {category === 'wallet_topup' && (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            <div 
+              onClick={() => {
+                setStatusFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Transactions</span>
+                <CreditCard className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{statusCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('pending');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Pending</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('completed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-green-600">Completed</span>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('failed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Failed</span>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('cancelled');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+                statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-gray-600">Cancelled</span>
+                <XCircle className="h-4 w-4 text-gray-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{statusCounts.cancelled.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="space-y-3">
           <div className="flex flex-col md:flex-row gap-3">
@@ -291,17 +503,19 @@ const Transactions: React.FC = () => {
               />
             </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+            {category !== 'fee_record' && category !== 'wallet_topup' && (
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            )}
 
             <select
               value={paymentMethodFilter}

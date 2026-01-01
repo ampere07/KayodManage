@@ -78,6 +78,7 @@ const Verifications: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
   const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -230,14 +231,16 @@ const Verifications: React.FC = () => {
           return v.status === statusFilter;
         });
       
-      return matchesSearch && matchesStatus;
+      const matchesUserType = userTypeFilter === 'all' || user.userType === userTypeFilter;
+      
+      return matchesSearch && matchesStatus && matchesUserType;
     });
-  }, [userVerifications, searchTerm, statusFilter]);
+  }, [userVerifications, searchTerm, statusFilter, userTypeFilter]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, statusFilter, userTypeFilter]);
 
   // Paginate filtered users
   const paginatedUsers = useMemo(() => {
@@ -266,17 +269,33 @@ const Verifications: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">User Verifications</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">{filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'}</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">Review and manage user verification submissions including identity documents, credentials, and face verification</p>
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div className="bg-blue-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setStatusFilter('all');
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Total Users</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{userVerifications.length}</p>
           </div>
-          <div className="bg-yellow-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setStatusFilter('under_review');
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              statusFilter === 'under_review' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Pending Review</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">
               {userVerifications.filter(({ verifications }) => 
@@ -284,7 +303,15 @@ const Verifications: React.FC = () => {
               ).length}
             </p>
           </div>
-          <div className="bg-green-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setStatusFilter('approved');
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              statusFilter === 'approved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Approved</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">
               {userVerifications.filter(({ verifications }) => 
@@ -292,7 +319,15 @@ const Verifications: React.FC = () => {
               ).length}
             </p>
           </div>
-          <div className="bg-red-50 rounded-lg p-3">
+          <div 
+            onClick={() => {
+              setStatusFilter('rejected');
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              statusFilter === 'rejected' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium mb-1">Rejected</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">
               {userVerifications.filter(({ verifications }) => 
@@ -317,44 +352,43 @@ const Verifications: React.FC = () => {
           
           <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
             <button
-              onClick={() => setStatusFilter('all')}
+              onClick={() => {
+                setUserTypeFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusFilter === 'all'
+                userTypeFilter === 'all'
                   ? 'bg-blue-50 text-blue-700'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              All Status
+              All
             </button>
             <button
-              onClick={() => setStatusFilter('under_review')}
+              onClick={() => {
+                setUserTypeFilter('client');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusFilter === 'under_review'
-                  ? 'bg-yellow-50 text-yellow-700'
+                userTypeFilter === 'client'
+                  ? 'bg-purple-50 text-purple-700'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Pending
+              Customer
             </button>
             <button
-              onClick={() => setStatusFilter('approved')}
+              onClick={() => {
+                setUserTypeFilter('provider');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusFilter === 'approved'
-                  ? 'bg-green-50 text-green-700'
+                userTypeFilter === 'provider'
+                  ? 'bg-indigo-50 text-indigo-700'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Approved
-            </button>
-            <button
-              onClick={() => setStatusFilter('rejected')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusFilter === 'rejected'
-                  ? 'bg-red-50 text-red-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              Rejected
+              Provider
             </button>
           </div>
         </div>
@@ -381,7 +415,7 @@ const Verifications: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Submissions</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Verification Attempts</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Documents</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Submitted</th>
                     </tr>
@@ -475,7 +509,7 @@ const Verifications: React.FC = () => {
 
                       <div className="space-y-2 mb-3 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Submissions:</span>
+                          <span className="text-gray-500">Verification Attempts:</span>
                           <span className="font-medium">{verifications.length}</span>
                         </div>
                         <div className="flex justify-between">

@@ -17,7 +17,7 @@ class VerificationService {
     }
 
     const verifications = await CredentialVerification.find(query)
-      .populate('userId', 'name email userType profileImage')
+      .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .sort({ submittedAt: -1 })
       .limit(parseInt(limit))
@@ -32,7 +32,7 @@ class VerificationService {
    */
   async getVerificationById(verificationId) {
     const verification = await CredentialVerification.findById(verificationId)
-      .populate('userId', 'name email userType profileImage')
+      .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .lean();
 
@@ -70,7 +70,7 @@ class VerificationService {
       updateData,
       { new: true }
     )
-      .populate('userId', 'name email userType profileImage')
+      .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .lean();
 

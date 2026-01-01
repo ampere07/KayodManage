@@ -13,12 +13,13 @@ import {
   XCircle
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
-import { flaggedService } from '../services';
+import { flaggedService, usersService } from '../services';
 import { ReviewReportModal } from '../components/Modals';
 import type { 
   ReportedPost, 
   ReportFilterStatus 
 } from '../types/flagged.types';
+import type { User as UserType } from '../types/users.types';
 
 const Flagged: React.FC = () => {
   const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
@@ -34,9 +35,15 @@ const Flagged: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [flaggedUsersStats, setFlaggedUsersStats] = useState({
+    total: 0,
+    customers: 0,
+    providers: 0
+  });
 
   useEffect(() => {
     fetchReportedPosts();
+    fetchFlaggedUsersStats();
   }, []);
 
   // Handle reportId from URL params
@@ -82,6 +89,26 @@ const Flagged: React.FC = () => {
       console.error('Error fetching reported posts:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFlaggedUsersStats = async () => {
+    try {
+      const response = await usersService.getUsers({ limit: 1000 });
+      const flaggedUsers = response.users.filter((user: UserType) => 
+        user.accountStatus && ['restricted', 'suspended', 'banned'].includes(user.accountStatus)
+      );
+      
+      const customers = flaggedUsers.filter((user: UserType) => user.userType === 'client').length;
+      const providers = flaggedUsers.filter((user: UserType) => user.userType === 'provider').length;
+      
+      setFlaggedUsersStats({
+        total: flaggedUsers.length,
+        customers,
+        providers
+      });
+    } catch (err: any) {
+      console.error('Error fetching flagged users stats:', err);
     }
   };
 
@@ -207,12 +234,28 @@ const Flagged: React.FC = () => {
             </div>
           </div>
           
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             {pendingCount > 0 && (
               <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
                 {pendingCount} pending review{pendingCount !== 1 ? 's' : ''}
               </span>
             )}
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-0.5">Total Flagged Users</div>
+                <div className="text-lg font-bold text-gray-900">{flaggedUsersStats.total}</div>
+              </div>
+              <div className="w-px h-10 bg-gray-300 mx-2"></div>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-0.5">Customer</div>
+                <div className="text-lg font-bold text-blue-600">{flaggedUsersStats.customers}</div>
+              </div>
+              <div className="w-px h-10 bg-gray-300 mx-2"></div>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-0.5">Provider</div>
+                <div className="text-lg font-bold text-green-600">{flaggedUsersStats.providers}</div>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -9,6 +9,7 @@ export interface UserInfo {
   email: string;
   userType: string;
   profileImage?: string;
+  createdAt?: string;
 }
 
 export interface VerificationDocument {
