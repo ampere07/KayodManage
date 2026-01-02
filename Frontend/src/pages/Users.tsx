@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Search, 
@@ -22,8 +22,8 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
-import { usersService } from '../services';
 import { UserDetailsModal } from '../components/Modals';
+import { useUsers, useUserCounts, useStatusCounts, useFlaggedUserCounts, useUserMutations } from '../hooks/useUsers';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
 import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
 import type { User, UserStats } from '../types';
@@ -37,34 +37,11 @@ const getInitials = (name: string): string => {
 const Users: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [users, setUsers] = useState<User[]>([]);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'unverified' | 'suspended' | 'restricted' | 'banned'>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
-  const [statusCounts, setStatusCounts] = useState({
-    all: 0,
-    verified: 0,
-    unverified: 0
-  });
   const [flaggedUserTypeFilter, setFlaggedUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
-  const [userTypeCounts, setUserTypeCounts] = useState({
-    total: 0,
-    customers: 0,
-    providers: 0,
-    suspended: 0,
-    restricted: 0,
-    banned: 0,
-    verified: 0,
-    unverified: 0
-  });
-  const [flaggedUserCounts, setFlaggedUserCounts] = useState({
-    total: 0,
-    customers: 0,
-    providers: 0
-  });
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -95,123 +72,74 @@ const Users: React.FC = () => {
     if (type === 'flagged') return 'Review and manage restricted, suspended, and banned user accounts';
     return 'Manage and monitor all user accounts, including customers and service providers';
   };
+
+  const userType = getUserType();
+
+  const queryParams = useMemo(() => {
+    const params: any = {
+      page: pagination.page,
+      limit: pagination.limit,
+      ...(searchTerm && { search: searchTerm })
+    };
+
+    if (userType === 'customers') params.userType = 'client';
+    if (userType === 'providers') params.userType = 'provider';
+    if (userType === 'flagged') {
+      params.restricted = 'true';
+      if (flaggedUserTypeFilter !== 'all') {
+        params.userType = flaggedUserTypeFilter;
+      }
+    }
+
+    if (statusFilter === 'verified') params.isVerified = 'true';
+    if (statusFilter === 'unverified') params.isVerified = 'false';
+    if (statusFilter === 'suspended') params.status = 'suspended';
+    if (statusFilter === 'restricted') params.status = 'restricted';
+    if (statusFilter === 'banned') params.status = 'banned';
+
+    return params;
+  }, [pagination.page, pagination.limit, searchTerm, statusFilter, flaggedUserTypeFilter, userType]);
+
+  const statusCountsParams = useMemo(() => {
+    const baseParams: any = {};
+    
+    if (userType === 'customers') baseParams.userType = 'client';
+    if (userType === 'providers') baseParams.userType = 'provider';
+    if (userType === 'flagged') baseParams.restricted = 'true';
+
+    return baseParams;
+  }, [userType]);
+
+  const userCountsParams = useMemo(() => {
+    const baseParams: any = {};
+    
+    if (userType === 'customers') {
+      baseParams.userType = 'client';
+    } else if (userType === 'providers') {
+      baseParams.userType = 'provider';
+    }
+
+    return baseParams;
+  }, [userType]);
+
+  const { data: usersData, isLoading: usersLoading, isFetching } = useUsers(queryParams);
+  const { data: userTypeCounts = { total: 0, customers: 0, providers: 0, suspended: 0, restricted: 0, banned: 0, verified: 0, unverified: 0 } } = useUserCounts(userCountsParams);
+  const { data: statusCounts = { all: 0, verified: 0, unverified: 0 } } = useStatusCounts(statusCountsParams);
+  const { data: flaggedUserCounts = { total: 0, customers: 0, providers: 0 } } = useFlaggedUserCounts();
+  const mutations = useUserMutations();
+
+  const users = usersData?.users || [];
+  const loading = usersLoading;
   
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      
-      const params: any = {
-        page: pagination.page,
-        limit: pagination.limit,
-        ...(searchTerm && { search: searchTerm })
-      };
-
-      const userType = getUserType();
-      if (userType === 'customers') params.userType = 'client';
-      if (userType === 'providers') params.userType = 'provider';
-      if (userType === 'flagged') {
-        params.restricted = 'true';
-        if (flaggedUserTypeFilter !== 'all') {
-          params.userType = flaggedUserTypeFilter;
-        }
-      }
-
-      if (statusFilter === 'verified') params.isVerified = 'true';
-      if (statusFilter === 'unverified') params.isVerified = 'false';
-      if (statusFilter === 'suspended') params.status = 'suspended';
-      if (statusFilter === 'restricted') params.status = 'restricted';
-      if (statusFilter === 'banned') params.status = 'banned';
-
-      const data = await usersService.getUsers(params);
-      
-      setUsers(data.users || []);
-      setUserStats(data.stats || null);
-      setPagination(prev => ({ 
-        ...prev, 
-        total: data.pagination?.total || 0,
-        pages: data.pagination?.pages || 1
+  useEffect(() => {
+    if (usersData?.pagination) {
+      setPagination(prev => ({
+        ...prev,
+        total: usersData.pagination.total || 0,
+        pages: usersData.pagination.pages || 1
       }));
-    } catch (error) {
-      toast.error('Error loading users');
-      console.error('Error fetching users:', error);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const fetchStatusCounts = async () => {
-    try {
-      const userType = getUserType();
-      const baseParams: any = {};
-      
-      if (userType === 'customers') baseParams.userType = 'client';
-      if (userType === 'providers') baseParams.userType = 'provider';
-      if (userType === 'flagged') baseParams.restricted = 'true';
-
-      const [allData, verifiedData, unverifiedData] = await Promise.all([
-        usersService.getUsers({ ...baseParams, limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, isVerified: 'true', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, isVerified: 'false', limit: 1, page: 1 })
-      ]);
-
-      setStatusCounts({
-        all: allData.pagination?.total || 0,
-        verified: verifiedData.pagination?.total || 0,
-        unverified: unverifiedData.pagination?.total || 0
-      });
-    } catch (error) {
-      console.error('Error fetching status counts:', error);
-    }
-  };
-
-  const fetchUserTypeCounts = async () => {
-    try {
-      const userType = getUserType();
-      const baseParams: any = {};
-      
-      if (userType === 'customers') {
-        baseParams.userType = 'client';
-      } else if (userType === 'providers') {
-        baseParams.userType = 'provider';
-      }
-
-      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData] = await Promise.all([
-        usersService.getUsers({ limit: 1, page: 1 }),
-        usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'suspended', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'restricted', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, status: 'banned', limit: 1, page: 1 })
-      ]);
-
-      setUserTypeCounts({
-        total: totalData.pagination?.total || 0,
-        customers: customersData.pagination?.total || 0,
-        providers: providersData.pagination?.total || 0,
-        suspended: suspendedData.pagination?.total || 0,
-        restricted: restrictedData.pagination?.total || 0,
-        banned: bannedData.pagination?.total || 0,
-        verified: 0,
-        unverified: 0
-      });
-
-      if (userType === 'flagged') {
-        const [flaggedTotalData, flaggedCustomersData, flaggedProvidersData] = await Promise.all([
-          usersService.getUsers({ restricted: 'true', limit: 1, page: 1 }),
-          usersService.getUsers({ restricted: 'true', userType: 'client', limit: 1, page: 1 }),
-          usersService.getUsers({ restricted: 'true', userType: 'provider', limit: 1, page: 1 })
-        ]);
-
-        setFlaggedUserCounts({
-          total: flaggedTotalData.pagination?.total || 0,
-          customers: flaggedCustomersData.pagination?.total || 0,
-          providers: flaggedProvidersData.pagination?.total || 0
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching user type counts:', error);
-    }
-  };
+  }, [usersData]);
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -220,13 +148,8 @@ const Users: React.FC = () => {
   useEffect(() => {
     setStatusFilter('all');
     setFlaggedUserTypeFilter('all');
-    fetchStatusCounts();
-    fetchUserTypeCounts();
+    setPagination(prev => ({ ...prev, page: 1 }));
   }, [location.pathname]);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [pagination.page, location.pathname, searchTerm, statusFilter, flaggedUserTypeFilter]);
   
   const isUserRestricted = (user: User) => {
     if (user.accountStatus) return user.accountStatus !== 'active';
@@ -252,55 +175,34 @@ const Users: React.FC = () => {
   const handleUserAction = async (actionType: string, duration?: number) => {
     if (!selectedUser) return;
     
-    console.log('handleUserAction called:', { actionType, duration, userId: selectedUser._id });
-    
     try {
-      let updatedUser: User;
-      
       switch (actionType) {
         case 'ban':
-          console.log('Calling banUser with duration:', duration);
-          updatedUser = await usersService.banUser(selectedUser._id, 'Banned by admin', duration);
+          await mutations.banUser.mutateAsync({ userId: selectedUser._id, reason: 'Banned by admin', duration });
           break;
         case 'suspend':
-          console.log('Calling suspendUser with duration:', duration);
-          updatedUser = await usersService.suspendUser(selectedUser._id, 'Suspended by admin', duration || 7);
+          await mutations.suspendUser.mutateAsync({ userId: selectedUser._id, reason: 'Suspended by admin', duration: duration || 7 });
           break;
         case 'restrict':
-          console.log('Calling restrictUser with duration:', duration);
-          updatedUser = await usersService.restrictUser(selectedUser._id, duration);
+          await mutations.restrictUser.mutateAsync({ userId: selectedUser._id, duration });
           break;
         case 'unrestrict':
-          updatedUser = await usersService.unrestrictUser(selectedUser._id);
+          await mutations.unrestrictUser.mutateAsync(selectedUser._id);
           break;
         default:
           return;
       }
-
-      console.log('Updated user received:', updatedUser);
-
-      setUsers(prev => prev.map(user => 
-        user._id === selectedUser._id ? updatedUser : user
-      ));
-      setSelectedUser(updatedUser);
-      toast.success(`User ${actionType === 'unrestrict' ? 'unrestricted' : actionType + 'ned'} successfully`);
+      setSelectedUser(null);
     } catch (error) {
-      toast.error(`Failed to ${actionType} user`);
       console.error(`Error ${actionType}ing user:`, error);
     }
   };
 
   const toggleUserVerification = async (userId: string, isVerified: boolean) => {
     try {
-      const updatedUser = await usersService.verifyUser(userId, !isVerified);
-      
-      setUsers(prev => prev.map(user => 
-        user._id === userId ? updatedUser : user
-      ));
-      setSelectedUser(updatedUser);
-      toast.success(`User ${!isVerified ? 'verified' : 'unverified'} successfully`);
+      await mutations.verifyUser.mutateAsync({ userId, isVerified: !isVerified });
+      setSelectedUser(null);
     } catch (error) {
-      toast.error('Failed to update verification');
       console.error('Error updating verification:', error);
     }
   };

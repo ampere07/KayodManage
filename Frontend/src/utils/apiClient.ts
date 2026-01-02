@@ -8,7 +8,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 10000, // Reduced timeout for better error handling
+  timeout: 30000,
 });
 
 // Helper function to check if error is network-related
@@ -16,14 +16,15 @@ const isNetworkError = (error: any): boolean => {
   return error.code === 'ERR_NETWORK' || 
          error.code === 'ERR_CONNECTION_REFUSED' ||
          error.code === 'ECONNREFUSED' ||
+         error.code === 'ECONNABORTED' ||
          error.message?.includes('Network Error') ||
+         error.message?.includes('timeout') ||
          !error.response;
 };
 
 // Request interceptor to add auth headers if needed
 apiClient.interceptors.request.use(
   (config) => {
-    console.log('[API] Making request to:', config.url);
     return config;
   },
   (error) => {
@@ -35,30 +36,21 @@ apiClient.interceptors.request.use(
 // Response interceptor to handle errors globally
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('[API] Response from:', response.config.url, 'Status:', response.status);
     return response;
   },
   (error) => {
-    // Silent 404 handling for specific endpoints
     const silent404Endpoints = ['/api/verifications/'];
     const isSilent404 = error.response?.status === 404 && 
       silent404Endpoints.some(endpoint => error.config?.url?.includes(endpoint));
     
-    if (!isSilent404) {
-      console.error('[API] Response error:', error);
-    }
-    
-    // Handle network errors
     if (isNetworkError(error)) {
-      console.error('[API] Network error detected:', error.message);
-      // Don't show toast for specific endpoints to avoid spam
-      const silentEndpoints = ['/api/auth/check', '/api/socket'];
+      const silentEndpoints = ['/api/auth/check', '/api/socket', '/api/dashboard'];
       const shouldShowToast = !silentEndpoints.some(endpoint => 
         error.config?.url?.includes(endpoint)
       );
       
       if (shouldShowToast) {
-        toast.error('Connection failed. Please check your network or server status.');
+        toast.error('Cannot connect to server. Please ensure backend is running.');
       }
       
       return Promise.reject({

@@ -12,11 +12,10 @@ import {
   Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from '../context/AuthContext';
-import { isNetworkError } from '../utils/apiClient';
-import { verificationsService } from '../services';
+
 import { VerificationDetailsModal } from '../components/Modals';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
+import { useVerifications, useUpdateVerificationStatus } from '../hooks';
 import type { Verification, UserInfo } from '../types';
 
 const getInitials = (name: string): string => {
@@ -73,9 +72,8 @@ const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ u
 };
 
 const Verifications: React.FC = () => {
-  const { isAuthenticated, loading: authLoading } = useAuth();
-  const [verifications, setVerifications] = useState<Verification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: verifications = [], isLoading: loading } = useVerifications();
+  const updateStatusMutation = useUpdateVerificationStatus();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
@@ -89,13 +87,6 @@ const Verifications: React.FC = () => {
     limit: 20
   });
 
-  useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      fetchVerifications();
-    }
-  }, [isAuthenticated, authLoading]);
-
-  // Handle id/verificationId from URL params
   useEffect(() => {
     const id = searchParams.get('id');
     const verificationId = searchParams.get('verificationId');
@@ -131,32 +122,6 @@ const Verifications: React.FC = () => {
     }
   }, [verifications, searchParams, setSearchParams]);
 
-  const fetchVerifications = async () => {
-    try {
-      setLoading(true);
-      
-      if (!isAuthenticated) {
-        return;
-      }
-
-      const data = await verificationsService.getAllVerifications();
-      
-      if (data.success) {
-        setVerifications(data.data || []);
-      }
-    } catch (error: any) {
-      const isNetworkErrorDetected = isNetworkError(error);
-      
-      if (isNetworkErrorDetected) {
-        toast.error('Cannot connect to server');
-      } else {
-        toast.error('Failed to load verifications');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleStatusUpdate = async (
     verificationId: string, 
     status: string, 
@@ -164,24 +129,17 @@ const Verifications: React.FC = () => {
     reason?: string
   ): Promise<void> => {
     try {
-      if (!isAuthenticated) {
-        throw new Error('Please login to perform this action');
-      }
-
-      const response = await verificationsService.updateVerificationStatus(verificationId, {
-        status: status as any,
+      await updateStatusMutation.mutateAsync({
+        verificationId,
+        status,
         adminNotes: notes,
         rejectionReason: reason
       });
-
-      if (response.success) {
-        await fetchVerifications();
-        setModalOpen(false);
-      } else {
-        throw new Error(response.message || 'Failed to update status');
-      }
+      setModalOpen(false);
+      toast.success('Verification status updated successfully');
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || error.message || 'Failed to update status');
+      toast.error(error.message || 'Failed to update status');
+      throw error;
     }
   };
 
@@ -251,7 +209,7 @@ const Verifications: React.FC = () => {
 
   const totalPages = Math.ceil(filteredUsers.length / pagination.limit);
 
-  if (authLoading || loading) {
+  if (loading) {
     return (
       <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
         <div className="text-center">

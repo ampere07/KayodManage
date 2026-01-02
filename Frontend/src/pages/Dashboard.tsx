@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   Users, 
   Briefcase, 
@@ -10,7 +10,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import apiClient from '../utils/apiClient';
+import { useDashboardComparison, useDashboardRevenueChart } from '../hooks/useDashboard';
 
 function Header() {
   const { user } = useAuth();
@@ -22,6 +22,10 @@ function Header() {
     month: 'long', 
     day: 'numeric', 
     year: 'numeric' 
+  });
+  const shortDate = currentDate.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric' 
   });
   const timeString = currentDate.toLocaleTimeString('en-US', { 
     hour: '2-digit', 
@@ -36,10 +40,16 @@ function Header() {
   
   return (
     <div className="mb-2 md:mb-3">
-      <h1 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-0.5">
-        {greeting}, {user?.name || 'Admin'}
-      </h1>
-      <p className="text-xs text-gray-500 mb-1.5 md:mb-2">
+      <div className="flex items-start justify-between mb-0.5">
+        <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-1000">
+          {greeting}, {user?.name || 'Admin'}
+        </h1>
+        <div className="text-right md:hidden">
+          <p className="text-xs text-gray-900">{timeString}</p>
+          <p className="text-xs text-gray-600">{shortDate}</p>
+        </div>
+      </div>
+      <p className="text-xs text-gray-900 mb-1.5 md:mb-2 hidden md:block">
         <span className="hidden sm:inline">{dateString} · </span>{timeString}
       </p>
       
@@ -73,20 +83,7 @@ function Header() {
 function StatCards() {
   const navigate = useNavigate();
   const { dashboardStats } = useSocket();
-  const [comparison, setComparison] = useState<any>(null);
-
-  useEffect(() => {
-    fetchComparison();
-  }, []);
-
-  const fetchComparison = async () => {
-    try {
-      const response = await apiClient.get('/api/dashboard/stats-comparison');
-      setComparison(response.data);
-    } catch (error) {
-      console.error('Error fetching stats comparison:', error);
-    }
-  };
+  const { data: comparison } = useDashboardComparison();
 
   const stats = dashboardStats || {
     totalUsers: 0,
@@ -192,25 +189,7 @@ interface RevenueChartData {
 
 function RevenueChart() {
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
-  const [chartData, setChartData] = useState<RevenueChartData[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchRevenueData();
-  }, [period]);
-
-  const fetchRevenueData = async () => {
-    try {
-      setLoading(true);
-      const days = period === 'week' ? 7 : period === 'month' ? 30 : 365;
-      const response = await apiClient.get(`/api/dashboard/revenue-chart?days=${days}`);
-      setChartData(response.data);
-    } catch (error) {
-      console.error('Error fetching revenue chart data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: chartData = [], isLoading: loading } = useDashboardRevenueChart(period);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -261,7 +240,7 @@ function RevenueChart() {
         </div>
       </div>
       
-      <div className="flex-1" style={{ minHeight: '180px', maxHeight: '280px' }}>
+      <div className="flex-1 h-[240px] sm:h-auto sm:min-h-[240px] sm:max-h-[280px]">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-xs text-gray-500">Loading...</div>
@@ -346,13 +325,13 @@ function ActiveAlerts() {
     }
   };
 
-  const displayAlerts = alerts?.slice(0, 6) || [];
+  const displayAlerts = alerts || [];
 
   return (
     <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
       <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2">Active Alerts</h3>
       
-      <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2" style={{ minHeight: '180px', maxHeight: '280px' }}>
+      <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2 max-h-[240px] sm:max-h-[280px]">
         {displayAlerts.length > 0 ? (
           displayAlerts.map((alert) => (
             <div 
@@ -363,7 +342,7 @@ function ActiveAlerts() {
                 <h4 className="text-xs font-semibold text-gray-900 mb-0.5">
                   {alert.title || 'New Post Reported'}
                 </h4>
-                <p className="text-xs text-gray-600 line-clamp-1 md:line-clamp-2">
+                <p className="text-xs text-gray-600 line-clamp-2">
                   {alert.message || `Job "${alert.jobTitle || 'Test'}" reported for inappropriate content`}
                 </p>
               </div>
@@ -485,11 +464,11 @@ export default function Dashboard() {
       <Header />
       <StatCards />
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 md:mb-3">
-        <div className="lg:col-span-2">
+      <div className="flex flex-col lg:flex-row gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 md:mb-3">
+        <div className="w-full lg:w-[55%]">
           <RevenueChart />
         </div>
-        <div>
+        <div className="w-full lg:w-[45%]">
           <ActiveAlerts />
         </div>
       </div>

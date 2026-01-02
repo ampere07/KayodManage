@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
@@ -20,6 +20,7 @@ import toast from 'react-hot-toast';
 import { usersService, transactionsService } from '../services';
 import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals';
 import { getInitials } from '../utils';
+import { useActivityLogs } from '../hooks';
 import type { User, Transaction } from '../types';
 
 interface AdminInfo {
@@ -110,8 +111,7 @@ const SYSTEM_ACTIONS = [
 
 const Activity: React.FC = () => {
   const navigate = useNavigate();
-  const [activities, setActivities] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: activities = [], isLoading: loading, refetch } = useActivityLogs();
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'system'>('all');
@@ -126,31 +126,9 @@ const Activity: React.FC = () => {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
-  useEffect(() => {
-    fetchActivities();
-  }, []);
-
-  const fetchActivities = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/activity-logs', {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setActivities(data.logs || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch activity logs:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchActivities();
+    await refetch();
     setRefreshing(false);
     toast.success('Activity logs refreshed');
   };
@@ -190,7 +168,8 @@ const Activity: React.FC = () => {
     }
   };
 
-  const filteredActivities = activities.filter(activity => {
+  const filteredActivities = useMemo(() => {
+    return activities.filter(activity => {
     const matchesSearch = 
       activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -206,7 +185,8 @@ const Activity: React.FC = () => {
       (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
     
     return matchesSearch && matchesAction && matchesType;
-  });
+    });
+  }, [activities, searchTerm, actionFilter, typeFilter]);
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -548,7 +528,7 @@ const Activity: React.FC = () => {
           try {
             await usersService.verifyUser(userId, verified);
             toast.success(`User ${verified ? 'verified' : 'unverified'} successfully`);
-            fetchActivities();
+            await refetch();
           } catch (error) {
             toast.error('Failed to update verification');
           }
@@ -570,7 +550,7 @@ const Activity: React.FC = () => {
                 break;
             }
             toast.success(`User ${actionType}ed successfully`);
-            fetchActivities();
+            await refetch();
           } catch (error) {
             toast.error(`Failed to ${actionType} user`);
           }
