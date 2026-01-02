@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .env
+*.md
+*.log
+*.txt
+*.bat
+*.ps1
