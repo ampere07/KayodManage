@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Search,
@@ -19,9 +19,6 @@ import toast from 'react-hot-toast';
 import { DateRangePicker } from '../components/Transactions';
 import { TransactionDetailsModal, TopUpModal } from '../components/Modals';
 
-// Service imports
-import { transactionsService } from '../services';
-
 // Type imports
 import type { Transaction, TransactionStats } from '../types';
 
@@ -39,6 +36,9 @@ import {
   getCategoryTitle
 } from '../utils';
 
+// Hooks
+import { useTransactions, useTransactionCounts, useTransactionMutations } from '../hooks/useTransactions';
+
 /**
  * Transactions Management Page
  * Displays and manages all financial transactions
@@ -46,10 +46,6 @@ import {
 const Transactions: React.FC = () => {
   const location = useLocation();
 
-  // State management
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -66,13 +62,6 @@ const Transactions: React.FC = () => {
     limit: 20,
     total: 0,
     pages: 0
-  });
-  const [statusCounts, setStatusCounts] = useState({
-    total: 0,
-    pending: 0,
-    completed: 0,
-    failed: 0,
-    cancelled: 0
   });
 
   // Handle query parameters when URL changes
@@ -101,103 +90,60 @@ const Transactions: React.FC = () => {
 
   const category = getTransactionCategory();
 
-  /**
-   * Fetch transactions from API
-   */
-  const fetchTransactions = async () => {
-    try {
-      setLoading(true);
+  const queryParams = useMemo(() => {
+    const params: any = {
+      page: pagination.page,
+      limit: pagination.limit
+    };
+    if (searchTerm) params.search = searchTerm;
+    if (statusFilter !== 'all') params.status = statusFilter;
+    if (paymentMethodFilter !== 'all') params.paymentMethod = paymentMethodFilter;
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
 
-      const params: any = {
-        page: pagination.page,
-        limit: pagination.limit
-      };
-      if (searchTerm) params.search = searchTerm;
-      if (statusFilter !== 'all') params.status = statusFilter;
-      if (paymentMethodFilter !== 'all') params.paymentMethod = paymentMethodFilter;
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
+    if (category === 'fee_record') {
+      params.type = 'fee_record';
+      params.includeFees = 'true';
+    } else if (category === 'wallet_topup') {
+      params.type = 'xendit_topup';
+    } else if (category !== 'all') {
+      params.type = category;
+    } else {
+      params.includeFees = 'true';
+    }
 
-      if (category === 'fee_record') {
-        params.type = 'fee_record';
-        params.includeFees = 'true';
-      } else if (category === 'wallet_topup') {
-        params.type = 'xendit_topup';
-      } else if (category !== 'all') {
-        params.type = category;
-      } else {
-        params.includeFees = 'true';
-      }
+    return params;
+  }, [pagination.page, pagination.limit, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo, category]);
 
-      const data = await transactionsService.getTransactions(params);
-      setTransactions(data.transactions || []);
-      setTransactionStats(data.stats || null);
+  const transactionType = category === 'wallet_topup' ? 'xendit_topup' : category === 'fee_record' ? 'fee_record' : category;
+  
+  const { data: transactionsData, isLoading, refetch } = useTransactions(queryParams);
+  const { data: statusCounts = { total: 0, pending: 0, completed: 0, failed: 0, cancelled: 0 } } = useTransactionCounts(transactionType);
+  const mutations = useTransactionMutations();
+
+  const transactions = transactionsData?.transactions || [];
+  const transactionStats = transactionsData?.stats || null;
+  const loading = isLoading;
+
+  useEffect(() => {
+    if (transactionsData?.pagination) {
       setPagination(prev => ({
         ...prev,
-        total: data.pagination?.total || 0,
-        pages: data.pagination?.pages || 1
+        total: transactionsData.pagination.total || 0,
+        pages: transactionsData.pagination.pages || 1
       }));
-
-      // Calculate status counts for fee records - only fetch when no status filter applied
-      if (category === 'fee_record' && statusFilter === 'all') {
-        const countParams = { type: 'fee_record', includeFees: 'true', limit: 10000, page: 1 };
-        const countData = await transactionsService.getTransactions(countParams);
-        const allTransactions = countData.transactions || [];
-        setStatusCounts({
-          total: allTransactions.length,
-          pending: allTransactions.filter((t: Transaction) => t.status === 'pending').length,
-          completed: allTransactions.filter((t: Transaction) => t.status === 'completed').length,
-          failed: allTransactions.filter((t: Transaction) => t.status === 'failed').length,
-          cancelled: allTransactions.filter((t: Transaction) => t.status === 'cancelled').length
-        });
-      }
-
-      // Calculate status counts for top-up transactions
-      if (category === 'wallet_topup' && statusFilter === 'all') {
-        const countParams = { type: 'xendit_topup', limit: 10000, page: 1 };
-        const countData = await transactionsService.getTransactions(countParams);
-        const allTransactions = countData.transactions || [];
-        setStatusCounts({
-          total: allTransactions.length,
-          pending: allTransactions.filter((t: Transaction) => t.status === 'pending').length,
-          completed: allTransactions.filter((t: Transaction) => t.status === 'completed').length,
-          failed: allTransactions.filter((t: Transaction) => t.status === 'failed').length,
-          cancelled: allTransactions.filter((t: Transaction) => t.status === 'cancelled').length
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-      toast.error('Error loading transactions');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [transactionsData]);
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, [category, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo]);
 
-  useEffect(() => {
-    fetchTransactions();
-  }, [category, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo, pagination.page]);
-
-  /**
-   * Update transaction status
-   */
-  const updateTransactionStatus = async (transactionId: string, status: string, transactionType: string) => {
+  const updateTransactionStatus = async (transactionId: string, status: string) => {
     try {
-      const updatedData = await transactionsService.updateTransactionStatus(transactionId, {
-        status: status as any,
-        type: transactionType
-      });
-
-      setTransactions((prev) =>
-        prev.map((transaction) => (transaction._id === transactionId ? updatedData.transaction : transaction))
-      );
-      toast.success(`Transaction ${status}`);
+      await mutations.updateTransactionStatus.mutateAsync({ transactionId, status });
     } catch (error) {
       console.error('Failed to update transaction status:', error);
-      toast.error('Failed to update transaction status');
     }
   };
 
@@ -277,7 +223,7 @@ const Transactions: React.FC = () => {
                 <span className="font-medium text-gray-600">View</span>
               </div>
               <button
-                onClick={fetchTransactions}
+                onClick={() => refetch()}
                 disabled={loading}
                 className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700"
                 title="Refresh"

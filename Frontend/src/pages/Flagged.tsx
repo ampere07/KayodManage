@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   AlertTriangle, 
@@ -13,18 +13,18 @@ import {
   XCircle
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
-import { flaggedService, usersService } from '../services';
 import { ReviewReportModal } from '../components/Modals';
+import { useFlaggedPosts, useFlaggedUsersStats, useReviewReportedPost } from '../hooks';
 import type { 
   ReportedPost, 
   ReportFilterStatus 
 } from '../types/flagged.types';
-import type { User as UserType } from '../types/users.types';
 
 const Flagged: React.FC = () => {
-  const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: reportedPosts = [], isLoading: loading } = useFlaggedPosts();
+  const { data: flaggedUsersStats = { total: 0, customers: 0, providers: 0 } } = useFlaggedUsersStats();
+  const reviewPostMutation = useReviewReportedPost();
+
   const [selectedPost, setSelectedPost] = useState<ReportedPost | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [filter, setFilter] = useState<ReportFilterStatus>('all');
@@ -35,18 +35,7 @@ const Flagged: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
-  const [flaggedUsersStats, setFlaggedUsersStats] = useState({
-    total: 0,
-    customers: 0,
-    providers: 0
-  });
 
-  useEffect(() => {
-    fetchReportedPosts();
-    fetchFlaggedUsersStats();
-  }, []);
-
-  // Handle reportId from URL params
   useEffect(() => {
     const reportId = searchParams.get('reportId');
     const alertId = searchParams.get('alertId');
@@ -55,14 +44,10 @@ const Flagged: React.FC = () => {
     if (targetId && reportedPosts.length > 0) {
       const post = reportedPosts.find(p => p._id === targetId);
       if (post) {
-        // Set the highlighted post
         setHighlightedPostId(targetId);
-        
-        // Open the modal automatically
         setSelectedPost(post);
         setIsModalOpen(true);
         
-        // Scroll to the highlighted row after a short delay
         setTimeout(() => {
           highlightedRowRef.current?.scrollIntoView({ 
             behavior: 'smooth', 
@@ -70,7 +55,6 @@ const Flagged: React.FC = () => {
           });
         }, 300);
         
-        // Clear the URL parameter after processing
         searchParams.delete('reportId');
         searchParams.delete('alertId');
         setSearchParams(searchParams, { replace: true });
@@ -78,55 +62,14 @@ const Flagged: React.FC = () => {
     }
   }, [reportedPosts, searchParams, setSearchParams]);
 
-  const fetchReportedPosts = async () => {
-    setLoading(true);
-    try {
-      const data = await flaggedService.getReportedPosts();
-      setReportedPosts(data.reportedPosts || []);
-      setError(null);
-    } catch (err: any) {
-      setError(err?.message || 'An error occurred');
-      console.error('Error fetching reported posts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchFlaggedUsersStats = async () => {
-    try {
-      const response = await usersService.getUsers({ limit: 1000 });
-      const flaggedUsers = response.users.filter((user: UserType) => 
-        user.accountStatus && ['restricted', 'suspended', 'banned'].includes(user.accountStatus)
-      );
-      
-      const customers = flaggedUsers.filter((user: UserType) => user.userType === 'client').length;
-      const providers = flaggedUsers.filter((user: UserType) => user.userType === 'provider').length;
-      
-      setFlaggedUsersStats({
-        total: flaggedUsers.length,
-        customers,
-        providers
-      });
-    } catch (err: any) {
-      console.error('Error fetching flagged users stats:', err);
-    }
-  };
-
   const handleReviewPost = async (postId: string, action: 'approve' | 'dismiss' | 'delete') => {
     setActionLoading(true);
     try {
-      const result = await flaggedService.reviewReportedPost(postId, {
+      await reviewPostMutation.mutateAsync({
+        postId,
         action,
         adminNotes: 'Action taken by admin'
       });
-      
-      setReportedPosts(prev => 
-        prev.map(post => 
-          post._id === postId 
-            ? { ...post, ...result.reportedPost, status: result.reportedPost.status }
-            : post
-        )
-      );
 
       setIsModalOpen(false);
       setSelectedPost(null);
@@ -155,7 +98,6 @@ const Flagged: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedPost(null);
-    // Keep the highlight for a few seconds after closing modal
     setTimeout(() => {
       setHighlightedPostId(null);
     }, 3000);
@@ -186,7 +128,7 @@ const Flagged: React.FC = () => {
     return reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const getFilteredPosts = () => {
+  const filteredPosts = useMemo(() => {
     let filtered = reportedPosts;
     
     if (filter !== 'all') {
@@ -204,10 +146,12 @@ const Flagged: React.FC = () => {
     }
     
     return filtered;
-  };
+  }, [reportedPosts, filter, searchTerm]);
 
-  const filteredPosts = getFilteredPosts();
-  const pendingCount = reportedPosts.filter(post => post.status === 'pending').length;
+  const pendingCount = useMemo(() => 
+    reportedPosts.filter(post => post.status === 'pending').length,
+    [reportedPosts]
+  );
   
   const totalPages = Math.ceil(filteredPosts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -224,7 +168,6 @@ const Flagged: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div className="flex items-center">
@@ -253,220 +196,205 @@ const Flagged: React.FC = () => {
               <div className="w-px h-10 bg-gray-300 mx-2"></div>
               <div className="text-center">
                 <div className="text-xs text-gray-500 mb-0.5">Provider</div>
-                <div className="text-lg font-bold text-green-600">{flaggedUsersStats.providers}</div>
+                <div className="text-lg font-bold text-purple-600">{flaggedUsersStats.providers}</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Search and Filter Controls */}
-        <div className="mt-6 flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-4">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                filter === 'all' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All ({reportedPosts.length})
+            </button>
+            <button
+              onClick={() => setFilter('pending')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                filter === 'pending' 
+                  ? 'bg-yellow-600 text-white' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Pending ({pendingCount})
+            </button>
+            <button
+              onClick={() => setFilter('reviewed')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                filter === 'reviewed' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Reviewed
+            </button>
+            <button
+              onClick={() => setFilter('dismissed')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                filter === 'dismissed' 
+                  ? 'bg-gray-600 text-white' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Dismissed
+            </button>
+            <button
+              onClick={() => setFilter('resolved')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                filter === 'resolved' 
+                  ? 'bg-green-600 text-white' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Resolved
+            </button>
+          </div>
+          
+          <div className="relative flex-grow sm:flex-grow-0 sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
               type="text"
-              placeholder="Search by job title, reporter name, reason, or comment..."
+              placeholder="Search reports..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-          </div>
-
-          <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
-            {[
-              { key: 'all', label: 'All', count: reportedPosts.length },
-              { key: 'pending', label: 'Pending', count: reportedPosts.filter(p => p.status === 'pending').length },
-              { key: 'reviewed', label: 'Reviewed', count: reportedPosts.filter(p => p.status === 'reviewed').length },
-              { key: 'resolved', label: 'Resolved', count: reportedPosts.filter(p => p.status === 'resolved').length },
-              { key: 'dismissed', label: 'Dismissed', count: reportedPosts.filter(p => p.status === 'dismissed').length }
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => {
-                  setFilter(tab.key as ReportFilterStatus);
-                  setCurrentPage(1);
-                }}
-                className={`px-3 py-1 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                  filter === tab.key
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
           </div>
         </div>
       </div>
 
-      {/* Error State */}
-      {error && (
-        <div className="flex-shrink-0 mx-6 mt-4 bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 rounded">
-          <div className="flex items-center">
-            <XCircle className="h-5 w-5 mr-2" />
-            <span>Error: {error}</span>
+      <div className="flex-1 overflow-auto p-6">
+        {paginatedPosts.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+            <Flag className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No reports found</h3>
+            <p className="text-gray-500">
+              {filter !== 'all' 
+                ? 'Try adjusting your filters or search term.' 
+                : 'No posts have been reported yet.'}
+            </p>
           </div>
-        </div>
-      )}
-
-      {/* Scrollable Table Container */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {filteredPosts.length === 0 ? (
-            <div className="h-full flex items-center justify-center bg-white p-12">
-              <div className="text-center">
-                <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  {searchTerm ? 'No matching reports found' : 
-                   filter === 'all' ? 'No reported posts found' : `No ${filter} reports`}
-                </h2>
-                <p className="text-gray-600">
-                  {searchTerm ? 'Try adjusting your search terms' :
-                   filter === 'pending' ? 'All reports have been reviewed!' : 'Check back later for new reports.'}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white overflow-hidden">
-              <table className="min-w-full w-full table-fixed">
-                <thead className="bg-gray-50 border-b border-gray-200">
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="w-[30%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Job Details
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Job Post
                     </th>
-                    <th className="w-[25%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Report Info
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Reported By
                     </th>
-                    <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Reason
                     </th>
-                    <th className="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
                     </th>
-                    <th className="w-[10%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Action
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white">
-                  {paginatedPosts.map((post, index) => {
-                    const isHighlighted = highlightedPostId === post._id;
-                    
-                    return (
-                    <React.Fragment key={post._id}>
-                      <tr 
-                        ref={isHighlighted ? highlightedRowRef : null}
-                        className={`hover:bg-gray-50 transition-all duration-300 ${
-                          isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
-                        }`}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="max-w-xs">
-                            <div className="text-sm font-medium text-gray-900 truncate">
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {paginatedPosts.map((post) => (
+                    <tr 
+                      key={post._id}
+                      ref={highlightedPostId === post._id ? highlightedRowRef : null}
+                      className={`hover:bg-gray-50 transition-all ${
+                        highlightedPostId === post._id ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' : ''
+                      }`}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            {post.jobId.images && post.jobId.images.length > 0 ? (
+                              <img
+                                className="h-10 w-10 rounded object-cover"
+                                src={post.jobId.images[0]}
+                                alt="Job"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
+                                <ImageIcon className="h-5 w-5 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
                               {post.jobId.title}
                             </div>
-                            <div className="text-sm text-gray-500 line-clamp-2">
-                              {post.jobId.description}
-                            </div>
-                            <div className="flex items-center mt-1 text-xs text-gray-400">
-                              <span className="bg-gray-100 px-2 py-1 rounded">
-                                {post.jobId.category}
-                              </span>
-                              <span className="ml-2">
-                                {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
-                              </span>
-                              {post.jobId.media && post.jobId.media.length > 0 && (
-                                <span className="ml-2 flex items-center text-blue-600">
-                                  <ImageIcon className="h-3 w-3 mr-1" />
-                                  {post.jobId.media.length} file{post.jobId.media.length !== 1 ? 's' : ''}
-                                </span>
-                              )}
-                              {post.jobId.isDeleted && (
-                                <span className="ml-2 flex items-center text-red-600 font-medium">
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Deleted
-                                </span>
-                              )}
+                            <div className="text-sm text-gray-500">
+                              {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
                             </div>
                           </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="max-w-xs">
-                            <div className="flex items-center text-sm text-gray-900 mb-1">
-                              <Flag className="h-4 w-4 text-red-500 mr-1" />
-                              <span className="font-medium">{formatReason(post.reason)}</span>
-                            </div>
-                            <div className="text-sm text-gray-600 line-clamp-2 mb-2">
-                              "{post.comment}"
-                            </div>
-                            <div className="flex items-center text-xs text-gray-500">
-                              <User className="h-3 w-3 mr-1" />
-                              <span>{post.reportedBy.providerName}</span>
-                            </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          <User className="h-5 w-5 text-gray-400 mr-2" />
+                          <div className="text-sm text-gray-900">
+                            {post.reportedBy.providerName}
                           </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(post.status)}`}>
-                            {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
-                          </span>
-                          {post.status !== 'pending' && post.reviewedAt && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Reviewed {formatDate(post.reviewedAt)}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            <span>{formatDate(post.createdAt)}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900">{formatReason(post.reason)}</div>
+                        {post.comment && (
+                          <div className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                            {post.comment}
                           </div>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleViewPost(post)}
-                            className={`inline-flex items-center px-3 py-1.5 text-sm rounded-md transition-colors ${
-                              post.status === 'pending'
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            {post.status === 'pending' ? 'Review' : 'View'}
-                          </button>
-                        </td>
-                      </tr>
-                      {index < paginatedPosts.length - 1 && (
-                        <tr>
-                          <td colSpan={5} className="p-0">
-                            <div className="border-b border-gray-200" />
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                    );
-                  })}
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-500">
+                          <Calendar className="h-4 w-4 mr-1" />
+                          {formatDate(post.reportedAt)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
+                          {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <button
+                          onClick={() => handleViewPost(post)}
+                          className="text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center mx-auto"
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
+            </div>
 
-              {totalPages > 1 && (
-                <div className="bg-white px-6 py-4 flex items-center justify-between border-t border-gray-200">
+            {totalPages > 1 && (
+              <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
+                <div className="flex items-center justify-between">
                   <div className="flex-1 flex justify-between sm:hidden">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
                       className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Previous
                     </button>
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                       disabled={currentPage === totalPages}
                       className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -486,7 +414,7 @@ const Flagged: React.FC = () => {
                     <div>
                       <nav className="relative z-0 inline-flex rounded-lg shadow-sm -space-x-px">
                         <button
-                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                           disabled={currentPage === 1}
                           className="relative inline-flex items-center px-2 py-2 rounded-l-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -521,13 +449,12 @@ const Flagged: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Review Report Modal */}
       <ReviewReportModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}

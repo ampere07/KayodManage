@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Eye,
@@ -25,9 +25,6 @@ import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
 import { JobDetailsModal } from '../components/Modals';
 
-// Service imports
-import { jobsService } from '../services';
-
 // Tpye imports
 import type { Job, JobsPagination } from '../types';
 
@@ -40,14 +37,15 @@ import {
   formatPHPCurrency
 } from '../utils';
 
+// Hooks
+import { useJobs, useJobCounts, useJobMutations } from '../hooks/useJobs';
+
 /**
  * Jobs Management Page
  * Displays and manages all jobs in the system
  */
 const Jobs: React.FC = () => {
   // State management
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -62,92 +60,46 @@ const Jobs: React.FC = () => {
     total: 0,
     pages: 0
   });
-  const [jobCounts, setJobCounts] = useState({
-    total: 0,
-    open: 0,
-    assigned: 0,
-    completed: 0,
-    totalValue: 0
-  });
 
-  // Fetch jobs on mount and when filters change
+  const queryParams = useMemo(() => ({
+    page: pagination.page,
+    limit: pagination.limit,
+    ...(searchTerm && { search: searchTerm }),
+    ...(statusFilter !== 'all' && { status: statusFilter }),
+    ...(categoryFilter !== 'all' && { category: categoryFilter }),
+    ...(paymentMethodFilter !== 'all' && { paymentMethod: paymentMethodFilter }),
+    ...(urgentFilter === 'true' && { isUrgent: 'true' })
+  }), [pagination.page, pagination.limit, searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter]);
+
+  const { data: jobsData, isLoading } = useJobs(queryParams);
+  const { data: jobCounts = { total: 0, open: 0, assigned: 0, completed: 0, totalValue: 0 } } = useJobCounts();
+  const mutations = useJobMutations();
+
+  const jobs = jobsData?.jobs || [];
+  const loading = isLoading;
+
   useEffect(() => {
-    fetchJobs();
-  }, [searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter, pagination.page]);
+    if (jobsData?.pagination) {
+      setPagination(prev => ({
+        ...prev,
+        total: jobsData.pagination.total || 0,
+        pages: jobsData.pagination.pages || 0
+      }));
+    }
+  }, [jobsData]);
 
-  // Fetch job counts on mount
   useEffect(() => {
-    fetchJobCounts();
-  }, []);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter]);
 
-  /**
-   * Fetch jobs from API
-   */
-  const fetchJobs = async () => {
-    try {
-      setLoading(true);
-      const data = await jobsService.getJobs({
-        page: pagination.page,
-        limit: pagination.limit,
-        ...(searchTerm && { search: searchTerm }),
-        ...(statusFilter !== 'all' && { status: statusFilter }),
-        ...(categoryFilter !== 'all' && { category: categoryFilter }),
-        ...(paymentMethodFilter !== 'all' && { paymentMethod: paymentMethodFilter }),
-        ...(urgentFilter === 'true' && { isUrgent: 'true' })
-      });
-
-      setJobs(data.jobs || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (error) {
-      console.error('Failed to fetch jobs:', error);
-      toast.error('Failed to load jobs');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Fetch job counts and total value
-   */
-  const fetchJobCounts = async () => {
-    try {
-      const [totalData, openData, assignedData, completedData] = await Promise.all([
-        jobsService.getJobs({ limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'completed', limit: 1, page: 1 })
-      ]);
-
-      const totalValue = totalData.stats?.totalValue || 0;
-
-      setJobCounts({
-        total: totalData.pagination?.total || 0,
-        open: openData.pagination?.total || 0,
-        assigned: assignedData.pagination?.total || 0,
-        completed: completedData.pagination?.total || 0,
-        totalValue
-      });
-    } catch (error) {
-      console.error('Error fetching job counts:', error);
-    }
-  };
-
-  /**
-   * Update job status
-   */
   const updateJobStatus = async (jobId: string, status: string) => {
     try {
-      const response = await jobsService.updateJobStatus(jobId, {
+      await mutations.updateJobStatus.mutateAsync({
+        jobId,
         status: status as 'open' | 'in_progress' | 'completed' | 'cancelled'
       });
-
-      setJobs(prev => prev.map(job =>
-        job._id === jobId ? response.job : job
-      ));
-      toast.success(`Job status updated to ${status}`);
     } catch (error) {
       console.error('Failed to update job status:', error);
-      toast.error('Failed to update job status');
     }
   };
 
