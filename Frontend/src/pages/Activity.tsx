@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Search, 
   Shield, 
@@ -111,11 +111,15 @@ const SYSTEM_ACTIONS = [
 
 const Activity: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: activities = [], isLoading: loading, refetch } = useActivityLogs();
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'system'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null);
+  const activityRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20
@@ -133,7 +137,7 @@ const Activity: React.FC = () => {
     toast.success('Activity logs refreshed');
   };
 
-  const handleActivityClick = async (activity: ActivityLog) => {
+  const handleActivityClick = useCallback(async (activity: ActivityLog) => {
     if (!activity.targetId || !activity.targetType) return;
 
     try {
@@ -166,7 +170,7 @@ const Activity: React.FC = () => {
       console.error('Error fetching activity target:', error);
       toast.error('Failed to load details');
     }
-  };
+  }, [navigate]);
 
   const filteredActivities = useMemo(() => {
     return activities.filter(activity => {
@@ -202,6 +206,80 @@ const Activity: React.FC = () => {
   const totalActivityLogs = activities.length;
   const userActivityLogs = activities.filter(activity => USER_ACTIONS.includes(activity.actionType)).length;
   const systemActivityLogs = activities.filter(activity => SYSTEM_ACTIONS.includes(activity.actionType)).length;
+
+  // Handle activity ID from URL parameter
+  useEffect(() => {
+    const activityId = searchParams.get('id');
+    if (activityId && activities.length > 0 && !highlightedActivityId) {
+      console.log('Processing activity ID from URL:', activityId);
+      // Find the activity
+      const activity = activities.find(a => a._id === activityId);
+      if (activity) {
+        console.log('Activity found:', activity);
+        // Set as highlighted
+        setHighlightedActivityId(activityId);
+        
+        // Find which page this activity is on
+        const activityIndex = filteredActivities.findIndex(a => a._id === activityId);
+        console.log('Activity index in filtered list:', activityIndex);
+        if (activityIndex !== -1) {
+          const targetPage = Math.floor(activityIndex / pagination.limit) + 1;
+          console.log('Setting page to:', targetPage);
+          setPagination(prev => ({ ...prev, page: targetPage }));
+        }
+      } else {
+        console.log('Activity not found in activities list');
+        // Activity not found, clear the URL param
+        setSearchParams({});
+      }
+    }
+  }, [searchParams, activities, filteredActivities, pagination.limit, highlightedActivityId, setSearchParams]);
+
+  // Separate effect for scrolling after pagination updates and opening modal
+  useEffect(() => {
+    const activityId = searchParams.get('id');
+    if (activityId && highlightedActivityId === activityId && activities.length > 0) {
+      // Wait for pagination to render
+      const scrollTimer = setTimeout(() => {
+        const element = activityRefs.current[activityId];
+        
+        if (element) {
+          console.log('Scrolling to activity:', activityId);
+          console.log('Element found:', element);
+          
+          // Use scrollIntoView which is more reliable
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+          });
+          
+          // After scrolling, open the modal for this activity
+          setTimeout(() => {
+            const activity = activities.find(a => a._id === activityId);
+            if (activity) {
+              console.log('Opening modal for activity:', activity);
+              handleActivityClick(activity);
+            }
+          }, 800);
+        } else {
+          console.log('Element not found for activity:', activityId);
+          console.log('Available refs:', Object.keys(activityRefs.current));
+        }
+      }, 500);
+      
+      // Remove highlight after 6 seconds
+      const highlightTimer = setTimeout(() => {
+        setHighlightedActivityId(null);
+        setSearchParams({});
+      }, 6000);
+      
+      return () => {
+        clearTimeout(scrollTimer);
+        clearTimeout(highlightTimer);
+      };
+    }
+  }, [pagination.page, highlightedActivityId, searchParams, setSearchParams, activities, handleActivityClick]);
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
@@ -311,7 +389,7 @@ const Activity: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
@@ -343,12 +421,31 @@ const Activity: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedActivities.map((activity) => (
                       <tr 
-                        key={activity._id} 
+                        key={activity._id}
+                        ref={(el) => {
+                          activityRefs.current[activity._id] = el as HTMLTableRowElement;
+                          // Scroll immediately when the highlighted element is rendered
+                          const activityId = searchParams.get('id');
+                          if (el && activityId === activity._id && highlightedActivityId === activityId) {
+                            console.log('Element rendered, scrolling immediately');
+                            setTimeout(() => {
+                              el.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                                inline: 'nearest'
+                              });
+                            }, 100);
+                          }
+                        }}
                         onClick={() => handleActivityClick(activity)}
-                        className={`transition-colors ${
+                        className={`transition-all duration-200 ${
                           activity.targetId && activity.targetType 
-                            ? 'hover:bg-blue-50 cursor-pointer' 
+                            ? 'hover:bg-gray-100 cursor-pointer' 
                             : 'hover:bg-gray-50'
+                        } ${
+                          highlightedActivityId === activity._id
+                            ? 'bg-yellow-100 ring-2 ring-yellow-400'
+                            : ''
                         }`}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -416,10 +513,29 @@ const Activity: React.FC = () => {
                 {paginatedActivities.map((activity) => (
                   <div 
                     key={activity._id}
+                    ref={(el) => {
+                      activityRefs.current[activity._id] = el;
+                      // Scroll immediately when the highlighted element is rendered
+                      const activityId = searchParams.get('id');
+                      if (el && activityId === activity._id && highlightedActivityId === activityId) {
+                        console.log('Mobile element rendered, scrolling immediately');
+                        setTimeout(() => {
+                          el.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center',
+                            inline: 'nearest'
+                          });
+                        }, 100);
+                      }
+                    }}
                     onClick={() => handleActivityClick(activity)}
-                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-colors ${
+                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-all duration-200 ${
                       activity.targetId && activity.targetType 
-                        ? 'hover:bg-blue-50 cursor-pointer' 
+                        ? 'hover:bg-gray-100 cursor-pointer' 
+                        : 'hover:bg-gray-50'
+                    } ${
+                      highlightedActivityId === activity._id
+                        ? 'bg-yellow-100 ring-2 ring-yellow-400'
                         : ''
                     }`}
                   >

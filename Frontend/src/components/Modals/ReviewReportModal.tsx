@@ -79,18 +79,20 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
       title="Review Reported Post"
       width="2xl"
     >
-      <div className="p-6 space-y-6">
+      <div className="flex flex-col">
         {/* Status Badge */}
-        <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-          <span className="text-sm text-gray-600">Current Status</span>
+        <div className="flex items-center justify-between px-6 py-6">
+          <span className="text-sm text-gray-600 font-medium">Current Status</span>
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(reportedPost.status)}`}>
             {reportedPost.status.charAt(0).toUpperCase() + reportedPost.status.slice(1)}
           </span>
         </div>
 
+        <div className="border-t border-gray-200"></div>
+
         {/* Job Details */}
-        <div>
-          <h3 className="font-semibold text-lg mb-3 text-gray-900">Job Details</h3>
+        <div className="px-6 py-6">
+          <h3 className="font-semibold text-lg mb-4 text-gray-900">Job Details</h3>
           <div className="space-y-2 text-sm">
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Title:</span>
@@ -133,9 +135,11 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
           </div>
         </div>
 
+        <div className="border-t border-gray-200"></div>
+
         {/* Job Media */}
-        <div className="border-t border-gray-200 pt-6">
-          <h3 className="font-semibold text-lg mb-3 text-gray-900">
+        <div className="px-6 py-6">
+          <h3 className="font-semibold text-lg mb-4 text-gray-900">
             Job Media
             {reportedPost.jobId.media && reportedPost.jobId.media.length > 0 && (
               <span className="ml-2 text-sm font-normal text-gray-600">
@@ -210,9 +214,11 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
           )}
         </div>
 
+        <div className="border-t border-gray-200"></div>
+
         {/* Report Details */}
-        <div className="border-t border-gray-200 pt-6">
-          <h3 className="font-semibold text-lg mb-3 text-gray-900">Report Details</h3>
+        <div className="px-6 py-6">
+          <h3 className="font-semibold text-lg mb-4 text-gray-900">Report Details</h3>
           <div className="p-4 border-l-4 border-red-400 bg-red-50 space-y-2 text-sm">
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-700 font-medium">Reason:</span>
@@ -237,9 +243,11 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
           </div>
         </div>
 
+        <div className="border-t border-gray-200"></div>
+
         {/* Admin Notes */}
         {reportedPost.status === 'pending' ? (
-          <div className="border-t border-gray-200 pt-6">
+          <div className="px-6 py-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Admin Notes
             </label>
@@ -252,51 +260,56 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
             />
           </div>
         ) : reportedPost.adminNotes && (
-          <div className="border-t border-gray-200 pt-6">
-            <h3 className="font-semibold text-lg mb-3 text-gray-900">Admin Notes</h3>
+          <div className="px-6 py-6">
+            <h3 className="font-semibold text-lg mb-4 text-gray-900">Admin Notes</h3>
             <div className="p-3 bg-gray-50 border-l-4 border-gray-400 rounded">
               <p className="text-gray-700 text-sm">{reportedPost.adminNotes}</p>
             </div>
           </div>
         )}
 
+        {reportedPost.status === 'pending' && <div className="border-t border-gray-200"></div>}
+
         {/* Action Buttons */}
         {reportedPost.status === 'pending' && (
-          <div className="flex gap-2 pt-4 border-t border-gray-200">
+          <div className="flex gap-3 px-6 py-6">
             <button
               onClick={() => handleReview('dismiss')}
               disabled={isLoading}
-              className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <XCircle className="h-4 w-4 mr-1.5" />
+              <XCircle className="h-4 w-4 mr-2" />
               Dismiss
             </button>
             
             <button
               onClick={() => handleReview('approve')}
               disabled={isLoading}
-              className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <CheckCircle className="h-4 w-4 mr-1.5" />
+              <CheckCircle className="h-4 w-4 mr-2" />
               Keep Post
             </button>
             
             <button
               onClick={() => handleReview('delete')}
               disabled={isLoading}
-              className="flex-1 flex items-center justify-center px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Trash2 className="h-4 w-4 mr-1.5" />
+              <Trash2 className="h-4 w-4 mr-2" />
               Delete Post
             </button>
           </div>
         )}
 
         {isLoading && (
-          <div className="flex items-center justify-center py-4 border-t border-gray-200">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-gray-600 text-sm">Processing...</span>
-          </div>
+          <>
+            <div className="border-t border-gray-200"></div>
+            <div className="flex items-center justify-center px-6 py-6">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-gray-600 text-sm">Processing...</span>
+            </div>
+          </>
         )}
       </div>
     </SideModal>

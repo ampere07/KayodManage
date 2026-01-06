@@ -9,6 +9,8 @@ const {
   getAdminStats,
   getAllAdmins,
   getAdminById,
+  getAdminActivity,
+  getAdminSessions,
   createAdmin,
   updateAdmin,
   updateAdminPermissions
@@ -49,13 +51,17 @@ router.get('/stats', adminAuth, getAdminStats);
 
 router.get('/admins', adminAuth, getAllAdmins);
 
+router.get('/admins/:adminId/activity', adminAuth, getAdminActivity);
+
+router.get('/admins/:adminId/sessions', adminAuth, getAdminSessions);
+
 router.get('/admins/:adminId', adminAuth, getAdminById);
 
 router.post('/admins', adminAuth, createAdmin);
 
-router.patch('/admins/:adminId', adminAuth, updateAdmin);
-
 router.patch('/admins/:adminId/permissions', adminAuth, updateAdminPermissions);
+
+router.patch('/admins/:adminId', adminAuth, updateAdmin);
 
 // Manual trigger for auto-approving top-ups
 router.post('/approve-topups-now', adminAuth, async (req, res) => {

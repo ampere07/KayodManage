@@ -2,7 +2,9 @@ const bcrypt = require('bcryptjs');
 const ReportedPost = require('../models/ReportedPost');
 const Job = require('../models/Job');
 const User = require('../models/User');
+const ActivityLog = require('../models/ActivityLog');
 const { formatPHPCurrency, formatBudgetResponse } = require('../utils/currency');
+const mongoose = require('mongoose');
 
 // Get all reported posts with filtering and pagination
 const getReportedPosts = async (req, res) => {
@@ -564,7 +566,7 @@ const getAdminStats = async (req, res) => {
 const getAllAdmins = async (req, res) => {
   try {
     const admins = await User.find({
-      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
     }).select('name email userType accountStatus createdAt lastLogin permissions');
 
     const formattedAdmins = admins.map(admin => ({
@@ -616,7 +618,7 @@ const updateAdminPermissions = async (req, res) => {
 
     const admin = await User.findOne({
       _id: adminId,
-      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
     });
 
     if (!admin) {
@@ -648,7 +650,7 @@ const updateAdminPermissions = async (req, res) => {
 
 const createAdmin = async (req, res) => {
   try {
-    const { name, email, password, phone, userType, location, permissions } = req.body;
+    const { name, email, password, phone, userType, location, accountStatus, permissions } = req.body;
 
     if (!name || !email || !password || !phone || !location) {
       return res.status(400).json({
@@ -674,9 +676,9 @@ const createAdmin = async (req, res) => {
       phone,
       userType: userType || 'admin',
       location,
+      accountStatus: accountStatus || 'active',
       categories: [],
       isVerified: true,
-      accountStatus: 'active',
       restrictionDetails: {
         isRestricted: false,
         appealAllowed: true
@@ -726,7 +728,7 @@ const getAdminById = async (req, res) => {
 
     const admin = await User.findOne({
       _id: adminId,
-      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
     }).select('name email phone userType location accountStatus createdAt lastLogin permissions');
 
     if (!admin) {
@@ -745,8 +747,8 @@ const getAdminById = async (req, res) => {
         phone: admin.phone,
         userType: admin.userType,
         location: admin.location,
-        permissions: admin.permissions,
         accountStatus: admin.accountStatus,
+        permissions: admin.permissions,
         createdAt: admin.createdAt,
         lastLogin: admin.lastLogin
       }
@@ -763,7 +765,7 @@ const getAdminById = async (req, res) => {
 const updateAdmin = async (req, res) => {
   try {
     const { adminId } = req.params;
-    const { name, email, phone, userType, location, permissions, newPassword } = req.body;
+    const { name, email, phone, userType, location, accountStatus, permissions, newPassword } = req.body;
 
     if (!name || !email || !phone || !location) {
       return res.status(400).json({
@@ -774,7 +776,7 @@ const updateAdmin = async (req, res) => {
 
     const admin = await User.findOne({
       _id: adminId,
-      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support'] }
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
     });
 
     if (!admin) {
@@ -799,6 +801,9 @@ const updateAdmin = async (req, res) => {
     admin.phone = phone;
     admin.userType = userType;
     admin.location = location;
+    if (accountStatus) {
+      admin.accountStatus = accountStatus;
+    }
     if (permissions) {
       admin.permissions = permissions;
     }
@@ -820,11 +825,245 @@ const updateAdmin = async (req, res) => {
         phone: admin.phone,
         userType: admin.userType,
         location: admin.location,
+        accountStatus: admin.accountStatus,
         permissions: admin.permissions
       }
     });
   } catch (error) {
     console.error('Error updating admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const getAdminActivity = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    const { limit = 10, skip = 0 } = req.query;
+
+    const admin = await User.findOne({
+      _id: adminId,
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    const activities = await ActivityLog.find({ adminId })
+      .sort({ createdAt: -1 })
+      .skip(parseInt(skip))
+      .limit(parseInt(limit))
+      .populate('targetId', 'name email title')
+      .lean();
+
+    const formatTimeAgo = (date) => {
+      const now = new Date();
+      const diffInMs = now - new Date(date);
+      const diffInMinutes = Math.floor(diffInMs / 60000);
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      const diffInDays = Math.floor(diffInHours / 24);
+
+      if (diffInMinutes < 1) return 'Just now';
+      if (diffInMinutes < 60) return `${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'} ago`;
+      if (diffInHours < 24) return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ago`;
+      if (diffInDays === 1) return 'Yesterday';
+      if (diffInDays < 7) return `${diffInDays} days ago`;
+      
+      return new Date(date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+    };
+
+    const actionTitles = {
+      verification_approved: 'Approved provider verification',
+      verification_rejected: 'Rejected provider verification',
+      user_restricted: 'Restricted user account',
+      user_suspended: 'Suspended user account',
+      user_banned: 'Banned user account',
+      user_unrestricted: 'Unrestricted user account',
+      transaction_completed: 'Completed transaction',
+      transaction_failed: 'Transaction failed',
+      support_closed: 'Closed support ticket',
+      support_reopened: 'Reopened support ticket',
+      admin_login: 'Admin login'
+    };
+
+    const formattedActivities = activities.map(activity => ({
+      _id: activity._id,
+      action: actionTitles[activity.actionType] || activity.actionType,
+      description: activity.description,
+      details: activity.metadata?.details || null,
+      timeAgo: formatTimeAgo(activity.createdAt),
+      createdAt: activity.createdAt
+    }));
+
+    res.json({
+      success: true,
+      activities: formattedActivities
+    });
+  } catch (error) {
+    console.error('Error fetching admin activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error: ' + error.message
+    });
+  }
+};
+
+const getAdminSessions = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+
+    const admin = await User.findOne({
+      _id: adminId,
+      userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    const sessionsCollection = mongoose.connection.db.collection('sessions');
+    
+    // Since sessions are stored as JSON strings, we need to fetch all and filter manually
+    const allSessions = await sessionsCollection.find({}).toArray();
+    
+    console.log(`Total sessions in DB: ${allSessions.length}`);
+    
+    // Filter sessions by parsing the JSON string
+    const sessions = allSessions.filter(session => {
+      let sessionData;
+      try {
+        if (typeof session.session === 'string') {
+          sessionData = JSON.parse(session.session);
+        } else {
+          sessionData = session.session;
+        }
+        
+        // Check if this session belongs to the admin
+        return sessionData.adminId === adminId || 
+               sessionData.userId === adminId;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    console.log(`Found ${sessions.length} sessions for admin ${adminId}`);
+    
+    // Debug: Log first session if found
+    if (sessions.length > 0) {
+      let firstSessionData;
+      try {
+        firstSessionData = typeof sessions[0].session === 'string' 
+          ? JSON.parse(sessions[0].session) 
+          : sessions[0].session;
+        console.log('Session data:', JSON.stringify(firstSessionData, null, 2));
+      } catch (e) {
+        console.log('Could not parse session data');
+      }
+    }
+
+    const activeSessions = sessions.map(session => {
+      let sessionData = session.session || {};
+      
+      // Handle case where session might be a JSON string
+      if (typeof sessionData === 'string') {
+        try {
+          sessionData = JSON.parse(sessionData);
+        } catch (e) {
+          console.error('Failed to parse session data:', e);
+          sessionData = {};
+        }
+      }
+      
+      const userAgent = sessionData.userAgent || 'Unknown';
+      const ipAddress = sessionData.ipAddress || 'Unknown';
+      
+      let device = 'Unknown Device';
+      let os = 'Unknown OS';
+      
+      // If userAgent is 'Unknown', this is an old session created before we added device tracking
+      if (userAgent === 'Unknown') {
+        device = 'Web Browser on Desktop';
+        os = 'Unknown';
+      } else if (userAgent.includes('Mobile') || userAgent.includes('Android') || userAgent.includes('iPhone')) {
+        if (userAgent.includes('Android')) {
+          device = 'Mobile App on Android';
+          os = 'Android';
+        } else if (userAgent.includes('iPhone') || userAgent.includes('iOS')) {
+          device = 'Mobile App on iOS';
+          os = 'iOS';
+        } else {
+          device = 'Mobile Device';
+          os = 'Mobile';
+        }
+      } else {
+        if (userAgent.includes('Chrome') && !userAgent.includes('Edge')) {
+          device = 'Chrome';
+        } else if (userAgent.includes('Firefox')) {
+          device = 'Firefox';
+        } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+          device = 'Safari';
+        } else if (userAgent.includes('Edg')) {
+          device = 'Edge';
+        } else {
+          device = 'Web Browser';
+        }
+        
+        if (userAgent.includes('Windows')) {
+          os = 'Windows';
+        } else if (userAgent.includes('Mac')) {
+          os = 'MacOS';
+        } else if (userAgent.includes('Linux')) {
+          os = 'Linux';
+        } else {
+          os = 'Desktop';
+        }
+        
+        device = `${device} on ${os}`;
+      }
+
+      // Handle location - prioritize location field over IP
+      let location;
+      if (sessionData.location) {
+        location = sessionData.location;
+      } else if (ipAddress && ipAddress !== 'Unknown') {
+        location = ipAddress;
+      } else {
+        location = 'Unknown';
+      }
+      
+      const lastAccess = session.expires || new Date();
+      const isCurrent = sessionData.sessionId === req.sessionID;
+
+      return {
+        _id: session._id,
+        device,
+        os,
+        location,
+        ipAddress,
+        lastAccess,
+        isCurrent,
+        userAgent
+      };
+    });
+
+    res.json({
+      success: true,
+      sessions: activeSessions
+    });
+  } catch (error) {
+    console.error('Error fetching admin sessions:', error);
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -842,6 +1081,8 @@ module.exports = {
   getAdminStats,
   getAllAdmins,
   getAdminById,
+  getAdminActivity,
+  getAdminSessions,
   createAdmin,
   updateAdmin,
   updateAdminPermissions

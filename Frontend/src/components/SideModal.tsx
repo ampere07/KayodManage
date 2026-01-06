@@ -4,15 +4,17 @@ import { X } from 'lucide-react';
 interface SideModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
+  headerContent?: React.ReactNode;
   children: React.ReactNode;
-  width?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  width?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl';
 }
 
 const SideModal: React.FC<SideModalProps> = ({ 
   isOpen, 
   onClose, 
-  title, 
+  title,
+  headerContent, 
   children,
   width = 'xl'
 }) => {
@@ -21,7 +23,12 @@ const SideModal: React.FC<SideModalProps> = ({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
-    '2xl': 'max-w-2xl'
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
+    '7xl': 'max-w-7xl'
   };
 
   useEffect(() => {
@@ -66,14 +73,29 @@ const SideModal: React.FC<SideModalProps> = ({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            aria-label="Close modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {headerContent ? (
+            <>
+              {headerContent}
+              <button
+                onClick={onClose}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors ml-4"
+                aria-label="Close modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+              <button
+                onClick={onClose}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Content */}

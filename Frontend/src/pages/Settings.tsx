@@ -24,6 +24,9 @@ interface Admin {
   email: string;
   role: string;
   permissions: Permission;
+  accountStatus?: string;
+  isOnline?: boolean;
+  lastLogin?: string;
 }
 
 const Settings: React.FC = () => {
@@ -34,9 +37,8 @@ const Settings: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
-  const [filter, setFilter] = useState<'all' | 'admin' | 'finance' | 'support'>('all');
+  const [filter, setFilter] = useState<'all' | 'superadmin' | 'admin' | 'finance' | 'support'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchAdmins();
@@ -72,6 +74,115 @@ const Settings: React.FC = () => {
     return key.charAt(0).toUpperCase() + key.slice(1);
   };
 
+  const getAccessLevel = (role: string): { label: string; color: string } => {
+    const normalizedRole = role.toLowerCase();
+    if (normalizedRole === 'superadmin') {
+      return { label: 'Super Admin', color: 'bg-green-100 text-green-800' };
+    }
+    if (normalizedRole === 'admin') {
+      return { label: 'Admin', color: 'bg-blue-100 text-blue-800' };
+    }
+    if (normalizedRole === 'finance') {
+      return { label: 'Finance', color: 'bg-yellow-100 text-yellow-800' };
+    }
+    if (normalizedRole === 'customer support' || normalizedRole === 'support') {
+      return { label: 'Support', color: 'bg-purple-100 text-purple-800' };
+    }
+    return { label: 'Limited Access', color: 'bg-gray-100 text-gray-800' };
+  };
+
+  const getAccountStatus = (status?: string): { label: string; color: string } => {
+    if (status === 'active') {
+      return { label: 'Active', color: 'bg-green-100 text-green-800' };
+    }
+    if (status === 'suspended') {
+      return { label: 'Suspended', color: 'bg-yellow-100 text-yellow-800' };
+    }
+    if (status === 'banned') {
+      return { label: 'Banned', color: 'bg-red-100 text-red-800' };
+    }
+    if (status === 'restricted') {
+      return { label: 'Restricted', color: 'bg-orange-100 text-orange-800' };
+    }
+    return { label: 'Unknown', color: 'bg-gray-100 text-gray-800' };
+  };
+
+  const formatLastLogin = (lastLogin?: string): string => {
+    if (!lastLogin) return 'Never';
+    const date = new Date(lastLogin);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInMinutes = Math.floor(diffInMs / 60000);
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    const diffInDays = Math.floor(diffInHours / 24);
+
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
+  const getPermissionTemplate = (permissions: Permission): { name: string; color: string } => {
+    // Check Super Admin (all true)
+    if (Object.values(permissions).every(val => val === true)) {
+      return { name: 'Full Access', color: 'bg-green-100 text-green-800' };
+    }
+
+    // Check Admin template
+    if (
+      permissions.dashboard === true &&
+      permissions.users === true &&
+      permissions.jobs === true &&
+      permissions.transactions === false &&
+      permissions.verifications === true &&
+      permissions.support === false &&
+      permissions.activity === true &&
+      permissions.flagged === true &&
+      permissions.settings === false
+    ) {
+      return { name: 'Admin', color: 'bg-blue-100 text-blue-800' };
+    }
+
+    // Check Finance template
+    if (
+      permissions.dashboard === true &&
+      permissions.users === false &&
+      permissions.jobs === false &&
+      permissions.transactions === true &&
+      permissions.verifications === false &&
+      permissions.support === true &&
+      permissions.activity === true &&
+      permissions.flagged === false &&
+      permissions.settings === false
+    ) {
+      return { name: 'Finance', color: 'bg-yellow-100 text-yellow-800' };
+    }
+
+    // Check Support template
+    if (
+      permissions.dashboard === true &&
+      permissions.users === true &&
+      permissions.jobs === true &&
+      permissions.transactions === false &&
+      permissions.verifications === true &&
+      permissions.support === true &&
+      permissions.activity === false &&
+      permissions.flagged === true &&
+      permissions.settings === false
+    ) {
+      return { name: 'Support', color: 'bg-purple-100 text-purple-800' };
+    }
+
+    // Custom permissions
+    return { name: 'Custom', color: 'bg-gray-100 text-gray-800' };
+  };
+
   const handleEdit = (admin: Admin) => {
     setSelectedAdmin(admin);
     setIsEditModalOpen(true);
@@ -82,27 +193,16 @@ const Settings: React.FC = () => {
     setSelectedAdmin(null);
   };
 
-  const toggleCardExpansion = (adminId: string) => {
-    setExpandedCards(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(adminId)) {
-        newSet.delete(adminId);
-      } else {
-        newSet.add(adminId);
-      }
-      return newSet;
-    });
-  };
-
   const getFilteredAdmins = () => {
     let filtered = admins;
     
     if (filter !== 'all') {
       filtered = filtered.filter(admin => {
         const role = admin.role.toLowerCase();
-        if (filter === 'admin') return role === 'admin' || role === 'superadmin';
+        if (filter === 'superadmin') return role === 'superadmin';
+        if (filter === 'admin') return role === 'admin';
         if (filter === 'finance') return role === 'finance';
-        if (filter === 'support') return role === 'support';
+        if (filter === 'support') return role === 'customer support';
         return true;
       });
     }
@@ -121,12 +221,10 @@ const Settings: React.FC = () => {
   };
 
   const filteredAdmins = getFilteredAdmins();
-  const adminCount = admins.filter(a => {
-    const role = a.role.toLowerCase();
-    return role === 'admin' || role === 'superadmin';
-  }).length;
+  const superAdminCount = admins.filter(a => a.role.toLowerCase() === 'superadmin').length;
+  const adminCount = admins.filter(a => a.role.toLowerCase() === 'admin').length;
   const financeCount = admins.filter(a => a.role.toLowerCase() === 'finance').length;
-  const supportCount = admins.filter(a => a.role.toLowerCase() === 'support').length;
+  const supportCount = admins.filter(a => a.role.toLowerCase() === 'customer support').length;
 
   if (user?.role !== 'superadmin') {
     return (
@@ -174,6 +272,9 @@ const Settings: React.FC = () => {
                 <SettingsIcon className="h-6 w-6 md:h-8 md:w-8 text-blue-600 mr-2 md:mr-3 flex-shrink-0" />
                 <div className="min-w-0">
                   <h1 className="text-xl md:text-2xl font-bold text-gray-900">Settings</h1>
+                  <p className="text-xs md:text-sm text-gray-500 mt-1">
+                    Manage admin accounts and configure system permissions
+                  </p>
                 </div>
               </div>
               
@@ -186,7 +287,107 @@ const Settings: React.FC = () => {
               </button>
             </div>
 
-            {/* Search and Filter Controls */}
+            {/* Stats Counter - Now Clickable Filters */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <button
+                onClick={() => setFilter('all')}
+                className={`bg-gradient-to-br from-gray-50 to-gray-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+                  filter === 'all' ? 'border-gray-500 shadow-md' : 'border-gray-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">All Management</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{admins.length}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setFilter('superadmin')}
+                className={`bg-gradient-to-br from-green-50 to-green-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+                  filter === 'superadmin' ? 'border-green-500 shadow-md' : 'border-green-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Super Admin</p>
+                    <p className="text-2xl font-bold text-green-900 mt-1">{superAdminCount}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setFilter('admin')}
+                className={`bg-gradient-to-br from-blue-50 to-blue-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+                  filter === 'admin' ? 'border-blue-500 shadow-md' : 'border-blue-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Admin</p>
+                    <p className="text-2xl font-bold text-blue-900 mt-1">{adminCount}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setFilter('finance')}
+                className={`bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+                  filter === 'finance' ? 'border-yellow-500 shadow-md' : 'border-yellow-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="text-xs font-medium text-yellow-600 uppercase tracking-wide">Finance</p>
+                    <p className="text-2xl font-bold text-yellow-900 mt-1">{financeCount}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setFilter('support')}
+                className={`bg-gradient-to-br from-purple-50 to-purple-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+                  filter === 'support' ? 'border-purple-500 shadow-md' : 'border-purple-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Support</p>
+                    <p className="text-2xl font-bold text-purple-900 mt-1">{supportCount}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                      <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* Search Controls */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -197,27 +398,6 @@ const Settings: React.FC = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
-              </div>
-
-              <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
-                {[
-                  { key: 'all', label: 'All', count: admins.length },
-                  { key: 'admin', label: 'Admin', count: adminCount },
-                  { key: 'finance', label: 'Finance', count: financeCount },
-                  { key: 'support', label: 'Support', count: supportCount }
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setFilter(tab.key as 'all' | 'admin' | 'finance' | 'support')}
-                    className={`px-3 py-1.5 text-xs md:text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                      filter === tab.key
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {tab.label} ({tab.count})
-                  </button>
-                ))}
               </div>
             </div>
           </div>
@@ -266,11 +446,17 @@ const Settings: React.FC = () => {
                       <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         Email
                       </th>
+                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                        Status
+                      </th>
                       <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         Role
                       </th>
                       <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         Permissions
+                      </th>
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                        Last Login
                       </th>
                       <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         Actions
@@ -280,7 +466,10 @@ const Settings: React.FC = () => {
                   <tbody className="bg-white">
                     {filteredAdmins.map((admin, index) => (
                       <React.Fragment key={admin._id}>
-                        <tr className="hover:bg-gray-50 transition-colors">
+                        <tr 
+                          onClick={() => handleEdit(admin)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
                           <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {admin.uid}
                           </td>
@@ -291,40 +480,41 @@ const Settings: React.FC = () => {
                             {admin.email}
                           </td>
                           <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center justify-center">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                getAccountStatus(admin.accountStatus).color
+                              }`}>
+                                {getAccountStatus(admin.accountStatus).label}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                               {admin.role}
                             </span>
                           </td>
                           <td className="px-4 lg:px-6 py-4">
-                            <div className="flex items-center justify-center space-x-2 lg:space-x-3">
-                              {permissionLabels.map((permission) => (
-                                <div key={permission} className="flex flex-col items-center">
-                                  <label className="text-xs text-gray-600 mb-1 whitespace-nowrap">
-                                    {formatPermissionLabel(permission)}
-                                  </label>
-                                  <input
-                                    type="checkbox"
-                                    checked={admin.permissions[permission]}
-                                    disabled
-                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded cursor-not-allowed opacity-60"
-                                  />
-                                </div>
-                              ))}
+                            <div className="flex items-center justify-center">
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                                getPermissionTemplate(admin.permissions).color
+                              }`}>
+                                {getPermissionTemplate(admin.permissions).name}
+                              </span>
                             </div>
                           </td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {formatLastLogin(admin.lastLogin)}
+                          </td>
                           <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-center">
-                            <button
-                              onClick={() => handleEdit(admin)}
-                              className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                            >
+                            <span className="inline-flex items-center text-blue-600 text-sm font-medium">
                               <Edit2 className="h-3 w-3 mr-1" />
                               Edit
-                            </button>
+                            </span>
                           </td>
                         </tr>
                         {index < filteredAdmins.length - 1 && (
                           <tr>
-                            <td colSpan={6} className="p-0">
+                            <td colSpan={8} className="p-0">
                               <div className="border-b border-gray-200" />
                             </td>
                           </tr>
@@ -338,11 +528,12 @@ const Settings: React.FC = () => {
               {/* Mobile Card View */}
               <div className="md:hidden px-4 py-4 space-y-3">
                 {filteredAdmins.map((admin) => {
-                  const isExpanded = expandedCards.has(admin._id);
-                  const activePermissions = permissionLabels.filter(p => admin.permissions[p]);
-                  
                   return (
-                    <div key={admin._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <div 
+                      key={admin._id} 
+                      onClick={() => handleEdit(admin)}
+                      className="bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-all"
+                    >
                       {/* Card Header - Always Visible */}
                       <div className="p-4">
                         <div className="flex items-start justify-between mb-2">
@@ -355,74 +546,38 @@ const Settings: React.FC = () => {
                           </span>
                         </div>
                         
-                        <p className="text-xs text-gray-500 mb-3">{admin.uid}</p>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs text-gray-500">{admin.uid}</p>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              getPermissionTemplate(admin.permissions).color
+                            }`}>
+                              {getPermissionTemplate(admin.permissions).name}
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              getAccountStatus(admin.accountStatus).color
+                            }`}>
+                              {getAccountStatus(admin.accountStatus).label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-gray-500 mb-3">
+                          Last login: <span className="font-medium text-gray-700">{formatLastLogin(admin.lastLogin)}</span>
+                        </p>
 
                         {/* Quick Permissions Summary */}
                         <div className="flex items-center justify-between">
-                          <button
-                            onClick={() => toggleCardExpansion(admin._id)}
-                            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-                          >
-                            <span className="font-medium">
-                              {isExpanded ? 'Hide' : 'Show'} Permissions
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600 font-medium">Access Level:</span>
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                              getAccessLevel(admin.role).color
+                            }`}>
+                              {getAccessLevel(admin.role).label}
                             </span>
-                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">
-                              {activePermissions.length}/{permissionLabels.length}
-                            </span>
-                            <svg
-                              className={`h-4 w-4 transition-transform ${
-                                isExpanded ? 'rotate-180' : ''
-                              }`}
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          
-                          <button
-                            onClick={() => handleEdit(admin)}
-                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            <Edit2 className="h-3 w-3 mr-1" />
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Expandable Permissions Section */}
-                      {isExpanded && (
-                        <div className="border-t border-gray-100 bg-gray-50 p-4">
-                          <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Permissions</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {permissionLabels.map((permission) => (
-                              <div
-                                key={permission}
-                                className={`flex items-center gap-2 p-2 rounded ${
-                                  admin.permissions[permission]
-                                    ? 'bg-blue-50'
-                                    : 'bg-white'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={admin.permissions[permission]}
-                                  disabled
-                                  className="h-4 w-4 text-blue-600 border-gray-300 rounded cursor-not-allowed"
-                                />
-                                <span className={`text-sm ${
-                                  admin.permissions[permission]
-                                    ? 'text-gray-900 font-medium'
-                                    : 'text-gray-500'
-                                }`}>
-                                  {formatPermissionLabel(permission)}
-                                </span>
-                              </div>
-                            ))}
                           </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
