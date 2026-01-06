@@ -17,7 +17,7 @@ const UserSchema = new Schema({
   password: {
     type: String,
     required: function() { 
-      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support';
+      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support' || this.userType === 'support';
     }
   },
   phone: {
@@ -27,7 +27,7 @@ const UserSchema = new Schema({
   },
   userType: {
     type: String,
-    enum: ['client', 'provider', 'admin', 'superadmin', 'finance', 'customer support'],
+    enum: ['client', 'provider', 'admin', 'superadmin', 'finance', 'customer support', 'support'],
     default: 'client'
   },
   location: {
@@ -106,7 +106,7 @@ const UserSchema = new Schema({
     type: Number,
     default: 0,
     required: function() {
-      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support';
+      return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support' || this.userType === 'support';
     }
   },
   ticketsSubmittedResolved: {

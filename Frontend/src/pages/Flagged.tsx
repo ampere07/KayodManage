@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
 import { ReviewReportModal } from '../components/Modals';
-import { useFlaggedPosts, useFlaggedUsersStats, useReviewReportedPost } from '../hooks';
+import { useFlaggedPosts, useReviewReportedPost } from '../hooks';
 import type { 
   ReportedPost, 
   ReportFilterStatus 
@@ -22,7 +22,6 @@ import type {
 
 const Flagged: React.FC = () => {
   const { data: reportedPosts = [], isLoading: loading } = useFlaggedPosts();
-  const { data: flaggedUsersStats = { total: 0, customers: 0, providers: 0 } } = useFlaggedUsersStats();
   const reviewPostMutation = useReviewReportedPost();
 
   const [selectedPost, setSelectedPost] = useState<ReportedPost | null>(null);
@@ -115,13 +114,20 @@ const Flagged: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return 'Invalid Date';
+    }
   };
 
   const formatReason = (reason: string) => {
@@ -130,6 +136,12 @@ const Flagged: React.FC = () => {
 
   const filteredPosts = useMemo(() => {
     let filtered = reportedPosts;
+    
+    // Debug: Log the first post to see the structure
+    if (filtered.length > 0) {
+      console.log('First post jobId:', filtered[0].jobId);
+      console.log('First post jobId.media:', filtered[0].jobId.media);
+    }
     
     if (filter !== 'all') {
       filtered = filtered.filter(post => post.status === filter);
@@ -148,10 +160,13 @@ const Flagged: React.FC = () => {
     return filtered;
   }, [reportedPosts, filter, searchTerm]);
 
-  const pendingCount = useMemo(() => 
-    reportedPosts.filter(post => post.status === 'pending').length,
-    [reportedPosts]
-  );
+  const statusCounts = useMemo(() => ({
+    all: reportedPosts.length,
+    pending: reportedPosts.filter(post => post.status === 'pending').length,
+    reviewed: reportedPosts.filter(post => post.status === 'reviewed').length,
+    resolved: reportedPosts.filter(post => post.status === 'resolved').length,
+    dismissed: reportedPosts.filter(post => post.status === 'dismissed').length
+  }), [reportedPosts]);
   
   const totalPages = Math.ceil(filteredPosts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -168,291 +183,370 @@ const Flagged: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
-      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div className="flex items-center">
-            <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Flagged</h1>
-            </div>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-3">
-            {pendingCount > 0 && (
-              <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
-                {pendingCount} pending review{pendingCount !== 1 ? 's' : ''}
-              </span>
-            )}
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
-              <div className="text-center">
-                <div className="text-xs text-gray-500 mb-0.5">Total Flagged Users</div>
-                <div className="text-lg font-bold text-gray-900">{flaggedUsersStats.total}</div>
-              </div>
-              <div className="w-px h-10 bg-gray-300 mx-2"></div>
-              <div className="text-center">
-                <div className="text-xs text-gray-500 mb-0.5">Customer</div>
-                <div className="text-lg font-bold text-blue-600">{flaggedUsersStats.customers}</div>
-              </div>
-              <div className="w-px h-10 bg-gray-300 mx-2"></div>
-              <div className="text-center">
-                <div className="text-xs text-gray-500 mb-0.5">Provider</div>
-                <div className="text-lg font-bold text-purple-600">{flaggedUsersStats.providers}</div>
-              </div>
-            </div>
-          </div>
+      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
+        <div className="mb-4">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Flagged</h1>
+          <p className="text-xs md:text-sm text-gray-500 mt-1">
+            Review and manage reported posts from users across the platform
+          </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-4">
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'all' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              All ({reportedPosts.length})
-            </button>
-            <button
-              onClick={() => setFilter('pending')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'pending' 
-                  ? 'bg-yellow-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Pending ({pendingCount})
-            </button>
-            <button
-              onClick={() => setFilter('reviewed')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'reviewed' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Reviewed
-            </button>
-            <button
-              onClick={() => setFilter('dismissed')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'dismissed' 
-                  ? 'bg-gray-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Dismissed
-            </button>
-            <button
-              onClick={() => setFilter('resolved')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'resolved' 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Resolved
-            </button>
-          </div>
-          
-          <div className="relative flex-grow sm:flex-grow-0 sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+          <button
+            onClick={() => setFilter('all')}
+            className={`bg-gradient-to-br from-red-50 to-red-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+              filter === 'all' ? 'border-red-500 shadow-md' : 'border-red-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-red-600 uppercase tracking-wide">All Reports</p>
+                <p className="text-2xl font-bold text-red-900 mt-1">{statusCounts.all}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center">
+                <Flag className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setFilter('pending')}
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+              filter === 'pending' ? 'border-yellow-500 shadow-md' : 'border-yellow-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-yellow-600 uppercase tracking-wide">Pending</p>
+                <p className="text-2xl font-bold text-yellow-900 mt-1">{statusCounts.pending}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setFilter('reviewed')}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+              filter === 'reviewed' ? 'border-blue-500 shadow-md' : 'border-blue-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Reviewed</p>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{statusCounts.reviewed}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                <Eye className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setFilter('resolved')}
+            className={`bg-gradient-to-br from-green-50 to-green-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+              filter === 'resolved' ? 'border-green-500 shadow-md' : 'border-green-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Resolved</p>
+                <p className="text-2xl font-bold text-green-900 mt-1">{statusCounts.resolved}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setFilter('dismissed')}
+            className={`bg-gradient-to-br from-gray-50 to-gray-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
+              filter === 'dismissed' ? 'border-gray-600 shadow-md' : 'border-gray-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Dismissed</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{statusCounts.dismissed}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                <XCircle className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
               placeholder="Search reports..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
-        {paginatedPosts.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <Flag className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No reports found</h3>
-            <p className="text-gray-500">
-              {filter !== 'all' 
-                ? 'Try adjusting your filters or search term.' 
-                : 'No posts have been reported yet.'}
-            </p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Job Post
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Reported By
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Reason
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedPosts.map((post) => (
-                    <tr 
-                      key={post._id}
-                      ref={highlightedPostId === post._id ? highlightedRowRef : null}
-                      className={`hover:bg-gray-50 transition-all ${
-                        highlightedPostId === post._id ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' : ''
-                      }`}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            {post.jobId.images && post.jobId.images.length > 0 ? (
-                              <img
-                                className="h-10 w-10 rounded object-cover"
-                                src={post.jobId.images[0]}
-                                alt="Job"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-                                <ImageIcon className="h-5 w-5 text-gray-400" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                              {post.jobId.title}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <User className="h-5 w-5 text-gray-400 mr-2" />
-                          <div className="text-sm text-gray-900">
-                            {post.reportedBy.providerName}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{formatReason(post.reason)}</div>
-                        {post.comment && (
-                          <div className="text-xs text-gray-500 mt-1 max-w-xs truncate">
-                            {post.comment}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center text-sm text-gray-500">
-                          <Calendar className="h-4 w-4 mr-1" />
-                          {formatDate(post.reportedAt)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
-                          {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <button
-                          onClick={() => handleViewPost(post)}
-                          className="text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center mx-auto"
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          Review
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Loading reported posts...</p>
+              </div>
             </div>
+          ) : paginatedPosts.length === 0 ? (
+            <div className="bg-white p-12 text-center">
+              <div className="text-gray-400 mb-4">
+                <Flag className="h-12 w-12 mx-auto" />
+              </div>
+              <p className="text-gray-600 font-medium">No reports found</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {filter !== 'all' 
+                  ? 'Try adjusting your filters or search term.' 
+                  : 'No posts have been reported yet.'}
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block bg-white">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Job Post
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Reported By
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Reason
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {paginatedPosts.map((post) => (
+                      <tr 
+                        key={post._id}
+                        ref={highlightedPostId === post._id ? highlightedRowRef : null}
+                        onClick={() => handleViewPost(post)}
+                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${
+                          highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
+                        }`}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              {(() => {
+                                // Try different possible image sources
+                                let imageUrl = null;
+                                
+                                // Check media array
+                                if (post.jobId.media && post.jobId.media.length > 0) {
+                                  imageUrl = post.jobId.media[0].url || post.jobId.media[0];
+                                }
+                                
+                                // Check images array (fallback)
+                                if (!imageUrl && (post.jobId as any).images && (post.jobId as any).images.length > 0) {
+                                  imageUrl = (post.jobId as any).images[0];
+                                }
+                                
+                                return imageUrl ? (
+                                  <img
+                                    className="h-10 w-10 rounded object-cover"
+                                    src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
+                                    alt="Job"
+                                    onError={(e) => {
+                                      console.error('Image failed to load:', imageUrl);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                      (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="h-10 w-10 rounded bg-gray-200 flex items-center justify-center"><svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
+                                    <ImageIcon className="h-5 w-5 text-gray-400" />
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
+                                {post.jobId.title}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <User className="h-5 w-5 text-gray-400 mr-2" />
+                            <div className="text-sm text-gray-900">
+                              {post.reportedBy.providerName}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">{formatReason(post.reason)}</div>
+                          {post.comment && (
+                            <div className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                              {post.comment}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-500">
+                            <Calendar className="h-4 w-4 mr-1" />
+                            {formatDate(post.createdAt)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
+                            {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <span className="text-blue-600 font-medium inline-flex items-center">
+                            <Eye className="h-4 w-4 mr-1" />
+                            Review
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-            {totalPages > 1 && (
-              <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 flex justify-between sm:hidden">
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Next
-                    </button>
+              {/* Mobile Card View */}
+              <div className="md:hidden px-4 py-4 space-y-3">
+                {paginatedPosts.map((post) => (
+                  <div 
+                    key={post._id}
+                    ref={highlightedPostId === post._id ? highlightedRowRef : null}
+                    onClick={() => handleViewPost(post)}
+                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-all duration-300 cursor-pointer hover:shadow-md ${
+                      highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex-shrink-0 h-12 w-12">
+                        {(() => {
+                          // Try different possible image sources
+                          let imageUrl = null;
+                          
+                          // Check media array
+                          if (post.jobId.media && post.jobId.media.length > 0) {
+                            imageUrl = post.jobId.media[0].url || post.jobId.media[0];
+                          }
+                          
+                          // Check images array (fallback)
+                          if (!imageUrl && (post.jobId as any).images && (post.jobId as any).images.length > 0) {
+                            imageUrl = (post.jobId as any).images[0];
+                          }
+                          
+                          return imageUrl ? (
+                            <img
+                              className="h-12 w-12 rounded object-cover"
+                              src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
+                              alt="Job"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="h-12 w-12 rounded bg-gray-200 flex items-center justify-center"><svg class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
+                              }}
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded bg-gray-200 flex items-center justify-center">
+                              <ImageIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900 truncate">{post.jobId.title}</h3>
+                        <p className="text-xs text-gray-500">{formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}</p>
+                      </div>
+                    </div>
+
+                    <div className="mb-3 pb-3 border-b border-gray-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <User className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm text-gray-900">{post.reportedBy.providerName}</span>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900">{formatReason(post.reason)}</div>
+                      {post.comment && (
+                        <p className="text-xs text-gray-500 mt-1">{post.comment}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <Calendar className="h-3 w-3" />
+                        <span>{formatDate(post.createdAt)}</span>
+                      </div>
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
+                        {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                ))}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
+                  <div className="flex items-center justify-between w-full">
                     <div>
-                      <p className="text-sm text-gray-700">
-                        Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
+                        Showing{' '}
+                        <span className="font-medium">{startIndex + 1}</span>{' '}
+                        to{' '}
                         <span className="font-medium">
                           {Math.min(startIndex + itemsPerPage, filteredPosts.length)}
                         </span>{' '}
-                        of <span className="font-medium">{filteredPosts.length}</span> results
+                        of{' '}
+                        <span className="font-medium">{filteredPosts.length}</span> results
                       </p>
                     </div>
-                    <div>
-                      <nav className="relative z-0 inline-flex rounded-lg shadow-sm -space-x-px">
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={currentPage === 1}
-                          className="relative inline-flex items-center px-2 py-2 rounded-l-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronLeft className="h-5 w-5" />
-                        </button>
-                        
-                        {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                          const pageNumber = i + 1;
-                          return (
-                            <button
-                              key={pageNumber}
-                              onClick={() => setCurrentPage(pageNumber)}
-                              className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                currentPage === pageNumber
-                                  ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
-                                  : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                              }`}
-                            >
-                              {pageNumber}
-                            </button>
-                          );
-                        })}
-                        
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                          disabled={currentPage === totalPages}
-                          className="relative inline-flex items-center px-2 py-2 rounded-r-lg border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronRight className="h-5 w-5" />
-                        </button>
-                      </nav>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <ReviewReportModal

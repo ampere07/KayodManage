@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const { getLocationFromIP } = require('../utils/geolocation');
 
 const login = async (req, res) => {
   try {
@@ -42,12 +43,26 @@ const login = async (req, res) => {
 
     admin.lastLogin = new Date();
     await admin.save();
+    
+    // Get real IP address (handle proxy headers)
+    const realIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
+                   req.headers['x-real-ip'] || 
+                   req.ip || 
+                   req.connection.remoteAddress || 
+                   'Unknown';
+    
+    // Get location from IP
+    const location = getLocationFromIP(realIp);
       
     req.session.isAuthenticated = true;
     req.session.role = admin.userType;
     req.session.username = admin.email;
     req.session.adminId = admin._id.toString();
     req.session.userId = admin._id.toString();
+    req.session.userAgent = req.get('User-Agent') || 'Unknown';
+    req.session.ipAddress = realIp;
+    req.session.location = location;
+    req.session.sessionId = req.sessionID;
 
     res.json({
       success: true,
