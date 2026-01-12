@@ -137,6 +137,32 @@ const Activity: React.FC = () => {
     toast.success('Activity logs refreshed');
   };
 
+  const formatDescriptionWithDuration = (activity: ActivityLog) => {
+    const { description, actionType, metadata } = activity;
+    
+    if (
+      (actionType === 'user_restricted' || 
+       actionType === 'user_suspended' || 
+       actionType === 'user_banned') && 
+      metadata?.duration
+    ) {
+      const duration = metadata.duration;
+      let durationText = '';
+      
+      if (duration === -1) {
+        durationText = 'indefinitely';
+      } else if (duration === 1) {
+        durationText = 'for 1 day';
+      } else {
+        durationText = `for ${duration} days`;
+      }
+      
+      return `${description} ${durationText}`;
+    }
+    
+    return description;
+  };
+
   const handleActivityClick = useCallback(async (activity: ActivityLog) => {
     if (!activity.targetId || !activity.targetType) return;
 
@@ -303,55 +329,58 @@ const Activity: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200">
-            <p className="text-xs text-gray-600 font-medium mb-1">Total Activity Logs</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{totalActivityLogs}</p>
-            <p className="text-xs text-gray-500 mt-1">All actions</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200">
-            <p className="text-xs text-gray-600 font-medium mb-1">User Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{userActivityLogs}</p>
-            <p className="text-xs text-gray-500 mt-1">User management</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border border-green-200">
-            <p className="text-xs text-gray-600 font-medium mb-1">System Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{systemActivityLogs}</p>
-            <p className="text-xs text-gray-500 mt-1">System events</p>
-          </div>
-        </div>
-
-        <div className="flex gap-2 mb-4">
           <button
             onClick={() => setTypeFilter('all')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              typeFilter === 'all'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
+              typeFilter === 'all' ? 'border-blue-500 shadow-md' : 'border-blue-200'
             }`}
           >
-            All
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Total Activity Logs</p>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{totalActivityLogs}</p>
+                <p className="text-xs text-blue-700 mt-1">All actions</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                <ActivityIcon className="w-5 h-5 text-white" />
+              </div>
+            </div>
           </button>
+
           <button
             onClick={() => setTypeFilter('user')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              typeFilter === 'user'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
+              typeFilter === 'user' ? 'border-purple-500 shadow-md' : 'border-purple-200'
             }`}
           >
-            User
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">User Actions</p>
+                <p className="text-2xl font-bold text-purple-900 mt-1">{userActivityLogs}</p>
+                <p className="text-xs text-purple-700 mt-1">User management</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
+                <UserCheck className="w-5 h-5 text-white" />
+              </div>
+            </div>
           </button>
+
           <button
             onClick={() => setTypeFilter('system')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              typeFilter === 'system'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`bg-gradient-to-br from-green-50 to-green-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
+              typeFilter === 'system' ? 'border-green-500 shadow-md' : 'border-green-200'
             }`}
           >
-            System
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs font-medium text-green-600 uppercase tracking-wide">System Actions</p>
+                <p className="text-2xl font-bold text-green-900 mt-1">{systemActivityLogs}</p>
+                <p className="text-xs text-green-700 mt-1">System events</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+            </div>
           </button>
         </div>
 
@@ -477,7 +506,7 @@ const Activity: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900 max-w-[300px]">{activity.description}</div>
+                          <div className="text-sm text-gray-900 max-w-[300px]">{formatDescriptionWithDuration(activity)}</div>
                         </td>
                         <td className="px-6 py-4">
                           {activity.targetId && (
@@ -567,7 +596,7 @@ const Activity: React.FC = () => {
                       </span>
                     </div>
 
-                    <p className="text-sm text-gray-900 mb-3">{activity.description}</p>
+                    <p className="text-sm text-gray-900 mb-3">{formatDescriptionWithDuration(activity)}</p>
 
                     {activity.targetId && (
                       <div className="mb-3 pb-3 border-b border-gray-100">
