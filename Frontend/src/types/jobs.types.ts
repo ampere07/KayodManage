@@ -56,6 +56,10 @@ export interface Job {
   archived?: boolean;
   archiveType?: 'hidden' | 'removed';
   archivedAt?: Date | string;
+  isHidden?: boolean;
+  hiddenAt?: Date | string;
+  hiddenBy?: string;
+  deletedBy?: string;
   createdAt: Date | string;
   updatedAt: Date | string;
 }

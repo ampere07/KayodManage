@@ -111,6 +111,16 @@ class JobsService {
     );
     return response.data;
   }
+
+  /**
+   * Restore a job
+   */
+  async restoreJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.patch<{ success: boolean; message: string }>(
+      `${this.baseUrl}/${jobId}/restore`
+    );
+    return response.data;
+  }
 }
 
 // Export a singleton instance
