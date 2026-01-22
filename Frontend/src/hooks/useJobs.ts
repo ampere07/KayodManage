@@ -10,6 +10,8 @@ interface UseJobsParams {
   category?: string;
   paymentMethod?: string;
   isUrgent?: string;
+  archived?: boolean;
+  archiveType?: 'hidden' | 'removed';
 }
 
 const JOBS_QUERY_KEY = 'jobs';
@@ -42,6 +44,34 @@ export const useJobCounts = () => {
         assigned: assignedData.pagination?.total || 0,
         completed: completedData.pagination?.total || 0,
         totalValue
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+};
+
+export const useArchivedJobs = (params: UseJobsParams) => {
+  return useQuery({
+    queryKey: [JOBS_QUERY_KEY, 'archived', params],
+    queryFn: () => jobsService.getJobs({ ...params, archived: true }),
+    staleTime: 2 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+};
+
+export const useArchivedJobCounts = () => {
+  return useQuery({
+    queryKey: [JOBS_QUERY_KEY, 'archived-counts'],
+    queryFn: async () => {
+      const [hiddenData, removedData] = await Promise.all([
+        jobsService.getJobs({ limit: 1, page: 1, archived: true, archiveType: 'hidden' }),
+        jobsService.getJobs({ limit: 1, page: 1, archived: true, archiveType: 'removed' })
+      ]);
+
+      return {
+        hidden: hiddenData.pagination?.total || 0,
+        removed: removedData.pagination?.total || 0
       };
     },
     staleTime: 5 * 60 * 1000,

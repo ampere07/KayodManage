@@ -4,7 +4,9 @@ const {
   getJobDetails, 
   updateJobStatus, 
   assignJobToProvider,
-  getJobStats 
+  getJobStats,
+  hideJob,
+  unhideJob
 } = require('../controllers/jobController');
 const { adminAuth } = require('../middleware/auth');
 
@@ -21,6 +23,12 @@ router.get('/:jobId', adminAuth, getJobDetails);
 
 // Update job status
 router.patch('/:jobId/status', adminAuth, updateJobStatus);
+
+// Hide job
+router.patch('/:jobId/hide', adminAuth, hideJob);
+
+// Unhide job
+router.patch('/:jobId/unhide', adminAuth, unhideJob);
 
 // Assign job to provider
 router.patch('/:jobId/assign', adminAuth, assignJobToProvider);

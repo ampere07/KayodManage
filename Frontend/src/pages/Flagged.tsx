@@ -163,7 +163,6 @@ const Flagged: React.FC = () => {
   const statusCounts = useMemo(() => ({
     all: reportedPosts.length,
     pending: reportedPosts.filter(post => post.status === 'pending').length,
-    reviewed: reportedPosts.filter(post => post.status === 'reviewed').length,
     resolved: reportedPosts.filter(post => post.status === 'resolved').length,
     dismissed: reportedPosts.filter(post => post.status === 'dismissed').length
   }), [reportedPosts]);
@@ -191,7 +190,7 @@ const Flagged: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <button
             onClick={() => setFilter('all')}
             className={`bg-gradient-to-br from-red-50 to-red-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
@@ -222,23 +221,6 @@ const Flagged: React.FC = () => {
               </div>
               <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
-
-          <button
-            onClick={() => setFilter('reviewed')}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
-              filter === 'reviewed' ? 'border-blue-500 shadow-md' : 'border-blue-200'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Reviewed</p>
-                <p className="text-2xl font-bold text-blue-900 mt-1">{statusCounts.reviewed}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-                <Eye className="w-5 h-5 text-white" />
               </div>
             </div>
           </button>

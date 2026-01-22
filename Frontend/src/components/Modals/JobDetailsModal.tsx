@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   X,
   ChevronDown,
@@ -33,6 +34,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   job,
   onJobUpdate 
 }) => {
+  const queryClient = useQueryClient();
   const [showMediaAttachments, setShowMediaAttachments] = useState(false);
   const [showApplicants, setShowApplicants] = useState(false);
   const [applicants, setApplicants] = useState<Application[]>([]);
@@ -90,11 +92,26 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     
     try {
       await jobsService.hideJob(job._id);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       toast.success('Job hidden');
       onClose();
     } catch (error) {
       console.error('Failed to hide job:', error);
       toast.error('Failed to hide job');
+    }
+  };
+
+  const handleUnhideJob = async () => {
+    if (!job) return;
+    
+    try {
+      await jobsService.unhideJob(job._id);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Job unhidden');
+      onClose();
+    } catch (error) {
+      console.error('Failed to unhide job:', error);
+      toast.error('Failed to unhide job');
     }
   };
 
@@ -107,6 +124,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     
     try {
       await jobsService.deleteJob(job._id);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       toast.success('Job deleted');
       onClose();
     } catch (error) {
@@ -412,16 +430,26 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
         <div className="border-t border-gray-300 p-6 bg-gray-50">
           <div className="flex gap-3">
+            {(job.isHidden || job.archived) ? (
+              <button
+                onClick={handleUnhideJob}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Eye className="h-4 w-4" />
+                Unhide
+              </button>
+            ) : (
+              <button
+                onClick={handleHideJob}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <EyeOff className="h-4 w-4" />
+                Hide
+              </button>
+            )}
             <button
-              onClick={handleHideJob}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <EyeOff className="h-4 w-4" />
-              Hide
-            </button>
-            <button
-              onClick={handleDeleteJob}
-              className="flex-1 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+              disabled
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 bg-gray-100 cursor-not-allowed flex items-center justify-center gap-2 opacity-50"
             >
               <Trash2 className="h-4 w-4" />
               Delete

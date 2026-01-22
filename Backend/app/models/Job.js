@@ -204,6 +204,31 @@ const JobSchema = new Schema({
     type: String,
     trim: true,
     default: null
+  },
+  archived: {
+    type: Boolean,
+    default: false
+  },
+  archiveType: {
+    type: String,
+    enum: ['hidden', 'removed'],
+    default: null
+  },
+  archivedAt: {
+    type: Date,
+    default: null
+  },
+  isHidden: {
+    type: Boolean,
+    default: false
+  },
+  hiddenAt: {
+    type: Date,
+    default: null
+  },
+  hiddenBy: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,
@@ -251,6 +276,9 @@ JobSchema.index({ createdAt: -1 });
 JobSchema.index({ date: 1 });
 JobSchema.index({ isUrgent: 1 });
 JobSchema.index({ isDeleted: 1 });
+JobSchema.index({ archived: 1 });
+JobSchema.index({ isHidden: 1 });
+JobSchema.index({ archiveType: 1 });
 JobSchema.index({ deletedAt: -1 });
 JobSchema.index({ title: 'text', description: 'text' });
 

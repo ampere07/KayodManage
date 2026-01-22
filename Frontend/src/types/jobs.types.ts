@@ -53,6 +53,9 @@ export interface Job {
   paidAt?: Date | string;
   applicationCount: number;
   applications?: Application[];
+  archived?: boolean;
+  archiveType?: 'hidden' | 'removed';
+  archivedAt?: Date | string;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -65,6 +68,8 @@ export interface JobsQueryParams {
   category?: string;
   paymentMethod?: string;
   isUrgent?: string;
+  archived?: boolean;
+  archiveType?: 'hidden' | 'removed';
 }
 
 export interface JobsPagination {
