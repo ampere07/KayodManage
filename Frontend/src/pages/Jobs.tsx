@@ -171,7 +171,9 @@ const Jobs: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
           <div 
             onClick={() => setStatusFilter('all')}
-            className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              statusFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-blue-600">Total Jobs</span>
@@ -182,7 +184,9 @@ const Jobs: React.FC = () => {
 
           <div 
             onClick={() => setStatusFilter('open')}
-            className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border border-green-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              statusFilter === 'open' ? 'border-green-400 ring-2 ring-green-300' : 'border-green-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-green-600">Open Jobs</span>
@@ -193,7 +197,9 @@ const Jobs: React.FC = () => {
 
           <div 
             onClick={() => setStatusFilter('in_progress')}
-            className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border border-yellow-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              statusFilter === 'in_progress' ? 'border-yellow-400 ring-2 ring-yellow-300' : 'border-yellow-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-yellow-600">Assigned Jobs</span>
@@ -204,7 +210,9 @@ const Jobs: React.FC = () => {
 
           <div 
             onClick={() => setStatusFilter('completed')}
-            className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              statusFilter === 'completed' ? 'border-purple-400 ring-2 ring-purple-300' : 'border-purple-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-purple-600">Completed</span>

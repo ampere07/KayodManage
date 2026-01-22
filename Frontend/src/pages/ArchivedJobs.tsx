@@ -135,10 +135,23 @@ const ArchivedJobs: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 max-w-2xl">
+          <div 
+            onClick={() => setArchiveTypeFilter('all')}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-blue-600">All</span>
+              <Archive className="h-4 w-4 text-blue-600" />
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-blue-900">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
+          </div>
+
           <div 
             onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
-            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'
             }`}
           >
@@ -151,7 +164,7 @@ const ArchivedJobs: React.FC = () => {
 
           <div 
             onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
-            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'
             }`}
           >

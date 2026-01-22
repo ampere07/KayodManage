@@ -229,6 +229,10 @@ const JobSchema = new Schema({
   hiddenBy: {
     type: String,
     default: null
+  },
+  deletedBy: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,

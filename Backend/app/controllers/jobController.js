@@ -533,6 +533,153 @@ const unhideJob = async (req, res) => {
   }
 };
 
+const deleteJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const adminId = req.admin?.id;
+    const adminName = req.admin?.name || 'Admin';
+    
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        archived: true,
+        archiveType: 'removed',
+        archivedAt: new Date(),
+        deletedBy: adminName
+      },
+      { new: true }
+    )
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
+    
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    await Notification.create({
+      userId: job.userId._id,
+      title: 'Job Removed by Admin',
+      message: `Your job "${job.title}" has been removed by administration.`,
+      type: 'admin_action',
+      relatedId: job._id,
+      relatedModel: 'Job',
+      priority: 'high',
+      data: {
+        jobId: job._id,
+        jobTitle: job.title,
+        deletedBy: adminName,
+        deletedAt: new Date()
+      }
+    });
+    
+    if (adminId) {
+      await createActivityLog(
+        adminId,
+        'job_deleted',
+        `Deleted job "${job.title}" posted by ${job.userId.name}`,
+        {
+          targetType: 'job',
+          targetId: job._id,
+          targetModel: 'Job',
+          metadata: {
+            jobTitle: job.title,
+            userId: job.userId._id,
+            userName: job.userId.name
+          }
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('job:updated', {
+      job: { _id: job._id },
+      updateType: 'deleted'
+    });
+    
+    res.json({ success: true, message: 'Job deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting job:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to delete job', message: error.message });
+  }
+};
+
+const restoreJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const adminId = req.admin?.id;
+    const adminName = req.admin?.name || 'Admin';
+    
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        archived: false,
+        archiveType: null,
+        archivedAt: null,
+        deletedBy: null,
+        isHidden: false,
+        hiddenAt: null,
+        hiddenBy: null
+      },
+      { new: true }
+    )
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
+    
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    await Notification.create({
+      userId: job.userId._id,
+      title: 'Job Restored',
+      message: `Your job "${job.title}" has been restored by administration and is now visible.`,
+      type: 'admin_action',
+      relatedId: job._id,
+      relatedModel: 'Job',
+      priority: 'medium',
+      data: {
+        jobId: job._id,
+        jobTitle: job.title,
+        restoredBy: adminName,
+        restoredAt: new Date()
+      }
+    });
+    
+    if (adminId) {
+      await createActivityLog(
+        adminId,
+        'job_restored',
+        `Restored job "${job.title}" posted by ${job.userId.name}`,
+        {
+          targetType: 'job',
+          targetId: job._id,
+          targetModel: 'Job',
+          metadata: {
+            jobTitle: job.title,
+            userId: job.userId._id,
+            userName: job.userId.name
+          }
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('job:updated', {
+      job: { _id: job._id },
+      updateType: 'restored'
+    });
+    
+    res.json({ success: true, message: 'Job restored successfully' });
+  } catch (error) {
+    console.error('Error restoring job:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to restore job', message: error.message });
+  }
+};
+
 module.exports = { 
   getJobs, 
   getJobDetails, 
@@ -540,5 +687,7 @@ module.exports = {
   assignJobToProvider,
   getJobStats,
   hideJob,
-  unhideJob
+  unhideJob,
+  deleteJob,
+  restoreJob
 };

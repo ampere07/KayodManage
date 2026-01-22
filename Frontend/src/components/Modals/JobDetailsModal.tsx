@@ -6,7 +6,8 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
-  Trash2
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -118,18 +119,38 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const handleDeleteJob = async () => {
     if (!job) return;
     
-    if (!confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to delete this job? This will permanently archive it and remove it from the user\'s account.')) {
       return;
     }
     
     try {
       await jobsService.deleteJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job deleted');
+      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+      toast.success('Job deleted successfully');
       onClose();
     } catch (error) {
       console.error('Failed to delete job:', error);
       toast.error('Failed to delete job');
+    }
+  };
+
+  const handleRestoreJob = async () => {
+    if (!job) return;
+    
+    if (!confirm('Are you sure you want to restore this job? This will make it visible to the user again.')) {
+      return;
+    }
+    
+    try {
+      await jobsService.restoreJob(job._id);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+      toast.success('Job restored successfully');
+      onClose();
+    } catch (error) {
+      console.error('Failed to restore job:', error);
+      toast.error('Failed to restore job');
     }
   };
   
@@ -430,30 +451,59 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
         <div className="border-t border-gray-300 p-6 bg-gray-50">
           <div className="flex gap-3">
-            {(job.isHidden || job.archived) ? (
+            {job.archived && job.archiveType === 'removed' ? (
               <button
-                onClick={handleUnhideJob}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                onClick={handleRestoreJob}
+                className="flex-1 px-4 py-3 border border-green-300 rounded-lg text-sm font-medium text-green-700 bg-white hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
               >
-                <Eye className="h-4 w-4" />
-                Unhide
+                <RotateCcw className="h-4 w-4" />
+                Restore
               </button>
+            ) : job.archived && job.archiveType === 'hidden' ? (
+              <>
+                <button
+                  onClick={handleUnhideJob}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Eye className="h-4 w-4" />
+                  Unhide
+                </button>
+                <button
+                  onClick={handleDeleteJob}
+                  className="flex-1 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-white hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              </>
             ) : (
-              <button
-                onClick={handleHideJob}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-              >
-                <EyeOff className="h-4 w-4" />
-                Hide
-              </button>
+              <>
+                {job.isHidden ? (
+                  <button
+                    onClick={handleUnhideJob}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Eye className="h-4 w-4" />
+                    Unhide
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleHideJob}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <EyeOff className="h-4 w-4" />
+                    Hide
+                  </button>
+                )}
+                <button
+                  onClick={handleDeleteJob}
+                  className="flex-1 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-white hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              </>
             )}
-            <button
-              disabled
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 bg-gray-100 cursor-not-allowed flex items-center justify-center gap-2 opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </button>
           </div>
         </div>
       </div>
