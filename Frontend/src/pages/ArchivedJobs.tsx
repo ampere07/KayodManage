@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   Search,
   Eye,
-  Trash2,
+  Archive,
   CheckCircle,
   XCircle,
   Clock,
@@ -15,21 +16,16 @@ import {
   X,
   ChevronDown,
   Briefcase,
-  FolderOpen,
-  DollarSign,
+  RotateCcw,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import toast from 'react-hot-toast';
 
-// Component imports
 import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
 import { JobDetailsModal } from '../components/Modals';
 
-// Tpye imports
 import type { Job, JobsPagination } from '../types';
 
-// Utility imports
 import {
   getInitials,
   getJobStatusColor,
@@ -38,21 +34,14 @@ import {
   formatPHPCurrency
 } from '../utils';
 
-// Hooks
-import { useJobs, useJobCounts, useJobMutations } from '../hooks/useJobs';
+import { useArchivedJobs, useJobCounts, useArchivedJobCounts } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
 
-/**
- * Jobs Management Page
- * Displays and manages all jobs in the system
- */
-const Jobs: React.FC = () => {
-  // State management
+const ArchivedJobs: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
-  const [urgentFilter, setUrgentFilter] = useState('all');
+  const [archiveTypeFilter, setArchiveTypeFilter] = useState<'all' | 'hidden' | 'removed'>('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -69,15 +58,14 @@ const Jobs: React.FC = () => {
     ...(searchTerm && { search: searchTerm }),
     ...(statusFilter !== 'all' && { status: statusFilter }),
     ...(categoryFilter !== 'all' && { category: categoryFilter }),
-    ...(paymentMethodFilter !== 'all' && { paymentMethod: paymentMethodFilter }),
-    ...(urgentFilter === 'true' && { isUrgent: 'true' })
-  }), [pagination.page, pagination.limit, searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter]);
+    archived: true,
+    ...(archiveTypeFilter !== 'all' && { archiveType: archiveTypeFilter })
+  }), [pagination.page, pagination.limit, searchTerm, statusFilter, categoryFilter, archiveTypeFilter]);
 
   const queryClient = useQueryClient();
   const { socket } = useSocketContext();
-  const { data: jobsData, isLoading } = useJobs(queryParams);
-  const { data: jobCounts = { total: 0, open: 0, assigned: 0, completed: 0, totalValue: 0 } } = useJobCounts();
-  const mutations = useJobMutations();
+  const { data: jobsData, isLoading } = useArchivedJobs(queryParams);
+  const { data: archivedCounts = { hidden: 0, removed: 0 } } = useArchivedJobCounts();
 
   const jobs = jobsData?.jobs || [];
   const loading = isLoading;
@@ -115,38 +103,18 @@ const Jobs: React.FC = () => {
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter, categoryFilter, paymentMethodFilter, urgentFilter]);
+  }, [searchTerm, statusFilter, categoryFilter, archiveTypeFilter]);
 
-  const updateJobStatus = async (jobId: string, status: string) => {
-    try {
-      await mutations.updateJobStatus.mutateAsync({
-        jobId,
-        status: status as 'open' | 'in_progress' | 'completed' | 'cancelled'
-      });
-    } catch (error) {
-      console.error('Failed to update job status:', error);
-    }
-  };
-
-  /**
-   * Open job details modal
-   */
   const openJobModal = (job: Job) => {
     setSelectedJob(job);
     setJobModal({ isOpen: true });
   };
 
-  /**
-   * Close job details modal
-   */
   const closeJobModal = () => {
     setJobModal({ isOpen: false });
     setTimeout(() => setSelectedJob(null), 300);
   };
 
-  /**
-   * Format currency with zero decimals
-   */
   const formatCurrency = (amount: number) => {
     if (!amount || isNaN(amount)) {
       return '₱0';
@@ -159,76 +127,48 @@ const Jobs: React.FC = () => {
 
   return (
     <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Jobs</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">Manage and monitor all job listings</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Archived Jobs</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">View and manage archived job listings</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div 
-            onClick={() => setStatusFilter('all')}
-            className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
+            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-blue-600">Total Jobs</span>
-              <Briefcase className="h-4 w-4 text-blue-600" />
+              <span className="text-xs font-medium text-orange-600">Hidden</span>
+              <Archive className="h-4 w-4 text-orange-600" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-blue-900">{jobCounts.total.toLocaleString()}</p>
+            <p className="text-xl sm:text-2xl font-bold text-orange-900">{archivedCounts.hidden.toLocaleString()}</p>
           </div>
 
           <div 
-            onClick={() => setStatusFilter('open')}
-            className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border border-green-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
+            onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
+            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-green-600">Open Jobs</span>
-              <FolderOpen className="h-4 w-4 text-green-600" />
+              <span className="text-xs font-medium text-red-600">Removed</span>
+              <X className="h-4 w-4 text-red-600" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-green-900">{jobCounts.open.toLocaleString()}</p>
-          </div>
-
-          <div 
-            onClick={() => setStatusFilter('in_progress')}
-            className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border border-yellow-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-yellow-600">Assigned Jobs</span>
-              <Clock className="h-4 w-4 text-yellow-600" />
-            </div>
-            <p className="text-xl sm:text-2xl font-bold text-yellow-900">{jobCounts.assigned.toLocaleString()}</p>
-          </div>
-
-          <div 
-            onClick={() => setStatusFilter('completed')}
-            className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg hover:scale-105 transition-all"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-purple-600">Completed</span>
-              <CheckCircle className="h-4 w-4 text-purple-600" />
-            </div>
-            <p className="text-xl sm:text-2xl font-bold text-purple-900">{jobCounts.completed.toLocaleString()}</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-indigo-600">Total Value</span>
-              <DollarSign className="h-4 w-4 text-indigo-600" />
-            </div>
-            <p className="text-xl sm:text-2xl font-bold text-indigo-900">{formatCurrency(jobCounts.totalValue)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-red-900">{archivedCounts.removed.toLocaleString()}</p>
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
-              placeholder="Search jobs..."
+              placeholder="Search archived jobs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -249,52 +189,41 @@ const Jobs: React.FC = () => {
           </select>
 
           <select
-            value={paymentMethodFilter}
-            onChange={(e) => setPaymentMethodFilter(e.target.value)}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
           >
-            <option value="all">Payment Method</option>
-            <option value="wallet">Wallet</option>
-            <option value="cash">Cash</option>
-            <option value="xendit">Xendit</option>
-          </select>
-
-          <select
-            value={urgentFilter}
-            onChange={(e) => setUrgentFilter(e.target.value)}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
-          >
-            <option value="all">All Priority</option>
-            <option value="true">Urgent Only</option>
-            <option value="false">Normal Priority</option>
+            <option value="all">All Status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading jobs...</p>
+                <p className="text-gray-500">Loading archived jobs...</p>
               </div>
             </div>
           ) : jobs.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
-                <Search className="h-12 w-12 mx-auto" />
+                <Archive className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-medium">No jobs found</p>
-              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              <p className="text-gray-600 font-medium">No archived jobs found</p>
+              <p className="text-sm text-gray-500 mt-1">Archived jobs will appear here</p>
             </div>
           ) : (
             <>
-              {/* Desktop Table View */}
               <div className="hidden md:block bg-white">
                 <table className="min-w-full w-full table-fixed">
-                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
                       <th className="w-[25%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Job Title
@@ -312,7 +241,7 @@ const Jobs: React.FC = () => {
                         Applications
                       </th>
                       <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Posted
+                        Archived
                       </th>
                     </tr>
                   </thead>
@@ -387,11 +316,11 @@ const Jobs: React.FC = () => {
                           <td className="px-6 py-4">
                             <div className="space-y-1">
                               <p className="text-xs text-gray-500">
-                                {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                                {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                               </p>
                               <div className="flex items-center gap-1 text-xs text-gray-400">
                                 <Calendar className="h-3 w-3" />
-                                {new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                               </div>
                             </div>
                           </td>
@@ -409,7 +338,6 @@ const Jobs: React.FC = () => {
                 </table>
               </div>
 
-              {/* Mobile Card View */}
               <div className="md:hidden px-4 py-4 space-y-3">
                 {jobs.map((job) => (
                   <div key={job._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -486,9 +414,9 @@ const Jobs: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <Archive className="h-4 w-4 text-gray-400 flex-shrink-0" />
                           <p className="text-xs text-gray-500">
-                            {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                            Archived {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                           </p>
                         </div>
                       </div>
@@ -499,49 +427,19 @@ const Jobs: React.FC = () => {
                           <span className="text-gray-300">•</span>
                           <span className="text-xs text-gray-500 capitalize">{job.serviceTier} Tier</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {job.status === 'open' && (
-                            <>
-                              <button
-                                onClick={() => updateJobStatus(job._id, 'in_progress')}
-                                className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                title="Mark as in progress"
-                              >
-                                <Clock className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => updateJobStatus(job._id, 'cancelled')}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Cancel job"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          {job.status === 'in_progress' && (
-                            <button
-                              onClick={() => updateJobStatus(job._id, 'completed')}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                              title="Mark as completed"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openJobModal(job)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="View details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => openJobModal(job)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Pagination */}
               {pagination.pages > 1 && (
                 <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
                   <div className="flex items-center justify-between w-full">
@@ -583,14 +481,12 @@ const Jobs: React.FC = () => {
         </div>
       </div>
 
-      {/* Job Details Modal */}
       <JobDetailsModal
         isOpen={jobModal.isOpen}
         onClose={closeJobModal}
         job={selectedJob}
       />
 
-      {/* Image Lightbox Modal */}
       {selectedJob && selectedJob.media && selectedJob.media.length > 0 && selectedImageIndex !== null && (
         <>
           <div
@@ -656,4 +552,4 @@ const Jobs: React.FC = () => {
   );
 };
 
-export default Jobs;
+export default ArchivedJobs;

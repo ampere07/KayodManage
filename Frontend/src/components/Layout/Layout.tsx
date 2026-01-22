@@ -27,6 +27,8 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [isUsersOpen, setIsUsersOpen] = useState(false);
+  const [isJobsOpen, setIsJobsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const location = useLocation();
   const { logout, user } = useAuth();
 
@@ -37,8 +39,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   };
 
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard' },
-    { name: 'Jobs', href: '/jobs', icon: Briefcase, permission: 'jobs' },
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard' }
   ];
 
   const userItems = [
@@ -48,6 +49,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'Flagged & Suspended', href: '/users/flagged' }
   ];
 
+  const jobItems = [
+    { name: 'All Jobs', href: '/jobs' },
+    { name: 'Archived', href: '/jobs/archived' }
+  ];
+
   const transactionItems = [
     { name: 'Fee Records', href: '/transactions/fee-records' },
     { name: 'Top-up', href: '/transactions/top-up' },
@@ -55,12 +61,16 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'Refund', href: '/transactions/refund' }
   ];
 
+  const settingsItems = [
+    { name: 'Management', href: '/settings/management' },
+    { name: 'Configuration', href: '/settings/configuration' }
+  ];
+
   const bottomNavigation = [
     { name: 'Verifications', href: '/verifications', icon: Shield, permission: 'verifications' },
     { name: 'Support', href: '/support', icon: MessageSquare, permission: 'support' },
     { name: 'Activity', href: '/activity', icon: Activity, permission: 'activity' },
-    { name: 'Flagged', href: '/flagged', icon: AlertTriangle, permission: 'flagged' },
-    { name: 'Settings', href: '/settings', icon: Settings, permission: 'settings' },
+    { name: 'Flagged', href: '/flagged', icon: AlertTriangle, permission: 'flagged' }
   ];
 
   React.useEffect(() => {
@@ -70,6 +80,12 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     if (location.pathname.startsWith('/users')) {
       setIsUsersOpen(true);
     }
+    if (location.pathname.startsWith('/jobs')) {
+      setIsJobsOpen(true);
+    }
+    if (location.pathname.startsWith('/settings')) {
+      setIsSettingsOpen(true);
+    }
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -78,6 +94,8 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   const isTransactionPage = location.pathname.startsWith('/transactions');
   const isUserPage = location.pathname.startsWith('/users');
+  const isJobPage = location.pathname.startsWith('/jobs');
+  const isSettingsPage = location.pathname.startsWith('/settings');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -130,6 +148,96 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsJobsOpen(!isJobsOpen)}
+                  className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isJobPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Briefcase className={`mr-3 h-5 w-5 ${isJobPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Jobs</span>
+                  </div>
+                  {isJobsOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+                
+                {isJobsOpen && (
+                  <div className="ml-10 mt-1 space-y-1">
+                    {jobItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => hasPermission('jobs') && setIsJobsOpen(!isJobsOpen)}
+                  disabled={!hasPermission('jobs')}
+                  className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${
+                    !hasPermission('jobs')
+                      ? 'opacity-40 cursor-not-allowed text-gray-400'
+                      : isJobPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Briefcase className={`mr-4 h-6 w-6 ${!hasPermission('jobs') ? 'text-gray-300' : isJobPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Jobs</span>
+                  </div>
+                  {isJobsOpen ? (
+                    <ChevronDown className="h-5 w-5" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5" />
+                  )}
+                </button>
+                
+                {isJobsOpen && hasPermission('jobs') && (
+                  <div className="ml-11 mt-1 space-y-1">
+                    {jobItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                          onClick={() => setSidebarOpen(false)}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <button
@@ -227,22 +335,78 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
               {bottomNavigation.map((item) => {
                 const isActive = location.pathname === item.href;
+                const allowed = hasPermission(item.permission);
                 return (
                   <Link
                     key={item.name}
                     to={item.href}
+                    onClick={(e) => {
+                      if (!allowed) {
+                        e.preventDefault();
+                      } else {
+                        setSidebarOpen(false);
+                      }
+                    }}
                     className={`group flex items-center px-3 py-3 text-base font-medium rounded-md transition-colors ${
-                      isActive
+                      !allowed
+                        ? 'opacity-40 cursor-not-allowed text-gray-400'
+                        : isActive
                         ? 'bg-blue-100 text-blue-900'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
-                    onClick={() => setSidebarOpen(false)}
                   >
-                    <item.icon className={`mr-4 h-6 w-6 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <item.icon className={`mr-4 h-6 w-6 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
                     {item.name}
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => hasPermission('settings') && setIsSettingsOpen(!isSettingsOpen)}
+                  disabled={!hasPermission('settings')}
+                  className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${
+                    !hasPermission('settings')
+                      ? 'opacity-40 cursor-not-allowed text-gray-400'
+                      : isSettingsPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Settings className={`mr-4 h-6 w-6 ${!hasPermission('settings') ? 'text-gray-300' : isSettingsPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Settings</span>
+                  </div>
+                  {isSettingsOpen ? (
+                    <ChevronDown className="h-5 w-5" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5" />
+                  )}
+                </button>
+                
+                {isSettingsOpen && hasPermission('settings') && (
+                  <div className="ml-11 mt-1 space-y-1">
+                    {settingsItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                          onClick={() => setSidebarOpen(false)}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
           
@@ -290,6 +454,49 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsJobsOpen(!isJobsOpen)}
+                  className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isJobPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Briefcase className={`mr-3 h-5 w-5 ${isJobPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Jobs</span>
+                  </div>
+                  {isJobsOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+                
+                {isJobsOpen && (
+                  <div className="ml-10 mt-1 space-y-1">
+                    {jobItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <button
@@ -402,6 +609,49 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   </Link>
                 );
               })}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                  className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isSettingsPage
+                      ? 'bg-blue-100 text-blue-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Settings className={`mr-3 h-5 w-5 ${isSettingsPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <span>Settings</span>
+                  </div>
+                  {isSettingsOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+                
+                {isSettingsOpen && (
+                  <div className="ml-10 mt-1 space-y-1">
+                    {settingsItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        >
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
           

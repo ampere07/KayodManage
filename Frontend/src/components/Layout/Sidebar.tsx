@@ -19,8 +19,11 @@ import { useAuth } from '../../context/AuthContext';
 const Sidebar: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
+  // Force rebuild
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [isUsersOpen, setIsUsersOpen] = useState(false);
+  const [isJobsOpen, setIsJobsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (location.pathname.startsWith('/transactions')) {
@@ -28,6 +31,12 @@ const Sidebar: React.FC = () => {
     }
     if (location.pathname.startsWith('/users')) {
       setIsUsersOpen(true);
+    }
+    if (location.pathname.startsWith('/jobs')) {
+      setIsJobsOpen(true);
+    }
+    if (location.pathname.startsWith('/settings')) {
+      setIsSettingsOpen(true);
     }
   }, [location.pathname]);
 
@@ -38,8 +47,7 @@ const Sidebar: React.FC = () => {
   };
 
   const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard' },
-    { to: '/jobs', icon: Briefcase, label: 'Jobs', permission: 'jobs' },
+    { to: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard' }
   ];
 
   const userItems = [
@@ -49,6 +57,11 @@ const Sidebar: React.FC = () => {
     { to: '/users/flagged', label: 'Flagged & Suspended' }
   ];
 
+  const jobItems = [
+    { to: '/jobs', label: 'All Jobs' },
+    { to: '/jobs/archived', label: 'Archived' }
+  ];
+
   const transactionItems = [
     { to: '/transactions/fee-records', label: 'Fee Records' },
     { to: '/transactions/top-up', label: 'Top-up' },
@@ -56,16 +69,22 @@ const Sidebar: React.FC = () => {
     { to: '/transactions/refund', label: 'Refund' }
   ];
 
+  const settingsItems = [
+    { to: '/settings/management', label: 'Management' },
+    { to: '/settings/configuration', label: 'Configuration' }
+  ];
+
   const bottomNavItems = [
     { to: '/verifications', icon: Shield, label: 'Verifications', permission: 'verifications' },
     { to: '/support', icon: MessageCircleQuestion, label: 'Support', permission: 'support' },
     { to: '/activity', icon: Activity, label: 'Activity', permission: 'activity' },
-    { to: '/flagged', icon: AlertTriangle, label: 'Flagged', permission: 'flagged' },
-    { to: '/settings', icon: Settings, label: 'Settings', permission: 'settings' }
+    { to: '/flagged', icon: AlertTriangle, label: 'Flagged', permission: 'flagged' }
   ];
 
   const isTransactionPage = location.pathname.startsWith('/transactions');
   const isUserPage = location.pathname.startsWith('/users');
+  const isJobPage = location.pathname.startsWith('/jobs');
+  const isSettingsPage = location.pathname.startsWith('/settings');
 
   const handleTransactionClick = () => {
     setIsTransactionsOpen(prev => !prev);
@@ -73,6 +92,14 @@ const Sidebar: React.FC = () => {
 
   const handleUsersClick = () => {
     setIsUsersOpen(prev => !prev);
+  };
+
+  const handleJobsClick = () => {
+    setIsJobsOpen(prev => !prev);
+  };
+
+  const handleSettingsClick = () => {
+    setIsSettingsOpen(prev => !prev);
   };
 
   const handleNavClick = (e: React.MouseEvent, hasPermission: boolean) => {
@@ -114,6 +141,60 @@ const Sidebar: React.FC = () => {
               </li>
             );
           })}
+          
+          <li>
+            <button
+              type="button"
+              onClick={handleJobsClick}
+              disabled={!hasPermission('jobs')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
+                !hasPermission('jobs')
+                  ? 'opacity-40 cursor-not-allowed text-gray-500'
+                  : isJobPage
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Briefcase size={20} />
+                <span>Jobs</span>
+              </div>
+              {isJobsOpen ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )}
+            </button>
+            
+            {isJobsOpen && (
+              <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
+                {jobItems.map((item) => {
+                  const allowed = hasPermission('jobs');
+                  return (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/jobs'}
+                        onClick={(e) => handleNavClick(e, allowed)}
+                        className={({ isActive }) => {
+                          if (!allowed) {
+                            return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
+                          }
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
+                            isActive
+                              ? 'bg-blue-500 text-white'
+                              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                          }`;
+                        }}
+                      >
+                        {item.label}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
           
           <li>
             <button
@@ -250,6 +331,59 @@ const Sidebar: React.FC = () => {
               </li>
             );
           })}
+          
+          <li>
+            <button
+              type="button"
+              onClick={handleSettingsClick}
+              disabled={!hasPermission('settings')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
+                !hasPermission('settings')
+                  ? 'opacity-40 cursor-not-allowed text-gray-500'
+                  : isSettingsPage
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Settings size={20} />
+                <span>Settings</span>
+              </div>
+              {isSettingsOpen ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )}
+            </button>
+            
+            {isSettingsOpen && (
+              <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
+                {settingsItems.map((item) => {
+                  const allowed = hasPermission('settings');
+                  return (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        onClick={(e) => handleNavClick(e, allowed)}
+                        className={({ isActive }) => {
+                          if (!allowed) {
+                            return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
+                          }
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
+                            isActive
+                              ? 'bg-blue-500 text-white'
+                              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                          }`;
+                        }}
+                      >
+                        {item.label}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
         </ul>
       </nav>
       

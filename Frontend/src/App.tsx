@@ -10,12 +10,15 @@ import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Jobs from './pages/Jobs';
+import ArchivedJobs from './pages/ArchivedJobs';
 import Transactions from './pages/Transactions';
 import Verifications from './pages/Verifications';
 import Activity from './pages/Activity';
 import Flagged from './pages/Flagged';
 import Support from './pages/Support';
 import Settings from './pages/Settings';
+import SettingsManagement from './pages/SettingsManagement';
+import SettingsConfiguration from './pages/SettingsConfiguration';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 
 const queryClient = new QueryClient({
@@ -68,6 +71,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/users/providers" element={<ProtectedRoute><Layout title="Service Providers"><Users /></Layout></ProtectedRoute>} />
         <Route path="/users/flagged" element={<ProtectedRoute><Layout title="Flagged & Suspended"><Users /></Layout></ProtectedRoute>} />
         <Route path="/jobs" element={<ProtectedRoute><Layout title="Jobs"><Jobs /></Layout></ProtectedRoute>} />
+        <Route path="/jobs/archived" element={<ProtectedRoute><Layout title="Archived Jobs"><ArchivedJobs /></Layout></ProtectedRoute>} />
         <Route path="/transactions/fee-records" element={<ProtectedRoute><Layout title="Fee Records"><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/transactions/top-up" element={<ProtectedRoute><Layout title="Top-up Transactions"><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/transactions/cashout" element={<ProtectedRoute><Layout title="Cashout Transactions"><Transactions /></Layout></ProtectedRoute>} />
@@ -76,7 +80,9 @@ const AppRoutes: React.FC = () => {
         <Route path="/activity" element={<ProtectedRoute><Layout title="Activity Feed"><Activity /></Layout></ProtectedRoute>} />
         <Route path="/flagged" element={<ProtectedRoute><Layout title="Flagged"><Flagged /></Layout></ProtectedRoute>} />
         <Route path="/support" element={<ProtectedRoute><Layout title="Support Center"><Support /></Layout></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute><Layout title="Settings"><Settings /></Layout></ProtectedRoute>} />
+        <Route path="/settings" element={<Navigate to="/settings/management" replace />} />
+        <Route path="/settings/management" element={<ProtectedRoute><Layout title="Admin Management"><SettingsManagement /></Layout></ProtectedRoute>} />
+        <Route path="/settings/configuration" element={<ProtectedRoute><Layout title="System Configuration"><SettingsConfiguration /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

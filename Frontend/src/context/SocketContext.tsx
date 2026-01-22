@@ -45,6 +45,9 @@ interface SocketContextType {
   // Alerts data
   alerts: Alert[];
   
+  // Socket instance
+  socket: Socket | null;
+  
   // Manual refresh functions
   refreshDashboard: () => void;
   refreshAlerts: () => void;
@@ -166,6 +169,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     isConnected,
     dashboardStats,
     alerts,
+    socket,
     refreshDashboard,
     refreshAlerts
   };

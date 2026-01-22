@@ -1,6 +1,8 @@
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
+const { createActivityLog } = require('./activityLogController');
 
 const getJobs = async (req, res) => {
   try {
@@ -15,6 +17,19 @@ const getJobs = async (req, res) => {
     const isUrgent = req.query.isUrgent;
     
     let query = {};
+    
+    // Filter archived jobs
+    const archived = req.query.archived === 'true';
+    const archiveType = req.query.archiveType;
+    
+    if (archived) {
+      query.archived = true;
+      if (archiveType && (archiveType === 'hidden' || archiveType === 'removed')) {
+        query.archiveType = archiveType;
+      }
+    } else {
+      query.archived = { $ne: true };
+    }
     
     if (search) {
       query.$or = [
@@ -321,10 +336,209 @@ const getJobStats = async (req, res) => {
   }
 };
 
+const hideJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { reason } = req.body;
+    const adminId = req.admin?.id;
+    const adminName = req.admin?.name || 'Admin';
+    
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        archived: true,
+        archiveType: 'hidden',
+        archivedAt: new Date(),
+        isHidden: true,
+        hiddenAt: new Date(),
+        hiddenBy: adminName
+      },
+      { new: true }
+    )
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
+    
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    const notificationMessage = reason 
+      ? `Your job "${job.title}" has been hidden by admin. Reason: ${reason}`
+      : `Your job "${job.title}" has been hidden by admin for review.`;
+    
+    await Notification.create({
+      userId: job.userId._id,
+      title: 'Job Hidden by Admin',
+      message: notificationMessage,
+      type: 'admin_action',
+      relatedId: job._id,
+      relatedModel: 'Job',
+      priority: 'high',
+      data: {
+        jobId: job._id,
+        jobTitle: job.title,
+        hiddenBy: adminName,
+        hiddenAt: new Date(),
+        reason: reason || 'No reason provided'
+      }
+    });
+    
+    if (adminId) {
+      await createActivityLog(
+        adminId,
+        'job_hidden',
+        `Hidden job "${job.title}" posted by ${job.userId.name}${reason ? `. Reason: ${reason}` : ''}`,
+        {
+          targetType: 'job',
+          targetId: job._id,
+          targetModel: 'Job',
+          metadata: {
+            jobTitle: job.title,
+            userId: job.userId._id,
+            userName: job.userId.name,
+            reason: reason || 'No reason provided'
+          }
+        }
+      );
+    }
+    
+    const applicationCount = await Application.countDocuments({ job: jobId });
+    
+    let locationDisplay = 'Location not specified';
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', jobId, err);
+    }
+    
+    const jobWithData = {
+      ...job,
+      user: job.userId,
+      assignedTo: job.assignedToId,
+      applicationCount,
+      locationDisplay
+    };
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('job:updated', {
+      job: jobWithData,
+      updateType: 'hidden'
+    });
+    
+    res.json(jobWithData);
+  } catch (error) {
+    console.error('Error hiding job:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to hide job', message: error.message });
+  }
+};
+
+const unhideJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const adminId = req.admin?.id;
+    const adminName = req.admin?.name || 'Admin';
+    
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        archived: false,
+        archiveType: null,
+        archivedAt: null,
+        isHidden: false,
+        hiddenAt: null,
+        hiddenBy: null
+      },
+      { new: true }
+    )
+    .populate('userId', 'name email userType profileImage')
+    .populate('assignedToId', 'name email userType profileImage')
+    .lean();
+    
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    await Notification.create({
+      userId: job.userId._id,
+      title: 'Job Restored',
+      message: `Your job "${job.title}" has been restored and is now visible.`,
+      type: 'admin_action',
+      relatedId: job._id,
+      relatedModel: 'Job',
+      priority: 'medium',
+      data: {
+        jobId: job._id,
+        jobTitle: job.title,
+        restoredBy: adminName,
+        restoredAt: new Date()
+      }
+    });
+    
+    if (adminId) {
+      await createActivityLog(
+        adminId,
+        'job_unhidden',
+        `Restored job "${job.title}" posted by ${job.userId.name}`,
+        {
+          targetType: 'job',
+          targetId: job._id,
+          targetModel: 'Job',
+          metadata: {
+            jobTitle: job.title,
+            userId: job.userId._id,
+            userName: job.userId.name
+          }
+        }
+      );
+    }
+    
+    const applicationCount = await Application.countDocuments({ job: jobId });
+    
+    let locationDisplay = 'Location not specified';
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', jobId, err);
+    }
+    
+    const jobWithData = {
+      ...job,
+      user: job.userId,
+      assignedTo: job.assignedToId,
+      applicationCount,
+      locationDisplay
+    };
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('job:updated', {
+      job: jobWithData,
+      updateType: 'unhidden'
+    });
+    
+    res.json(jobWithData);
+  } catch (error) {
+    console.error('Error unhiding job:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to unhide job', message: error.message });
+  }
+};
+
 module.exports = { 
   getJobs, 
   getJobDetails, 
   updateJobStatus, 
   assignJobToProvider,
-  getJobStats 
+  getJobStats,
+  hideJob,
+  unhideJob
 };

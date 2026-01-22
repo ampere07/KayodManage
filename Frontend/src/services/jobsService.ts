@@ -77,6 +77,16 @@ class JobsService {
   }
 
   /**
+   * Unhide a job
+   */
+  async unhideJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.patch<{ success: boolean; message: string }>(
+      `${this.baseUrl}/${jobId}/unhide`
+    );
+    return response.data;
+  }
+
+  /**
    * Accept job application
    */
   async acceptApplication(

@@ -19,7 +19,9 @@ const activityLogSchema = new mongoose.Schema({
       'transaction_failed',
       'support_closed',
       'support_reopened',
-      'admin_login'
+      'admin_login',
+      'job_hidden',
+      'job_unhidden'
     ],
     required: true
   },
@@ -29,7 +31,7 @@ const activityLogSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ['user', 'transaction', 'support', 'verification'],
+    enum: ['user', 'transaction', 'support', 'verification', 'job'],
     required: false
   },
   targetId: {
@@ -39,7 +41,7 @@ const activityLogSchema = new mongoose.Schema({
   },
   targetModel: {
     type: String,
-    enum: ['User', 'Transaction', 'ChatSupport', 'CredentialVerification'],
+    enum: ['User', 'Transaction', 'ChatSupport', 'CredentialVerification', 'Job'],
     required: false
   },
   metadata: {
