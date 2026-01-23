@@ -172,19 +172,19 @@ const Users: React.FC = () => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
   };
 
-  const handleUserAction = async (actionType: string, duration?: number) => {
+  const handleUserAction = async (actionType: string, duration?: number, reason?: string) => {
     if (!selectedUser) return;
     
     try {
       switch (actionType) {
         case 'ban':
-          await mutations.banUser.mutateAsync({ userId: selectedUser._id, reason: 'Banned by admin', duration });
+          await mutations.banUser.mutateAsync({ userId: selectedUser._id, reason: reason || 'Banned by admin', duration });
           break;
         case 'suspend':
-          await mutations.suspendUser.mutateAsync({ userId: selectedUser._id, reason: 'Suspended by admin', duration: duration || 7 });
+          await mutations.suspendUser.mutateAsync({ userId: selectedUser._id, reason: reason || 'Suspended by admin', duration: duration || 7 });
           break;
         case 'restrict':
-          await mutations.restrictUser.mutateAsync({ userId: selectedUser._id, duration });
+          await mutations.restrictUser.mutateAsync({ userId: selectedUser._id, duration, reason: reason || 'Restricted by admin' });
           break;
         case 'unrestrict':
           await mutations.unrestrictUser.mutateAsync(selectedUser._id);
@@ -217,9 +217,9 @@ const Users: React.FC = () => {
     setTimeout(() => setSelectedUser(null), 300);
   };
 
-  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => {
+  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number, reason?: string) => {
     setSelectedUser(user);
-    await handleUserAction(actionType, duration);
+    await handleUserAction(actionType, duration, reason);
   };
 
   const handleCounterClick = (type: 'all' | 'customers' | 'providers' | 'suspended' | 'restricted' | 'banned') => {

@@ -139,8 +139,8 @@ export const useUserMutations = () => {
   });
 
   const restrictUser = useMutation({
-    mutationFn: ({ userId, duration }: { userId: string; duration?: number }) =>
-      usersService.restrictUser(userId, duration),
+    mutationFn: ({ userId, duration, reason }: { userId: string; duration?: number; reason?: string }) =>
+      usersService.restrictUser(userId, duration, reason),
     onSuccess: () => {
       invalidateUsers();
       toast.success('User restricted successfully');

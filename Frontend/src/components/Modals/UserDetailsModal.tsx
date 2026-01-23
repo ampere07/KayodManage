@@ -25,7 +25,7 @@ interface UserDetailsModalProps {
   onClose: () => void;
   user: User | null;
   onVerify: (userId: string, isVerified: boolean) => void;
-  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => void;
+  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number, reason?: string) => void;
 }
 
 const UserDetailsModal: React.FC<UserDetailsModalProps> = ({ 
@@ -41,6 +41,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   const [durationDays, setDurationDays] = useState<number>(0);
   const [durationHours, setDurationHours] = useState<number>(0);
   const [durationMinutes, setDurationMinutes] = useState<number>(0);
+  const [reason, setReason] = useState<string>('');
   const [penaltyData, setPenaltyData] = useState<PenaltyData>({
     totalPenalties: 0,
     activeWarnings: 0,
@@ -106,6 +107,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       setDurationDays(0);
       setDurationHours(0);
       setDurationMinutes(0);
+      setReason('');
       setRestrictedByAdmin(null);
     }
   }, [isOpen, user]);
@@ -162,29 +164,29 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const handleConfirmYes = () => {
     if (confirmingAction && user) {
-      // Calculate total duration in days
       const totalDays = durationDays + (durationHours / 24) + (durationMinutes / (24 * 60));
       
-      console.log('Restriction details:', {
-        action: confirmingAction,
-        durationDays,
-        durationHours,
-        durationMinutes,
-        totalDays
-      });
-      
-      // Validate that duration is provided for restrictions
       if (confirmingAction !== 'unrestrict' && totalDays <= 0) {
         toast.error('Please enter a duration for the restriction');
         return;
       }
+
+      if (confirmingAction !== 'unrestrict' && !reason.trim()) {
+        toast.error('Please provide a reason for the restriction');
+        return;
+      }
       
-      console.log('Calling onAction with duration:', totalDays);
-      onAction(user, confirmingAction, confirmingAction === 'unrestrict' ? undefined : totalDays);
+      onAction(
+        user, 
+        confirmingAction, 
+        confirmingAction === 'unrestrict' ? undefined : totalDays,
+        confirmingAction === 'unrestrict' ? undefined : reason
+      );
       setConfirmingAction(null);
       setDurationDays(0);
       setDurationHours(0);
       setDurationMinutes(0);
+      setReason('');
       setTimeout(() => {
         fetchPenaltyData();
       }, 1000);
@@ -196,14 +198,14 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     setDurationDays(0);
     setDurationHours(0);
     setDurationMinutes(0);
+    setReason('');
   };
 
-  const getActionText = () => {
+  const getActionLabel = () => {
     switch (confirmingAction) {
-      case 'ban': return 'ban this user';
-      case 'suspend': return 'suspend this user';
-      case 'restrict': return 'restrict this user';
-      case 'unrestrict': return 'remove restrictions from this user';
+      case 'ban': return 'Ban';
+      case 'suspend': return 'Suspend';
+      case 'restrict': return 'Restrict';
       default: return '';
     }
   };
@@ -453,63 +455,114 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
             {confirmingAction ? (
               <>
                 {confirmingAction !== 'unrestrict' && (
-                  <div className="w-full mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Restrict for:</label>
-                    <div className="flex gap-3 mb-4">
-                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
-                        <div className="text-xs text-gray-600 mb-1">Days</div>
-                        <input
-                          type="number"
-                          min="0"
-                          value={durationDays}
-                          onChange={(e) => setDurationDays(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
-                          placeholder="1"
-                        />
+                  <div className="w-full mb-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-3">{getActionLabel()} for:</label>
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Days Input */}
+                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
+                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Days</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={durationDays}
+                            onFocus={(e) => {
+                              if (parseInt(e.target.value) === 0) {
+                                setDurationDays(0);
+                                e.target.select();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              if (value === '') {
+                                setDurationDays(0);
+                              } else {
+                                setDurationDays(parseInt(value));
+                              }
+                            }}
+                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
+                          />
+                        </div>
+                        
+                        {/* Hours Input */}
+                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
+                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Hours</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={durationHours}
+                            onFocus={(e) => {
+                              if (parseInt(e.target.value) === 0) {
+                                setDurationHours(0);
+                                e.target.select();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              if (value === '') {
+                                setDurationHours(0);
+                              } else {
+                                const num = parseInt(value);
+                                setDurationHours(Math.min(23, num));
+                              }
+                            }}
+                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
+                          />
+                        </div>
+                        
+                        {/* Minutes Input */}
+                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
+                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Minutes</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={durationMinutes}
+                            onFocus={(e) => {
+                              if (parseInt(e.target.value) === 0) {
+                                setDurationMinutes(0);
+                                e.target.select();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              if (value === '') {
+                                setDurationMinutes(0);
+                              } else {
+                                const num = parseInt(value);
+                                setDurationMinutes(Math.min(59, num));
+                              }
+                            }}
+                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
+                          />
+                        </div>
                       </div>
-                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
-                        <div className="text-xs text-gray-600 mb-1">Hours</div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="23"
-                          value={durationHours}
-                          onChange={(e) => setDurationHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
-                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
-                          placeholder="1"
-                        />
-                      </div>
-                      <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-2">
-                        <div className="text-xs text-gray-600 mb-1">Minutes</div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={durationMinutes}
-                          onChange={(e) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                          className="w-full text-xl font-semibold text-center bg-transparent border-none focus:outline-none focus:ring-0 p-0"
-                          placeholder="1"
-                        />
-                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Reason:</label>
+                      <textarea
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        rows={3}
+                        placeholder="Enter the reason for this restriction..."
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none text-sm"
+                      />
                     </div>
                   </div>
                 )}
-                <div className="w-full flex items-center gap-3">
-                  <p className="text-sm font-medium text-gray-700 whitespace-nowrap">Confirm Restriction:</p>
-                  <div className="flex gap-2 flex-1">
-                    <button
-                      onClick={handleConfirmYes}
-                      className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    >
-                      confirm
-                    </button>
-                    <button
-                      onClick={handleConfirmNo}
-                      className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                <div className="w-full flex gap-3">
+                  <button
+                    onClick={handleConfirmNo}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmYes}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                  >
+                    Confirm
+                  </button>
                 </div>
               </>
             ) : (
