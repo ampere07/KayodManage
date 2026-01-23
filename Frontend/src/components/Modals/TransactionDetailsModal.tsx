@@ -45,7 +45,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           <div className="h-full flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+                <p className="text-xs text-gray-500 mt-1"><span className="font-semibold">Transaction ID:</span> <span className="font-mono">{transaction._id}</span></p>
+              </div>
               <button
                 onClick={onClose}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
@@ -55,14 +58,34 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              <div className="p-6">
+                {/* Financial Information */}
+                <div className="px-6 pt-6 pb-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-sm text-gray-600 mb-2">Kayod Platform Fee</p>
+                      <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-gray-600 mb-2">Job Fee Amount</p>
+                      <p className="text-3xl font-bold text-gray-900">
+                        {formatCurrency(transaction.job?.budget || transaction.jobId?.budget || 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200"></div>
+
                 {/* Customer & Provider Information */}
-                <div className="grid grid-cols-2 gap-4 pb-6 border-b border-gray-200 relative">
+                <div className="relative">
                   {/* Vertical separator line */}
                   <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200 -ml-px"></div>
-
-                  {/* Customer Information */}
-                  <div className="pr-4">
+                  
+                  <div className="px-6 py-6">
+                    <div className="grid grid-cols-2 gap-4">
+                    {/* Customer Information */}
+                    <div className="pr-4">
                     <h4 className="text-sm font-bold text-gray-900 mb-4">Customer Information:</h4>
 
                     <div className="flex items-center gap-3 mb-4">
@@ -176,10 +199,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       </div>
                     </div>
                   </div>
+                    </div>
+                  </div>
                 </div>
 
+                <div className="border-t border-gray-200"></div>
+
                 {/* Job Information */}
-                <div className="py-6 border-b border-gray-200">
+                <div className="px-6 py-6">
                   <h4 className="text-sm font-bold text-gray-900 mb-4">Job Information:</h4>
 
                   <div className="space-y-3 text-sm">
@@ -231,29 +258,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     </div>
                   </div>
                 </div>
-
-                {/* Financial Information */}
-                <div className="pt-6">
-                  <div className="space-y-3">
-                    <div className="flex items-baseline gap-2">
-                      <p className="text-sm text-gray-600 min-w-[140px]">Kayod Fee Amount:</p>
-                      <p className="text-2xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
-                    </div>
-
-                    <div className="flex items-baseline gap-2">
-                      <p className="text-sm text-gray-600 min-w-[140px]">Job Fee Amount:</p>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {formatCurrency(transaction.job?.budget || transaction.jobId?.budget || 0)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-sm text-gray-600 min-w-[140px]">Transaction ID:</p>
-                      <p className="text-xs text-gray-900 font-mono break-all flex-1">{transaction._id}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="p-6 border-t border-gray-200 bg-gray-50">
@@ -263,7 +267,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               >
                 Close
               </button>
-            </div>
+              </div>
           </div>
         </div>
       </>
@@ -283,7 +287,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         <div className="h-full flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+              <p className="text-xs text-gray-500 mt-1"><span className="font-semibold">Transaction ID:</span> <span className="font-mono">{transaction._id}</span></p>
+            </div>
             <button
               onClick={onClose}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
@@ -293,9 +300,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <div className="p-6">
               {/* Customer & Provider Information */}
-              <div className="grid grid-cols-2 gap-8 pb-6 border-b border-gray-200">
+              <div className="px-6 pt-6 pb-6">
+                <div className="grid grid-cols-2 gap-8">
                 {/* Customer Information */}
                 <div>
                   <h4 className="text-base font-bold text-gray-900 mb-6">Customer Information:</h4>
@@ -375,8 +382,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 </div>
               </div>
 
+              <div className="border-t border-gray-200"></div>
+
               {/* Job Information */}
-              <div className="py-6 border-b border-gray-200">
+              <div className="px-6 py-6">
                 <h4 className="text-sm font-bold text-gray-900 mb-4">Job Information:</h4>
 
                 <div className="space-y-3 text-sm">
@@ -422,17 +431,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 </div>
               </div>
 
+              <div className="border-t border-gray-200"></div>
+
               {/* Financial Information */}
-              <div className="pt-6">
+              <div className="px-6 pt-6">
                 <div className="space-y-4">
                   <div className="flex items-baseline justify-between">
                     <p className="text-sm font-semibold text-gray-700">Job Fee Amount:</p>
                     <p className="text-2xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
-                  </div>
-
-                  <div className="flex items-baseline justify-between pt-2">
-                    <p className="text-sm font-semibold text-gray-700">Transaction ID:</p>
-                    <p className="text-xs text-gray-600 font-mono break-all max-w-[280px] text-right">{transaction._id}</p>
                   </div>
                 </div>
               </div>
