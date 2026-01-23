@@ -56,11 +56,11 @@ const getUserDetails = async (req, res) => {
 const restrictUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { restricted, duration } = req.body;
+    const { restricted, duration, reason } = req.body;
     
     let user;
     if (restricted) {
-      user = await userService.restrictUser(userId, req.session.adminId, duration);
+      user = await userService.restrictUser(userId, req.session.adminId, duration, reason);
     } else {
       user = await userService.unrestrictUser(userId);
     }
@@ -80,6 +80,7 @@ const restrictUser = async (req, res) => {
           targetType: 'user',
           targetId: userId,
           targetModel: 'User',
+          metadata: reason ? { reason } : undefined,
           ipAddress: req.ip
         }
       );

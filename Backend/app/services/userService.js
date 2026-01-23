@@ -59,10 +59,10 @@ class UserService {
   /**
    * Restrict a user
    */
-  async restrictUser(userId, restrictedBy, duration) {
+  async restrictUser(userId, restrictedBy, duration, reason) {
     const restrictionDetails = {
       type: 'restricted',
-      reason: 'Account restricted by admin',
+      reason: reason && reason.trim() ? reason.trim() : 'Account restricted by admin',
       restrictedAt: new Date(),
       appealAllowed: true
     };

@@ -49,17 +49,14 @@ class UsersService {
   /**
    * Restrict a user
    */
-  async restrictUser(userId: string, duration?: number): Promise<UserActionResponse> {
-    console.log('usersService.restrictUser called:', { userId, duration });
-    const payload = { restricted: true, duration };
-    console.log('Sending payload:', payload);
+  async restrictUser(userId: string, duration?: number, reason?: string): Promise<UserActionResponse> {
+    const payload = { restricted: true, duration, reason };
     
     const response = await apiClient.patch<UserActionResponse>(
       `${this.baseUrl}/${userId}/restrict`,
       payload
     );
     
-    console.log('restrictUser response:', response.data);
     return response.data;
   }
 
