@@ -24,20 +24,28 @@ const setupSocketHandlers = (io) => {
   const connectedAdmins = new Set();
   
   adminNamespace.on('connection', async (socket) => {
-    // Only log new unique connections
-    if (!connectedAdmins.has(socket.id)) {
-      console.log('🔌 Admin connected:', socket.id);
-      connectedAdmins.add(socket.id);
-    }
-    
     socket.join('admin');
     socket.emit('connection:status', 'connected');
     
-    await sendInitialData(socket);
-    const intervals = setupRealtimeIntervals(socket);
+    const adminId = socket.handshake.auth?.adminId || socket.handshake.query?.adminId;
+    if (adminId) {
+      socket.data.adminId = adminId;
+    }
+    
+    await sendInitialData(socket, adminId);
+    const intervals = setupRealtimeIntervals(socket, adminId);
     
     socket.on('request:dashboard', () => broadcastDashboardStats());
-    socket.on('request:alerts', () => broadcastAlertUpdates());
+    socket.on('request:alerts', async () => {
+      const alerts = await getActiveAlerts(adminId);
+      socket.emit('alerts:update', { alerts, timestamp: new Date() });
+    });
+    
+    // Test handler for Activity page socket connection
+    socket.on('test:ping', (data) => {
+      console.log('🏓 Received test:ping from:', data);
+      socket.emit('test:pong', { message: 'Socket connection working!', page: data.page });
+    });
     
     socket.on('support:join_chat', (data) => {
       if (data.chatSupportId) {
@@ -114,11 +122,6 @@ const setupMainNamespaceHandlers = (io) => {
   const connectedUsers = new Set();
   
   io.on('connection', (socket) => {
-    // Only log new unique connections
-    if (!connectedUsers.has(socket.id)) {
-      console.log('📱 User connected:', socket.id);
-      connectedUsers.add(socket.id);
-    }
     
     socket.on('authenticate', (data) => {
       socket.emit('authenticated');
@@ -218,19 +221,19 @@ const setupMainNamespaceHandlers = (io) => {
   });
 };
 
-const sendInitialData = async (socket) => {
+const sendInitialData = async (socket, adminId) => {
   try {
     const stats = await getRealtimeStats();
     socket.emit('stats:initial', stats);
     
-    const alerts = await getActiveAlerts();
+    const alerts = await getActiveAlerts(adminId);
     socket.emit('alerts:initial', alerts);
   } catch (error) {
     // Silently handle errors
   }
 };
 
-const setupRealtimeIntervals = (socket) => {
+const setupRealtimeIntervals = (socket, adminId) => {
   const intervals = {};
   
   intervals.stats = setInterval(async () => {
@@ -238,7 +241,11 @@ const setupRealtimeIntervals = (socket) => {
   }, 5000);
   
   intervals.alerts = setInterval(async () => {
-    await broadcastAlertUpdates();
+    const alerts = await getActiveAlerts(adminId);
+    socket.emit('alerts:update', {
+      alerts,
+      timestamp: new Date()
+    });
   }, 20000);
   
   activeIntervals.set(socket.id, intervals);
@@ -377,11 +384,11 @@ const broadcastAlertUpdates = async () => {
   }
 };
 
-const getActiveAlerts = async () => {
+const getActiveAlerts = async (adminId) => {
   try {
     const mongoose = require('mongoose');
+    const DismissedAlert = require('../models/DismissedAlert');
     
-    // Check if database is connected before querying
     if (mongoose.connection.readyState !== 1) {
       return [];
     }
@@ -477,9 +484,15 @@ const getActiveAlerts = async () => {
       alerts = generatedAlerts.slice(0, 10);
     }
 
+    if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
+      const dismissedAlerts = await DismissedAlert.find({ adminId }).select('alertId');
+      const dismissedAlertIds = dismissedAlerts.map(d => d.alertId.toString());
+      
+      alerts = alerts.filter(alert => !dismissedAlertIds.includes(alert._id.toString()));
+    }
+
     return alerts;
   } catch (error) {
-    // Silently handle session and connection errors
     if (error.name === 'MongoExpiredSessionError' || 
         error.name === 'MongoNotConnectedError' ||
         error.name === 'MongoServerError' ||

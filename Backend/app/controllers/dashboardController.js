@@ -5,6 +5,7 @@ const Job = require('../models/Job');
 const Transaction = require('../models/Transaction');
 const ActivityFeed = require('../models/ActivityFeed');
 const Alert = require('../models/Alert');
+const DismissedAlert = require('../models/DismissedAlert');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const ChatSupport = require('../models/ChatSupport');
@@ -212,6 +213,9 @@ const generateActivitiesFromData = async () => {
 
 const getAlerts = async (req, res) => {
   try {
+    const mongoose = require('mongoose');
+    const adminId = req.admin?.id || req.user?.id;
+    
     let alerts = await Alert.find({ isActive: true })
       .populate('userId', 'name email')
       .populate('jobId', 'title')
@@ -222,7 +226,15 @@ const getAlerts = async (req, res) => {
       .limit(20);
 
     if (alerts.length === 0) {
-      alerts = await generateAlertsFromData();
+      const generatedAlerts = await generateAlertsFromData();
+      alerts = generatedAlerts;
+    }
+
+    if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
+      const dismissedAlerts = await DismissedAlert.find({ adminId }).select('alertId');
+      const dismissedAlertIds = dismissedAlerts.map(d => d.alertId.toString());
+      
+      alerts = alerts.filter(alert => !dismissedAlertIds.includes(alert._id.toString()));
     }
 
     res.json(alerts);

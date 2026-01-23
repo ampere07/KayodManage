@@ -27,6 +27,33 @@ const logActivity = async (adminId, actionType, description, options = {}) => {
 
     await log.save();
     console.log('✅ Activity logged successfully:', log._id);
+    
+    // Emit socket event for real-time updates
+    try {
+      const server = require('../../server');
+      const io = server.io;
+      
+      if (io) {
+        const eventData = {
+          logId: log._id,
+          actionType: log.actionType,
+          description: log.description
+        };
+        
+        console.log('📡 Emitting activity:new event from activityLogger:', eventData);
+        
+        // Get the admin namespace and emit to ALL connected clients
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('activity:new', eventData);
+        
+        console.log('✅ Socket event emitted to', adminNamespace.sockets.size, 'connected admin clients');
+      } else {
+        console.warn('⚠️ Socket.io instance not available');
+      }
+    } catch (socketError) {
+      console.error('❌ Error emitting socket event:', socketError);
+    }
+    
     return log;
   } catch (error) {
     console.error('❌ Error logging activity:', error.message);

@@ -500,8 +500,6 @@ const getAllChatSupports = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid admin ID' });
     }
 
-    console.log('Fetching tickets for admin:', adminObjectId.toString(), 'Role:', adminRole);
-
     let baseFilters;
     
     // Superadmins can see ALL tickets
@@ -554,11 +552,6 @@ const getAllChatSupports = async (req, res) => {
       .lean();
 
     const total = await ChatSupport.countDocuments(filters);
-
-    console.log(`Found ${chatSupports.length} tickets for admin ${adminObjectId.toString()}`);
-    chatSupports.forEach(ticket => {
-      console.log(`Ticket ${ticket._id}: assignedTo=${ticket.assignedTo ? ticket.assignedTo.toString() : 'null'}, acceptedBy=${ticket.acceptedBy ? ticket.acceptedBy.toString() : 'null'}`);
-    });
 
     // Map and include userType, profileImage, and displayStatus
     const chatSupportsWithUserData = chatSupports.map(chat => {

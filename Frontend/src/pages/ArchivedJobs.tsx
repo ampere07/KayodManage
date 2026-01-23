@@ -135,7 +135,7 @@ const ArchivedJobs: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 max-w-2xl">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
           <div 
             onClick={() => setArchiveTypeFilter('all')}
             className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
@@ -169,10 +169,13 @@ const ArchivedJobs: React.FC = () => {
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-red-600">Removed</span>
+              <span className="text-xs font-medium text-red-600">Deleted</span>
               <X className="h-4 w-4 text-red-600" />
             </div>
             <p className="text-xl sm:text-2xl font-bold text-red-900">{archivedCounts.removed.toLocaleString()}</p>
+          </div>
+
+          <div className="rounded-lg p-3 border border-transparent">
           </div>
         </div>
 
@@ -238,22 +241,25 @@ const ArchivedJobs: React.FC = () => {
                 <table className="min-w-full w-full table-fixed">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
-                      <th className="w-[25%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[22%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Job Title
                       </th>
-                      <th className="w-[20%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[18%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Customer
                       </th>
-                      <th className="w-[15%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Budget
                       </th>
-                      <th className="w-[15%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[13%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="w-[12%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[11%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Applications
                       </th>
-                      <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[11%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Archive Type
+                      </th>
+                      <th className="w-[12%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Archived
                       </th>
                     </tr>
@@ -327,6 +333,21 @@ const ArchivedJobs: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4">
+                            <div className="flex justify-center">
+                              {job.archiveType === 'hidden' ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                                  <Archive className="h-3.5 w-3.5" />
+                                  Hidden
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                                  <X className="h-3.5 w-3.5" />
+                                  Deleted
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
                             <div className="space-y-1">
                               <p className="text-xs text-gray-500">
                                 {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
@@ -340,7 +361,7 @@ const ArchivedJobs: React.FC = () => {
                         </tr>
                         {index < jobs.length - 1 && (
                           <tr>
-                            <td colSpan={6} className="p-0">
+                            <td colSpan={7} className="p-0">
                               <div className="border-b border-gray-200" />
                             </td>
                           </tr>
@@ -431,6 +452,20 @@ const ArchivedJobs: React.FC = () => {
                           <p className="text-xs text-gray-500">
                             Archived {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                           </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {job.archiveType === 'hidden' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                              <Archive className="h-3 w-3" />
+                              Hidden
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                              <X className="h-3 w-3" />
+                              Deleted
+                            </span>
+                          )}
                         </div>
                       </div>
 

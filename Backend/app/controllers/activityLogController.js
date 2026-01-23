@@ -13,7 +13,6 @@ exports.getActivityLogs = async (req, res) => {
     }
 
     if (targetId) {
-      // Ensure targetId is a valid ObjectId string before converting
       if (mongoose.Types.ObjectId.isValid(targetId)) {
         query.targetId = new mongoose.Types.ObjectId(targetId);
       } else {
@@ -68,6 +67,25 @@ exports.createActivityLog = async (adminId, actionType, description, options = {
     });
 
     await log.save();
+    
+    try {
+      const server = require('../../server');
+      const io = server.io;
+      
+      if (io) {
+        const eventData = {
+          logId: log._id,
+          actionType: log.actionType,
+          description: log.description
+        };
+        
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('activity:new', eventData);
+      }
+    } catch (socketError) {
+      console.error('Error emitting socket event:', socketError);
+    }
+    
     return log;
   } catch (error) {
     console.error('Error creating activity log:', error);

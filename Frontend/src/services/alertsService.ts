@@ -93,6 +93,29 @@ class AlertsService {
     }>(this.baseUrl, data);
     return response.data;
   }
+
+  /**
+   * Reset all alerts (clear dismissedBy for all alerts)
+   */
+  async resetAlerts(): Promise<{ success: boolean; message: string; modifiedCount: number }> {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      modifiedCount: number;
+    }>('/api/admin/alerts/reset');
+    return response.data;
+  }
+
+  /**
+   * Dismiss an alert
+   */
+  async dismissAlert(alertId: string): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.patch<{
+      success: boolean;
+      message: string;
+    }>(`/api/admin/alerts/${alertId}/dismiss`);
+    return response.data;
+  }
 }
 
 // Export a singleton instance

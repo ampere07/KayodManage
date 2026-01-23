@@ -343,6 +343,8 @@ const hideJob = async (req, res) => {
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
     
+    console.log('🔒 Hide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+    
     const job = await Job.findByIdAndUpdate(
       jobId,
       { 
@@ -385,7 +387,8 @@ const hideJob = async (req, res) => {
     });
     
     if (adminId) {
-      await createActivityLog(
+      console.log('📝 Creating activity log for job_hidden');
+      const activityLog = await createActivityLog(
         adminId,
         'job_hidden',
         `Hidden job "${job.title}" posted by ${job.userId.name}${reason ? `. Reason: ${reason}` : ''}`,
@@ -401,6 +404,9 @@ const hideJob = async (req, res) => {
           }
         }
       );
+      console.log('✅ Activity log created:', activityLog?._id);
+    } else {
+      console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
     const applicationCount = await Application.countDocuments({ job: jobId });
@@ -444,6 +450,8 @@ const unhideJob = async (req, res) => {
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
     
+    console.log('🔓 Unhide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+    
     const job = await Job.findByIdAndUpdate(
       jobId,
       { 
@@ -481,7 +489,8 @@ const unhideJob = async (req, res) => {
     });
     
     if (adminId) {
-      await createActivityLog(
+      console.log('📝 Creating activity log for job_unhidden');
+      const activityLog = await createActivityLog(
         adminId,
         'job_unhidden',
         `Restored job "${job.title}" posted by ${job.userId.name}`,
@@ -496,6 +505,9 @@ const unhideJob = async (req, res) => {
           }
         }
       );
+      console.log('✅ Activity log created:', activityLog?._id);
+    } else {
+      console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
     const applicationCount = await Application.countDocuments({ job: jobId });
@@ -539,6 +551,8 @@ const deleteJob = async (req, res) => {
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
     
+    console.log('🗑️ Delete Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+    
     const job = await Job.findByIdAndUpdate(
       jobId,
       { 
@@ -574,7 +588,8 @@ const deleteJob = async (req, res) => {
     });
     
     if (adminId) {
-      await createActivityLog(
+      console.log('📝 Creating activity log for job_deleted');
+      const activityLog = await createActivityLog(
         adminId,
         'job_deleted',
         `Deleted job "${job.title}" posted by ${job.userId.name}`,
@@ -589,6 +604,9 @@ const deleteJob = async (req, res) => {
           }
         }
       );
+      console.log('✅ Activity log created:', activityLog?._id);
+    } else {
+      console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
     const { io } = require('../../server');
@@ -610,6 +628,8 @@ const restoreJob = async (req, res) => {
     const { jobId } = req.params;
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
+    
+    console.log('♻️ Restore Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
     
     const job = await Job.findByIdAndUpdate(
       jobId,
@@ -649,7 +669,8 @@ const restoreJob = async (req, res) => {
     });
     
     if (adminId) {
-      await createActivityLog(
+      console.log('📝 Creating activity log for job_restored');
+      const activityLog = await createActivityLog(
         adminId,
         'job_restored',
         `Restored job "${job.title}" posted by ${job.userId.name}`,
@@ -664,6 +685,9 @@ const restoreJob = async (req, res) => {
           }
         }
       );
+      console.log('✅ Activity log created:', activityLog?._id);
+    } else {
+      console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
     const { io } = require('../../server');

@@ -273,7 +273,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
               }`}
             >
@@ -289,7 +289,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('pending');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
               }`}
             >
@@ -305,7 +305,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('completed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
               }`}
             >
@@ -321,7 +321,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('failed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
               }`}
             >
@@ -337,7 +337,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('cancelled');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
               }`}
             >
@@ -358,7 +358,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
               }`}
             >
@@ -374,7 +374,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('pending');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
               }`}
             >
@@ -390,7 +390,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('completed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
               }`}
             >
@@ -406,7 +406,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('failed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
               }`}
             >
@@ -422,7 +422,7 @@ const Transactions: React.FC = () => {
                 setStatusFilter('cancelled');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
                 statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
               }`}
             >

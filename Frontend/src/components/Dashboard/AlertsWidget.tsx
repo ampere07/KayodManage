@@ -53,15 +53,18 @@ const AlertsWidget: React.FC = () => {
     }
   };
 
-  const markAsRead = async (alertId: string) => {
+  const dismissAlert = async (alertId: string) => {
     try {
-      await fetch(`/api/dashboard/alerts/${alertId}/read`, {
+      const response = await fetch(`/api/admin/alerts/${alertId}/dismiss`, {
         method: 'PATCH',
         credentials: 'include'
       });
-      setAlerts(prev => prev.filter(alert => alert._id !== alertId));
+      
+      if (response.ok) {
+        setAlerts(prev => prev.filter(alert => alert._id !== alertId));
+      }
     } catch (error) {
-      console.error('Failed to mark alert as read:', error);
+      console.error('Failed to dismiss alert:', error);
     }
   };
 
@@ -135,9 +138,9 @@ const AlertsWidget: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => markAsRead(alert._id)}
+                onClick={() => dismissAlert(alert._id)}
                 className="text-gray-400 hover:text-gray-600 p-1"
-                title="Mark as read"
+                title="Dismiss alert"
               >
                 <X className="h-4 w-4" />
               </button>

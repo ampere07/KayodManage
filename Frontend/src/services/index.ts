@@ -3,6 +3,7 @@
  * Central export point for all service modules
  */
 
+export { alertsService, default as AlertsService } from './alertsService';
 export { flaggedService, default as FlaggedService } from './flaggedService';
 export { jobsService, default as JobsService } from './jobsService';
 export { supportService, default as SupportService } from './supportService';
