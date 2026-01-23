@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { 
   Search, 
   Shield, 
@@ -12,7 +13,6 @@ import {
   MessageSquare, 
   Calendar,
   Activity as ActivityIcon,
-  RefreshCw,
   MousePointerClick
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -21,6 +21,7 @@ import { usersService, transactionsService } from '../services';
 import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals';
 import { getInitials } from '../utils';
 import { useActivityLogs } from '../hooks';
+import { useSocket } from '../context/SocketContext';
 import type { User, Transaction } from '../types';
 
 interface AdminInfo {
@@ -41,9 +42,9 @@ interface TargetInfo {
 interface ActivityLog {
   _id: string;
   adminId: AdminInfo;
-  actionType: 'verification_approved' | 'verification_rejected' | 'user_restricted' | 'user_suspended' | 'user_banned' | 'user_unrestricted' | 'transaction_completed' | 'transaction_failed' | 'support_closed' | 'support_reopened' | 'admin_login';
+  actionType: 'verification_approved' | 'verification_rejected' | 'user_restricted' | 'user_suspended' | 'user_banned' | 'user_unrestricted' | 'transaction_completed' | 'transaction_failed' | 'support_closed' | 'support_reopened' | 'admin_login' | 'job_hidden' | 'job_unhidden' | 'job_deleted' | 'job_restored';
   description: string;
-  targetType?: 'user' | 'transaction' | 'support' | 'verification';
+  targetType?: 'user' | 'transaction' | 'support' | 'verification' | 'job';
   targetId?: TargetInfo;
   metadata?: any;
   ipAddress?: string;
@@ -61,7 +62,11 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   transaction_failed: <XCircle className="h-4 w-4" />,
   support_closed: <MessageSquare className="h-4 w-4" />,
   support_reopened: <MessageSquare className="h-4 w-4" />,
-  admin_login: <Shield className="h-4 w-4" />
+  admin_login: <Shield className="h-4 w-4" />,
+  job_hidden: <XCircle className="h-4 w-4" />,
+  job_unhidden: <CheckCircle className="h-4 w-4" />,
+  job_deleted: <XCircle className="h-4 w-4" />,
+  job_restored: <CheckCircle className="h-4 w-4" />
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -75,7 +80,11 @@ const ACTION_COLORS: Record<string, string> = {
   transaction_failed: 'bg-red-100 text-red-700',
   support_closed: 'bg-gray-100 text-gray-700',
   support_reopened: 'bg-blue-100 text-blue-700',
-  admin_login: 'bg-purple-100 text-purple-700'
+  admin_login: 'bg-purple-100 text-purple-700',
+  job_hidden: 'bg-orange-100 text-orange-700',
+  job_unhidden: 'bg-green-100 text-green-700',
+  job_deleted: 'bg-red-100 text-red-700',
+  job_restored: 'bg-green-100 text-green-700'
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -89,7 +98,11 @@ const ACTION_LABELS: Record<string, string> = {
   transaction_failed: 'Transaction Failed',
   support_closed: 'Support Closed',
   support_reopened: 'Support Reopened',
-  admin_login: 'Admin Login'
+  admin_login: 'Admin Login',
+  job_hidden: 'Job Hidden',
+  job_unhidden: 'Job Restored',
+  job_deleted: 'Job Deleted',
+  job_restored: 'Job Restored'
 };
 
 const USER_ACTIONS = [
@@ -99,6 +112,13 @@ const USER_ACTIONS = [
   'user_suspended',
   'user_banned',
   'user_unrestricted'
+];
+
+const JOB_ACTIONS = [
+  'job_hidden',
+  'job_unhidden',
+  'job_deleted',
+  'job_restored'
 ];
 
 const SYSTEM_ACTIONS = [
@@ -112,11 +132,12 @@ const SYSTEM_ACTIONS = [
 const Activity: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const { data: activities = [], isLoading: loading, refetch } = useActivityLogs();
+  const { socket } = useSocket();
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'system'>('all');
-  const [refreshing, setRefreshing] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'job' | 'system'>('all');
   const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null);
   const activityRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -130,12 +151,69 @@ const Activity: React.FC = () => {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-    toast.success('Activity logs refreshed');
-  };
+  // Real-time socket listener for new activity logs
+  useEffect(() => {
+    console.log('🔍 Activity page mounted, checking socket:', {
+      socketExists: !!socket,
+      socketConnected: socket?.connected,
+      socketId: socket?.id
+    });
+
+    if (!socket) {
+      console.log('⚠️ Socket not available in Activity page');
+      return;
+    }
+
+    console.log('✅ Setting up activity:new listener, socket connected:', socket.connected);
+
+    const handleNewActivity = (data: any) => {
+      console.log('🔔 ========================================');
+      console.log('🔔 NEW ACTIVITY LOG RECEIVED!');
+      console.log('🔔 Data:', data);
+      console.log('🔔 ========================================');
+      
+      // Log before invalidation
+      console.log('📤 About to invalidate queries...');
+      
+      // Invalidate and immediately refetch
+      queryClient.invalidateQueries({ 
+        queryKey: ['activity'],
+        refetchType: 'active'
+      });
+      
+      console.log('✅ Queries invalidated');
+      
+      // Also trigger manual refetch
+      console.log('📤 About to manually refetch...');
+      refetch().then(() => {
+        console.log('✅ Manual refetch completed');
+      }).catch((err) => {
+        console.error('❌ Manual refetch failed:', err);
+      });
+      
+      toast.success('New activity log', {
+        duration: 2000,
+        icon: '📝'
+      });
+    };
+
+    socket.on('activity:new', handleNewActivity);
+    console.log('📡 Listener registered for activity:new event');
+
+    // Test the socket connection
+    socket.emit('test:ping', { page: 'activity' });
+    
+    // Listen for test response
+    socket.on('test:pong', (data) => {
+      console.log('🏓 Received test:pong:', data);
+    });
+
+    return () => {
+      console.log('🧹 Cleaning up activity:new listener');
+      socket.off('activity:new', handleNewActivity);
+      socket.off('test:pong');
+    };
+  }, [socket, queryClient, refetch]);
 
   const formatDescriptionWithDuration = (activity: ActivityLog) => {
     const { description, actionType, metadata } = activity;
@@ -191,6 +269,10 @@ const Activity: React.FC = () => {
         case 'verification':
           navigate('/verifications');
           break;
+          
+        case 'job':
+          navigate('/jobs');
+          break;
       }
     } catch (error) {
       console.error('Error fetching activity target:', error);
@@ -212,6 +294,7 @@ const Activity: React.FC = () => {
     const matchesType = 
       typeFilter === 'all' ||
       (typeFilter === 'user' && USER_ACTIONS.includes(activity.actionType)) ||
+      (typeFilter === 'job' && JOB_ACTIONS.includes(activity.actionType)) ||
       (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
     
     return matchesSearch && matchesAction && matchesType;
@@ -317,71 +400,48 @@ const Activity: React.FC = () => {
               Track and monitor all administrative actions and system events across the platform
             </p>
           </div>
-          
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <button
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div
             onClick={() => setTypeFilter('all')}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
-              typeFilter === 'all' ? 'border-blue-500 shadow-md' : 'border-blue-200'
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              typeFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Total Activity Logs</p>
-                <p className="text-2xl font-bold text-blue-900 mt-1">{totalActivityLogs}</p>
-                <p className="text-xs text-blue-700 mt-1">All actions</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-                <ActivityIcon className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">Total Activity Logs</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{totalActivityLogs}</p>
+          </div>
 
-          <button
+          <div
             onClick={() => setTypeFilter('user')}
-            className={`bg-gradient-to-br from-purple-50 to-purple-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
-              typeFilter === 'user' ? 'border-purple-500 shadow-md' : 'border-purple-200'
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              typeFilter === 'user' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">User Actions</p>
-                <p className="text-2xl font-bold text-purple-900 mt-1">{userActivityLogs}</p>
-                <p className="text-xs text-purple-700 mt-1">User management</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
-                <UserCheck className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">User Actions</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{userActivityLogs}</p>
+          </div>
 
-          <button
-            onClick={() => setTypeFilter('system')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 border-2 rounded-lg p-4 transition-all hover:shadow-md text-left ${
-              typeFilter === 'system' ? 'border-green-500 shadow-md' : 'border-green-200'
+          <div
+            onClick={() => setTypeFilter('job')}
+            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              typeFilter === 'job' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-green-600 uppercase tracking-wide">System Actions</p>
-                <p className="text-2xl font-bold text-green-900 mt-1">{systemActivityLogs}</p>
-                <p className="text-xs text-green-700 mt-1">System events</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">Job Actions</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{activities.filter(activity => JOB_ACTIONS.includes(activity.actionType)).length}</p>
+          </div>
+
+          <div
+            onClick={() => setTypeFilter('system')}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              typeFilter === 'system' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+            }`}
+          >
+            <p className="text-xs text-gray-600 font-medium mb-1">System Actions</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{systemActivityLogs}</p>
+          </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-3">
@@ -413,6 +473,10 @@ const Activity: React.FC = () => {
             <option value="support_closed">Support Closed</option>
             <option value="support_reopened">Support Reopened</option>
             <option value="admin_login">Admin Login</option>
+            <option value="job_hidden">Job Hidden</option>
+            <option value="job_unhidden">Job Restored</option>
+            <option value="job_deleted">Job Deleted</option>
+            <option value="job_restored">Job Restored</option>
           </select>
         </div>
       </div>

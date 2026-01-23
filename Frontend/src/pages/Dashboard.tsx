@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Users, 
   Briefcase, 
@@ -11,6 +11,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardComparison, useDashboardRevenueChart } from '../hooks/useDashboard';
+import { alertsService } from '../services';
 
 function Header() {
   const { user } = useAuth();
@@ -298,7 +299,102 @@ function RevenueChart() {
 
 function ActiveAlerts() {
   const navigate = useNavigate();
-  const { alerts } = useSocket();
+  const { alerts, socket } = useSocket();
+  const { user } = useAuth();
+  const [dismissingAlerts, setDismissingAlerts] = useState<Set<string>>(new Set());
+  const [localAlerts, setLocalAlerts] = useState(alerts || []);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const adminId = user?.id || user?._id || user?.adminId || user?.userId;
+  const dismissedAlertsKey = `dismissedAlerts_${adminId}`;
+
+  useEffect(() => {
+    console.log('👤 Full user object:', user);
+    console.log('🎯 Admin ID resolved:', adminId);
+    console.log('🔑 LocalStorage key:', dismissedAlertsKey);
+    const dismissedAlerts = JSON.parse(localStorage.getItem(dismissedAlertsKey) || '[]');
+    console.log('🚫 Dismissed alerts from localStorage:', dismissedAlerts);
+    const filteredAlerts = (alerts || []).filter(alert => !dismissedAlerts.includes(alert._id));
+    console.log('✅ Filtered alerts:', filteredAlerts.length, 'of', alerts?.length);
+    setLocalAlerts(filteredAlerts);
+  }, [alerts, dismissedAlertsKey, adminId, user]);
+
+  const handleResetAlerts = async () => {
+    if (!confirm('Reset all alerts? This will make all dismissed alerts visible again for testing.')) {
+      return;
+    }
+    
+    setIsResetting(true);
+    
+    try {
+      const response = await fetch('http://localhost:5000/api/admin/alerts/reset', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        localStorage.removeItem(dismissedAlertsKey);
+        alert(`Alerts reset successfully!`);
+        window.location.reload();
+      } else {
+        alert('Failed to reset alerts: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error resetting alerts:', error);
+      alert('Error resetting alerts. Check console for details.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleDismiss = async (alertId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    console.log('🗑️ Dismissing alert:', alertId, 'for admin:', adminId);
+    console.log('🔑 Using localStorage key:', dismissedAlertsKey);
+    
+    setDismissingAlerts(prev => new Set(prev).add(alertId));
+    
+    try {
+      // Check if this is a generated alert (starts with prefix)
+      const isGeneratedAlert = alertId.startsWith('report_') || 
+                              alertId.startsWith('verification_') || 
+                              alertId.startsWith('support_');
+      
+      console.log('🏷️ Is generated alert:', isGeneratedAlert);
+      
+      if (isGeneratedAlert) {
+        // For generated alerts, just remove from local state
+        // Store dismissed alert IDs in localStorage to persist across sessions
+        const dismissedAlerts = JSON.parse(localStorage.getItem(dismissedAlertsKey) || '[]');
+        dismissedAlerts.push(alertId);
+        localStorage.setItem(dismissedAlertsKey, JSON.stringify(dismissedAlerts));
+        console.log('💾 Saved to localStorage:', dismissedAlerts);
+        
+        setLocalAlerts(prev => prev.filter(alert => alert._id !== alertId));
+      } else {
+        // For real Alert documents, call the API
+        console.log('🌐 Calling API to dismiss alert');
+        await alertsService.dismissAlert(alertId);
+        setLocalAlerts(prev => prev.filter(alert => alert._id !== alertId));
+      }
+    } catch (error) {
+      console.error('Error dismissing alert:', error);
+      setDismissingAlerts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(alertId);
+        return newSet;
+      });
+    } finally {
+      setDismissingAlerts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(alertId);
+        return newSet;
+      });
+    }
+  };
 
   const handleReview = (alert: any) => {
     if (alert.category === 'reported_post' || alert.reportId) {
@@ -325,11 +421,21 @@ function ActiveAlerts() {
     }
   };
 
-  const displayAlerts = alerts || [];
+  const displayAlerts = localAlerts || [];
 
   return (
     <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
-      <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2">Active Alerts</h3>
+      <div className="flex items-center justify-between mb-1.5 md:mb-2">
+        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Active Alerts</h3>
+        <button
+          onClick={handleResetAlerts}
+          disabled={isResetting}
+          className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Reset all alerts for testing"
+        >
+          {isResetting ? 'Resetting...' : 'Reset'}
+        </button>
+      </div>
       
       <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2 max-h-[240px] sm:max-h-[280px]">
         {displayAlerts.length > 0 ? (
@@ -354,8 +460,12 @@ function ActiveAlerts() {
                 >
                   Review
                 </button>
-                <button className="px-2 md:px-2.5 py-0.5 md:py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50 transition-colors">
-                  Dismiss
+                <button 
+                  onClick={(e) => handleDismiss(alert._id, e)}
+                  disabled={dismissingAlerts.has(alert._id)}
+                  className="px-2 md:px-2.5 py-0.5 md:py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {dismissingAlerts.has(alert._id) ? 'Dismissing...' : 'Dismiss'}
                 </button>
               </div>
             </div>

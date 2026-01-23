@@ -7,10 +7,8 @@ import {
   ChevronRight,
   Calendar,
   User,
-  Flag,
   Search,
-  Image as ImageIcon,
-  XCircle
+  Image as ImageIcon
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
 import { ReviewReportModal } from '../components/Modals';
@@ -191,75 +189,45 @@ const Flagged: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <button
+          <div
             onClick={() => setFilter('all')}
-            className={`bg-gradient-to-br from-red-50 to-red-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
-              filter === 'all' ? 'border-red-500 shadow-md' : 'border-red-200'
+            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              filter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-red-600 uppercase tracking-wide">All Reports</p>
-                <p className="text-2xl font-bold text-red-900 mt-1">{statusCounts.all}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center">
-                <Flag className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">All Reports</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.all}</p>
+          </div>
 
-          <button
+          <div
             onClick={() => setFilter('pending')}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
-              filter === 'pending' ? 'border-yellow-500 shadow-md' : 'border-yellow-200'
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              filter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-yellow-600 uppercase tracking-wide">Pending</p>
-                <p className="text-2xl font-bold text-yellow-900 mt-1">{statusCounts.pending}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">Pending</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.pending}</p>
+          </div>
 
-          <button
+          <div
             onClick={() => setFilter('resolved')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
-              filter === 'resolved' ? 'border-green-500 shadow-md' : 'border-green-200'
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              filter === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Resolved</p>
-                <p className="text-2xl font-bold text-green-900 mt-1">{statusCounts.resolved}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.resolved}</p>
+          </div>
 
-          <button
+          <div
             onClick={() => setFilter('dismissed')}
-            className={`bg-gradient-to-br from-gray-50 to-gray-100 border-2 rounded-lg p-4 transition-all hover:shadow-md ${
-              filter === 'dismissed' ? 'border-gray-600 shadow-md' : 'border-gray-300'
+            className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+              filter === 'dismissed' ? 'border-gray-600 ring-2 ring-gray-500 shadow-lg' : 'border-gray-300'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Dismissed</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{statusCounts.dismissed}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
-                <XCircle className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </button>
+            <p className="text-xs text-gray-600 font-medium mb-1">Dismissed</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.dismissed}</p>
+          </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-3">

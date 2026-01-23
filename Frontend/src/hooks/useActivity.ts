@@ -7,10 +7,14 @@ export const useActivityLogs = () => {
   return useQuery({
     queryKey: [ACTIVITY_QUERY_KEY],
     queryFn: async () => {
+      console.log('🔄 Fetching activity logs...');
       const response = await apiClient.get('/api/admin/activity-logs');
+      console.log('✅ Activity logs fetched:', response.data.logs?.length, 'logs');
       return response.data.logs || [];
     },
-    staleTime: 2 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
 };

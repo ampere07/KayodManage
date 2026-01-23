@@ -238,13 +238,12 @@ const Support: React.FC = () => {
               setFilters(prev => ({ ...prev, activeTab: 'all' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               filters.activeTab === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
             }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Total Tickets</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalTickets}</p>
-            <p className="text-xs text-gray-500 mt-1">{stats.totalMessages} messages</p>
           </div>
 
           <div 
@@ -252,13 +251,12 @@ const Support: React.FC = () => {
               setFilters(prev => ({ ...prev, activeTab: 'open' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               filters.activeTab === 'open' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
             }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Open Tickets</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.openTickets}</p>
-            <p className="text-xs text-gray-500 mt-1">Awaiting assignment</p>
           </div>
 
           <div 
@@ -266,13 +264,12 @@ const Support: React.FC = () => {
               setFilters(prev => ({ ...prev, activeTab: 'pending' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               filters.activeTab === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
             }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Pending Response</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.pendingTickets}</p>
-            <p className="text-xs text-gray-500 mt-1">{stats.unreadTickets} with unread</p>
           </div>
 
           <div 
@@ -280,13 +277,12 @@ const Support: React.FC = () => {
               setFilters(prev => ({ ...prev, activeTab: 'resolved' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg hover:scale-105 transition-all ${
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
               filters.activeTab === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
             }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.resolvedTickets}</p>
-            <p className="text-xs text-gray-500 mt-1">{stats.resolvedToday} today</p>
           </div>
         </div>
 

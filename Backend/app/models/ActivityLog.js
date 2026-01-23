@@ -21,7 +21,9 @@ const activityLogSchema = new mongoose.Schema({
       'support_reopened',
       'admin_login',
       'job_hidden',
-      'job_unhidden'
+      'job_unhidden',
+      'job_deleted',
+      'job_restored'
     ],
     required: true
   },

@@ -95,11 +95,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       socket.disconnect();
     }
 
+    const adminId = user?.id || user?._id || user?.adminId;
+    console.log('[Socket] Connecting with admin ID:', adminId);
+    console.log('[Socket] User object:', user);
+    
     const newSocket = io('http://localhost:5000/admin', {
       withCredentials: true,
       transports: ['websocket', 'polling'],
       timeout: 10000,
-      forceNew: true
+      forceNew: true,
+      auth: {
+        adminId: adminId
+      }
     });
 
     // Connection events

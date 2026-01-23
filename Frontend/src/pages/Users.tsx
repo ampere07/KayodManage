@@ -248,12 +248,10 @@ const Users: React.FC = () => {
         </div>
 
         {getUserType() === 'all' && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
             <div 
               onClick={() => handleCounterClick('all')}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-              }`}
+              className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border-2 border-blue-600 ring-2 ring-blue-400 shadow-lg cursor-pointer hover:shadow-lg transition-all"
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-blue-600">Total Users</span>
@@ -283,11 +281,50 @@ const Users: React.FC = () => {
               </div>
               <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
             </div>
+
+            <div 
+              onClick={() => setStatusFilter('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+            </div>
           </div>
         )}
 
         {getUserType() === 'customers' && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
             <div 
               onClick={() => navigate('/users')}
               className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg transition-all"
@@ -301,12 +338,10 @@ const Users: React.FC = () => {
 
             <div 
               onClick={() => navigate('/users/customers')}
-              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-              }`}
+              className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border-2 border-purple-600 ring-2 ring-purple-400 shadow-lg cursor-pointer hover:shadow-lg transition-all"
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-purple-600">Total Customers</span>
+                <span className="text-xs font-medium text-purple-600">Customers</span>
                 <UserIcon className="h-4 w-4 text-purple-600" />
               </div>
               <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
@@ -317,59 +352,16 @@ const Users: React.FC = () => {
               className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200 cursor-pointer hover:shadow-lg transition-all"
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-indigo-600">Total Providers</span>
+                <span className="text-xs font-medium text-indigo-600">Providers</span>
                 <Briefcase className="h-4 w-4 text-indigo-600" />
               </div>
               <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
-            </div>
-          </div>
-        )}
-
-        {getUserType() === 'flagged' && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
-            <div 
-              onClick={() => setFlaggedUserTypeFilter('all')}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                flaggedUserTypeFilter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-red-600">Total Flagged</span>
-                <AlertCircle className="h-4 w-4 text-red-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-red-900">{flaggedUserCounts.total.toLocaleString()}</p>
-            </div>
-
-            <div 
-              onClick={() => setFlaggedUserTypeFilter('client')}
-              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                flaggedUserTypeFilter === 'client' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-purple-600">Customers</span>
-                <UserIcon className="h-4 w-4 text-purple-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-purple-900">{flaggedUserCounts.customers.toLocaleString()}</p>
-            </div>
-
-            <div 
-              onClick={() => setFlaggedUserTypeFilter('provider')}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                flaggedUserTypeFilter === 'provider' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-blue-600">Providers</span>
-                <Briefcase className="h-4 w-4 text-blue-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-900">{flaggedUserCounts.providers.toLocaleString()}</p>
             </div>
 
             <div 
               onClick={() => setStatusFilter('suspended')}
               className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'suspended' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
@@ -382,7 +374,165 @@ const Users: React.FC = () => {
             <div 
               onClick={() => setStatusFilter('restricted')}
               className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'restricted' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+                statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {getUserType() === 'flagged' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('all')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                flaggedUserTypeFilter === 'all' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Total Flagged</span>
+                <AlertCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{flaggedUserCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('client')}
+              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                flaggedUserTypeFilter === 'client' ? 'border-2 border-purple-600 ring-2 ring-purple-400 shadow-lg' : 'border border-purple-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-purple-600">Customers</span>
+                <UserIcon className="h-4 w-4 text-purple-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-900">{flaggedUserCounts.customers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setFlaggedUserTypeFilter('provider')}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                flaggedUserTypeFilter === 'provider' ? 'border-2 border-blue-600 ring-2 ring-blue-400 shadow-lg' : 'border border-blue-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Providers</span>
+                <Briefcase className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{flaggedUserCounts.providers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Restricted</span>
+                <Shield className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('banned')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Banned</span>
+                <Ban className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        {getUserType() === 'providers' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div 
+              onClick={() => navigate('/users')}
+              className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <UsersIcon className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-blue-900">{userTypeCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/customers')}
+              className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-purple-600">Customers</span>
+                <UserIcon className="h-4 w-4 text-purple-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => navigate('/users/providers')}
+              className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border-2 border-indigo-600 ring-2 ring-indigo-400 shadow-lg cursor-pointer hover:shadow-lg transition-all"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-indigo-600">Providers</span>
+                <Briefcase className="h-4 w-4 text-indigo-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('suspended')}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Suspended</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter('restricted')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
@@ -403,45 +553,6 @@ const Users: React.FC = () => {
                 <Ban className="h-4 w-4 text-red-600" />
               </div>
               <p className="text-xl sm:text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
-            </div>
-          </div>
-        )}
-
-        {getUserType() === 'providers' && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-4">
-            <div 
-              onClick={() => navigate('/users')}
-              className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200 cursor-pointer hover:shadow-lg transition-all"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-blue-600">Total Users</span>
-                <UsersIcon className="h-4 w-4 text-blue-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-900">{userTypeCounts.total.toLocaleString()}</p>
-            </div>
-
-            <div 
-              onClick={() => navigate('/users/customers')}
-              className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border border-purple-200 cursor-pointer hover:shadow-lg transition-all"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-purple-600">Total Customers</span>
-                <UserIcon className="h-4 w-4 text-purple-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-purple-900">{userTypeCounts.customers.toLocaleString()}</p>
-            </div>
-
-            <div 
-              onClick={() => navigate('/users/providers')}
-              className={`bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-indigo-500 ring-2 ring-indigo-400 shadow-lg' : 'border-indigo-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-indigo-600">Total Providers</span>
-                <Briefcase className="h-4 w-4 text-indigo-600" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-indigo-900">{userTypeCounts.providers.toLocaleString()}</p>
             </div>
           </div>
         )}
