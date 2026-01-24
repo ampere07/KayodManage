@@ -13,6 +13,7 @@ const getJobs = async (req, res) => {
     const search = req.query.search;
     const status = req.query.status;
     const category = req.query.category;
+    const profession = req.query.profession;
     const paymentMethod = req.query.paymentMethod;
     const isUrgent = req.query.isUrgent;
     
@@ -35,7 +36,8 @@ const getJobs = async (req, res) => {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
-        { category: { $regex: search, $options: 'i' } }
+        { professionName: { $regex: search, $options: 'i' } },
+        { categoryName: { $regex: search, $options: 'i' } }
       ];
     }
     
@@ -44,7 +46,11 @@ const getJobs = async (req, res) => {
     }
     
     if (category && category !== 'all') {
-      query.category = { $regex: category, $options: 'i' };
+      query.categoryName = { $regex: category, $options: 'i' };
+    }
+    
+    if (profession && profession !== 'all') {
+      query.professionName = { $regex: profession, $options: 'i' };
     }
     
     if (paymentMethod && paymentMethod !== 'all') {

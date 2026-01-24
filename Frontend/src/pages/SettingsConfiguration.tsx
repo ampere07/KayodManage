@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Briefcase, Megaphone } from 'lucide-react';
+import JobCategoryConfiguration from '../components/Settings/JobCategoryConfiguration';
 
 const SettingsConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'job-category' | 'advertisement'>('job-category');
@@ -52,16 +53,12 @@ const SettingsConfiguration: React.FC = () => {
           </nav>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-gray-100">
-          {activeTab === 'job-category' && (
-            <div className="p-6">
-              {/* Job Category content will go here */}
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === 'job-category' && <JobCategoryConfiguration />}
 
           {activeTab === 'advertisement' && (
-            <div className="p-6">
-              {/* Advertisement content will go here */}
+            <div className="p-6 bg-white">
+              <p className="text-gray-500">Advertisement configuration coming soon...</p>
             </div>
           )}
         </div>
