@@ -12,7 +12,21 @@ const JobSchema = new Schema({
     required: true,
     trim: true
   },
-  category: {
+  profession: {
+    type: Schema.Types.ObjectId,
+    required: true
+  },
+  professionName: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  categoryId: {
+    type: Schema.Types.ObjectId,
+    ref: 'JobCategory',
+    required: true
+  },
+  categoryName: {
     type: String,
     required: true,
     trim: true
@@ -273,7 +287,10 @@ JobSchema.virtual('applications', {
 
 // Indexes for better query performance
 JobSchema.index({ status: 1 });
-JobSchema.index({ category: 1 });
+JobSchema.index({ profession: 1 });
+JobSchema.index({ professionName: 1 });
+JobSchema.index({ categoryId: 1 });
+JobSchema.index({ categoryName: 1 });
 JobSchema.index({ userId: 1 });
 JobSchema.index({ assignedToId: 1 });
 JobSchema.index({ createdAt: -1 });
