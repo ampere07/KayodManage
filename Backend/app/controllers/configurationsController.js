@@ -1,4 +1,6 @@
 const JobCategory = require('../models/JobCategory');
+const fs = require('fs');
+const path = require('path');
 
 // Job Categories
 exports.getJobCategories = async (req, res) => {
@@ -21,7 +23,7 @@ exports.getJobCategories = async (req, res) => {
 
 exports.createJobCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, icon } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -43,6 +45,7 @@ exports.createJobCategory = async (req, res) => {
 
     const category = await JobCategory.create({
       name: name.trim(),
+      icon: icon || undefined,
       professions: [],
     });
     
@@ -63,15 +66,8 @@ exports.createJobCategory = async (req, res) => {
 exports.updateJobCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    const { name } = req.body;
+    const { name, icon } = req.body;
     
-    if (!name || !name.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category name is required',
-      });
-    }
-
     const category = await JobCategory.findById(categoryId);
     
     if (!category) {
@@ -81,19 +77,33 @@ exports.updateJobCategory = async (req, res) => {
       });
     }
 
-    const existingCategory = await JobCategory.findOne({ 
-      name: name.trim(),
-      _id: { $ne: categoryId },
-    });
-    
-    if (existingCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category name already exists',
+    if (name !== undefined) {
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category name is required',
+        });
+      }
+
+      const existingCategory = await JobCategory.findOne({ 
+        name: name.trim(),
+        _id: { $ne: categoryId },
       });
+      
+      if (existingCategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category name already exists',
+        });
+      }
+
+      category.name = name.trim();
     }
 
-    category.name = name.trim();
+    if (icon !== undefined) {
+      category.icon = icon;
+    }
+
     await category.save();
 
     res.status(200).json({
@@ -290,6 +300,86 @@ exports.deleteProfession = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete profession',
+      error: error.message,
+    });
+  }
+};
+
+exports.uploadCategoryIcon = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    const { buffer, originalname } = req.file;
+    const { categoryName, oldIcon } = req.body;
+    
+    if (!categoryName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category name is required',
+      });
+    }
+
+    const fileExtension = path.extname(originalname);
+    const sanitizedCategoryName = categoryName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const fileName = `${sanitizedCategoryName}${fileExtension}`;
+
+    const kayodPath = path.join(
+      __dirname,
+      '../../../..',
+      'kayod/client/src/assets/icons/categories',
+      fileName
+    );
+    
+    const kayodManagePath = path.join(
+      __dirname,
+      '../../..',
+      'Frontend/public/assets/icons/categories',
+      fileName
+    );
+
+    const kayodDir = path.dirname(kayodPath);
+    const kayodManageDir = path.dirname(kayodManagePath);
+
+    if (!fs.existsSync(kayodDir)) {
+      fs.mkdirSync(kayodDir, { recursive: true });
+    }
+    if (!fs.existsSync(kayodManageDir)) {
+      fs.mkdirSync(kayodManageDir, { recursive: true });
+    }
+
+    if (oldIcon && oldIcon.startsWith('custom:')) {
+      const oldFileName = oldIcon.replace('custom:', '');
+      const oldKayodPath = path.join(kayodDir, oldFileName);
+      const oldKayodManagePath = path.join(kayodManageDir, oldFileName);
+      
+      if (fs.existsSync(oldKayodPath)) {
+        fs.unlinkSync(oldKayodPath);
+      }
+      
+      if (fs.existsSync(oldKayodManagePath)) {
+        fs.unlinkSync(oldKayodManagePath);
+      }
+    }
+
+    fs.writeFileSync(kayodPath, buffer);
+    fs.writeFileSync(kayodManagePath, buffer);
+
+    res.status(200).json({
+      success: true,
+      iconName: `custom:${fileName}`,
+      fullPath: `/assets/icons/categories/${fileName}`,
+      message: 'Icon uploaded successfully',
+    });
+  } catch (error) {
+    console.error('Error uploading category icon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload icon',
       error: error.message,
     });
   }

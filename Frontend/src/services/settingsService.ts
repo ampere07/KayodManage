@@ -73,5 +73,20 @@ export const settingsService = {
   deleteProfession: async (professionId: string) => {
     const response = await apiClient.delete(`/api/admin/configurations/professions/${professionId}`);
     return response.data;
+  },
+
+  uploadCategoryIcon: async (file: File, categoryName: string, oldIcon?: string) => {
+    const formData = new FormData();
+    formData.append('icon', file);
+    formData.append('categoryName', categoryName);
+    if (oldIcon) {
+      formData.append('oldIcon', oldIcon);
+    }
+    const response = await apiClient.post('/api/admin/configurations/upload-category-icon', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
   }
 };

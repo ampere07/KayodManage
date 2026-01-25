@@ -5,6 +5,7 @@ import { JobCategory } from '../../types/configuration.types';
 import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import toast from 'react-hot-toast';
+import { getIconByName, getDefaultIconForCategory } from '../../constants/categoryIcons';
 
 const JobCategoryConfiguration: React.FC = () => {
   const [categories, setCategories] = useState<JobCategory[]>([]);
@@ -94,6 +95,8 @@ const JobCategoryConfiguration: React.FC = () => {
           <div className="divide-y divide-gray-200">
             {filteredCategories.map((category) => {
               const isExpanded = expandedCategories.has(category._id);
+              const iconName = category.icon || getDefaultIconForCategory(category.name);
+              const categoryIcon = getIconByName(iconName);
               
               return (
                 <div key={category._id} className="border-b border-gray-200">
@@ -111,7 +114,22 @@ const JobCategoryConfiguration: React.FC = () => {
                         )}
                       </div>
                       
-                      <span className="text-sm font-medium text-gray-900">{category.name}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-shrink-0 p-2 rounded-lg" style={{ backgroundColor: `${categoryIcon.color}15` }}>
+                          <img 
+                            key={category._id + iconName}
+                            src={categoryIcon.imagePath} 
+                            alt={categoryIcon.label}
+                            className="w-5 h-5" 
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              console.log('Image load error:', categoryIcon.imagePath);
+                              target.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">{category.name}</span>
+                      </div>
                       
                       <span className="text-xs text-gray-500">
                         ({category.professions.length} profession{category.professions.length !== 1 ? 's' : ''})

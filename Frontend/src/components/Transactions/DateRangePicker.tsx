@@ -154,7 +154,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 w-80">
+        <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 w-80">
           <div className="flex gap-2 mb-4 pb-4 border-b border-gray-200">
             <button
               onClick={() => handleQuickSelect(7)}

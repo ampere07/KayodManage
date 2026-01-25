@@ -27,6 +27,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const customer = getUser(transaction);
   const provider = getToUser(transaction) || customer;
   const isFeeRecord = transaction.transactionType === 'fee_record';
+  const isWithdrawal = transaction.type === 'withdrawal';
 
   // Render fee record layout
   if (isFeeRecord) {
@@ -268,6 +269,160 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 Close
               </button>
               </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Withdrawal transaction layout
+  if (isWithdrawal) {
+    const user = customer;
+
+    return (
+      <>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity" onClick={onClose} />
+
+        <div
+          className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
+            isOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          <div className="h-full flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+              <button
+                onClick={onClose}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <XIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {/* Amount Section */}
+              <div className={`px-6 py-6 ${
+                transaction.status === 'completed' 
+                  ? 'bg-green-100' 
+                  : transaction.status === 'pending'
+                  ? 'bg-yellow-100'
+                  : 'bg-red-100'
+              }`}>
+                <p className="text-sm text-gray-600 mb-2">Withdrawal Amount</p>
+                <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
+              </div>
+
+              <div className="p-6">
+
+                {/* User Information */}
+                {user && (
+                  <div className="mb-6">
+                    <h4 className="text-sm font-bold text-gray-900 mb-4">User Information</h4>
+
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="relative flex-shrink-0">
+                        {user?.profileImage ? (
+                          <img
+                            src={user.profileImage}
+                            alt={user.name}
+                            className="w-16 h-16 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center">
+                            <span className="text-xl font-medium text-orange-600">
+                              {getInitials(user?.name || 'Unknown')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{user?.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500">{user?.email || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-start gap-2">
+                        <p className="text-gray-600 min-w-[120px]">Name:</p>
+                        <p className="text-gray-900 font-medium">{user?.name || 'N/A'}</p>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <p className="text-gray-600 min-w-[120px]">Email:</p>
+                        <p className="text-gray-900 break-all">{user?.email || 'N/A'}</p>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <p className="text-gray-600 min-w-[120px]">Phone:</p>
+                        <p className="text-gray-900">{user?.phone || 'N/A'}</p>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <p className="text-gray-600 min-w-[120px]">Location:</p>
+                        <p className="text-gray-900">{user?.location || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Transaction Information */}
+                <div className="pt-6 border-t border-gray-200">
+                  <h4 className="text-sm font-bold text-gray-900 mb-4">Transaction Information</h4>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Transaction ID:</p>
+                      <p className="text-gray-900 font-mono break-all flex-1">{transaction._id}</p>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Type:</p>
+                      <p className="text-gray-900 font-medium capitalize">{transaction.type?.replace('_', ' ')}</p>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Status:</p>
+                      <p className="text-gray-900 font-medium capitalize">{transaction.status}</p>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Payment Method:</p>
+                      <p className="text-gray-900 font-medium capitalize">{transaction.paymentMethod || 'N/A'}</p>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Description:</p>
+                      <p className="text-gray-900">{transaction.description}</p>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <p className="text-gray-600 min-w-[120px]">Date:</p>
+                      <div>
+                        <p className="text-gray-900">
+                          {new Date(transaction.createdAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={onClose}
+                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </>

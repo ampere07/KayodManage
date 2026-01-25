@@ -9,6 +9,7 @@ export interface Profession {
 export interface JobCategory {
   _id: string;
   name: string;
+  icon?: string;
   professions: Profession[];
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -16,6 +17,7 @@ export interface JobCategory {
 
 export interface CreateJobCategoryRequest {
   name: string;
+  icon?: string;
 }
 
 export interface CreateProfessionRequest {
@@ -24,7 +26,8 @@ export interface CreateProfessionRequest {
 }
 
 export interface UpdateJobCategoryRequest {
-  name: string;
+  name?: string;
+  icon?: string;
 }
 
 export interface UpdateProfessionRequest {
