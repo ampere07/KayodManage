@@ -23,6 +23,10 @@ const jobCategorySchema = new mongoose.Schema({
     trim: true,
     unique: true,
   },
+  icon: {
+    type: String,
+    trim: true,
+  },
   professions: [professionSchema],
   createdAt: {
     type: Date,

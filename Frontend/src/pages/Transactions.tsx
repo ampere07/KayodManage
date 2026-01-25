@@ -203,12 +203,14 @@ const Transactions: React.FC = () => {
                 ? 'Track and manage platform service fees collected from completed job transactions'
                 : category === 'wallet_topup'
                 ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
+                : category === 'withdrawal'
+                ? 'Monitor and manage user withdrawal requests to external payment methods'
                 : `${pagination.total} total transactions`
               }
             </p>
           </div>
 
-          {category !== 'fee_record' && category !== 'wallet_topup' && (
+          {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
             <div className="hidden md:flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1.5">
                 <CheckCircle className="h-4 w-4 text-green-600" />
@@ -435,6 +437,75 @@ const Transactions: React.FC = () => {
           </div>
         )}
 
+        {/* Cashout Status Counters */}
+        {category === 'withdrawal' && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div 
+              onClick={() => {
+                setStatusFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'all' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">All</span>
+                <CreditCard className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-orange-900">{statusCounts.total.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('completed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-green-600">Approved</span>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('pending');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-600">Pending</span>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
+            </div>
+
+            <div 
+              onClick={() => {
+                setStatusFilter('failed');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Denied</span>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="space-y-3">
           <div className="flex flex-col md:flex-row gap-3">
@@ -449,7 +520,7 @@ const Transactions: React.FC = () => {
               />
             </div>
 
-            {category !== 'fee_record' && category !== 'wallet_topup' && (
+            {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -473,10 +544,7 @@ const Transactions: React.FC = () => {
               <option value="cash">Cash</option>
               <option value="xendit">Xendit</option>
             </select>
-          </div>
 
-          <div className="flex flex-col md:flex-row md:items-center gap-3">
-            <span className="text-sm font-medium text-gray-700">Date Range:</span>
             <DateRangePicker
               startDate={dateFrom}
               endDate={dateTo}
@@ -531,7 +599,7 @@ const Transactions: React.FC = () => {
                       <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Date
                       </th>
-                      {category !== 'fee_record' && category !== 'wallet_topup' && (
+                      {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
                         <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                           Actions
                         </th>
@@ -662,7 +730,7 @@ const Transactions: React.FC = () => {
                                 </div>
                               </div>
                             </td>
-                            {category !== 'fee_record' && category !== 'wallet_topup' && (
+                            {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
                               <td className="px-6 py-4">
                                 <div className="flex items-center justify-center gap-2">
                                   {transaction.status === 'pending' &&
@@ -707,7 +775,7 @@ const Transactions: React.FC = () => {
                           </tr>
                           {index < transactions.length - 1 && (
                             <tr>
-                              <td colSpan={category === 'fee_record' || category === 'wallet_topup' ? 6 : 7} className="p-0">
+                              <td colSpan={category === 'fee_record' || category === 'wallet_topup' || category === 'withdrawal' ? 6 : 7} className="p-0">
                                 <div className="border-b border-gray-200" />
                               </td>
                             </tr>
@@ -837,7 +905,7 @@ const Transactions: React.FC = () => {
                               <span>{formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}</span>
                             </div>
                           </div>
-                          {category !== 'fee_record' && category !== 'wallet_topup' && (
+                          {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
                             <div className="flex items-center gap-2">
                               {transaction.status === 'pending' &&
                                 transaction.transactionType !== 'fee_record' &&
