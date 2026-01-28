@@ -213,14 +213,7 @@ exports.createProfession = async (req, res) => {
 exports.updateProfession = async (req, res) => {
   try {
     const { professionId } = req.params;
-    const { name } = req.body;
-    
-    if (!name || !name.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Profession name is required',
-      });
-    }
+    const { name, icon } = req.body;
 
     const category = await JobCategory.findOne({
       'professions._id': professionId,
@@ -242,19 +235,33 @@ exports.updateProfession = async (req, res) => {
       });
     }
 
-    const existingProfession = category.professions.find(
-      p => p._id.toString() !== professionId && 
-           p.name.toLowerCase() === name.trim().toLowerCase()
-    );
-    
-    if (existingProfession) {
-      return res.status(400).json({
-        success: false,
-        message: 'Profession name already exists in this category',
-      });
+    if (name !== undefined) {
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Profession name is required',
+        });
+      }
+
+      const existingProfession = category.professions.find(
+        p => p._id.toString() !== professionId && 
+             p.name.toLowerCase() === name.trim().toLowerCase()
+      );
+      
+      if (existingProfession) {
+        return res.status(400).json({
+          success: false,
+          message: 'Profession name already exists in this category',
+        });
+      }
+
+      profession.name = name.trim();
     }
 
-    profession.name = name.trim();
+    if (icon !== undefined) {
+      profession.icon = icon;
+    }
+
     profession.updatedAt = new Date();
     
     await category.save();
@@ -352,6 +359,92 @@ exports.uploadCategoryIcon = async (req, res) => {
       fs.mkdirSync(kayodManageDir, { recursive: true });
     }
 
+    // Delete any existing icon files for this profession (including old timestamp versions)
+    const existingFiles = fs.readdirSync(kayodDir).filter(file => {
+      const baseName = file.replace(path.extname(file), '');
+      // Match files like: profession-name.png, prof-profession-name-123456.png
+      return baseName === sanitizedName || baseName.startsWith(`prof-${sanitizedName}-`);
+    });
+    
+    existingFiles.forEach(file => {
+      const oldKayodPath = path.join(kayodDir, file);
+      const oldKayodManagePath = path.join(kayodManageDir, file);
+      
+      if (fs.existsSync(oldKayodPath)) {
+        fs.unlinkSync(oldKayodPath);
+      }
+      
+      if (fs.existsSync(oldKayodManagePath)) {
+        fs.unlinkSync(oldKayodManagePath);
+      }
+    });
+
+    fs.writeFileSync(kayodPath, buffer);
+    fs.writeFileSync(kayodManagePath, buffer);
+
+    res.status(200).json({
+      success: true,
+      iconName: `custom:${fileName}`,
+      fullPath: `/assets/icons/categories/${fileName}`,
+      message: 'Icon uploaded successfully',
+    });
+  } catch (error) {
+    console.error('Error uploading category icon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload icon',
+      error: error.message,
+    });
+  }
+};
+
+exports.uploadProfessionIcon = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    const { buffer, originalname } = req.file;
+    const { professionName, oldIcon } = req.body;
+    
+    if (!professionName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Profession name is required',
+      });
+    }
+
+    const fileExtension = path.extname(originalname);
+    const sanitizedName = professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const fileName = `${sanitizedName}${fileExtension}`;
+
+    const kayodPath = path.join(
+      __dirname,
+      '../../../..',
+      'kayod/client/src/assets/icons/professions',
+      fileName
+    );
+    
+    const kayodManagePath = path.join(
+      __dirname,
+      '../../..',
+      'Frontend/public/assets/icons/professions',
+      fileName
+    );
+
+    const kayodDir = path.dirname(kayodPath);
+    const kayodManageDir = path.dirname(kayodManagePath);
+
+    if (!fs.existsSync(kayodDir)) {
+      fs.mkdirSync(kayodDir, { recursive: true });
+    }
+    if (!fs.existsSync(kayodManageDir)) {
+      fs.mkdirSync(kayodManageDir, { recursive: true });
+    }
+
     if (oldIcon && oldIcon.startsWith('custom:')) {
       const oldFileName = oldIcon.replace('custom:', '');
       const oldKayodPath = path.join(kayodDir, oldFileName);
@@ -372,14 +465,14 @@ exports.uploadCategoryIcon = async (req, res) => {
     res.status(200).json({
       success: true,
       iconName: `custom:${fileName}`,
-      fullPath: `/assets/icons/categories/${fileName}`,
-      message: 'Icon uploaded successfully',
+      fullPath: `/assets/icons/professions/${fileName}`,
+      message: 'Profession icon uploaded successfully',
     });
   } catch (error) {
-    console.error('Error uploading category icon:', error);
+    console.error('Error uploading profession icon:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to upload icon',
+      message: 'Failed to upload profession icon',
       error: error.message,
     });
   }

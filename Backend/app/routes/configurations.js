@@ -9,6 +9,7 @@ const {
   updateProfession,
   deleteProfession,
   uploadCategoryIcon,
+  uploadProfessionIcon,
 } = require('../controllers/configurationsController');
 
 const router = express.Router();
@@ -63,5 +64,8 @@ router.delete('/professions/:professionId', requireAdmin, deleteProfession);
 
 // Category Icon Upload
 router.post('/upload-category-icon', requireAdmin, upload.single('icon'), uploadCategoryIcon);
+
+// Profession Icon Upload
+router.post('/upload-profession-icon', requireAdmin, upload.single('icon'), uploadProfessionIcon);
 
 module.exports = router;

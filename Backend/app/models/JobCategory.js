@@ -6,6 +6,10 @@ const professionSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  icon: {
+    type: String,
+    trim: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
