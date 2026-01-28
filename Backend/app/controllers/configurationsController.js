@@ -367,11 +367,10 @@ exports.uploadCategoryIcon = async (req, res) => {
       fs.mkdirSync(kayodManageDir, { recursive: true });
     }
 
-    // Delete any existing icon files for this profession (including old timestamp versions)
+    // Delete any existing icon files for this category (including old timestamp versions)
     const existingFiles = fs.readdirSync(kayodDir).filter(file => {
       const baseName = file.replace(path.extname(file), '');
-      // Match files like: profession-name.png, prof-profession-name-123456.png
-      return baseName === sanitizedName || baseName.startsWith(`prof-${sanitizedName}-`);
+      return baseName === sanitizedCategoryName || baseName.startsWith(`${sanitizedCategoryName}-`);
     });
     
     existingFiles.forEach(file => {

@@ -30,14 +30,16 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 }) => {
   const [categoryName, setCategoryName] = useState(category.name);
   const [categoryIcon, setCategoryIcon] = useState(category.icon || getDefaultIconForCategory(category.name));
+  const [iconTimestamp, setIconTimestamp] = useState(Date.now());
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [professions, setProfessions] = useState<Profession[]>(category.professions);
-  const [editingProfessionId, setEditingProfessionId] = useState<string | null>(null);
+  const [editingProfession, setEditingProfession] = useState<Profession | null>(null);
   const [editingProfessionName, setEditingProfessionName] = useState('');
   const [editingProfessionIcon, setEditingProfessionIcon] = useState<string | undefined>(undefined);
-  const [showProfessionIconPicker, setShowProfessionIconPicker] = useState<string | null>(null);
+  const [showProfessionIconPicker, setShowProfessionIconPicker] = useState(false);
   const [uploadingProfessionIcon, setUploadingProfessionIcon] = useState<string | null>(null);
+  const [professionIconTimestamps, setProfessionIconTimestamps] = useState<Record<string, number>>({});
   const [newProfessionName, setNewProfessionName] = useState('');
   const [isAddingProfession, setIsAddingProfession] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,7 +50,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const [currentProfessionForUpload, setCurrentProfessionForUpload] = useState<string | null>(null);
 
   const handleEditProfession = (profession: Profession) => {
-    setEditingProfessionId(profession._id);
+    setEditingProfession(profession);
     setEditingProfessionName(profession.name);
     setEditingProfessionIcon(profession.icon);
   };
@@ -59,22 +61,26 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       return;
     }
 
-    setProfessions(prev =>
-      prev.map(prof =>
-        prof._id === editingProfessionId
-          ? { ...prof, name: editingProfessionName.trim(), icon: editingProfessionIcon }
-          : prof
-      )
-    );
-    setEditingProfessionId(null);
+    if (editingProfession) {
+      setProfessions(prev =>
+        prev.map(prof =>
+          prof._id === editingProfession._id
+            ? { ...prof, name: editingProfessionName.trim(), icon: editingProfessionIcon }
+            : prof
+        )
+      );
+    }
+    setEditingProfession(null);
     setEditingProfessionName('');
     setEditingProfessionIcon(undefined);
+    setShowProfessionIconPicker(false);
   };
 
   const handleCancelProfessionEdit = () => {
-    setEditingProfessionId(null);
+    setEditingProfession(null);
     setEditingProfessionName('');
     setEditingProfessionIcon(undefined);
+    setShowProfessionIconPicker(false);
   };
 
   const handleDeleteProfession = async (professionId: string) => {
@@ -145,6 +151,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         category.icon
       );
       setCategoryIcon(response.iconName);
+      setIconTimestamp(Date.now());
       setShowIconPicker(false);
       toast.success('Icon uploaded successfully');
     } catch (error: any) {
@@ -182,19 +189,24 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         profession.icon
       );
       
-      if (editingProfessionId === currentProfessionForUpload) {
+      if (editingProfession && editingProfession._id === currentProfessionForUpload) {
         setEditingProfessionIcon(response.iconName);
-      } else {
-        setProfessions(prev =>
-          prev.map(prof =>
-            prof._id === currentProfessionForUpload
-              ? { ...prof, icon: response.iconName }
-              : prof
-          )
-        );
       }
       
-      setShowProfessionIconPicker(null);
+      setProfessions(prev =>
+        prev.map(prof =>
+          prof._id === currentProfessionForUpload
+            ? { ...prof, icon: response.iconName }
+            : prof
+        )
+      );
+      
+      setProfessionIconTimestamps(prev => ({
+        ...prev,
+        [currentProfessionForUpload]: Date.now()
+      }));
+      
+      setShowProfessionIconPicker(false);
       toast.success('Profession icon uploaded successfully');
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to upload profession icon');
@@ -207,28 +219,26 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     }
   };
 
-  const handleSelectProfessionIcon = (professionId: string, iconName: string) => {
-    if (editingProfessionId === professionId) {
-      setEditingProfessionIcon(iconName);
-    } else {
-      setProfessions(prev =>
-        prev.map(prof =>
-          prof._id === professionId
-            ? { ...prof, icon: iconName }
-            : prof
-        )
-      );
+  const handleSelectProfessionIcon = (iconName: string) => {
+    setEditingProfessionIcon(iconName);
+    if (editingProfession) {
+      setProfessionIconTimestamps(prev => ({
+        ...prev,
+        [editingProfession._id]: Date.now()
+      }));
     }
-    setShowProfessionIconPicker(null);
+    setShowProfessionIconPicker(false);
   };
 
-  const triggerProfessionIconUpload = (professionId: string) => {
-    setCurrentProfessionForUpload(professionId);
-    professionFileInputRef.current?.click();
+  const triggerProfessionIconUpload = () => {
+    if (editingProfession) {
+      setCurrentProfessionForUpload(editingProfession._id);
+      professionFileInputRef.current?.click();
+    }
   };
 
   const getProfessionIconName = (profession: Profession) => {
-    if (editingProfessionId === profession._id && editingProfessionIcon !== undefined) {
+    if (editingProfession && editingProfession._id === profession._id && editingProfessionIcon !== undefined) {
       return editingProfessionIcon;
     }
     return profession.icon;
@@ -236,7 +246,12 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
   const getProfessionIconData = (profession: Profession) => {
     const iconName = getProfessionIconName(profession);
-    return getProfessionIconByName(iconName || '', categoryIcon);
+    const iconData = getProfessionIconByName(iconName || '', categoryIcon);
+    const timestamp = professionIconTimestamps[profession._id] || Date.now();
+    return {
+      ...iconData,
+      imagePath: `${iconData.imagePath}?t=${timestamp}`
+    };
   };
 
   const handleConfirm = async () => {
@@ -312,7 +327,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 relative">
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Category Name
@@ -336,7 +351,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                 style={{ backgroundColor: `${getIconByName(categoryIcon).color}15` }}
               >
                 <img 
-                  src={getIconByName(categoryIcon).imagePath}
+                  src={`${getIconByName(categoryIcon).imagePath}?t=${iconTimestamp}`}
                   alt={getIconByName(categoryIcon).label}
                   className="w-6 h-6"
                   onError={(e) => {
@@ -395,6 +410,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                       key={icon.name}
                       onClick={() => {
                         setCategoryIcon(icon.name);
+                        setIconTimestamp(Date.now());
                         setShowIconPicker(false);
                       }}
                       className={`p-3 rounded-lg border-2 transition-all hover:scale-105 ${
@@ -418,39 +434,40 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
-                Professions
+                Professions ({professions.length})
               </label>
               <button
                 onClick={() => setIsAddingProfession(true)}
-                className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
+                <Plus className="w-4 h-4" />
                 Add
               </button>
             </div>
 
             {isAddingProfession && (
-              <div className="mb-3 p-3 border border-gray-300 rounded-lg bg-white">
+              <div className="mb-4 p-4 border border-blue-200 bg-blue-50 rounded-lg">
+                <input
+                  type="text"
+                  value={newProfessionName}
+                  onChange={(e) => setNewProfessionName(e.target.value)}
+                  placeholder="New profession name"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddProfession();
+                    if (e.key === 'Escape') {
+                      setIsAddingProfession(false);
+                      setNewProfessionName('');
+                    }
+                  }}
+                />
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newProfessionName}
-                    onChange={(e) => setNewProfessionName(e.target.value)}
-                    placeholder="New profession name"
-                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddProfession();
-                      if (e.key === 'Escape') {
-                        setIsAddingProfession(false);
-                        setNewProfessionName('');
-                      }
-                    }}
-                  />
                   <button
                     onClick={handleAddProfession}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap"
+                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Save
                   </button>
@@ -459,7 +476,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                       setIsAddingProfession(false);
                       setNewProfessionName('');
                     }}
-                    className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 whitespace-nowrap"
+                    className="flex-1 px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
                   </button>
@@ -475,156 +492,59 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
               className="hidden"
             />
 
-            <div className="space-y-2">
-              {professions.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-8">
-                  No professions yet. Add your first profession.
-                </p>
-              ) : (
-                professions.map((profession) => (
-                  <div key={profession._id}>
-                    {editingProfessionId === profession._id ? (
-                      <div className="p-3 border border-gray-300 rounded-lg bg-white">
-                        <div className="flex gap-2 mb-3">
-                          <input
-                            type="text"
-                            value={editingProfessionName}
-                            onChange={(e) => setEditingProfessionName(e.target.value)}
-                            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSaveProfessionEdit();
-                              if (e.key === 'Escape') handleCancelProfessionEdit();
-                            }}
-                          />
-                        </div>
-                        
-                        <div className="mb-3">
-                          <label className="block text-xs font-medium text-gray-600 mb-2">
-                            Profession Icon
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="flex-shrink-0 p-2 rounded-lg border border-gray-300" 
-                              style={{ backgroundColor: `${getProfessionIconData(profession).color}15` }}
-                            >
-                              <img 
-                                src={getProfessionIconData(profession).imagePath}
-                                alt="Profession icon"
-                                className="w-5 h-5"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                }}
-                              />
-                            </div>
-                            <button
-                              onClick={() => setShowProfessionIconPicker(
-                                showProfessionIconPicker === profession._id ? null : profession._id
-                              )}
-                              className="flex-1 px-3 py-2 text-xs text-left border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                            >
-                              <ImageIcon className="w-3 h-3" />
-                              <span>Change Icon</span>
-                            </button>
-                          </div>
-                          
-                          {showProfessionIconPicker === profession._id && (
-                            <div className="mt-2 p-3 border border-gray-300 rounded-lg bg-gray-50 max-h-48 overflow-y-auto">
-                              <button
-                                type="button"
-                                onClick={() => triggerProfessionIconUpload(profession._id)}
-                                disabled={uploadingProfessionIcon === profession._id}
-                                className="w-full mb-3 px-3 py-2 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-blue-600 text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-                              >
-                                {uploadingProfessionIcon === profession._id ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                    <span>Uploading...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <ImageIcon className="w-4 h-4" />
-                                    <span>Upload Custom</span>
-                                  </>
-                                )}
-                              </button>
-                              
-                              <div className="grid grid-cols-5 gap-1">
-                                {getAllIcons().map((icon) => (
-                                  <button
-                                    key={icon.name}
-                                    onClick={() => handleSelectProfessionIcon(profession._id, icon.name)}
-                                    className={`p-2 rounded-lg border-2 transition-all hover:scale-105 ${
-                                      getProfessionIconName(profession) === icon.name
-                                        ? 'border-blue-500 bg-blue-50'
-                                        : 'border-gray-200 hover:border-gray-300'
-                                    }`}
-                                    style={{ backgroundColor: `${icon.color}10` }}
-                                    title={icon.label}
-                                  >
-                                    <img 
-                                      src={icon.imagePath}
-                                      alt={icon.label}
-                                      className="w-4 h-4 mx-auto"
-                                    />
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSaveProfessionEdit}
-                            className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={handleCancelProfessionEdit}
-                            className="flex-1 px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
+            {professions.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                <p className="text-sm">No professions yet</p>
+                <p className="text-xs mt-1">Click Add to create your first profession</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {professions.map((profession) => {
+                  const professionIcon = getProfessionIconData(profession);
+
+                  return (
+                    <div
+                      key={profession._id}
+                      className="relative group flex flex-col items-center"
+                    >
+                      <div
+                        onClick={() => handleEditProfession(profession)}
+                        className="w-full aspect-square rounded-lg border-2 border-gray-200 hover:border-blue-400 transition-all cursor-pointer flex flex-col items-center justify-center p-3 relative group"
+                        style={{ backgroundColor: `${professionIcon.color}08` }}
+                      >
                         <div 
-                          className="flex-shrink-0 p-2 rounded-lg border border-gray-200" 
-                          style={{ backgroundColor: `${getProfessionIconData(profession).color}15` }}
+                          className="w-12 h-12 rounded-lg flex items-center justify-center mb-2"
+                          style={{ backgroundColor: `${professionIcon.color}15` }}
                         >
                           <img 
-                            src={getProfessionIconData(profession).imagePath}
-                            alt="Profession icon"
-                            className="w-4 h-4"
+                            src={professionIcon.imagePath}
+                            alt={profession.name}
+                            className="w-8 h-8" 
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.style.display = 'none';
                             }}
                           />
                         </div>
-                        <button
-                          onClick={() => handleEditProfession(profession)}
-                          className="flex-1 px-4 py-2.5 text-left text-sm bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
-                        >
+                        <p className="text-xs text-gray-900 text-center font-medium line-clamp-2 leading-tight">
                           {profession.name}
-                        </button>
+                        </p>
                         <button
-                          onClick={() => handleDeleteProfession(profession._id)}
-                          className="p-2.5 text-red-600 hover:bg-red-50 border border-gray-300 rounded-lg transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProfession(profession._id);
+                          }}
+                          className="absolute top-2 right-2 p-1.5 bg-white border border-red-200 text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
                           title="Delete profession"
                         >
-                          <X className="w-4 h-4" />
+                          <X className="w-3 h-3" />
                         </button>
                       </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -691,6 +611,141 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
           </div>
         )}
       </div>
+
+      {editingProfession && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-60 z-[60]"
+            onClick={handleCancelProfessionEdit}
+          />
+          <div className="fixed bottom-0 right-0 w-full max-w-md bg-white rounded-t-2xl shadow-2xl z-[70] animate-slide-up">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Edit Profession</h3>
+              <button
+                onClick={handleCancelProfessionEdit}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Profession Name
+                </label>
+                <input
+                  type="text"
+                  value={editingProfessionName}
+                  onChange={(e) => setEditingProfessionName(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Auto Electrician"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveProfessionEdit();
+                    if (e.key === 'Escape') handleCancelProfessionEdit();
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Icon
+                </label>
+                <div className="flex items-center gap-3 mb-3">
+                  <div 
+                    className="flex-shrink-0 p-3 rounded-lg border-2 border-gray-300" 
+                    style={{ 
+                      backgroundColor: `${getProfessionIconData(editingProfession).color}15` 
+                    }}
+                  >
+                    <img 
+                      src={getProfessionIconData(editingProfession).imagePath}
+                      alt="Icon"
+                      className="w-7 h-7" 
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowProfessionIconPicker(!showProfessionIconPicker)}
+                    className="flex-1 px-4 py-2.5 text-left border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Change Icon</span>
+                  </button>
+                </div>
+
+                {showProfessionIconPicker && (
+                  <div className="p-4 border border-gray-300 rounded-lg bg-gray-50">
+                    <button
+                      type="button"
+                      onClick={triggerProfessionIconUpload}
+                      disabled={uploadingProfessionIcon === editingProfession._id}
+                      className="w-full mb-4 px-4 py-3 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-blue-600 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {uploadingProfessionIcon === editingProfession._id ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-4 h-4" />
+                          <span>Upload Custom Image</span>
+                        </>
+                      )}
+                    </button>
+                    
+                    <div className="border-t border-gray-300 pt-3 mb-3">
+                      <p className="text-xs text-gray-600 font-medium">Or choose from existing:</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto">
+                      {getAllIcons().map((icon) => (
+                        <button
+                          key={icon.name}
+                          onClick={() => handleSelectProfessionIcon(icon.name)}
+                          className={`p-2.5 rounded-lg border-2 transition-all hover:scale-105 ${
+                            getProfessionIconName(editingProfession) === icon.name
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                          style={{ backgroundColor: `${icon.color}10` }}
+                          title={icon.label}
+                        >
+                          <img 
+                            src={icon.imagePath}
+                            alt={icon.label}
+                            className="w-5 h-5 mx-auto"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-200">
+              <button
+                onClick={handleCancelProfessionEdit}
+                className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveProfessionEdit}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 };

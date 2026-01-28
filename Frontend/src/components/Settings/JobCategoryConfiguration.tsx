@@ -17,6 +17,7 @@ const JobCategoryConfiguration: React.FC = () => {
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [editingCategory, setEditingCategory] = useState<JobCategory | null>(null);
   const [showQuickAccessManager, setShowQuickAccessManager] = useState(false);
+  const [iconTimestamp, setIconTimestamp] = useState(Date.now());
 
   useEffect(() => {
     loadCategories();
@@ -27,6 +28,7 @@ const JobCategoryConfiguration: React.FC = () => {
       setLoading(true);
       const response = await settingsService.getJobCategories();
       setCategories(response.categories || []);
+      setIconTimestamp(Date.now());
     } catch (error) {
       console.error('Failed to load categories:', error);
       toast.error('Failed to load categories');
@@ -59,6 +61,7 @@ const JobCategoryConfiguration: React.FC = () => {
         allProfessions.push({
           ...profession,
           categoryName: category.name,
+          categoryIcon: category.icon,
         });
       });
     });
@@ -140,7 +143,7 @@ const JobCategoryConfiguration: React.FC = () => {
                         <div className="flex-shrink-0 p-2 rounded-lg" style={{ backgroundColor: `${categoryIcon.color}15` }}>
                           <img 
                             key={category._id + iconName}
-                            src={categoryIcon.imagePath} 
+                            src={`${categoryIcon.imagePath}?t=${iconTimestamp}`}
                             alt={categoryIcon.label}
                             className="w-5 h-5" 
                             onError={(e) => {
@@ -195,7 +198,7 @@ const JobCategoryConfiguration: React.FC = () => {
                                   style={{ backgroundColor: `${professionIcon.color}15` }}
                                 >
                                   <img 
-                                    src={professionIcon.imagePath} 
+                                    src={`${professionIcon.imagePath}?t=${iconTimestamp}`}
                                     alt={profession.name}
                                     className="w-10 h-10" 
                                     onError={(e) => {
