@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronRight, ChevronDown, Plus } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, Plus, Star } from 'lucide-react';
 import { settingsService } from '../../services';
 import { JobCategory } from '../../types/configuration.types';
 import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
+import QuickAccessManager from './QuickAccessManager';
 import toast from 'react-hot-toast';
 import { getIconByName, getDefaultIconForCategory } from '../../constants/categoryIcons';
 
@@ -15,6 +16,7 @@ const JobCategoryConfiguration: React.FC = () => {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [editingCategory, setEditingCategory] = useState<JobCategory | null>(null);
+  const [showQuickAccessManager, setShowQuickAccessManager] = useState(false);
 
   useEffect(() => {
     loadCategories();
@@ -50,6 +52,19 @@ const JobCategoryConfiguration: React.FC = () => {
     setShowEditDrawer(true);
   };
 
+  const getAllProfessions = () => {
+    const allProfessions: any[] = [];
+    categories.forEach(category => {
+      category.professions.forEach(profession => {
+        allProfessions.push({
+          ...profession,
+          categoryName: category.name,
+        });
+      });
+    });
+    return allProfessions;
+  };
+
   const filteredCategories = categories.filter(category =>
     category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     category.professions.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -70,6 +85,13 @@ const JobCategoryConfiguration: React.FC = () => {
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+          <button
+            onClick={() => setShowQuickAccessManager(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            <Star className="w-4 h-4" />
+            Quick Access
+          </button>
           <button
             onClick={() => setShowAddCategoryModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -195,6 +217,13 @@ const JobCategoryConfiguration: React.FC = () => {
           category={editingCategory}
         />
       )}
+
+      <QuickAccessManager
+        isOpen={showQuickAccessManager}
+        onClose={() => setShowQuickAccessManager(false)}
+        onSuccess={loadCategories}
+        allProfessions={getAllProfessions()}
+      />
     </div>
   );
 };

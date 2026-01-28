@@ -104,3 +104,25 @@ export const getAllIcons = (): CategoryIcon[] => {
 export const getDefaultIconForCategory = (categoryName: string): string => {
   return DEFAULT_CATEGORY_ICONS[categoryName] || 'professional-services';
 };
+
+export const getProfessionIconByName = (iconName: string, categoryIcon?: string): CategoryIcon => {
+  if (!iconName) {
+    return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
+  }
+  
+  if (iconName.startsWith('custom:')) {
+    const fileName = iconName.replace('custom:', '');
+    return {
+      name: iconName,
+      imagePath: `/assets/icons/professions/${fileName}`,
+      color: '#0F766E',
+      label: fileName.replace(/\.\w+$/, '').replace(/^prof-/, '').replace(/-\d+$/, '').replace(/-/g, ' '),
+    };
+  }
+  
+  if (CATEGORY_ICONS[iconName]) {
+    return CATEGORY_ICONS[iconName];
+  }
+  
+  return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
+};

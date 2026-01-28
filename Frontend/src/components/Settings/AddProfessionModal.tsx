@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { Upload, Image as ImageIcon } from 'lucide-react';
 import SideModal from '../SideModal';
 import { settingsService } from '../../services';
 
@@ -18,8 +19,33 @@ const AddProfessionModal: React.FC<AddProfessionModalProps> = ({
   categoryName
 }) => {
   const [professionName, setProfessionName] = useState('');
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setError('File size must be less than 5MB');
+        return;
+      }
+      setIconFile(file);
+      setError(null);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIconPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +58,24 @@ const AddProfessionModal: React.FC<AddProfessionModalProps> = ({
 
     try {
       setLoading(true);
-      await settingsService.createProfession({ 
+      
+      const professionResponse = await settingsService.createProfession({ 
         name: professionName.trim(),
         categoryId 
       });
+      
+      if (iconFile && professionResponse.success && professionResponse.profession) {
+        const uploadResponse = await settingsService.uploadProfessionIcon(iconFile, professionName.trim());
+        if (uploadResponse.success) {
+          await settingsService.updateProfession(professionResponse.profession._id, {
+            icon: uploadResponse.iconName
+          });
+        }
+      }
+      
       setProfessionName('');
+      setIconFile(null);
+      setIconPreview(null);
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -56,7 +95,7 @@ const AddProfessionModal: React.FC<AddProfessionModalProps> = ({
             </div>
           )}
 
-          <div>
+          <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Profession Name <span className="text-red-500">*</span>
             </label>
@@ -68,6 +107,41 @@ const AddProfessionModal: React.FC<AddProfessionModalProps> = ({
               placeholder="e.g., Software Developer, Cyber Security"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Profession Icon (Optional)
+            </label>
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 transition-colors flex items-center justify-center gap-2 text-gray-600 hover:text-blue-600"
+                  disabled={loading}
+                >
+                  <Upload className="w-4 h-4" />
+                  {iconFile ? iconFile.name : 'Choose Icon'}
+                </button>
+              </div>
+              {iconPreview && (
+                <div className="w-16 h-16 border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                  <img src={iconPreview} alt="Preview" className="w-12 h-12 object-contain" />
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              PNG or JPG, max 5MB. Icon will be saved as: {professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'profession-name'}.png
+            </p>
           </div>
         </div>
 
