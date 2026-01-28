@@ -1,7 +1,10 @@
 export interface Profession {
   _id: string;
   name: string;
+  icon?: string;
   categoryId: string;
+  isQuickAccess?: boolean;
+  quickAccessOrder?: number;
   createdAt: Date | string;
   updatedAt: Date | string;
 }

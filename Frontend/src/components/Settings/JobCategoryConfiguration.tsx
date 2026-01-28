@@ -6,7 +6,7 @@ import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import QuickAccessManager from './QuickAccessManager';
 import toast from 'react-hot-toast';
-import { getIconByName, getDefaultIconForCategory } from '../../constants/categoryIcons';
+import { getIconByName, getDefaultIconForCategory, getProfessionIconByName } from '../../constants/categoryIcons';
 
 const JobCategoryConfiguration: React.FC = () => {
   const [categories, setCategories] = useState<JobCategory[]>([]);
@@ -179,15 +179,34 @@ const JobCategoryConfiguration: React.FC = () => {
                           No professions yet. Click Edit to add professions.
                         </p>
                       ) : (
-                        <div className="grid grid-cols-3 gap-3">
-                          {category.professions.map((profession) => (
-                            <div
-                              key={profession._id}
-                              className="px-4 py-2.5 bg-white border border-gray-200 rounded-lg"
-                            >
-                              <span className="text-sm text-gray-900">{profession.name}</span>
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-10 gap-3">
+                          {category.professions.map((profession) => {
+                            const professionIcon = getProfessionIconByName(profession.icon || '', category.icon);
+                            return (
+                              <div
+                                key={profession._id}
+                                className="flex flex-col items-center"
+                              >
+                                <span className="text-xs text-gray-700 text-center line-clamp-2 leading-tight mb-1.5 h-8">
+                                  {profession.name}
+                                </span>
+                                <div 
+                                  className="w-16 h-16 rounded-lg flex items-center justify-center border border-gray-200 hover:border-gray-300 transition-colors" 
+                                  style={{ backgroundColor: `${professionIcon.color}15` }}
+                                >
+                                  <img 
+                                    src={professionIcon.imagePath} 
+                                    alt={profession.name}
+                                    className="w-10 h-10" 
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
