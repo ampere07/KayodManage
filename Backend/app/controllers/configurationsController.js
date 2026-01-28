@@ -213,7 +213,7 @@ exports.createProfession = async (req, res) => {
 exports.updateProfession = async (req, res) => {
   try {
     const { professionId } = req.params;
-    const { name, icon } = req.body;
+    const { name, icon, isQuickAccess, quickAccessOrder } = req.body;
 
     const category = await JobCategory.findOne({
       'professions._id': professionId,
@@ -260,6 +260,14 @@ exports.updateProfession = async (req, res) => {
 
     if (icon !== undefined) {
       profession.icon = icon;
+    }
+
+    if (isQuickAccess !== undefined) {
+      profession.isQuickAccess = isQuickAccess;
+    }
+
+    if (quickAccessOrder !== undefined) {
+      profession.quickAccessOrder = quickAccessOrder;
     }
 
     profession.updatedAt = new Date();
@@ -473,6 +481,91 @@ exports.uploadProfessionIcon = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to upload profession icon',
+      error: error.message,
+    });
+  }
+};
+
+exports.updateQuickAccessProfessions = async (req, res) => {
+  try {
+    const { professions } = req.body;
+    
+    console.log('Received quick access update request:', professions);
+    
+    if (!Array.isArray(professions)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Professions must be an array',
+      });
+    }
+
+    if (professions.length > 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maximum 8 quick access professions allowed',
+      });
+    }
+
+    const mongoose = require('mongoose');
+
+    // Step 1 & 2 Combined: Reset all and set selected professions
+    console.log('\ud83d� Updating professions...');
+    const allCategories = await JobCategory.find();
+    
+    for (const category of allCategories) {
+      let modified = false;
+      
+      category.professions.forEach(profession => {
+        // Reset all to false first
+        profession.isQuickAccess = false;
+        profession.quickAccessOrder = 0;
+        
+        // Check if this profession is in the selected list
+        const selectedIndex = professions.findIndex(
+          p => p.professionId === profession._id.toString()
+        );
+        
+        if (selectedIndex !== -1) {
+          profession.isQuickAccess = true;
+          profession.quickAccessOrder = selectedIndex + 1;
+          modified = true;
+          console.log(`  ✅ ${profession.name} (order: ${selectedIndex + 1})`);
+        }
+      });
+      
+      if (modified || category.professions.length > 0) {
+        category.markModified('professions');
+        await category.save({ validateModifiedOnly: false });
+        console.log(`  💾 Saved category: ${category.name}`);
+      }
+    }
+
+    // Step 3: Verify the changes
+    console.log('\n🔍 Verifying saved data...');
+    const verifyCategories = await JobCategory.find().lean();
+    let verifiedCount = 0;
+    
+    verifyCategories.forEach(cat => {
+      cat.professions.forEach(prof => {
+        if (prof.isQuickAccess) {
+          verifiedCount++;
+          console.log(`  ✓ ${prof.name} (order: ${prof.quickAccessOrder}, category: ${cat.name})`);
+        }
+      });
+    });
+    
+    console.log(`\nTotal verified quick access professions: ${verifiedCount}\n`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Quick access professions updated successfully',
+      verifiedCount,
+    });
+  } catch (error) {
+    console.error('❌ Error updating quick access professions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update quick access professions',
       error: error.message,
     });
   }

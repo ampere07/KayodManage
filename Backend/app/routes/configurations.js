@@ -10,6 +10,7 @@ const {
   deleteProfession,
   uploadCategoryIcon,
   uploadProfessionIcon,
+  updateQuickAccessProfessions,
 } = require('../controllers/configurationsController');
 
 const router = express.Router();
@@ -67,5 +68,40 @@ router.post('/upload-category-icon', requireAdmin, upload.single('icon'), upload
 
 // Profession Icon Upload
 router.post('/upload-profession-icon', requireAdmin, upload.single('icon'), uploadProfessionIcon);
+
+// Quick Access Professions Management
+router.post('/quick-access-professions', requireAdmin, updateQuickAccessProfessions);
+
+// Debug endpoint to check quick access professions
+router.get('/quick-access-professions/debug', async (req, res) => {
+  try {
+    const categories = await require('../models/JobCategory').find();
+    const quickAccessProfessions = [];
+    
+    categories.forEach(category => {
+      category.professions.forEach(profession => {
+        if (profession.isQuickAccess) {
+          quickAccessProfessions.push({
+            _id: profession._id,
+            name: profession.name,
+            categoryName: category.name,
+            quickAccessOrder: profession.quickAccessOrder,
+            isQuickAccess: profession.isQuickAccess
+          });
+        }
+      });
+    });
+    
+    quickAccessProfessions.sort((a, b) => a.quickAccessOrder - b.quickAccessOrder);
+    
+    res.json({
+      success: true,
+      count: quickAccessProfessions.length,
+      professions: quickAccessProfessions
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 module.exports = router;

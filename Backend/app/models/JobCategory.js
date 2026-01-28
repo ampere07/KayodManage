@@ -10,6 +10,14 @@ const professionSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  isQuickAccess: {
+    type: Boolean,
+    default: false,
+  },
+  quickAccessOrder: {
+    type: Number,
+    default: 0,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

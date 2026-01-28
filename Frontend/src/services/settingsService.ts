@@ -103,5 +103,10 @@ export const settingsService = {
       },
     });
     return response.data;
-  }
+  },
+
+  updateQuickAccessProfessions: async (professions: Array<{ professionId: string }>) => {
+    const response = await apiClient.post('/api/admin/configurations/quick-access-professions', { professions });
+    return response.data;
+  },
 };
