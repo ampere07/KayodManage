@@ -40,10 +40,10 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
       const quickAccess = allProfessions
         .filter(p => p.isQuickAccess)
         .sort((a, b) => (a.quickAccessOrder || 0) - (b.quickAccessOrder || 0));
-      
+
       // Get available professions (not in quick access)
       const available = allProfessions.filter(p => !p.isQuickAccess);
-      
+
       setSelectedProfessions(quickAccess);
       setAvailableProfessions(available);
     }
@@ -80,15 +80,15 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
-    
+
     if (draggedIndex === null || draggedIndex === index) return;
 
     const items = Array.from(selectedProfessions);
     const draggedItem = items[draggedIndex];
-    
+
     items.splice(draggedIndex, 1);
     items.splice(index, 0, draggedItem);
-    
+
     setSelectedProfessions(items);
     setDraggedIndex(index);
   };
@@ -148,7 +148,7 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-end z-50">
-      <div className="bg-white shadow-xl w-full max-w-2xl h-full flex flex-col animate-slide-in-right">
+      <div className="bg-white shadow-xl w-full max-w-2xl h-full flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Manage Quick Access Professions</h2>
@@ -208,9 +208,8 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
                         onDragStart={(e) => handleDragStart(e, index)}
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
-                        className={`relative flex flex-col items-center cursor-move group ${
-                          draggedIndex === index ? 'opacity-50' : ''
-                        }`}
+                        className={`relative flex flex-col items-center cursor-move group ${draggedIndex === index ? 'opacity-50' : ''
+                          }`}
                       >
                         <div className="absolute top-1 right-1 z-10">
                           <button
@@ -223,17 +222,17 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
                         <span className="text-xs text-gray-700 text-center line-clamp-2 leading-tight mb-1.5 h-8 px-1">
                           {profession.name}
                         </span>
-                        <div 
-                          className="w-16 h-16 rounded-lg flex items-center justify-center border-2 transition-all" 
-                          style={{ 
+                        <div
+                          className="w-16 h-16 rounded-lg flex items-center justify-center border-2 transition-all"
+                          style={{
                             backgroundColor: `${professionIcon.color}15`,
                             borderColor: draggedIndex === index ? '#3b82f6' : '#e5e7eb'
                           }}
                         >
-                          <img 
-                            src={professionIcon.imagePath} 
+                          <img
+                            src={professionIcon.imagePath}
                             alt={profession.name}
-                            className="w-10 h-10" 
+                            className="w-10 h-10"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.style.display = 'none';
