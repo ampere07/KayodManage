@@ -6,7 +6,7 @@ const path = require('path');
 exports.getJobCategories = async (req, res) => {
   try {
     const categories = await JobCategory.find().sort({ name: 1 }).lean();
-    
+
     res.status(200).json({
       success: true,
       categories,
@@ -24,7 +24,7 @@ exports.getJobCategories = async (req, res) => {
 exports.createJobCategory = async (req, res) => {
   try {
     const { name, icon } = req.body;
-    
+
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -32,10 +32,10 @@ exports.createJobCategory = async (req, res) => {
       });
     }
 
-    const existingCategory = await JobCategory.findOne({ 
-      name: name.trim() 
+    const existingCategory = await JobCategory.findOne({
+      name: name.trim()
     });
-    
+
     if (existingCategory) {
       return res.status(400).json({
         success: false,
@@ -48,7 +48,7 @@ exports.createJobCategory = async (req, res) => {
       icon: icon || undefined,
       professions: [],
     });
-    
+
     res.status(201).json({
       success: true,
       category,
@@ -67,9 +67,9 @@ exports.updateJobCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
     const { name, icon } = req.body;
-    
+
     const category = await JobCategory.findById(categoryId);
-    
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -85,11 +85,11 @@ exports.updateJobCategory = async (req, res) => {
         });
       }
 
-      const existingCategory = await JobCategory.findOne({ 
+      const existingCategory = await JobCategory.findOne({
         name: name.trim(),
         _id: { $ne: categoryId },
       });
-      
+
       if (existingCategory) {
         return res.status(400).json({
           success: false,
@@ -125,7 +125,7 @@ exports.deleteJobCategory = async (req, res) => {
     const { categoryId } = req.params;
 
     const category = await JobCategory.findById(categoryId);
-    
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -153,7 +153,7 @@ exports.deleteJobCategory = async (req, res) => {
 exports.createProfession = async (req, res) => {
   try {
     const { name, categoryId } = req.body;
-    
+
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -169,7 +169,7 @@ exports.createProfession = async (req, res) => {
     }
 
     const category = await JobCategory.findById(categoryId);
-    
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -180,7 +180,7 @@ exports.createProfession = async (req, res) => {
     const existingProfession = category.professions.find(
       p => p.name.toLowerCase() === name.trim().toLowerCase()
     );
-    
+
     if (existingProfession) {
       return res.status(400).json({
         success: false,
@@ -191,11 +191,11 @@ exports.createProfession = async (req, res) => {
     category.professions.push({
       name: name.trim(),
     });
-    
+
     await category.save();
-    
+
     const newProfession = category.professions[category.professions.length - 1];
-    
+
     res.status(201).json({
       success: true,
       profession: newProfession,
@@ -218,7 +218,7 @@ exports.updateProfession = async (req, res) => {
     const category = await JobCategory.findOne({
       'professions._id': professionId,
     });
-    
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -227,7 +227,7 @@ exports.updateProfession = async (req, res) => {
     }
 
     const profession = category.professions.id(professionId);
-    
+
     if (!profession) {
       return res.status(404).json({
         success: false,
@@ -244,10 +244,10 @@ exports.updateProfession = async (req, res) => {
       }
 
       const existingProfession = category.professions.find(
-        p => p._id.toString() !== professionId && 
-             p.name.toLowerCase() === name.trim().toLowerCase()
+        p => p._id.toString() !== professionId &&
+          p.name.toLowerCase() === name.trim().toLowerCase()
       );
-      
+
       if (existingProfession) {
         return res.status(400).json({
           success: false,
@@ -271,9 +271,9 @@ exports.updateProfession = async (req, res) => {
     }
 
     profession.updatedAt = new Date();
-    
+
     await category.save();
-    
+
     res.status(200).json({
       success: true,
       profession,
@@ -295,7 +295,7 @@ exports.deleteProfession = async (req, res) => {
     const category = await JobCategory.findOne({
       'professions._id': professionId,
     });
-    
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -331,7 +331,7 @@ exports.uploadCategoryIcon = async (req, res) => {
 
     const { buffer, originalname } = req.file;
     const { categoryName, oldIcon } = req.body;
-    
+
     if (!categoryName) {
       return res.status(400).json({
         success: false,
@@ -349,7 +349,7 @@ exports.uploadCategoryIcon = async (req, res) => {
       'kayod/client/src/assets/icons/categories',
       fileName
     );
-    
+
     const kayodManagePath = path.join(
       __dirname,
       '../../..',
@@ -372,17 +372,25 @@ exports.uploadCategoryIcon = async (req, res) => {
       const baseName = file.replace(path.extname(file), '');
       return baseName === sanitizedCategoryName || baseName.startsWith(`${sanitizedCategoryName}-`);
     });
-    
+
     existingFiles.forEach(file => {
       const oldKayodPath = path.join(kayodDir, file);
       const oldKayodManagePath = path.join(kayodManageDir, file);
-      
-      if (fs.existsSync(oldKayodPath)) {
-        fs.unlinkSync(oldKayodPath);
+
+      try {
+        if (fs.existsSync(oldKayodPath)) {
+          fs.unlinkSync(oldKayodPath);
+        }
+      } catch (err) {
+        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
       }
-      
-      if (fs.existsSync(oldKayodManagePath)) {
-        fs.unlinkSync(oldKayodManagePath);
+
+      try {
+        if (fs.existsSync(oldKayodManagePath)) {
+          fs.unlinkSync(oldKayodManagePath);
+        }
+      } catch (err) {
+        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
       }
     });
 
@@ -416,7 +424,7 @@ exports.uploadProfessionIcon = async (req, res) => {
 
     const { buffer, originalname } = req.file;
     const { professionName, oldIcon } = req.body;
-    
+
     if (!professionName) {
       return res.status(400).json({
         success: false,
@@ -434,7 +442,7 @@ exports.uploadProfessionIcon = async (req, res) => {
       'kayod/client/src/assets/icons/professions',
       fileName
     );
-    
+
     const kayodManagePath = path.join(
       __dirname,
       '../../..',
@@ -456,13 +464,21 @@ exports.uploadProfessionIcon = async (req, res) => {
       const oldFileName = oldIcon.replace('custom:', '');
       const oldKayodPath = path.join(kayodDir, oldFileName);
       const oldKayodManagePath = path.join(kayodManageDir, oldFileName);
-      
-      if (fs.existsSync(oldKayodPath)) {
-        fs.unlinkSync(oldKayodPath);
+
+      try {
+        if (fs.existsSync(oldKayodPath)) {
+          fs.unlinkSync(oldKayodPath);
+        }
+      } catch (err) {
+        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
       }
-      
-      if (fs.existsSync(oldKayodManagePath)) {
-        fs.unlinkSync(oldKayodManagePath);
+
+      try {
+        if (fs.existsSync(oldKayodManagePath)) {
+          fs.unlinkSync(oldKayodManagePath);
+        }
+      } catch (err) {
+        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
       }
     }
 
@@ -488,9 +504,9 @@ exports.uploadProfessionIcon = async (req, res) => {
 exports.updateQuickAccessProfessions = async (req, res) => {
   try {
     const { professions } = req.body;
-    
+
     console.log('Received quick access update request:', professions);
-    
+
     if (!Array.isArray(professions)) {
       return res.status(400).json({
         success: false,
@@ -510,20 +526,20 @@ exports.updateQuickAccessProfessions = async (req, res) => {
     // Step 1 & 2 Combined: Reset all and set selected professions
     console.log('\ud83d� Updating professions...');
     const allCategories = await JobCategory.find();
-    
+
     for (const category of allCategories) {
       let modified = false;
-      
+
       category.professions.forEach(profession => {
         // Reset all to false first
         profession.isQuickAccess = false;
         profession.quickAccessOrder = 0;
-        
+
         // Check if this profession is in the selected list
         const selectedIndex = professions.findIndex(
           p => p.professionId === profession._id.toString()
         );
-        
+
         if (selectedIndex !== -1) {
           profession.isQuickAccess = true;
           profession.quickAccessOrder = selectedIndex + 1;
@@ -531,7 +547,7 @@ exports.updateQuickAccessProfessions = async (req, res) => {
           console.log(`  ✅ ${profession.name} (order: ${selectedIndex + 1})`);
         }
       });
-      
+
       if (modified || category.professions.length > 0) {
         category.markModified('professions');
         await category.save({ validateModifiedOnly: false });
@@ -543,7 +559,7 @@ exports.updateQuickAccessProfessions = async (req, res) => {
     console.log('\n🔍 Verifying saved data...');
     const verifyCategories = await JobCategory.find().lean();
     let verifiedCount = 0;
-    
+
     verifyCategories.forEach(cat => {
       cat.professions.forEach(prof => {
         if (prof.isQuickAccess) {
@@ -552,7 +568,7 @@ exports.updateQuickAccessProfessions = async (req, res) => {
         }
       });
     });
-    
+
     console.log(`\nTotal verified quick access professions: ${verifiedCount}\n`);
 
     res.status(200).json({
