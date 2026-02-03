@@ -77,8 +77,8 @@ const JobCategoryConfiguration: React.FC = () => {
     <div className="h-full flex flex-col bg-white">
       {/* Header with Search and Add Button */}
       <div className="flex-shrink-0 p-6 border-b border-gray-200">
-        <div className="flex items-center gap-4">
-          <div className="flex-1 relative">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="w-full md:flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
@@ -88,20 +88,23 @@ const JobCategoryConfiguration: React.FC = () => {
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <button
-            onClick={() => setShowQuickAccessManager(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
-          >
-            <Star className="w-4 h-4" />
-            Quick Access
-          </button>
-          <button
-            onClick={() => setShowAddCategoryModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Job Category
-          </button>
+          <div className="flex gap-2 w-full md:w-auto">
+            <button
+              onClick={() => setShowQuickAccessManager(true)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors whitespace-nowrap text-sm"
+            >
+              <Star className="w-4 h-4" />
+              <span>Quick Access</span>
+            </button>
+            <button
+              onClick={() => setShowAddCategoryModal(true)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="md:hidden">Add</span>
+              <span className="hidden md:inline">Add Job Category</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -122,11 +125,11 @@ const JobCategoryConfiguration: React.FC = () => {
               const isExpanded = expandedCategories.has(category._id);
               const iconName = category.icon || getDefaultIconForCategory(category.name);
               const categoryIcon = getIconByName(iconName);
-              
+
               return (
                 <div key={category._id} className="border-b border-gray-200">
                   {/* Category Header */}
-                  <div 
+                  <div
                     onClick={() => toggleCategory(category._id)}
                     className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
                   >
@@ -138,14 +141,14 @@ const JobCategoryConfiguration: React.FC = () => {
                           <ChevronRight className="w-5 h-5" />
                         )}
                       </div>
-                      
+
                       <div className="flex items-center gap-2">
                         <div className="flex-shrink-0 p-2 rounded-lg" style={{ backgroundColor: `${categoryIcon.color}15` }}>
-                          <img 
+                          <img
                             key={category._id + iconName}
                             src={`${categoryIcon.imagePath}?t=${iconTimestamp}`}
                             alt={categoryIcon.label}
-                            className="w-5 h-5" 
+                            className="w-5 h-5"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               console.log('Image load error:', categoryIcon.imagePath);
@@ -153,14 +156,15 @@ const JobCategoryConfiguration: React.FC = () => {
                             }}
                           />
                         </div>
-                        <span className="text-sm font-medium text-gray-900">{category.name}</span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-gray-900 leading-tight">{category.name}</span>
+                          <span className="text-xs text-gray-500">
+                            {category.professions.length} profession{category.professions.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
                       </div>
-                      
-                      <span className="text-xs text-gray-500">
-                        ({category.professions.length} profession{category.professions.length !== 1 ? 's' : ''})
-                      </span>
                     </div>
-                    
+
                     {isExpanded && (
                       <button
                         onClick={(e) => {
@@ -182,25 +186,27 @@ const JobCategoryConfiguration: React.FC = () => {
                           No professions yet. Click Edit to add professions.
                         </p>
                       ) : (
-                        <div className="grid grid-cols-10 gap-3">
+                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-4">
                           {category.professions.map((profession) => {
                             const professionIcon = getProfessionIconByName(profession.icon || '', category.icon);
                             return (
                               <div
                                 key={profession._id}
-                                className="flex flex-col items-center"
+                                className="flex flex-col items-center w-full sm:w-24 group relative"
                               >
-                                <span className="text-xs text-gray-700 text-center line-clamp-2 leading-tight mb-1.5 h-8">
-                                  {profession.name}
-                                </span>
-                                <div 
-                                  className="w-16 h-16 rounded-lg flex items-center justify-center border border-gray-200 hover:border-gray-300 transition-colors" 
-                                  style={{ backgroundColor: `${professionIcon.color}15` }}
+                                <div className="h-8 w-full flex items-end justify-center mb-2">
+                                  <span className="text-xs text-gray-700 text-center line-clamp-2 leading-tight group-hover:text-blue-600 transition-colors break-words hyphens-auto w-full">
+                                    {profession.name}
+                                  </span>
+                                </div>
+                                <div
+                                  className="relative flex items-center justify-center transition-transform duration-200 group-hover:scale-105"
                                 >
-                                  <img 
+                                  <div className="absolute inset-0 m-auto w-12 h-12 rounded-xl bg-orange-100/80"></div>
+                                  <img
                                     src={`${professionIcon.imagePath}?t=${iconTimestamp}`}
                                     alt={profession.name}
-                                    className="w-10 h-10" 
+                                    className="relative z-10 w-16 h-16 object-contain drop-shadow-sm transition-opacity opacity-100"
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
                                       target.style.display = 'none';

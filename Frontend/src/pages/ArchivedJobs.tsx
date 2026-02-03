@@ -76,7 +76,7 @@ const ArchivedJobs: React.FC = () => {
     const handleJobUpdate = (data: any) => {
       console.log('Job updated via socket:', data);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      
+
       if (data.updateType === 'hidden') {
         toast.success('Job has been hidden');
       } else if (data.updateType === 'unhidden') {
@@ -126,61 +126,97 @@ const ArchivedJobs: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-gray-50 -mx-2 sm:-mx-4 md:-mx-8 lg:-mx-8 -my-2 sm:-my-3 md:-my-4">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Archived Jobs</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">View and manage archived job listings</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-          <div 
-            onClick={() => setArchiveTypeFilter('all')}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-blue-600">All</span>
-              <Archive className="h-4 w-4 text-blue-600" />
+        <div className="mb-4">
+          {/* Mobile: Compact Grid */}
+          <div className="grid grid-cols-2 gap-2 md:hidden">
+            <div
+              onClick={() => setArchiveTypeFilter('all')}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <Archive className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">All</span>
+              </div>
+              <span className="text-sm font-bold text-blue-700">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</span>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-blue-900">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
+
+            <div
+              onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-orange-50 border-orange-200 ${archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <Archive className="h-4 w-4 text-orange-600" />
+                <span className="text-sm font-medium text-gray-700">Hidden</span>
+              </div>
+              <span className="text-sm font-bold text-orange-700">{archivedCounts.hidden.toLocaleString()}</span>
+            </div>
+
+            <div
+              onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
+              className={`col-span-2 rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <X className="h-4 w-4 text-red-600" />
+                <span className="text-sm font-medium text-gray-700">Deleted</span>
+              </div>
+              <span className="text-sm font-bold text-red-700">{archivedCounts.removed.toLocaleString()}</span>
+            </div>
           </div>
 
-          <div 
-            onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
-            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-orange-600">Hidden</span>
-              <Archive className="h-4 w-4 text-orange-600" />
+          {/* Desktop: Grid Layout */}
+          <div className="hidden md:grid grid-cols-5 gap-3">
+            <div
+              onClick={() => setArchiveTypeFilter('all')}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">All</span>
+                <Archive className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-2xl font-bold text-blue-900">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-orange-900">{archivedCounts.hidden.toLocaleString()}</p>
-          </div>
 
-          <div 
-            onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
-            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-red-600">Deleted</span>
-              <X className="h-4 w-4 text-red-600" />
+            <div
+              onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-orange-600">Hidden</span>
+                <Archive className="h-4 w-4 text-orange-600" />
+              </div>
+              <p className="text-2xl font-bold text-orange-900">{archivedCounts.hidden.toLocaleString()}</p>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-red-900">{archivedCounts.removed.toLocaleString()}</p>
-          </div>
 
-          <div className="rounded-lg p-3 border border-transparent">
+            <div
+              onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-600">Deleted</span>
+                <X className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-2xl font-bold text-red-900">{archivedCounts.removed.toLocaleString()}</p>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="space-y-3">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
@@ -191,30 +227,32 @@ const ArchivedJobs: React.FC = () => {
             />
           </div>
 
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
-          >
-            <option value="all">All Categories</option>
-            {JOB_CATEGORIES.map(category => (
-              <option key={category} value={category} className="capitalize">
-                {category}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-2 md:flex gap-2 md:gap-3">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
+            >
+              <option value="all">All Categories</option>
+              {JOB_CATEGORIES.map(category => (
+                <option key={category} value={category} className="capitalize">
+                  {category}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium w-full md:w-auto"
-          >
-            <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
+            >
+              <option value="all">All Status</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
         </div>
       </div>
 

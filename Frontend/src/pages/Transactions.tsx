@@ -116,7 +116,7 @@ const Transactions: React.FC = () => {
   }, [pagination.page, pagination.limit, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo, category]);
 
   const transactionType = category === 'wallet_topup' ? 'xendit_topup' : category === 'fee_record' ? 'fee_record' : category;
-  
+
   const { data: transactionsData, isLoading, refetch } = useTransactions(queryParams);
   const { data: statusCounts = { total: 0, pending: 0, completed: 0, failed: 0, cancelled: 0 } } = useTransactionCounts(transactionType);
   const mutations = useTransactionMutations();
@@ -192,20 +192,20 @@ const Transactions: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-gray-50 -mx-2 sm:-mx-4 md:-mx-8 lg:-mx-8 -my-2 sm:-my-3 md:-my-4">
       {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getCategoryTitle(category)}</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
-              {category === 'fee_record' 
+              {category === 'fee_record'
                 ? 'Track and manage platform service fees collected from completed job transactions'
                 : category === 'wallet_topup'
-                ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
-                : category === 'withdrawal'
-                ? 'Monitor and manage user withdrawal requests to external payment methods'
-                : `${pagination.total} total transactions`
+                  ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
+                  : category === 'withdrawal'
+                    ? 'Monitor and manage user withdrawal requests to external payment methods'
+                    : `${pagination.total} total transactions`
               }
             </p>
           </div>
@@ -270,14 +270,13 @@ const Transactions: React.FC = () => {
         {/* Fee Records Status Counters */}
         {category === 'fee_record' && (
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-              }`}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-blue-600">Total Transactions</span>
@@ -286,14 +285,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-blue-900">{statusCounts.total.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('pending');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-              }`}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-yellow-600">Pending</span>
@@ -302,14 +300,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('completed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-              }`}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-green-600">Completed</span>
@@ -318,14 +315,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('failed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-              }`}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-red-600">Failed</span>
@@ -334,14 +330,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('cancelled');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
-              }`}
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-gray-600">Cancelled</span>
@@ -355,14 +350,13 @@ const Transactions: React.FC = () => {
         {/* Top-up Status Counters */}
         {category === 'wallet_topup' && (
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-              }`}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-blue-600">Total Transactions</span>
@@ -371,14 +365,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-blue-900">{statusCounts.total.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('pending');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-              }`}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-yellow-600">Pending</span>
@@ -387,14 +380,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('completed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-              }`}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-green-600">Completed</span>
@@ -403,14 +395,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('failed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-              }`}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-red-600">Failed</span>
@@ -419,14 +410,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('cancelled');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
-              }`}
+              className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'cancelled' ? 'border-gray-500 ring-2 ring-gray-400 shadow-lg' : 'border-gray-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-gray-600">Cancelled</span>
@@ -440,14 +430,13 @@ const Transactions: React.FC = () => {
         {/* Cashout Status Counters */}
         {category === 'withdrawal' && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'all' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
-              }`}
+              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-orange-600">All</span>
@@ -456,14 +445,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-orange-900">{statusCounts.total.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('completed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-              }`}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-green-600">Approved</span>
@@ -472,14 +460,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('pending');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-              }`}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-yellow-600">Pending</span>
@@ -488,14 +475,13 @@ const Transactions: React.FC = () => {
               <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
             </div>
 
-            <div 
+            <div
               onClick={() => {
                 setStatusFilter('failed');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-              }`}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-red-600">Denied</span>
