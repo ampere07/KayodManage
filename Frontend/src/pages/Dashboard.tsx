@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Briefcase, 
-  DollarSign, 
+import {
+  Users,
+  Briefcase,
+  DollarSign,
   AlertCircle,
   TrendingUp
 } from 'lucide-react';
@@ -16,29 +16,29 @@ import { alertsService } from '../services';
 function Header() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   const currentDate = new Date();
-  const dateString = currentDate.toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    month: 'long', 
-    day: 'numeric', 
-    year: 'numeric' 
+  const dateString = currentDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
   });
-  const shortDate = currentDate.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric' 
+  const shortDate = currentDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
   });
-  const timeString = currentDate.toLocaleTimeString('en-US', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
+  const timeString = currentDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
   });
-  
-  const greeting = currentDate.getHours() < 12 
-    ? 'Good Morning' 
-    : currentDate.getHours() < 18 
-    ? 'Good Afternoon' 
-    : 'Good Evening';
-  
+
+  const greeting = currentDate.getHours() < 12
+    ? 'Good Morning'
+    : currentDate.getHours() < 18
+      ? 'Good Afternoon'
+      : 'Good Evening';
+
   return (
     <div className="mb-2 md:mb-3">
       <div className="flex items-start justify-between mb-0.5">
@@ -53,23 +53,23 @@ function Header() {
       <p className="text-xs text-gray-900 mb-1.5 md:mb-2 hidden md:block">
         <span className="hidden sm:inline">{dateString} · </span>{timeString}
       </p>
-      
+
       <div className="flex gap-1.5 md:gap-2 flex-wrap">
-        <button 
+        <button
           onClick={() => navigate('/verifications')}
           className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
         >
           <span className="hidden sm:inline">View Verifications</span>
           <span className="sm:hidden">Verify</span>
         </button>
-        <button 
+        <button
           onClick={() => navigate('/jobs')}
           className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
         >
           <span className="hidden sm:inline">Review Flagged Jobs</span>
           <span className="sm:hidden">Flagged</span>
         </button>
-        <button 
+        <button
           onClick={() => navigate('/support')}
           className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
         >
@@ -155,8 +155,8 @@ function StatCards() {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2 mb-2 md:mb-3">
       {statCards.map((stat) => (
-        <div 
-          key={stat.label} 
+        <div
+          key={stat.label}
           onClick={stat.onClick}
           className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
         >
@@ -164,15 +164,14 @@ function StatCards() {
             <span className="text-xs text-gray-600">{stat.label}</span>
             <stat.icon className="w-3 sm:w-4 h-3 sm:h-4 text-gray-400" />
           </div>
-          
+
           <div className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-0.5 md:mb-1">
             {stat.value}
           </div>
-          
-          <div className={`text-xs flex items-center gap-1 ${
-            stat.changeType === 'positive' ? 'text-green-600' : 
+
+          <div className={`text-xs flex items-center gap-1 ${stat.changeType === 'positive' ? 'text-green-600' :
             stat.changeType === 'negative' ? 'text-red-600' : 'text-gray-600'
-          }`}>
+            }`}>
             {stat.changeType === 'positive' && <TrendingUp className="w-3 h-3 hidden sm:inline" />}
             <span className="truncate text-xs">{stat.change}</span>
           </div>
@@ -206,42 +205,39 @@ function RevenueChart() {
     <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
       <div className="flex items-center justify-between mb-1.5 md:mb-2">
         <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Revenue Overview</h3>
-        
+
         <div className="flex gap-1 md:gap-1.5">
           <button
             onClick={() => setPeriod('week')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
-              period === 'week' 
-                ? 'bg-gray-900 text-white' 
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'week'
+              ? 'bg-gray-900 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+              }`}
           >
             Week
           </button>
           <button
             onClick={() => setPeriod('month')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
-              period === 'month' 
-                ? 'bg-gray-900 text-white' 
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'month'
+              ? 'bg-gray-900 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+              }`}
           >
             Month
           </button>
           <button
             onClick={() => setPeriod('year')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${
-              period === 'year' 
-                ? 'bg-gray-900 text-white' 
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'year'
+              ? 'bg-gray-900 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+              }`}
           >
             Year
           </button>
         </div>
       </div>
-      
-      <div className="flex-1 h-[240px] sm:h-auto sm:min-h-[240px] sm:max-h-[280px]">
+
+      <div className="w-full h-[180px] sm:flex-1 sm:h-auto sm:min-h-[240px] sm:max-h-[280px]">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-xs text-gray-500">Loading...</div>
@@ -251,39 +247,39 @@ function RevenueChart() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis 
-                dataKey="name" 
+              <XAxis
+                dataKey="name"
                 tick={{ fontSize: 9, fill: '#6b7280' }}
                 axisLine={false}
                 tickLine={false}
               />
-              <YAxis 
+              <YAxis
                 tick={{ fontSize: 9, fill: '#6b7280' }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
               />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'white',
+                  border: '1px solid #e5e7eb',
                   borderRadius: '8px',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                   fontSize: '11px'
                 }}
                 formatter={(value: number) => [formatCurrency(value), 'Revenue']}
               />
-              <Area 
-                type="monotone" 
-                dataKey="revenue" 
-                stroke="#3b82f6" 
+              <Area
+                type="monotone"
+                dataKey="revenue"
+                stroke="#3b82f6"
                 strokeWidth={2}
-                fill="url(#colorValue)" 
+                fill="url(#colorValue)"
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -323,17 +319,17 @@ function ActiveAlerts() {
     if (!confirm('Reset all alerts? This will make all dismissed alerts visible again for testing.')) {
       return;
     }
-    
+
     setIsResetting(true);
-    
+
     try {
       const response = await fetch('http://localhost:5000/api/admin/alerts/reset', {
         method: 'POST',
         credentials: 'include'
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         localStorage.removeItem(dismissedAlertsKey);
         alert(`Alerts reset successfully!`);
@@ -351,20 +347,20 @@ function ActiveAlerts() {
 
   const handleDismiss = async (alertId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     console.log('🗑️ Dismissing alert:', alertId, 'for admin:', adminId);
     console.log('🔑 Using localStorage key:', dismissedAlertsKey);
-    
+
     setDismissingAlerts(prev => new Set(prev).add(alertId));
-    
+
     try {
       // Check if this is a generated alert (starts with prefix)
-      const isGeneratedAlert = alertId.startsWith('report_') || 
-                              alertId.startsWith('verification_') || 
-                              alertId.startsWith('support_');
-      
+      const isGeneratedAlert = alertId.startsWith('report_') ||
+        alertId.startsWith('verification_') ||
+        alertId.startsWith('support_');
+
       console.log('🏷️ Is generated alert:', isGeneratedAlert);
-      
+
       if (isGeneratedAlert) {
         // For generated alerts, just remove from local state
         // Store dismissed alert IDs in localStorage to persist across sessions
@@ -372,7 +368,7 @@ function ActiveAlerts() {
         dismissedAlerts.push(alertId);
         localStorage.setItem(dismissedAlertsKey, JSON.stringify(dismissedAlerts));
         console.log('💾 Saved to localStorage:', dismissedAlerts);
-        
+
         setLocalAlerts(prev => prev.filter(alert => alert._id !== alertId));
       } else {
         // For real Alert documents, call the API
@@ -436,11 +432,11 @@ function ActiveAlerts() {
           {isResetting ? 'Resetting...' : 'Reset'}
         </button>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2 max-h-[240px] sm:max-h-[280px]">
         {displayAlerts.length > 0 ? (
           displayAlerts.map((alert) => (
-            <div 
+            <div
               key={alert._id}
               className={`border border-gray-200 rounded-lg p-2 md:p-2.5 ${getAlertStyle(alert.type)}`}
             >
@@ -452,15 +448,15 @@ function ActiveAlerts() {
                   {alert.message || `Job "${alert.jobTitle || 'Test'}" reported for inappropriate content`}
                 </p>
               </div>
-              
+
               <div className="flex gap-1 md:gap-1.5">
-                <button 
+                <button
                   onClick={() => handleReview(alert)}
                   className="px-2 md:px-2.5 py-0.5 md:py-1 bg-gray-900 text-white text-xs rounded hover:bg-gray-800 transition-colors"
                 >
                   Review
                 </button>
-                <button 
+                <button
                   onClick={(e) => handleDismiss(alert._id, e)}
                   disabled={dismissingAlerts.has(alert._id)}
                   className="px-2 md:px-2.5 py-0.5 md:py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -507,16 +503,16 @@ function ActivityBreakdown() {
     { label: 'Online Users', value: stats.onlineUsers || 0, highlight: true },
   ];
 
-  const verificationRate = stats.providers > 0 
+  const verificationRate = stats.providers > 0
     ? Math.round((stats.verifiedProviders / stats.providers) * 100)
     : 0;
 
   const userBreakdown = [
     { label: 'Total Customers', value: stats.customers?.toLocaleString() || '0' },
     { label: 'Total Providers', value: stats.providers?.toLocaleString() || '0' },
-    { 
-      label: 'Verified Providers', 
-      value: `${stats.verifiedProviders || 0} (${verificationRate}%)` 
+    {
+      label: 'Verified Providers',
+      value: `${stats.verifiedProviders || 0} (${verificationRate}%)`
     },
     { label: 'Pending Verifications', value: stats.pendingVerifications?.toLocaleString() || '0' },
     { label: 'Average Rating', value: `${stats.averageRating || '0.0'} ★` },
@@ -526,11 +522,11 @@ function ActivityBreakdown() {
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
       <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
         <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">Today's Activity</h3>
-        
+
         <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
           {todayActivity.map((item) => (
-            <div 
-              key={item.label} 
+            <div
+              key={item.label}
               className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
             >
               <span className="text-xs text-gray-600">{item.label}</span>
@@ -546,14 +542,14 @@ function ActivityBreakdown() {
           ))}
         </div>
       </div>
-      
+
       <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
         <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">User Breakdown</h3>
-        
+
         <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
           {userBreakdown.map((item) => (
-            <div 
-              key={item.label} 
+            <div
+              key={item.label}
               className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
             >
               <span className="text-xs text-gray-600">{item.label}</span>
@@ -573,7 +569,7 @@ export default function Dashboard() {
     <div className="h-full flex flex-col overflow-hidden px-1 sm:px-0">
       <Header />
       <StatCards />
-      
+
       <div className="flex flex-col lg:flex-row gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 md:mb-3">
         <div className="w-full lg:w-[55%]">
           <RevenueChart />
@@ -582,7 +578,7 @@ export default function Dashboard() {
           <ActiveAlerts />
         </div>
       </div>
-      
+
       <ActivityBreakdown />
     </div>
   );
