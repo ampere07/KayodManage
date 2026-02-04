@@ -498,7 +498,7 @@ const Jobs: React.FC = () => {
                       </div>
                       <div className="flex flex-col items-end gap-1.5">
                         <span className="text-xs font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded capitalize">
-                          {job.category.replace(/([A-Z])/g, ' $1').trim()}
+                          {(job.category || '').replace(/([A-Z])/g, ' $1').trim()}
                         </span>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getJobStatusColor(job.status)}`}>
                           {job.isUrgent && <span className="text-orange-600 mr-1">⚠️</span>}
