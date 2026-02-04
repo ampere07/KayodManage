@@ -29,11 +29,11 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
-const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ 
-  isOpen, 
-  onClose, 
+const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
+  isOpen,
+  onClose,
   job,
-  onJobUpdate 
+  onJobUpdate
 }) => {
   const queryClient = useQueryClient();
   const [showMediaAttachments, setShowMediaAttachments] = useState(false);
@@ -41,7 +41,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const [applicants, setApplicants] = useState<Application[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
-  
+
   useEffect(() => {
     if (isOpen && job) {
       fetchApplicants();
@@ -50,7 +50,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const fetchApplicants = async () => {
     if (!job) return;
-    
+
     try {
       setLoadingApplicants(true);
       const data = await jobsService.getJobById(job._id);
@@ -64,7 +64,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleAcceptApplication = async (applicationId: string) => {
     if (!job) return;
-    
+
     try {
       await jobsService.acceptApplication(job._id, applicationId);
       toast.success('Application accepted');
@@ -77,7 +77,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleRejectApplication = async (applicationId: string) => {
     if (!job) return;
-    
+
     try {
       await jobsService.rejectApplication(job._id, applicationId);
       toast.success('Application rejected');
@@ -90,7 +90,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleHideJob = async () => {
     if (!job) return;
-    
+
     try {
       await jobsService.hideJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -104,7 +104,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleUnhideJob = async () => {
     if (!job) return;
-    
+
     try {
       await jobsService.unhideJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -118,11 +118,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleDeleteJob = async () => {
     if (!job) return;
-    
+
     if (!confirm('Are you sure you want to delete this job? This will permanently archive it and remove it from the user\'s account.')) {
       return;
     }
-    
+
     try {
       await jobsService.deleteJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -137,11 +137,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   const handleRestoreJob = async () => {
     if (!job) return;
-    
+
     if (!confirm('Are you sure you want to restore this job? This will make it visible to the user again.')) {
       return;
     }
-    
+
     try {
       await jobsService.restoreJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -153,7 +153,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
       toast.error('Failed to restore job');
     }
   };
-  
+
   if (!isOpen || !job) return null;
 
   const formatCurrency = (amount: number) => {
@@ -176,44 +176,42 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   return (
     <>
-      <div 
+      <div
         className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
         onClick={onClose}
       />
-      
+
       <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-50 shadow-2xl flex flex-col">
+        <div className="px-6 py-5 border-b border-gray-300 bg-gray-50 flex-shrink-0 z-10">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              aria-label="Close modal"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <button
+                onClick={() => copyToClipboard(job._id)}
+                className="text-xs text-gray-500 hover:text-blue-600 cursor-pointer transition-colors text-left"
+                title="Click to copy"
+              >
+                Job ID: {job._id}
+              </button>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500 inline">Job Title: </p>
+              <p className="text-base font-semibold text-gray-900 inline">{job.title}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           <div className="p-6">
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
-                <button
-                onClick={onClose}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-                aria-label="Close modal"
-                >
-                <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <button
-                    onClick={() => copyToClipboard(job._id)}
-                    className="text-xs text-gray-500 hover:text-blue-600 cursor-pointer transition-colors text-left"
-                    title="Click to copy"
-                  >
-                    Job ID: {job._id}
-                  </button>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-500 inline">Job Title: </p>
-                  <p className="text-base font-semibold text-gray-900 inline">{job.title}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-300 mb-6 -mx-6" />
-
             <div className="flex items-center gap-4 pb-6">
               {job.user?.profileImage ? (
                 <img
@@ -286,16 +284,18 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <div>
                 <p className="text-xs text-gray-500 mb-1">Job Posted On:</p>
                 <p className="text-sm font-medium text-gray-900">
-                  {new Date(job.createdAt).toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                  {new Date(job.createdAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
                   })}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Category:</p>
-                <p className="text-sm font-medium text-gray-900 capitalize">{job.category}</p>
+                <p className="text-sm font-medium text-gray-900 capitalize">
+                  {(job.category || '').replace(/([A-Z])/g, ' $1').trim()}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Budget:</p>
@@ -321,13 +321,13 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   <ChevronDown className="h-5 w-5" />
                 )}
               </button>
-              
+
               {showMediaAttachments && (
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   {job.media && job.media.length > 0 ? (
                     job.media.map((url, index) => (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         className="aspect-video border border-gray-300 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity group relative"
                         onClick={() => setSelectedImageIndex(index)}
                       >
@@ -364,7 +364,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   <ChevronDown className="h-5 w-5" />
                 )}
               </button>
-              
+
               {showApplicants && (
                 <div className="mt-3">
                   {loadingApplicants ? (
@@ -374,8 +374,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   ) : applicants.length > 0 ? (
                     <div className="space-y-3">
                       {applicants.map((application) => (
-                        <div 
-                          key={application._id} 
+                        <div
+                          key={application._id}
                           className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow"
                         >
                           <div className="flex items-start justify-between mb-3">
@@ -395,25 +395,24 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                               </div>
                             </div>
                             <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                                application.status === 'accepted'
-                                  ? 'bg-green-100 text-green-700'
-                                  : application.status === 'rejected'
+                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${application.status === 'accepted'
+                                ? 'bg-green-100 text-green-700'
+                                : application.status === 'rejected'
                                   ? 'bg-red-100 text-red-700'
                                   : 'bg-yellow-100 text-yellow-700'
-                              }`}
+                                }`}
                             >
                               {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
                             </span>
                           </div>
-                          
+
                           {application.provider?.phone && (
                             <div className="mb-2">
                               <p className="text-xs text-gray-500">Phone:</p>
                               <p className="text-sm text-gray-900">{application.provider.phone}</p>
                             </div>
                           )}
-                          
+
                           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                             <p className="text-xs text-gray-500">
                               Applied {formatDistanceToNow(new Date(application.appliedAt), { addSuffix: true })}

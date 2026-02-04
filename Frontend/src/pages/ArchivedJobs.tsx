@@ -410,116 +410,118 @@ const ArchivedJobs: React.FC = () => {
                 </table>
               </div>
 
-              <div className="md:hidden px-4 py-4 space-y-3">
+              {/* Mobile Card View */}
+              <div className="md:hidden px-4 py-4 space-y-4">
                 {jobs.map((job) => (
-                  <div key={job._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                    <div className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-sm font-semibold text-gray-900 truncate">{job.title}</h3>
-                            {job.isUrgent && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 flex-shrink-0">
-                                Urgent
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-500 line-clamp-2 mb-2">{job.description}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 capitalize">
-                              {job.category}
-                            </span>
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border ${getJobStatusColor(job.status)}`}>
-                              {getJobStatusIcon(job.status)}
-                              <span className="capitalize">{job.status.replace('_', ' ')}</span>
+                  <div
+                    key={job._id}
+                    onClick={() => openJobModal(job)}
+                    className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
+                  >
+                    {/* Header: User Info & Status */}
+                    <div className="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        {job.user?.profileImage ? (
+                          <img
+                            src={job.user.profileImage}
+                            alt={job.user.name}
+                            className="h-10 w-10 rounded-full object-cover border border-white shadow-sm"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center border border-white shadow-sm">
+                            <span className="text-xs font-bold">
+                              {getInitials(job.user?.name || 'Unknown')}
                             </span>
                           </div>
+                        )}
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 leading-tight">
+                            {job.user?.name || 'Unknown User'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {job.user?.email || 'No email'}
+                          </p>
                         </div>
                       </div>
-
-                      <div className="space-y-2 mb-3">
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            {job.user?.profileImage ? (
-                              <img
-                                src={job.user.profileImage}
-                                alt={job.user.name}
-                                className="h-6 w-6 rounded-full object-cover flex-shrink-0"
-                              />
-                            ) : (
-                              <div className="h-6 w-6 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                                <span className="text-xs font-semibold text-gray-700">
-                                  {getInitials(job.user?.name || 'Unknown')}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium text-gray-900 truncate">
-                                {job.user?.name || 'Unknown User'}
-                              </p>
-                              <p className="text-xs text-gray-500 truncate">
-                                {job.user?.email || 'No email'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                          <p className="text-xs text-gray-600 truncate flex-1">
-                            {job.locationDisplay || 'Selected Location'}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <Wallet className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                            <p className="text-xs font-semibold text-gray-900">
-                              {formatCurrency(job.budget)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-4 w-4 text-gray-400" />
-                            <span className="text-xs font-medium text-gray-700">{job.applicationCount}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Archive className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                          <p className="text-xs text-gray-500">
-                            Archived {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className="text-xs font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded capitalize">
+                          {(job.category || '').replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                        <div className="flex items-center gap-1">
                           {job.archiveType === 'hidden' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
-                              <Archive className="h-3 w-3" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-orange-100 text-orange-700 border border-orange-200">
                               Hidden
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
-                              <X className="h-3 w-3" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-700 border border-red-200">
                               Deleted
                             </span>
                           )}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getJobStatusColor(job.status)}`}>
+                            {job.isUrgent && <span className="text-orange-600 mr-1">⚠️</span>}
+                            {job.status.replace('_', ' ')}
+                          </span>
                         </div>
                       </div>
+                    </div>
 
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-500 capitalize">{job.paymentMethod}</span>
-                          <span className="text-gray-300">•</span>
-                          <span className="text-xs text-gray-500 capitalize">{job.serviceTier} Tier</span>
+                    {/* Job Details: Title, Description, Price */}
+                    <div className="p-4 border-b border-gray-100">
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Job Title:</p>
+                          <h3 className="text-sm font-bold text-gray-900 truncate">{job.title}</h3>
                         </div>
-                        <button
-                          onClick={() => openJobModal(job)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="View details"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Budget:</p>
+                          <p className="text-sm font-bold text-gray-900">{formatCurrency(job.budget)}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Description:</p>
+                        <p className="text-xs text-gray-900 line-clamp-2 leading-relaxed">{job.description}</p>
+                      </div>
+                    </div>
+
+                    {/* Meta: Dates & Location */}
+                    <div className="p-4 border-b border-gray-100 bg-gray-50/30">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Archived:</p>
+                          <p className="text-xs font-medium text-gray-900 truncate">
+                            {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Created:</p>
+                          <p className="text-xs font-medium text-gray-900">
+                            {new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Location:</p>
+                        <p className="text-xs font-medium text-gray-900 truncate">
+                          {job.locationDisplay || 'Location not specified'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Additional Info: Applicants, Payment, Tier */}
+                    <div className="px-4 py-3 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-gray-700">Applicants</p>
+                        <span className="text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full">{job.applicationCount || 0}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-gray-700">Payment Method</p>
+                        <span className="text-xs bg-white border px-1.5 py-0.5 rounded capitalize text-gray-700">{job.paymentMethod}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-gray-700">Service Tier</p>
+                        <span className="text-xs bg-white border px-1.5 py-0.5 rounded capitalize text-gray-700">{job.serviceTier}</span>
                       </div>
                     </div>
                   </div>
