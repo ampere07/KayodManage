@@ -4,7 +4,7 @@ const { logActivity } = require('../utils/activityLogger');
 const getAllVerifications = async (req, res) => {
   try {
     const { status, limit = 50, skip = 0 } = req.query;
-    
+
     const verifications = await verificationService.getAllVerifications({
       status,
       limit,
@@ -60,17 +60,17 @@ const updateVerificationStatus = async (req, res) => {
     const verification = await verificationService.updateVerificationStatus(
       verificationId,
       { status, adminNotes, rejectionReason },
-      req.user?._id
+      req.user?.id
     );
 
     console.log('✅ Verification status updated successfully');
 
     if (status === 'approved' || status === 'rejected') {
       const actionType = status === 'approved' ? 'verification_approved' : 'verification_rejected';
-      const description = status === 'approved' 
+      const description = status === 'approved'
         ? `Approved verification for ${verification.userId.name}`
         : `Rejected verification for ${verification.userId.name}`;
-      
+
       await logActivity(
         req.user.id,
         actionType,
@@ -88,6 +88,25 @@ const updateVerificationStatus = async (req, res) => {
       );
     }
 
+    // Emit socket event for user update
+    try {
+      const userService = require('../services/userService');
+      const userWithData = await userService.getUserById(verification.userId._id);
+      const { io } = require('../../server');
+
+      // Target the admin namespace specifically
+      const adminNamespace = io.of('/admin');
+      adminNamespace.to('admin').emit('user:updated', {
+        user: userWithData,
+        updateType: status === 'approved' ? 'verified' : 'unverified',
+        timestamp: new Date()
+      });
+
+      console.log(`📡 Emitted user:updated for ${userWithData.name} to admin namespace`);
+    } catch (socketError) {
+      console.error('Error emitting user update socket:', socketError);
+    }
+
     res.json({
       success: true,
       message: 'Verification status updated successfully',
@@ -100,9 +119,9 @@ const updateVerificationStatus = async (req, res) => {
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
     console.error('========================================');
-    
+
     const statusCode = error.message.includes('Invalid') || error.message.includes('required') ? 400 : 500;
-    
+
     res.status(statusCode).json({
       success: false,
       message: error.message,
@@ -163,9 +182,30 @@ const getUserImages = async (req, res) => {
   }
 };
 
+const getVerificationByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const verification = await verificationService.getVerificationByUserId(userId);
+
+    res.json({
+      success: true,
+      data: verification || null
+    });
+  } catch (error) {
+    console.error('Error fetching user verification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user verification details',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllVerifications,
   getVerificationById,
+  getVerificationByUserId,
   updateVerificationStatus,
   getVerificationStats,
   getUserImages

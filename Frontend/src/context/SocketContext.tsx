@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 
@@ -38,16 +39,16 @@ interface DashboardStats {
 interface SocketContextType {
   // Connection status
   isConnected: boolean;
-  
+
   // Dashboard data only
   dashboardStats: DashboardStats | null;
-  
+
   // Alerts data
   alerts: Alert[];
-  
+
   // Socket instance
   socket: Socket | null;
-  
+
   // Manual refresh functions
   refreshDashboard: () => void;
   refreshAlerts: () => void;
@@ -69,12 +70,13 @@ interface SocketProviderProps {
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const { isAuthenticated, user } = useAuth();
+  const queryClient = useQueryClient();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  
+
   // Dashboard state
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-  
+
   // Alerts state
   const [alerts, setAlerts] = useState<Alert[]>([]);
 
@@ -98,7 +100,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const adminId = user?.id || user?._id || user?.adminId;
     console.log('[Socket] Connecting with admin ID:', adminId);
     console.log('[Socket] User object:', user);
-    
+
     const newSocket = io('http://localhost:5000/admin', {
       withCredentials: true,
       transports: ['websocket', 'polling'],
@@ -114,11 +116,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       setIsConnected(true);
     });
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', () => {
       setIsConnected(false);
     });
 
-    newSocket.on('connect_error', (error) => {
+    newSocket.on('connect_error', () => {
       setIsConnected(false);
     });
 
@@ -144,6 +146,21 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       setAlerts(prev => prev.map(a => a._id === data.alert._id ? data.alert : a));
       if (data.updateType === 'created' && data.alert.priority >= 3) {
         toast.error(`Alert: ${data.alert.title}`);
+      }
+    });
+
+    // User update events
+    newSocket.on('user:updated', (data) => {
+      console.log('[Socket] User updated:', data.user.name);
+
+      // Invalidate the users query to trigger a refresh across the app
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+
+      // Also specifically invalidate the stats to keep counts accurate
+      queryClient.invalidateQueries({ queryKey: ['users', 'counts'] });
+
+      if (data.updateType === 'verified') {
+        toast.success(`${data.user.name} is now verified!`);
       }
     });
 

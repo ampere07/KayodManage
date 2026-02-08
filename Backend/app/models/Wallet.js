@@ -58,7 +58,6 @@ const WalletSchema = new Schema({
 });
 
 // Indexes for better query performance
-WalletSchema.index({ user: 1 });
 WalletSchema.index({ isActive: 1 });
 WalletSchema.index({ isVerified: 1 });
 

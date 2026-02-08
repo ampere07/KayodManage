@@ -152,29 +152,29 @@ const chatSupportSchema = new mongoose.Schema({
 function generateTicketId() {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const numbers = '0123456789';
-  
+
   const chars = [];
-  
+
   for (let i = 0; i < 5; i++) {
     chars.push(letters.charAt(Math.floor(Math.random() * letters.length)));
   }
-  
+
   for (let i = 0; i < 5; i++) {
     chars.push(numbers.charAt(Math.floor(Math.random() * numbers.length)));
   }
-  
+
   for (let i = chars.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [chars[i], chars[j]] = [chars[j], chars[i]];
   }
-  
+
   const part1 = chars.slice(0, 5).join('');
   const part2 = chars.slice(5, 10).join('');
-  
+
   return `${part1}-${part2}`;
 }
 
-chatSupportSchema.pre('save', function(next) {
+chatSupportSchema.pre('save', function (next) {
   if (this.isNew && !this.ticketId) {
     try {
       this.ticketId = generateTicketId();
@@ -182,7 +182,7 @@ chatSupportSchema.pre('save', function(next) {
       return next(new Error('Failed to generate ticketId: ' + error.message));
     }
   }
-  
+
   if (this.isModified('messages') && this.messages.length > 0) {
     const lastMsg = this.messages[this.messages.length - 1];
     this.lastMessage = {
@@ -195,6 +195,5 @@ chatSupportSchema.pre('save', function(next) {
 
 chatSupportSchema.index({ userId: 1, createdAt: -1 });
 chatSupportSchema.index({ status: 1 });
-chatSupportSchema.index({ ticketId: 1 }, { unique: true });
 
 module.exports = mongoose.model('ChatSupport', chatSupportSchema);

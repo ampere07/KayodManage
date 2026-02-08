@@ -1,4 +1,5 @@
 const CredentialVerification = require('../models/CredentialVerification');
+const User = require('../models/User');
 
 /**
  * Verification Service
@@ -10,7 +11,7 @@ class VerificationService {
    */
   async getAllVerifications(filters = {}) {
     const { status, limit = 50, skip = 0 } = filters;
-    
+
     const query = {};
     if (status && status !== 'all') {
       query.status = status;
@@ -65,20 +66,27 @@ class VerificationService {
       updateData.rejectionReason = rejectionReason;
     }
 
+    // Use a transaction or at least update both if needed
     const verification = await CredentialVerification.findByIdAndUpdate(
       verificationId,
       updateData,
       { new: true }
     )
       .populate('userId', 'name email userType profileImage createdAt')
-      .populate('reviewedBy', 'name email')
-      .lean();
+      .populate('reviewedBy', 'name email');
 
     if (!verification) {
       throw new Error('Verification not found');
     }
 
-    return verification;
+    // Sync isVerified status to User model
+    if (status === 'approved') {
+      await User.findByIdAndUpdate(verification.userId._id, { isVerified: true });
+    } else if (status === 'rejected') {
+      await User.findByIdAndUpdate(verification.userId._id, { isVerified: false });
+    }
+
+    return verification.toObject();
   }
 
   /**
@@ -119,6 +127,19 @@ class VerificationService {
       rejected: statusCounts.rejected || 0,
       under_review: statusCounts.under_review || 0
     };
+  }
+
+  /**
+   * Get latest verification for a user
+   */
+  async getVerificationByUserId(userId) {
+    const verification = await CredentialVerification.findOne({ userId })
+      .populate('userId', 'name email userType profileImage createdAt')
+      .populate('reviewedBy', 'name email')
+      .sort({ submittedAt: -1 })
+      .lean();
+
+    return verification;
   }
 
   /**

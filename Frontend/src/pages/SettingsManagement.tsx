@@ -58,21 +58,6 @@ const SettingsManagement: React.FC = () => {
     }
   };
 
-  const permissionLabels: (keyof Permission)[] = [
-    'dashboard',
-    'users',
-    'jobs',
-    'transactions',
-    'verifications',
-    'support',
-    'activity',
-    'flagged',
-    'settings'
-  ];
-
-  const formatPermissionLabel = (key: string): string => {
-    return key.charAt(0).toUpperCase() + key.slice(1);
-  };
 
   const getAccessLevel = (role: string): { label: string; color: string } => {
     const normalizedRole = role.toLowerCase();
@@ -223,7 +208,7 @@ const SettingsManagement: React.FC = () => {
 
   if (user?.role !== 'superadmin') {
     return (
-      <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
+      <div className="fixed inset-0 md:left-72 flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <ShieldAlert className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
@@ -236,7 +221,7 @@ const SettingsManagement: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
+      <div className="fixed inset-0 md:left-72 flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         <span className="ml-3 text-gray-600">Loading admins...</span>
       </div>
@@ -258,7 +243,7 @@ const SettingsManagement: React.FC = () => {
         admin={selectedAdmin}
       />
 
-      <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+      <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50">
         <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-4">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">

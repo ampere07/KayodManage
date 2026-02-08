@@ -1,7 +1,4 @@
-/**
- * User Types
- * Type definitions for user-related data structures
- */
+import { Verification } from './verifications.types';
 
 export type UserType = 'client' | 'provider' | 'admin' | 'superadmin';
 export type AccountStatus = 'active' | 'restricted' | 'suspended' | 'banned';
@@ -57,6 +54,7 @@ export interface User {
   restrictionDetails?: RestrictionDetails;
   wallet: UserWallet;
   fees: UserFee[];
+  verificationAudit?: Verification | null;
   createdAt: Date;
   lastLogin?: Date;
 }
@@ -66,14 +64,6 @@ export interface UserStats {
   onlineUsers: number;
   verifiedUsers: number;
   restrictedUsers: number;
-}
-
-export interface VerificationDetails {
-  verifiedBy?: {
-    _id: string;
-    name: string;
-  };
-  verifiedAt?: Date;
 }
 
 export interface PenaltyData {
@@ -103,7 +93,7 @@ export interface UsersResponse {
   };
 }
 
-export interface UserDetailsResponse extends User {}
+export interface UserDetailsResponse extends User { }
 
 export interface UserActionRequest {
   reason?: string;
@@ -112,4 +102,4 @@ export interface UserActionRequest {
   restricted?: boolean;
 }
 
-export interface UserActionResponse extends User {}
+export interface UserActionResponse extends User { }

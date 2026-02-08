@@ -50,7 +50,6 @@ const jobCategorySchema = new mongoose.Schema({
   },
 });
 
-jobCategorySchema.index({ name: 1 });
 jobCategorySchema.index({ 'professions._id': 1 });
 
 jobCategorySchema.pre('save', function (next) {

@@ -392,7 +392,7 @@ const Activity: React.FC = () => {
   }, [pagination.page, highlightedActivityId, searchParams, setSearchParams, activities, handleActivityClick]);
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 mt-16 md:mt-0">
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>

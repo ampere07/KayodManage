@@ -3,7 +3,7 @@ import { Briefcase } from 'lucide-react';
 
 const JobCategoryConfiguration: React.FC = () => {
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-4">
         <div className="flex items-center min-w-0">
           <Briefcase className="h-6 w-6 md:h-8 md:w-8 text-blue-600 mr-2 md:mr-3 flex-shrink-0" />

@@ -101,8 +101,8 @@ if (supportRouter && supportRouter.stack) {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const mongoose = require('mongoose');
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date(),
     uptime: process.uptime(),
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
@@ -115,29 +115,29 @@ const serverInstance = server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO server ready`);
   console.log(`🌐 Admin panel: http://localhost:5173`);
-  
+
   // Start automatic top-up approval (runs every 5 minutes)
   startAutoApprovalScheduler(5);
-  
+
   // Start restriction expiration scheduler (runs every hour)
   startRestrictionScheduler();
 });
 
 const gracefulShutdown = async () => {
   console.log('\n🛑 Shutting down...');
-  
+
   try {
     stopAutoApprovalScheduler();
-    
+
     const { closeChatSupportChangeStream } = require('./app/socket/socketHandlers');
     closeChatSupportChangeStream();
-    
-    io.close(() => {});
-    serverInstance.close(() => {});
-    
+
+    io.close(() => { });
+    serverInstance.close(() => { });
+
     const { disconnectDatabase } = require('./app/config/database');
     await disconnectDatabase();
-    
+
     console.log('✅ Shutdown complete');
     process.exit(0);
   } catch (error) {

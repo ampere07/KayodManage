@@ -192,7 +192,7 @@ const Flagged: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="mb-4">
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Flagged</h1>

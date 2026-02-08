@@ -169,7 +169,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
         onClick={onClose}
       />
 
-      <div className={`fixed inset-0 md:left-64 bg-white shadow-2xl z-[110] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+      <div className={`fixed inset-0 md:left-72 bg-white shadow-2xl z-[110] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}>
         <div className="h-full flex flex-col relative">
           {/* Mobile Backdrop for Bottom Sheet */}
@@ -392,7 +392,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
               ref={sheetRef}
               className={`
                 fixed md:static inset-x-0 bottom-0 z-[120] h-[85vh] md:h-full bg-white 
-                md:transform-none rounded-t-2xl md:rounded-none 
+                md:transform-none rounded-t-2xl md:rounded-none md:flex-1
                 shadow-[0_-4px_30px_rgba(0,0,0,0.15)] md:shadow-none flex flex-col
                 ${showMobileDocs ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
               `}
@@ -435,7 +435,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
               {/* Content Area - Images */}
               <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
-                <div className="max-w-3xl mx-auto">
+                <div className="w-full">
                   {activeTab === 'face' && (
                     <div className="space-y-6 md:space-y-8">
                       {/* Face Verification Images */}
@@ -661,7 +661,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                     </button>
                   </div>
                 ) : verification.status === 'approved' ? (
-                  <div className="max-w-3xl mx-auto rounded-lg p-3 bg-green-50 flex items-center justify-center gap-2">
+                  <div className="w-full rounded-lg p-3 bg-green-50 flex items-center justify-center gap-2">
                     <div className="flex-shrink-0 w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
                       <CheckCircle className="w-4 h-4 text-green-600" strokeWidth={2.5} />
                     </div>

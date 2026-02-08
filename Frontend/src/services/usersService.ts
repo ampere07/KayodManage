@@ -1,12 +1,9 @@
 import apiClient from '../utils/apiClient';
 import type {
-  User,
   UsersResponse,
   UserDetailsResponse,
   UsersQueryParams,
-  UserActionRequest,
   UserActionResponse,
-  VerificationDetails,
   PenaltyData
 } from '../types/users.types';
 
@@ -16,7 +13,6 @@ import type {
  */
 class UsersService {
   private baseUrl = '/api/users';
-  private verificationUrl = '/api/verifications';
   private activityUrl = '/api/admin/activity-logs';
 
   /**
@@ -51,12 +47,12 @@ class UsersService {
    */
   async restrictUser(userId: string, duration?: number, reason?: string): Promise<UserActionResponse> {
     const payload = { restricted: true, duration, reason };
-    
+
     const response = await apiClient.patch<UserActionResponse>(
       `${this.baseUrl}/${userId}/restrict`,
       payload
     );
-    
+
     return response.data;
   }
 
@@ -97,30 +93,6 @@ class UsersService {
   }
 
   /**
-   * Get verification details for a user
-   */
-  async getVerificationDetails(userId: string): Promise<VerificationDetails | null> {
-    try {
-      const response = await apiClient.get<any>(`${this.verificationUrl}/${userId}`);
-      const data = response.data;
-      
-      if (data.reviewedBy && data.reviewedAt) {
-        return {
-          verifiedBy: data.reviewedBy,
-          verifiedAt: data.reviewedAt
-        };
-      }
-      return null;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
-      console.error('Error fetching verification details:', error);
-      return null;
-    }
-  }
-
-  /**
    * Get penalty data for a user
    */
   async getPenaltyData(userId: string): Promise<PenaltyData> {
@@ -128,22 +100,22 @@ class UsersService {
       const response = await apiClient.get<any>(
         `${this.activityUrl}?targetId=${userId}&limit=1000`
       );
-      
+
       const logs = response.data.logs || [];
-      
-      const userLogs = logs.filter((log: any) => 
+
+      const userLogs = logs.filter((log: any) =>
         log.targetId?._id === userId
       );
-      
-      const penaltyActions = userLogs.filter((log: any) => 
+
+      const penaltyActions = userLogs.filter((log: any) =>
         ['user_restricted', 'user_suspended', 'user_banned'].includes(log.actionType)
       );
-      
+
       const totalPenalties = penaltyActions.length;
-      const lastPenalty = penaltyActions.length > 0 
-        ? new Date(penaltyActions[0].createdAt) 
+      const lastPenalty = penaltyActions.length > 0
+        ? new Date(penaltyActions[0].createdAt)
         : null;
-      
+
       return {
         totalPenalties,
         activeWarnings: 0,

@@ -290,17 +290,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
     return `${first}${last}`;
   };
 
-  const permissionLabels: { key: keyof typeof formData.permissions; label: string }[] = [
-    { key: 'dashboard', label: 'Dashboard' },
-    { key: 'users', label: 'Users' },
-    { key: 'jobs', label: 'Jobs' },
-    { key: 'transactions', label: 'Transactions' },
-    { key: 'verifications', label: 'Verifications' },
-    { key: 'support', label: 'Support' },
-    { key: 'activity', label: 'Activity' },
-    { key: 'flagged', label: 'Flagged' },
-    { key: 'settings', label: 'Settings' }
-  ];
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'basic', label: 'Basic Info', icon: User },

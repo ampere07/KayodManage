@@ -13,7 +13,7 @@ class UserService {
    */
   async getUsers(query, pagination) {
     const { skip, limit } = pagination;
-    
+
     const users = await User.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -21,19 +21,19 @@ class UserService {
       .lean();
 
     const userIds = users.map(user => user._id);
-    
+
     const wallets = await Wallet.find({ user: { $in: userIds } }).lean();
     const feeRecords = await FeeRecord.find({ provider: { $in: userIds } }).lean();
-    
+
     const walletMap = this._createWalletMap(wallets);
     const feeMap = this._createFeeMap(feeRecords);
-    
-    const usersWithData = users.map(user => 
+
+    const usersWithData = users.map(user =>
       this._enrichUserData(user, walletMap, feeMap)
     );
-    
+
     const total = await User.countDocuments(query);
-    
+
     return {
       users: usersWithData,
       total
@@ -50,10 +50,34 @@ class UserService {
     const wallet = await Wallet.findOne({ user: userId }).lean();
     const feeRecords = await FeeRecord.find({ provider: userId }).lean();
 
+    // Fetch verification record for audit details
+    // If user is verified, search for the approved record first
+    const CredentialVerification = require('../models/CredentialVerification');
+    let verification = null;
+
+    if (user.isVerified) {
+      verification = await CredentialVerification.findOne({ userId, status: 'approved' })
+        .populate('reviewedBy', 'name email')
+        .sort({ reviewedAt: -1 })
+        .lean();
+    }
+
+    // If still no record (not verified or approved record missing), get latest submission
+    if (!verification) {
+      verification = await CredentialVerification.findOne({ userId })
+        .populate('reviewedBy', 'name email')
+        .sort({ submittedAt: -1 })
+        .lean();
+    }
+
     const walletMap = this._createWalletMap(wallet ? [wallet] : []);
     const feeMap = this._createFeeMap(feeRecords);
 
-    return this._enrichUserData(user, walletMap, feeMap);
+    const enrichedUser = this._enrichUserData(user, walletMap, feeMap);
+    return {
+      ...enrichedUser,
+      verificationAudit: verification || null
+    };
   }
 
   /**
@@ -80,12 +104,12 @@ class UserService {
       restrictionDetails.restrictedBy = restrictedBy;
     }
 
-    const updateData = { 
+    const updateData = {
       isRestricted: true,
       accountStatus: 'restricted',
       restrictionDetails
     };
-    
+
     return await User.findByIdAndUpdate(userId, updateData, { new: true });
   }
 
@@ -95,7 +119,7 @@ class UserService {
   async unrestrictUser(userId) {
     return await User.findByIdAndUpdate(
       userId,
-      { 
+      {
         accountStatus: 'active',
         isRestricted: false,
         $unset: { restrictionDetails: 1 }
@@ -123,14 +147,14 @@ class UserService {
       expiresAt.setTime(expiresAt.getTime() + durationMs);
       restrictionDetails.expiresAt = expiresAt;
     }
-    
+
     if (restrictedBy && mongoose.Types.ObjectId.isValid(restrictedBy)) {
       restrictionDetails.restrictedBy = restrictedBy;
     }
-    
+
     return await User.findByIdAndUpdate(
       userId,
-      { 
+      {
         accountStatus: 'banned',
         isRestricted: true,
         restrictionDetails
@@ -147,7 +171,7 @@ class UserService {
     // Convert days (including fractional) to milliseconds
     const durationMs = (duration || 7) * 24 * 60 * 60 * 1000;
     expiresAt.setTime(expiresAt.getTime() + durationMs);
-    
+
     const restrictionDetails = {
       type: 'suspended',
       reason: reason.trim(),
@@ -156,14 +180,14 @@ class UserService {
       expiresAt: expiresAt,
       appealAllowed: true
     };
-    
+
     if (restrictedBy && mongoose.Types.ObjectId.isValid(restrictedBy)) {
       restrictionDetails.restrictedBy = restrictedBy;
     }
-    
+
     return await User.findByIdAndUpdate(
       userId,
-      { 
+      {
         accountStatus: 'suspended',
         isRestricted: true,
         restrictionDetails
@@ -189,14 +213,14 @@ class UserService {
   buildUserQuery(filters) {
     const { search, status, userType, restricted, isVerified } = filters;
     const query = {};
-    
+
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     if (status) {
       switch (status) {
         case 'verified':
@@ -219,22 +243,22 @@ class UserService {
           break;
       }
     }
-    
+
     if (isVerified !== undefined) {
       query.isVerified = isVerified === 'true' || isVerified === true;
     }
-    
+
     if (userType === 'client' || userType === 'provider') {
       query.userType = userType;
     }
-    
+
     if (restricted === 'true') {
       query.$or = [
         { accountStatus: { $in: ['restricted', 'suspended', 'banned'] } },
         { isRestricted: true }
       ];
     }
-    
+
     return query;
   }
 
@@ -255,7 +279,7 @@ class UserService {
         $unset: { restrictionDetails: 1 }
       }
     );
-    
+
     return result.modifiedCount;
   }
 
@@ -286,7 +310,7 @@ class UserService {
     const userId = user._id.toString();
     const wallet = walletMap[userId];
     const userFees = feeMap[userId] || [];
-    
+
     const walletData = {
       balance: wallet ? wallet.balance : 0,
       availableBalance: wallet ? wallet.availableBalance : 0,

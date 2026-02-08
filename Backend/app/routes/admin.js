@@ -18,6 +18,7 @@ const {
 const {
   getAllVerifications,
   getVerificationById,
+  getVerificationByUserId,
   updateVerificationStatus,
   getVerificationStats,
   getUserImages
@@ -46,6 +47,7 @@ router.post('/report-post', authMiddleware, createReport);
 
 router.get('/verifications', adminAuth, getAllVerifications);
 router.get('/verifications/stats', adminAuth, getVerificationStats);
+router.get('/verifications/user/:userId', adminAuth, getVerificationByUserId);
 router.get('/verifications/:verificationId', adminAuth, getVerificationById);
 router.patch('/verifications/:verificationId', adminAuth, updateVerificationStatus);
 
