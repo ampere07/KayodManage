@@ -1,11 +1,10 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
-  Shield, 
-  User, 
-  CheckCircle, 
-  XCircle, 
-  Eye,
+import {
+  User,
+  CheckCircle,
+  XCircle,
   Image,
   Calendar,
   AlertCircle,
@@ -91,29 +90,29 @@ const Verifications: React.FC = () => {
     const id = searchParams.get('id');
     const verificationId = searchParams.get('verificationId');
     const targetId = id || verificationId;
-    
+
     if (targetId && verifications.length > 0) {
       // Find verification by ID or by userId
-      const verification = verifications.find(v => 
+      const verification = verifications.find(v =>
         v._id === targetId || v.userId?._id === targetId
       );
-      
+
       if (verification) {
         // Set the highlighted user
         setHighlightedUserId(verification.userId?._id || null);
-        
+
         // Open the modal automatically
         setSelectedVerification(verification);
         setModalOpen(true);
-        
+
         // Scroll to the highlighted row after a short delay
         setTimeout(() => {
-          highlightedRowRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center' 
+          highlightedRowRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
           });
         }, 300);
-        
+
         // Clear the URL parameter after processing
         searchParams.delete('id');
         searchParams.delete('verificationId');
@@ -123,9 +122,9 @@ const Verifications: React.FC = () => {
   }, [verifications, searchParams, setSearchParams]);
 
   const handleStatusUpdate = async (
-    verificationId: string, 
-    status: string, 
-    notes?: string, 
+    verificationId: string,
+    status: string,
+    notes?: string,
     reason?: string
   ): Promise<void> => {
     try {
@@ -160,7 +159,7 @@ const Verifications: React.FC = () => {
   const userVerifications = useMemo(() => {
     const grouped = verifications.reduce((acc, verification) => {
       if (!verification.userId) return acc;
-      
+
       const userId = verification.userId._id;
       if (!acc[userId]) {
         acc[userId] = {
@@ -177,20 +176,20 @@ const Verifications: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return userVerifications.filter(({ user, verifications }) => {
-      const matchesSearch = 
+      const matchesSearch =
         user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesStatus = statusFilter === 'all' || 
+
+      const matchesStatus = statusFilter === 'all' ||
         verifications.some(v => {
           if (statusFilter === 'under_review') {
             return v.status === 'under_review' || v.status === 'pending';
           }
           return v.status === statusFilter;
         });
-      
+
       const matchesUserType = userTypeFilter === 'all' || user.userType === userTypeFilter;
-      
+
       return matchesSearch && matchesStatus && matchesUserType;
     });
   }, [userVerifications, searchTerm, statusFilter, userTypeFilter]);
@@ -221,77 +220,166 @@ const Verifications: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 mt-16 md:mt-0">
       {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">User Verifications</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">Review and manage user verification submissions including identity documents, credentials, and face verification</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1 hidden md:block">Review and manage user verification submissions including identity documents, credentials, and face verification</p>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div 
-            onClick={() => {
-              setStatusFilter('all');
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-            }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Total Users</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{userVerifications.length}</p>
+        <div className="mb-4">
+          {/* Mobile: Compact Grid */}
+          <div className="grid grid-cols-2 gap-2 md:hidden">
+            <div
+              onClick={() => {
+                setStatusFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${statusFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Total</span>
+              </div>
+              <span className="text-sm font-bold text-blue-700">{userVerifications.length}</span>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('under_review');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${statusFilter === 'under_review' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-gray-700">Pending</span>
+              </div>
+              <span className="text-sm font-bold text-yellow-700">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'pending' || v.status === 'under_review')
+                ).length}
+              </span>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('approved');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${statusFilter === 'approved' ? 'border-green-400 ring-2 ring-green-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <span className="text-sm font-medium text-gray-700">Approved</span>
+              </div>
+              <span className="text-sm font-bold text-green-700">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'approved')
+                ).length}
+              </span>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('rejected');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${statusFilter === 'rejected' ? 'border-red-400 ring-2 ring-red-300' : ''
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-red-600" />
+                <span className="text-sm font-medium text-gray-700">Rejected</span>
+              </div>
+              <span className="text-sm font-bold text-red-700">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'rejected')
+                ).length}
+              </span>
+            </div>
           </div>
-          <div 
-            onClick={() => {
-              setStatusFilter('under_review');
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              statusFilter === 'under_review' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-            }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Pending Review</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {userVerifications.filter(({ verifications }) => 
-                verifications.some(v => v.status === 'pending' || v.status === 'under_review')
-              ).length}
-            </p>
-          </div>
-          <div 
-            onClick={() => {
-              setStatusFilter('approved');
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              statusFilter === 'approved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-            }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Approved</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {userVerifications.filter(({ verifications }) => 
-                verifications.some(v => v.status === 'approved')
-              ).length}
-            </p>
-          </div>
-          <div 
-            onClick={() => {
-              setStatusFilter('rejected');
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}
-            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              statusFilter === 'rejected' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-            }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Rejected</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">
-              {userVerifications.filter(({ verifications }) => 
-                verifications.some(v => v.status === 'rejected')
-              ).length}
-            </p>
+
+          {/* Desktop: Grid Layout */}
+          <div className="hidden md:grid grid-cols-4 gap-3">
+            <div
+              onClick={() => {
+                setStatusFilter('all');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <User className="h-4 w-4 text-blue-600" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{userVerifications.length}</p>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('under_review');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'under_review' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-yellow-800">Pending Review</span>
+                <AlertCircle className="h-4 w-4 text-yellow-600" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'pending' || v.status === 'under_review')
+                ).length}
+              </p>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('approved');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'approved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-green-800">Approved</span>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'approved')
+                ).length}
+              </p>
+            </div>
+
+            <div
+              onClick={() => {
+                setStatusFilter('rejected');
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'rejected' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-red-800">Rejected</span>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">
+                {userVerifications.filter(({ verifications }) =>
+                  verifications.some(v => v.status === 'rejected')
+                ).length}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -307,18 +395,17 @@ const Verifications: React.FC = () => {
               className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
           </div>
-          
+
           <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
             <button
               onClick={() => {
                 setUserTypeFilter('all');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                userTypeFilter === 'all'
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'all'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               All
             </button>
@@ -327,11 +414,10 @@ const Verifications: React.FC = () => {
                 setUserTypeFilter('client');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                userTypeFilter === 'client'
-                  ? 'bg-purple-50 text-purple-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'client'
+                ? 'bg-purple-50 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               Customer
             </button>
@@ -340,11 +426,10 @@ const Verifications: React.FC = () => {
                 setUserTypeFilter('provider');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                userTypeFilter === 'provider'
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'provider'
+                ? 'bg-indigo-50 text-indigo-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               Provider
             </button>
@@ -381,19 +466,18 @@ const Verifications: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedUsers.map(({ user, verifications }) => {
                       const latestVerification = verifications[0];
-                      const totalDocuments = verifications.reduce((sum, v) => 
+                      const totalDocuments = verifications.reduce((sum, v) =>
                         sum + 1 + 1 + v.credentials.length, 0
                       );
                       const isHighlighted = highlightedUserId === user._id;
 
                       return (
-                        <tr 
-                          key={user._id} 
+                        <tr
+                          key={user._id}
                           ref={isHighlighted ? highlightedRowRef : null}
                           onClick={() => openModal(latestVerification)}
-                          className={`hover:bg-gray-50 transition-all duration-300 cursor-pointer ${
-                            isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
-                          }`}
+                          className={`hover:bg-gray-50 transition-all duration-300 cursor-pointer ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
+                            }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
@@ -436,21 +520,20 @@ const Verifications: React.FC = () => {
               </div>
 
               {/* Mobile Cards */}
-              <div className="md:hidden px-4 py-4 space-y-3">
+              <div className="md:hidden px-4 pb-4 pt-2 space-y-3">
                 {paginatedUsers.map(({ user, verifications }) => {
                   const latestVerification = verifications[0];
-                  const totalDocuments = verifications.reduce((sum, v) => 
+                  const totalDocuments = verifications.reduce((sum, v) =>
                     sum + 1 + 1 + v.credentials.length, 0
                   );
                   const isHighlighted = highlightedUserId === user._id;
 
                   return (
-                    <div 
-                      key={user._id} 
+                    <div
+                      key={user._id}
                       onClick={() => openModal(latestVerification)}
-                      className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-all duration-300 ${
-                        isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 shadow-lg' : ''
-                      }`}
+                      className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-all duration-300 ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 shadow-lg' : ''
+                        }`}
                     >
                       <div className="flex items-center gap-3 mb-3">
                         <UserAvatar user={user} size="md" />

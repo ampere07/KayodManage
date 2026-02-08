@@ -5,9 +5,6 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Calendar,
-  User,
-  Flag,
   Image as ImageIcon,
   Video
 } from 'lucide-react';
@@ -52,7 +49,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
       resolved: 'bg-green-100 text-green-800 border border-green-200',
       dismissed: 'bg-gray-100 text-gray-800 border border-gray-200'
     };
-    
+
     return badges[status as keyof typeof badges] || badges.pending;
   };
 
@@ -80,20 +77,21 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
       width="2xl"
     >
       <div className="flex flex-col">
-        {/* Status Badge */}
-        <div className="flex items-center justify-between px-6 py-6">
-          <span className="text-sm text-gray-600 font-medium">Current Status</span>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(reportedPost.status)}`}>
-            {reportedPost.status.charAt(0).toUpperCase() + reportedPost.status.slice(1)}
-          </span>
-        </div>
-
-        <div className="border-t border-gray-200"></div>
-
         {/* Job Details */}
         <div className="px-6 py-6">
-          <h3 className="font-semibold text-lg mb-4 text-gray-900">Job Details</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg text-gray-900">Job Details</h3>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(reportedPost.status)}`}>
+              {reportedPost.status.charAt(0).toUpperCase() + reportedPost.status.slice(1)}
+            </span>
+          </div>
           <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-3 gap-2">
+              <span className="text-gray-600 font-medium">Job ID:</span>
+              <span className="col-span-2 font-mono text-blue-600 font-semibold">
+                #{reportedPost.jobId._id.slice(-6).toUpperCase()}
+              </span>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Title:</span>
               <span className="col-span-2 text-gray-900">{reportedPost.jobId.title}</span>
@@ -147,26 +145,25 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
               </span>
             )}
           </h3>
-          
+
           {reportedPost.jobId.media && reportedPost.jobId.media.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
               {reportedPost.jobId.media.map((mediaItem, index) => {
                 const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.type;
-                const mediaType = typeof mediaItem === 'string' 
+                const mediaType = typeof mediaItem === 'string'
                   ? (mediaUrl?.match(/\.(mp4|webm|mov|avi)$/i) ? 'video' : 'image')
                   : mediaItem.mediaType || 'image';
                 const fileName = typeof mediaItem === 'string'
                   ? mediaUrl?.split('/').pop() || 'Unknown file'
                   : mediaItem.originalName || 'Unknown file';
-                
+
                 return (
                   <div key={index} className="bg-gray-50 rounded-lg p-2 border border-gray-200">
                     <div className="flex items-center justify-between mb-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        mediaType === 'video' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-green-100 text-green-800'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${mediaType === 'video'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-green-100 text-green-800'
+                        }`}>
                         {mediaType === 'video' ? (
                           <><Video className="h-3 w-3 inline mr-1" />Video</>
                         ) : (
@@ -174,7 +171,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                         )}
                       </span>
                     </div>
-                    
+
                     {mediaType === 'image' ? (
                       <img
                         src={mediaUrl}
@@ -190,7 +187,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                         preload="metadata"
                       />
                     )}
-                    
+
                     <div className="mt-2">
                       <a
                         href={mediaUrl}
@@ -281,7 +278,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
               <XCircle className="h-4 w-4 mr-2" />
               Dismiss
             </button>
-            
+
             <button
               onClick={() => handleReview('approve')}
               disabled={isLoading}
@@ -290,7 +287,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
               <CheckCircle className="h-4 w-4 mr-2" />
               Keep Post
             </button>
-            
+
             <button
               onClick={() => handleReview('delete')}
               disabled={isLoading}

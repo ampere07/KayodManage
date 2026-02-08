@@ -1,21 +1,26 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
-  AlertTriangle, 
-  Eye, 
-  ChevronLeft,
-  ChevronRight,
+import { SidebarContext } from '../components/Layout/Layout';
+import {
+  AlertTriangle,
+  Eye,
   Calendar,
   User,
   Search,
-  Image as ImageIcon
+  Image as ImageIcon,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Flag,
+  Activity as ActivityIcon
 } from 'lucide-react';
 import { formatBudgetWithType } from '../utils/currency';
+import { getInitials } from '../utils';
 import { ReviewReportModal } from '../components/Modals';
 import { useFlaggedPosts, useReviewReportedPost } from '../hooks';
-import type { 
-  ReportedPost, 
-  ReportFilterStatus 
+import type {
+  ReportedPost,
+  ReportFilterStatus
 } from '../types/flagged.types';
 
 const Flagged: React.FC = () => {
@@ -33,25 +38,33 @@ const Flagged: React.FC = () => {
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
 
+  const { setIsHeaderHidden } = useContext(SidebarContext);
+
+  useEffect(() => {
+    if (setIsHeaderHidden) {
+      setIsHeaderHidden(isModalOpen);
+    }
+  }, [isModalOpen, setIsHeaderHidden]);
+
   useEffect(() => {
     const reportId = searchParams.get('reportId');
     const alertId = searchParams.get('alertId');
     const targetId = reportId || alertId;
-    
+
     if (targetId && reportedPosts.length > 0) {
       const post = reportedPosts.find(p => p._id === targetId);
       if (post) {
         setHighlightedPostId(targetId);
         setSelectedPost(post);
         setIsModalOpen(true);
-        
+
         setTimeout(() => {
-          highlightedRowRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center' 
+          highlightedRowRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
           });
         }, 300);
-        
+
         searchParams.delete('reportId');
         searchParams.delete('alertId');
         setSearchParams(searchParams, { replace: true });
@@ -70,15 +83,15 @@ const Flagged: React.FC = () => {
 
       setIsModalOpen(false);
       setSelectedPost(null);
-      
+
       const actionMessages = {
         approve: 'Post approved and kept',
         dismiss: 'Report dismissed',
         delete: 'Post deleted successfully'
       };
-      
+
       alert(actionMessages[action]);
-      
+
     } catch (err: any) {
       console.error('Error reviewing post:', err);
       alert(err?.response?.data?.message || err?.message || 'An error occurred while reviewing the post');
@@ -107,7 +120,7 @@ const Flagged: React.FC = () => {
       resolved: 'bg-green-100 text-green-800 border border-green-200',
       dismissed: 'bg-gray-100 text-gray-800 border border-gray-200'
     };
-    
+
     return badges[status as keyof typeof badges] || badges.pending;
   };
 
@@ -134,27 +147,27 @@ const Flagged: React.FC = () => {
 
   const filteredPosts = useMemo(() => {
     let filtered = reportedPosts;
-    
+
     // Debug: Log the first post to see the structure
     if (filtered.length > 0) {
       console.log('First post jobId:', filtered[0].jobId);
       console.log('First post jobId.media:', filtered[0].jobId.media);
     }
-    
+
     if (filter !== 'all') {
       filtered = filtered.filter(post => post.status === filter);
     }
-    
+
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(post => 
+      filtered = filtered.filter(post =>
         post.jobId.title.toLowerCase().includes(search) ||
         post.reportedBy.providerName.toLowerCase().includes(search) ||
         post.reason.toLowerCase().includes(search) ||
         post.comment.toLowerCase().includes(search)
       );
     }
-    
+
     return filtered;
   }, [reportedPosts, filter, searchTerm]);
 
@@ -164,7 +177,7 @@ const Flagged: React.FC = () => {
     resolved: reportedPosts.filter(post => post.status === 'resolved').length,
     dismissed: reportedPosts.filter(post => post.status === 'dismissed').length
   }), [reportedPosts]);
-  
+
   const totalPages = Math.ceil(filteredPosts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedPosts = filteredPosts.slice(startIndex, startIndex + itemsPerPage);
@@ -188,12 +201,63 @@ const Flagged: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {/* Mobile: Compact Grid */}
+        <div className="grid grid-cols-2 gap-2 md:hidden mb-4">
           <div
             onClick={() => setFilter('all')}
-            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-            }`}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${filter === 'all' ? 'border-red-400 ring-2 ring-red-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-gray-700">Total</span>
+            </div>
+            <span className="text-sm font-bold text-red-700">{statusCounts.all}</span>
+          </div>
+
+          <div
+            onClick={() => setFilter('pending')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${filter === 'pending' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm font-medium text-gray-700">Pending</span>
+            </div>
+            <span className="text-sm font-bold text-yellow-700">{statusCounts.pending}</span>
+          </div>
+
+          <div
+            onClick={() => setFilter('resolved')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${filter === 'resolved' ? 'border-green-400 ring-2 ring-green-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium text-gray-700">Resolved</span>
+            </div>
+            <span className="text-sm font-bold text-green-700">{statusCounts.resolved}</span>
+          </div>
+
+          <div
+            onClick={() => setFilter('dismissed')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-gray-100 border-gray-200 ${filter === 'dismissed' ? 'border-gray-400 ring-2 ring-gray-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <XCircle className="h-4 w-4 text-gray-600" />
+              <span className="text-sm font-medium text-gray-700">Dismissed</span>
+            </div>
+            <span className="text-sm font-bold text-gray-700">{statusCounts.dismissed}</span>
+          </div>
+        </div>
+
+        {/* Desktop: Full Grid */}
+        <div className="hidden md:grid grid-cols-4 gap-3 mb-4">
+          <div
+            onClick={() => setFilter('all')}
+            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">All Reports</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.all}</p>
@@ -201,9 +265,8 @@ const Flagged: React.FC = () => {
 
           <div
             onClick={() => setFilter('pending')}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-            }`}
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Pending</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.pending}</p>
@@ -211,9 +274,8 @@ const Flagged: React.FC = () => {
 
           <div
             onClick={() => setFilter('resolved')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filter === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-            }`}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.resolved}</p>
@@ -221,9 +283,8 @@ const Flagged: React.FC = () => {
 
           <div
             onClick={() => setFilter('dismissed')}
-            className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filter === 'dismissed' ? 'border-gray-600 ring-2 ring-gray-500 shadow-lg' : 'border-gray-300'
-            }`}
+            className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'dismissed' ? 'border-gray-600 ring-2 ring-gray-500 shadow-lg' : 'border-gray-300'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Dismissed</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.dismissed}</p>
@@ -260,8 +321,8 @@ const Flagged: React.FC = () => {
               </div>
               <p className="text-gray-600 font-medium">No reports found</p>
               <p className="text-sm text-gray-500 mt-1">
-                {filter !== 'all' 
-                  ? 'Try adjusting your filters or search term.' 
+                {filter !== 'all'
+                  ? 'Try adjusting your filters or search term.'
                   : 'No posts have been reported yet.'}
               </p>
             </div>
@@ -294,13 +355,12 @@ const Flagged: React.FC = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedPosts.map((post) => (
-                      <tr 
+                      <tr
                         key={post._id}
                         ref={highlightedPostId === post._id ? highlightedRowRef : null}
                         onClick={() => handleViewPost(post)}
-                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${
-                          highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
-                        }`}
+                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
+                          }`}
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center">
@@ -308,17 +368,17 @@ const Flagged: React.FC = () => {
                               {(() => {
                                 // Try different possible image sources
                                 let imageUrl = null;
-                                
+
                                 // Check media array
                                 if (post.jobId.media && post.jobId.media.length > 0) {
                                   imageUrl = post.jobId.media[0].url || post.jobId.media[0];
                                 }
-                                
+
                                 // Check images array (fallback)
                                 if (!imageUrl && (post.jobId as any).images && (post.jobId as any).images.length > 0) {
                                   imageUrl = (post.jobId as any).images[0];
                                 }
-                                
+
                                 return imageUrl ? (
                                   <img
                                     className="h-10 w-10 rounded object-cover"
@@ -389,70 +449,125 @@ const Flagged: React.FC = () => {
               {/* Mobile Card View */}
               <div className="md:hidden px-4 py-4 space-y-3">
                 {paginatedPosts.map((post) => (
-                  <div 
+                  <div
                     key={post._id}
                     ref={highlightedPostId === post._id ? highlightedRowRef : null}
                     onClick={() => handleViewPost(post)}
-                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-all duration-300 cursor-pointer hover:shadow-md ${
-                      highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
-                    }`}
+                    className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-300 cursor-pointer active:scale-[0.98] ${highlightedPostId === post._id ? 'ring-2 ring-yellow-400 bg-yellow-50' : 'hover:shadow-md'
+                      }`}
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="flex-shrink-0 h-12 w-12">
-                        {(() => {
-                          // Try different possible image sources
-                          let imageUrl = null;
-                          
-                          // Check media array
-                          if (post.jobId.media && post.jobId.media.length > 0) {
-                            imageUrl = post.jobId.media[0].url || post.jobId.media[0];
-                          }
-                          
-                          // Check images array (fallback)
-                          if (!imageUrl && (post.jobId as any).images && (post.jobId as any).images.length > 0) {
-                            imageUrl = (post.jobId as any).images[0];
-                          }
-                          
-                          return imageUrl ? (
-                            <img
-                              className="h-12 w-12 rounded object-cover"
-                              src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
-                              alt="Job"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="h-12 w-12 rounded bg-gray-200 flex items-center justify-center"><svg class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
-                              }}
-                            />
-                          ) : (
-                            <div className="h-12 w-12 rounded bg-gray-200 flex items-center justify-center">
-                              <ImageIcon className="h-6 w-6 text-gray-400" />
-                            </div>
-                          );
-                        })()}
+                    {/* Card Header: Reported User Info */}
+                    <div className="p-4 flex items-center gap-3 bg-gray-50/50 border-b border-gray-100">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-white shadow-sm flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-bold text-gray-600">
+                          {getInitials((post.jobPosterId as any)?.name || 'Unknown')}
+                        </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">{post.jobId.title}</h3>
-                        <p className="text-xs text-gray-500">{formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}</p>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-gray-900 truncate">
+                            {(post.jobPosterId as any)?.name || 'Unknown User'}
+                          </h3>
+                          <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-[10px] font-bold border border-gray-200/50 shadow-sm ml-2 flex-shrink-0">
+                            Job ID: {post.jobId._id.slice(-6).toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {(post.jobPosterId as any)?.email || 'No email provided'}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="mb-3 pb-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2 mb-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm text-gray-900">{post.reportedBy.providerName}</span>
+                    {/* Card Body: Report Details */}
+                    <div className="p-4">
+                      {/* Section 1: Reason */}
+                      <div className="flex items-start gap-2 mb-4">
+                        <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <div className="text-sm font-bold text-gray-900 leading-tight">
+                            {formatReason(post.reason)}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1">
+                            <User className="h-3 w-3" />
+                            <span>Reported by: </span>
+                            <span className="font-semibold text-gray-700">{post.reportedBy.providerName}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-sm font-medium text-gray-900">{formatReason(post.reason)}</div>
+
+                      {/* Section 2: Reported Content (Separation Line) */}
+                      <div className="pt-4 border-t border-gray-100 -mx-4">
+                        <p className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.15em] flex items-center gap-1.5 ml-0.5 mb-3">
+                          <ActivityIcon className="h-3 w-3" />
+                          Reported Content Details
+                        </p>
+
+                        {/* Full-width Image with Separation Lines */}
+                        <div className="w-full h-52 bg-gray-50 relative border-y border-gray-100 overflow-hidden">
+                          {(() => {
+                            let imageUrl = null;
+                            if (post.jobId.media && post.jobId.media.length > 0) {
+                              imageUrl = post.jobId.media[0].url || post.jobId.media[0];
+                            }
+
+                            return imageUrl ? (
+                              <img
+                                src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
+                                alt="Reported"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 gap-2">
+                                <ImageIcon className="h-10 w-10 text-gray-300" />
+                              </div>
+                            );
+                          })()}
+
+                          {post.jobId.category && (
+                            <div className="absolute top-3 right-3">
+                              <span className="px-2 py-1 bg-white/90 backdrop-blur-sm shadow-sm rounded-md text-[10px] font-black text-blue-600 uppercase tracking-widest border border-white">
+                                {post.jobId.category}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Text details below the separation line */}
+                        <div className="px-4 pt-4">
+                          <h4 className="text-base font-bold text-gray-800 leading-tight mb-3">
+                            {post.jobId.title}
+                          </h4>
+                          <div className="flex flex-wrap gap-2 text-[11px]">
+                            <span className="px-2 py-1 bg-green-50 text-green-700 rounded-lg font-bold border border-green-100/50 shadow-sm">
+                              {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 3: Comment (Separation Line) */}
                       {post.comment && (
-                        <p className="text-xs text-gray-500 mt-1">{post.comment}</p>
+                        <div className="mt-5 pt-4 border-t border-gray-100">
+                          <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <ActivityIcon className="h-3 w-3" />
+                            Reporter's Comment
+                          </p>
+                          <div className="relative pl-3 border-l-2 border-red-100">
+                            <p className="text-sm text-gray-600 leading-relaxed italic pr-4">
+                              "{post.comment}"
+                            </p>
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <Calendar className="h-3 w-3" />
+                    {/* Card Footer: Metadata */}
+                    <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between mt-auto">
+                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
+                        <Calendar className="h-3.5 w-3.5" />
                         <span>{formatDate(post.createdAt)}</span>
                       </div>
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(post.status)}`}>
                         {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
                       </span>
                     </div>

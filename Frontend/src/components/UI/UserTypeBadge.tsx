@@ -3,9 +3,10 @@ import { Briefcase, User, Shield, Crown } from 'lucide-react';
 
 interface UserTypeBadgeProps {
   userType: string;
+  size?: 'sm' | 'md';
 }
 
-const UserTypeBadge: React.FC<UserTypeBadgeProps> = ({ userType }) => {
+const UserTypeBadge: React.FC<UserTypeBadgeProps> = ({ userType, size = 'md' }) => {
   const configs = {
     provider: {
       bg: 'bg-blue-100',
@@ -29,7 +30,19 @@ const UserTypeBadge: React.FC<UserTypeBadgeProps> = ({ userType }) => {
     }
   };
 
+  const sizeClasses = {
+    sm: {
+      container: 'gap-0.5 px-1.5 py-0.5 text-[10px]',
+      icon: 'h-2.5 w-2.5'
+    },
+    md: {
+      container: 'gap-1 px-2 py-1 text-xs',
+      icon: 'h-3 w-3'
+    }
+  };
+
   const config = configs[userType.toLowerCase() as keyof typeof configs] || configs.client;
+  const classes = sizeClasses[size];
   const Icon = config.icon;
 
   const getDisplayLabel = (type: string) => {
@@ -40,8 +53,8 @@ const UserTypeBadge: React.FC<UserTypeBadgeProps> = ({ userType }) => {
   };
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${config.bg} ${config.text}`}>
-      <Icon className="h-3 w-3" />
+    <span className={`inline-flex items-center rounded-full font-semibold whitespace-nowrap ${classes.container} ${config.bg} ${config.text}`}>
+      <Icon className={classes.icon} />
       {getDisplayLabel(userType)}
     </span>
   );

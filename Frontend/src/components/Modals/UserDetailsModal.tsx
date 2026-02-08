@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Shield,
@@ -28,9 +29,9 @@ interface UserDetailsModalProps {
   onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number, reason?: string) => void;
 }
 
-const UserDetailsModal: React.FC<UserDetailsModalProps> = ({ 
-  isOpen, 
-  onClose, 
+const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
+  isOpen,
+  onClose,
   user,
   onVerify,
   onAction
@@ -60,7 +61,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     }
 
     const calculateTimeRemaining = () => {
-      const expiresAt = new Date(user.restrictionDetails.expiresAt);
+      const expiresAt = new Date(user!.restrictionDetails!.expiresAt);
       const now = new Date();
       const diffMs = expiresAt.getTime() - now.getTime();
 
@@ -96,8 +97,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     if (isOpen && user) {
       fetchPenaltyData();
       if (user.restrictionDetails?.restrictedBy) {
-        const restrictedById = typeof user.restrictionDetails.restrictedBy === 'string' 
-          ? user.restrictionDetails.restrictedBy 
+        const restrictedById = typeof user.restrictionDetails.restrictedBy === 'string'
+          ? user.restrictionDetails.restrictedBy
           : user.restrictionDetails.restrictedBy._id;
         fetchRestrictedByAdmin(restrictedById);
       }
@@ -114,7 +115,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const fetchVerificationDetails = async () => {
     if (!user?._id) return;
-    
+
     setLoadingVerification(true);
     try {
       const details = await usersService.getVerificationDetails(user._id);
@@ -140,13 +141,13 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const fetchPenaltyData = async () => {
     if (!user?._id) return;
-    
+
     setLoadingPenalties(true);
     try {
       const data = await usersService.getPenaltyData(user._id);
-      
+
       const activeWarnings = user.accountStatus !== 'active' ? 1 : 0;
-      
+
       setPenaltyData({
         ...data,
         activeWarnings
@@ -165,7 +166,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   const handleConfirmYes = () => {
     if (confirmingAction && user) {
       const totalDays = durationDays + (durationHours / 24) + (durationMinutes / (24 * 60));
-      
+
       if (confirmingAction !== 'unrestrict' && totalDays <= 0) {
         toast.error('Please enter a duration for the restriction');
         return;
@@ -175,10 +176,10 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         toast.error('Please provide a reason for the restriction');
         return;
       }
-      
+
       onAction(
-        user, 
-        confirmingAction, 
+        user,
+        confirmingAction,
         confirmingAction === 'unrestrict' ? undefined : totalDays,
         confirmingAction === 'unrestrict' ? undefined : reason
       );
@@ -238,24 +239,15 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const { firstName, lastName } = parseFullName(user.name);
 
-  return (
+  return createPortal(
     <>
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity"
         onClick={onClose}
       />
-      
-      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-50 shadow-2xl overflow-y-auto flex flex-col">
-        {/* Mobile Top Bar with Close Button */}
-        <div className="md:hidden flex items-center justify-end px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            aria-label="Close modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+
+      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-[101] shadow-2xl overflow-y-auto flex flex-col">
+        {/* Mobile Top Bar with Close Button - Removed */}
 
         {/* Desktop Header with Title and Close Button */}
         <div className="hidden md:flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 sticky top-0 z-20">
@@ -270,9 +262,18 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         </div>
 
         <div className="px-4 md:px-6 py-6 flex-1 flex flex-col">
-          {/* Mobile Title */}
-          <h2 className="md:hidden text-xl font-semibold text-gray-900 mb-6">User Information</h2>
-          
+          {/* Mobile Title with Close Button */}
+          <div className="md:hidden flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">User Information</h2>
+            <button
+              onClick={onClose}
+              className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              aria-label="Close modal"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="relative flex-shrink-0">
@@ -290,7 +291,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </div>
                 )}
               </div>
-              
+
               <div>
                 <h3 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h3>
                 <button
@@ -394,29 +395,27 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Total Penalties:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                      penaltyData.totalPenalties > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${penaltyData.totalPenalties > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
                       {penaltyData.totalPenalties}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Active Warnings:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                      penaltyData.activeWarnings > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${penaltyData.activeWarnings > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
                       {penaltyData.activeWarnings}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Last Penalty:</p>
                     <p className="text-sm text-gray-900">
-                      {penaltyData.lastPenalty 
+                      {penaltyData.lastPenalty
                         ? new Date(penaltyData.lastPenalty).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })
                         : 'None'
                       }
                     </p>
@@ -483,7 +482,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                             className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
                           />
                         </div>
-                        
+
                         {/* Hours Input */}
                         <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
                           <label className="block text-xs font-medium text-gray-600 text-center mb-2">Hours</label>
@@ -509,7 +508,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                             className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
                           />
                         </div>
-                        
+
                         {/* Minutes Input */}
                         <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
                           <label className="block text-xs font-medium text-gray-600 text-center mb-2">Minutes</label>
@@ -537,7 +536,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                         </div>
                       </div>
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Reason:</label>
                       <textarea
@@ -605,7 +604,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
 
 /**
@@ -15,9 +14,9 @@ export const getPriorityBadge = (priority: string): JSX.Element => {
     medium: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Medium' },
     low: { bg: 'bg-green-100', text: 'text-green-700', label: 'Low' }
   };
-  
+
   const config = configs[priority as keyof typeof configs] || configs.low;
-  
+
   return (
     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.text}`}>
       {config.label}
@@ -30,13 +29,12 @@ export const getPriorityBadge = (priority: string): JSX.Element => {
  */
 export const getStatusBadge = (
   status: string,
-  assignedTo?: string,
   acceptedBy?: string,
   displayStatus?: string
 ): JSX.Element => {
   // Use displayStatus if provided (from backend)
   const effectiveStatus = displayStatus || (status === 'open' && !acceptedBy ? 'open' : status === 'open' && acceptedBy ? 'pending' : 'resolved');
-  
+
   if (effectiveStatus === 'open') {
     return (
       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">

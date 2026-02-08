@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X as XIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Transaction } from '../../types';
@@ -31,17 +32,16 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
   // Render fee record layout
   if (isFeeRecord) {
-    return (
+    return createPortal(
       <>
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+          className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity"
           onClick={onClose}
         />
 
         <div
-          className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
-            isOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
+          className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-[101] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
         >
           <div className="h-full flex flex-col">
             {/* Header */}
@@ -59,206 +59,211 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto">
-                {/* Financial Information */}
-                <div className="px-6 pt-6 pb-6">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-2">Kayod Platform Fee</p>
-                      <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
-                    </div>
+              {/* Financial Information */}
+              <div className={`px-6 py-6 ${transaction.status === 'completed'
+                ? 'bg-green-100'
+                : transaction.status === 'pending'
+                  ? 'bg-yellow-100'
+                  : 'bg-red-100'
+                }`}>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-2">Kayod Platform Fee</p>
+                    <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
+                  </div>
 
-                    <div>
-                      <p className="text-sm text-gray-600 mb-2">Job Fee Amount</p>
-                      <p className="text-3xl font-bold text-gray-900">
-                        {formatCurrency(transaction.job?.budget || transaction.jobId?.budget || 0)}
-                      </p>
-                    </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-2">Job Fee Amount</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {formatCurrency(transaction.job?.budget || transaction.jobId?.budget || 0)}
+                    </p>
                   </div>
                 </div>
+              </div>
 
-                <div className="border-t border-gray-200"></div>
+              <div className="border-t border-gray-200"></div>
 
-                {/* Customer & Provider Information */}
-                <div className="relative">
-                  {/* Vertical separator line */}
-                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200 -ml-px"></div>
-                  
-                  <div className="px-6 py-6">
-                    <div className="grid grid-cols-2 gap-4">
+              {/* Customer & Provider Information */}
+              <div className="relative">
+                {/* Vertical separator line */}
+                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200 -ml-px"></div>
+
+                <div className="px-6 py-6">
+                  <div className="grid grid-cols-2 gap-4">
                     {/* Customer Information */}
                     <div className="pr-4">
-                    <h4 className="text-sm font-bold text-gray-900 mb-4">Customer Information:</h4>
+                      <h4 className="text-sm font-bold text-gray-900 mb-4">Customer Information:</h4>
 
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="relative flex-shrink-0">
-                        {customer?.profileImage ? (
-                          <img
-                            src={customer.profileImage}
-                            alt={customer.name}
-                            className="w-16 h-16 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
-                            <span className="text-xl font-medium text-blue-600">
-                              {getInitials(customer?.name || 'Unknown')}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{customer?.name || 'Unknown'}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-sm">
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">First Name:</p>
-                        <p className="text-gray-900 font-medium">{customer?.name?.split(' ')[0] || 'N/A'}</p>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="relative flex-shrink-0">
+                          {customer?.profileImage ? (
+                            <img
+                              src={customer.profileImage}
+                              alt={customer.name}
+                              className="w-16 h-16 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+                              <span className="text-xl font-medium text-blue-600">
+                                {getInitials(customer?.name || 'Unknown')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{customer?.name || 'Unknown'}</p>
+                        </div>
                       </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Last Name:</p>
-                        <p className="text-gray-900 font-medium">{customer?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
-                      </div>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">First Name:</p>
+                          <p className="text-gray-900 font-medium">{customer?.name?.split(' ')[0] || 'N/A'}</p>
+                        </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">KYD:</p>
-                        <p className="text-gray-900 font-mono font-medium break-all">{customer?._id || 'N/A'}</p>
-                      </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Last Name:</p>
+                          <p className="text-gray-900 font-medium">{customer?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                        </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Email:</p>
-                        <p className="text-gray-900 font-medium break-all">{customer?.email || 'N/A'}</p>
-                      </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">KYD:</p>
+                          <p className="text-gray-900 font-mono font-medium break-all">{customer?._id || 'N/A'}</p>
+                        </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Contact Number:</p>
-                        <p className="text-gray-900 font-medium">{customer?.phone || 'N/A'}</p>
-                      </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Email:</p>
+                          <p className="text-gray-900 font-medium break-all">{customer?.email || 'N/A'}</p>
+                        </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Address:</p>
-                        <p className="text-gray-900 font-medium">{customer?.location || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Contact Number:</p>
+                          <p className="text-gray-900 font-medium">{customer?.phone || 'N/A'}</p>
+                        </div>
 
-                  {/* Provider Information */}
-                  <div className="pl-4">
-                    <h4 className="text-sm font-bold text-gray-900 mb-4">Provider Information:</h4>
-
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="relative flex-shrink-0">
-                        {provider?.profileImage ? (
-                          <img
-                            src={provider.profileImage}
-                            alt={provider.name}
-                            className="w-16 h-16 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-                            <span className="text-xl font-medium text-green-600">
-                              {getInitials(provider?.name || 'Unknown')}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{provider?.name || 'Unknown'}</p>
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Address:</p>
+                          <p className="text-gray-900 font-medium">{customer?.location || 'N/A'}</p>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-3 text-sm">
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">First Name:</p>
-                        <p className="text-gray-900 font-medium">{provider?.name?.split(' ')[0] || 'N/A'}</p>
+                    {/* Provider Information */}
+                    <div className="pl-4">
+                      <h4 className="text-sm font-bold text-gray-900 mb-4">Provider Information:</h4>
+
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="relative flex-shrink-0">
+                          {provider?.profileImage ? (
+                            <img
+                              src={provider.profileImage}
+                              alt={provider.name}
+                              className="w-16 h-16 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                              <span className="text-xl font-medium text-green-600">
+                                {getInitials(provider?.name || 'Unknown')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{provider?.name || 'Unknown'}</p>
+                        </div>
                       </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Last Name:</p>
-                        <p className="text-gray-900 font-medium">{provider?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">First Name:</p>
+                          <p className="text-gray-900 font-medium">{provider?.name?.split(' ')[0] || 'N/A'}</p>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Last Name:</p>
+                          <p className="text-gray-900 font-medium">{provider?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">KYD:</p>
+                          <p className="text-gray-900 font-mono font-medium break-all">{provider?._id || 'N/A'}</p>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Email:</p>
+                          <p className="text-gray-900 font-medium break-all">{provider?.email || 'N/A'}</p>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Contact Number:</p>
+                          <p className="text-gray-900 font-medium">{provider?.phone || 'N/A'}</p>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <p className="text-gray-600 min-w-[90px]">Address:</p>
+                          <p className="text-gray-900 font-medium">{provider?.location || 'N/A'}</p>
+                        </div>
                       </div>
-
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">KYD:</p>
-                        <p className="text-gray-900 font-mono font-medium break-all">{provider?._id || 'N/A'}</p>
-                      </div>
-
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Email:</p>
-                        <p className="text-gray-900 font-medium break-all">{provider?.email || 'N/A'}</p>
-                      </div>
-
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Contact Number:</p>
-                        <p className="text-gray-900 font-medium">{provider?.phone || 'N/A'}</p>
-                      </div>
-
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[90px]">Address:</p>
-                        <p className="text-gray-900 font-medium">{provider?.location || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-200"></div>
-
-                {/* Job Information */}
-                <div className="px-6 py-6">
-                  <h4 className="text-sm font-bold text-gray-900 mb-4">Job Information:</h4>
-
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Job Title:</p>
-                      <p className="text-gray-900 font-medium flex-1">
-                        {transaction.job?.title || transaction.jobId?.title || 'N/A'}
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Job Category:</p>
-                      <p className="text-gray-900 font-medium capitalize">
-                        {transaction.job?.category || transaction.jobId?.category || 'N/A'}
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Job ID:</p>
-                      <p className="text-gray-900 font-mono text-sm break-all flex-1">
-                        {transaction.job?._id || transaction.jobId?._id || 'N/A'}
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Created By:</p>
-                      <p className="text-gray-900 font-medium">{customer?.name || 'N/A'}</p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Created At:</p>
-                      <div>
-                        <p className="text-gray-900 font-medium">
-                          {new Date(transaction.createdAt).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[110px]">Job Location:</p>
-                      <p className="text-gray-900 font-medium">{customer?.location || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="border-t border-gray-200"></div>
+
+              {/* Job Information */}
+              <div className="px-6 py-6">
+                <h4 className="text-sm font-bold text-gray-900 mb-4">Job Information:</h4>
+
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Job Title:</p>
+                    <p className="text-gray-900 font-medium flex-1">
+                      {transaction.job?.title || transaction.jobId?.title || 'N/A'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Job Category:</p>
+                    <p className="text-gray-900 font-medium capitalize">
+                      {transaction.job?.category || transaction.jobId?.category || 'N/A'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Job ID:</p>
+                    <p className="text-gray-900 font-mono text-sm break-all flex-1">
+                      {transaction.job?._id || transaction.jobId?._id || 'N/A'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Created By:</p>
+                    <p className="text-gray-900 font-medium">{customer?.name || 'N/A'}</p>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Created At:</p>
+                    <div>
+                      <p className="text-gray-900 font-medium">
+                        {new Date(transaction.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <p className="text-gray-600 min-w-[110px]">Job Location:</p>
+                    <p className="text-gray-900 font-medium">{customer?.location || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="p-6 border-t border-gray-200 bg-gray-50">
@@ -268,10 +273,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               >
                 Close
               </button>
-              </div>
+            </div>
           </div>
         </div>
-      </>
+      </>,
+      document.body
     );
   }
 
@@ -279,14 +285,13 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   if (isWithdrawal) {
     const user = customer;
 
-    return (
+    return createPortal(
       <>
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity" onClick={onClose} />
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity" onClick={onClose} />
 
         <div
-          className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
-            isOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
+          className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-[101] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
         >
           <div className="h-full flex flex-col">
             {/* Header */}
@@ -302,13 +307,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
             <div className="flex-1 overflow-y-auto">
               {/* Amount Section */}
-              <div className={`px-6 py-6 ${
-                transaction.status === 'completed' 
-                  ? 'bg-green-100' 
-                  : transaction.status === 'pending'
+              <div className={`px-6 py-6 ${transaction.status === 'completed'
+                ? 'bg-green-100'
+                : transaction.status === 'pending'
                   ? 'bg-yellow-100'
                   : 'bg-red-100'
-              }`}>
+                }`}>
                 <p className="text-sm text-gray-600 mb-2">Withdrawal Amount</p>
                 <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
               </div>
@@ -337,21 +341,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         )}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{user?.name || 'Unknown'}</p>
-                        <p className="text-xs text-gray-500">{user?.email || 'N/A'}</p>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 w-12">Name:</span>
+                          <p className="text-sm font-medium text-gray-900">{user?.name || 'Unknown'}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 w-12">Email:</span>
+                          <p className="text-xs text-gray-500">{user?.email || 'N/A'}</p>
+                        </div>
                       </div>
                     </div>
 
                     <div className="space-y-3 text-sm">
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[120px]">Name:</p>
-                        <p className="text-gray-900 font-medium">{user?.name || 'N/A'}</p>
-                      </div>
 
-                      <div className="flex items-start gap-2">
-                        <p className="text-gray-600 min-w-[120px]">Email:</p>
-                        <p className="text-gray-900 break-all">{user?.email || 'N/A'}</p>
-                      </div>
 
                       <div className="flex items-start gap-2">
                         <p className="text-gray-600 min-w-[120px]">Phone:</p>
@@ -425,19 +427,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
           </div>
         </div>
-      </>
+      </>,
+      document.body
     );
   }
 
   // Regular transaction layout
-  return (
+  return createPortal(
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity" onClick={onClose} />
 
       <div
-        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-[101] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
       >
         <div className="h-full flex flex-col">
           {/* Header */}
@@ -455,9 +457,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           </div>
 
           <div className="flex-1 overflow-y-auto">
-              {/* Customer & Provider Information */}
-              <div className="px-6 pt-6 pb-6">
-                <div className="grid grid-cols-2 gap-8">
+            {/* Customer & Provider Information */}
+            <div className="px-6 pt-6 pb-6">
+              <div className="grid grid-cols-2 gap-8">
                 {/* Customer Information */}
                 <div>
                   <h4 className="text-base font-bold text-gray-900 mb-6">Customer Information:</h4>
@@ -610,7 +612,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 

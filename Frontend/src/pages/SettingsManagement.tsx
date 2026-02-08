@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, ShieldAlert, Edit2, XCircle, Search } from 'lucide-react';
+import { UserPlus, ShieldAlert, Edit2, XCircle, Search, Briefcase, Shield, Users, CreditCard, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { settingsService } from '../services';
 import CreateAdminModal from '../components/Settings/CreateAdminModal';
@@ -120,9 +120,9 @@ const SettingsManagement: React.FC = () => {
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInDays < 7) return `${diffInDays}d ago`;
-    
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
+
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
     });
@@ -190,7 +190,7 @@ const SettingsManagement: React.FC = () => {
 
   const getFilteredAdmins = () => {
     let filtered = admins;
-    
+
     if (filter !== 'all') {
       filtered = filtered.filter(admin => {
         const role = admin.role.toLowerCase();
@@ -201,17 +201,17 @@ const SettingsManagement: React.FC = () => {
         return true;
       });
     }
-    
+
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(admin => 
+      filtered = filtered.filter(admin =>
         admin.fullName.toLowerCase().includes(search) ||
         admin.email.toLowerCase().includes(search) ||
         admin.uid.toLowerCase().includes(search) ||
         admin.role.toLowerCase().includes(search)
       );
     }
-    
+
     return filtered;
   };
 
@@ -250,14 +250,14 @@ const SettingsManagement: React.FC = () => {
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={fetchAdmins}
       />
-      
+
       <EditAdminModal
         isOpen={isEditModalOpen}
         onClose={handleCloseEditModal}
         onSuccess={fetchAdmins}
         admin={selectedAdmin}
       />
-      
+
       <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
         <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-4">
           <div className="flex flex-col gap-4">
@@ -270,7 +270,7 @@ const SettingsManagement: React.FC = () => {
                   </p>
                 </div>
               </div>
-              
+
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="inline-flex items-center px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex-shrink-0"
@@ -280,12 +280,75 @@ const SettingsManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {/* Mobile View Counters */}
+            <div className="grid grid-cols-2 gap-2 md:hidden">
               <div
                 onClick={() => setFilter('all')}
-                className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                  filter === 'all' ? 'border-gray-500 ring-2 ring-gray-500 shadow-lg' : 'border-gray-200'
-                }`}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-gray-50 border-gray-200 ${filter === 'all' ? 'border-gray-500 ring-2 ring-gray-400' : ''
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-gray-600" />
+                  <span className="text-xs font-semibold text-gray-700 px-0.5">Total</span>
+                </div>
+                <span className="text-sm font-bold text-gray-900">{admins.length}</span>
+              </div>
+
+              <div
+                onClick={() => setFilter('superadmin')}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${filter === 'superadmin' ? 'border-green-500 ring-2 ring-green-300' : ''
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-green-600" />
+                  <span className="text-xs font-semibold text-gray-700 px-0.5">Super</span>
+                </div>
+                <span className="text-sm font-bold text-green-700">{superAdminCount}</span>
+              </div>
+
+              <div
+                onClick={() => setFilter('admin')}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${filter === 'admin' ? 'border-blue-500 ring-2 ring-blue-300' : ''
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <span className="text-xs font-semibold text-gray-700 px-0.5">Admin</span>
+                </div>
+                <span className="text-sm font-bold text-blue-700">{adminCount}</span>
+              </div>
+
+              <div
+                onClick={() => setFilter('finance')}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${filter === 'finance' ? 'border-yellow-500 ring-2 ring-yellow-300' : ''
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-yellow-600" />
+                  <span className="text-xs font-semibold text-gray-700 px-0.5">Finance</span>
+                </div>
+                <span className="text-sm font-bold text-yellow-700">{financeCount}</span>
+              </div>
+
+              <div
+                onClick={() => setFilter('support')}
+                className={`col-span-2 rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-purple-50 border-purple-200 ${filter === 'support' ? 'border-purple-500 ring-2 ring-purple-300' : ''
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-purple-600" />
+                  <span className="text-xs font-semibold text-gray-700 px-0.5">Support</span>
+                </div>
+                <span className="text-sm font-bold text-purple-700">{supportCount}</span>
+              </div>
+            </div>
+
+            {/* Desktop View Counters */}
+            <div className="hidden md:grid grid-cols-5 gap-3">
+              <div
+                onClick={() => setFilter('all')}
+                className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'all' ? 'border-gray-500 ring-2 ring-gray-500 shadow-lg' : 'border-gray-200'
+                  }`}
               >
                 <p className="text-xs text-gray-600 font-medium mb-1">All Management</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900">{admins.length}</p>
@@ -293,9 +356,8 @@ const SettingsManagement: React.FC = () => {
 
               <div
                 onClick={() => setFilter('superadmin')}
-                className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                  filter === 'superadmin' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-                }`}
+                className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'superadmin' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                  }`}
               >
                 <p className="text-xs text-gray-600 font-medium mb-1">Super Admin</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900">{superAdminCount}</p>
@@ -303,9 +365,8 @@ const SettingsManagement: React.FC = () => {
 
               <div
                 onClick={() => setFilter('admin')}
-                className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                  filter === 'admin' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-                }`}
+                className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'admin' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+                  }`}
               >
                 <p className="text-xs text-gray-600 font-medium mb-1">Admin</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900">{adminCount}</p>
@@ -313,9 +374,8 @@ const SettingsManagement: React.FC = () => {
 
               <div
                 onClick={() => setFilter('finance')}
-                className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                  filter === 'finance' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-                }`}
+                className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'finance' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                  }`}
               >
                 <p className="text-xs text-gray-600 font-medium mb-1">Finance</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900">{financeCount}</p>
@@ -323,9 +383,8 @@ const SettingsManagement: React.FC = () => {
 
               <div
                 onClick={() => setFilter('support')}
-                className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-                  filter === 'support' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-                }`}
+                className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'support' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+                  }`}
               >
                 <p className="text-xs text-gray-600 font-medium mb-1">Support</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900">{supportCount}</p>
@@ -363,163 +422,158 @@ const SettingsManagement: React.FC = () => {
                 <div className="text-center">
                   <ShieldAlert className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                    {searchTerm ? 'No matching admins found' : 
-                     filter === 'all' ? 'No admin accounts found' : `No ${filter} admins`}
+                    {searchTerm ? 'No matching admins found' :
+                      filter === 'all' ? 'No admin accounts found' : `No ${filter} admins`}
                   </h2>
                   <p className="text-gray-600">
                     {searchTerm ? 'Try adjusting your search terms' :
-                     admins.length === 0 ? 'Create a new admin account to get started.' : 'No admins found for this filter.'}
+                      admins.length === 0 ? 'Create a new admin account to get started.' : 'No admins found for this filter.'}
                   </p>
                 </div>
               </div>
             ) : (
               <>
                 <div className="hidden md:block bg-white overflow-x-auto">
-                <table className="min-w-full w-full table-auto">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        UID
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Full Name
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Email
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Status
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Role
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Permissions
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Last Login
-                      </th>
-                      <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    {filteredAdmins.map((admin, index) => (
-                      <React.Fragment key={admin._id}>
-                        <tr 
-                          onClick={() => handleEdit(admin)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                        >
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {admin.uid}
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {admin.fullName}
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {admin.email}
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center justify-center">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                getAccountStatus(admin.accountStatus).color
-                              }`}>
+                  <table className="min-w-full w-full table-auto">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          UID
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Full Name
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Email
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Status
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Role
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Permissions
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Last Login
+                        </th>
+                        <th className="px-4 lg:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                      {filteredAdmins.map((admin, index) => (
+                        <React.Fragment key={admin._id}>
+                          <tr
+                            onClick={() => handleEdit(admin)}
+                            className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          >
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {admin.uid}
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {admin.fullName}
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {admin.email}
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center justify-center">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getAccountStatus(admin.accountStatus).color
+                                  }`}>
+                                  {getAccountStatus(admin.accountStatus).label}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {admin.role}
+                              </span>
+                            </td>
+                            <td className="px-4 lg:px-6 py-4">
+                              <div className="flex items-center justify-center">
+                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPermissionTemplate(admin.permissions).color
+                                  }`}>
+                                  {getPermissionTemplate(admin.permissions).name}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {formatLastLogin(admin.lastLogin)}
+                            </td>
+                            <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-center">
+                              <span className="inline-flex items-center text-blue-600 text-sm font-medium">
+                                <Edit2 className="h-3 w-3 mr-1" />
+                                Edit
+                              </span>
+                            </td>
+                          </tr>
+                          {index < filteredAdmins.length - 1 && (
+                            <tr>
+                              <td colSpan={8} className="p-0">
+                                <div className="border-b border-gray-200" />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="md:hidden px-4 py-4 space-y-3">
+                  {filteredAdmins.map((admin) => {
+                    return (
+                      <div
+                        key={admin._id}
+                        onClick={() => handleEdit(admin)}
+                        className="bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-all"
+                      >
+                        <div className="p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-base font-semibold text-gray-900">{admin.fullName}</h3>
+                              <p className="text-sm text-gray-600 truncate">{admin.email}</p>
+                            </div>
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 flex-shrink-0 ml-2">
+                              {admin.role}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs text-gray-500">{admin.uid}</p>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getPermissionTemplate(admin.permissions).color
+                                }`}>
+                                {getPermissionTemplate(admin.permissions).name}
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getAccountStatus(admin.accountStatus).color
+                                }`}>
                                 {getAccountStatus(admin.accountStatus).label}
                               </span>
                             </div>
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {admin.role}
-                            </span>
-                          </td>
-                          <td className="px-4 lg:px-6 py-4">
-                            <div className="flex items-center justify-center">
-                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                getPermissionTemplate(admin.permissions).color
-                              }`}>
-                                {getPermissionTemplate(admin.permissions).name}
+                          </div>
+
+                          <p className="text-xs text-gray-500 mb-3">
+                            Last login: <span className="font-medium text-gray-700">{formatLastLogin(admin.lastLogin)}</span>
+                          </p>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-600 font-medium">Access Level:</span>
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getAccessLevel(admin.role).color
+                                }`}>
+                                {getAccessLevel(admin.role).label}
                               </span>
                             </div>
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {formatLastLogin(admin.lastLogin)}
-                          </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-center">
-                            <span className="inline-flex items-center text-blue-600 text-sm font-medium">
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              Edit
-                            </span>
-                          </td>
-                        </tr>
-                        {index < filteredAdmins.length - 1 && (
-                          <tr>
-                            <td colSpan={8} className="p-0">
-                              <div className="border-b border-gray-200" />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="md:hidden px-4 py-4 space-y-3">
-                {filteredAdmins.map((admin) => {
-                  return (
-                    <div 
-                      key={admin._id} 
-                      onClick={() => handleEdit(admin)}
-                      className="bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-all"
-                    >
-                      <div className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-semibold text-gray-900">{admin.fullName}</h3>
-                            <p className="text-sm text-gray-600 truncate">{admin.email}</p>
-                          </div>
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 flex-shrink-0 ml-2">
-                            {admin.role}
-                          </span>
-                        </div>
-                        
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs text-gray-500">{admin.uid}</p>
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              getPermissionTemplate(admin.permissions).color
-                            }`}>
-                              {getPermissionTemplate(admin.permissions).name}
-                            </span>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              getAccountStatus(admin.accountStatus).color
-                            }`}>
-                              {getAccountStatus(admin.accountStatus).label}
-                            </span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-gray-500 mb-3">
-                          Last login: <span className="font-medium text-gray-700">{formatLastLogin(admin.lastLogin)}</span>
-                        </p>
-
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600 font-medium">Access Level:</span>
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                              getAccessLevel(admin.role).color
-                            }`}>
-                              {getAccessLevel(admin.role).label}
-                            </span>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
               </>
             )}
           </div>
