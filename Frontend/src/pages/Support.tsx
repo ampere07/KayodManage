@@ -196,7 +196,7 @@ const Support: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 md:left-64 flex items-center justify-center bg-gray-50">
+      <div className="fixed inset-0 md:left-72 flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-500">Loading support tickets...</p>
@@ -206,7 +206,7 @@ const Support: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-16 md:top-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-x-0 bottom-0 top-16 md:top-0 md:left-72 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>

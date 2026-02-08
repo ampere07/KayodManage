@@ -10,7 +10,11 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { usersService } from '../../services';
-import type { User, VerificationDetails, PenaltyData } from '../../types';
+import type {
+  User,
+  Verification,
+  PenaltyData
+} from '../../types';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import toast from 'react-hot-toast';
@@ -36,7 +40,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   onVerify,
   onAction
 }) => {
-  const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
+  const [verificationDetails, setVerificationDetails] = useState<Verification | null>(null);
   const [loadingVerification, setLoadingVerification] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | null>(null);
   const [durationDays, setDurationDays] = useState<number>(0);
@@ -118,8 +122,16 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
     setLoadingVerification(true);
     try {
-      const details = await usersService.getVerificationDetails(user._id);
-      setVerificationDetails(details);
+      // Use getUserById which now includes verificationAudit to avoid extra API confusion
+      const fullUser = await usersService.getUserById(user._id);
+      if (fullUser && fullUser.verificationAudit) {
+        setVerificationDetails(fullUser.verificationAudit);
+      } else {
+        setVerificationDetails(null);
+      }
+    } catch (error) {
+      console.error('Error fetching verification details:', error);
+      setVerificationDetails(null);
     } finally {
       setLoadingVerification(false);
     }
@@ -246,362 +258,332 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-[101] shadow-2xl overflow-y-auto flex flex-col">
-        {/* Mobile Top Bar with Close Button - Removed */}
-
-        {/* Desktop Header with Title and Close Button */}
-        <div className="hidden md:flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 sticky top-0 z-20">
-          <h2 className="text-xl font-semibold text-gray-900">User Information</h2>
+      <div className="fixed right-0 top-0 h-full w-full md:w-[500px] bg-white z-[101] shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 md:px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">User Information</h2>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            aria-label="Close modal"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="px-4 md:px-6 py-6 flex-1 flex flex-col">
-          {/* Mobile Title with Close Button */}
-          <div className="md:hidden flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">User Information</h2>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-              aria-label="Close modal"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-shrink-0">
+        {/* User Quick Info (Sticky on Mobile) */}
+        <div className="sticky top-[61px] md:relative md:top-0 z-20 bg-white border-b border-gray-100 px-4 md:px-6 py-6 transition-all">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex-shrink-0">
                 {user.profileImage ? (
                   <img
                     src={user.profileImage}
                     alt={user.name}
-                    className="w-16 h-16 rounded-full object-cover"
+                    className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-gray-100"
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
-                    <span className="text-2xl font-semibold text-gray-700">
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-blue-50 flex items-center justify-center ring-2 ring-blue-50">
+                    <span className="text-xl md:text-2xl font-bold text-blue-600">
                       {getInitials(user.name)}
                     </span>
                   </div>
                 )}
               </div>
-
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h3>
+              <div className="min-w-0">
+                <h3 className="text-lg md:text-xl font-bold text-gray-900 truncate">{user.name}</h3>
                 <button
                   onClick={() => copyToClipboard(user._id)}
-                  className="text-sm text-gray-600 hover:text-blue-600 cursor-pointer transition-colors"
-                  title="Click to copy"
+                  className="text-xs md:text-sm font-medium text-gray-500 hover:text-blue-600 flex items-center gap-1"
                 >
                   {formatKYDNumber(user._id)}
                 </button>
               </div>
             </div>
-
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 items-end">
               <VerificationStatusBadge isVerified={user.isVerified} />
               {user.userType && <UserTypeBadge userType={user.userType} />}
             </div>
           </div>
+        </div>
 
-          <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-4 md:px-6 py-6 space-y-8">
+            {/* Personal Information */}
+            <section>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Personal Details</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">First Name</p>
+                  <p className="text-sm font-medium text-gray-900">{firstName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Last Name</p>
+                  <p className="text-sm font-medium text-gray-900">{lastName}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-gray-500 mb-1">Date of Birth</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {user.dateOfBirth ? (
+                      new Date(user.dateOfBirth).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })
+                    ) : (
+                      'Not provided'
+                    )}
+                  </p>
+                </div>
+              </div>
+            </section>
 
-          <div className="flex-1 flex flex-col">
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
-              <div className="space-y-2.5">
-                <p className="text-base text-gray-900"><span className="text-gray-600">First Name:</span> {firstName}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Last Name:</span> {lastName}</p>
-                <p className="text-base text-gray-900">
-                  <span className="text-gray-600">Date of Birth:</span>{' '}
-                  {user.dateOfBirth ? (
-                    new Date(user.dateOfBirth).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })
-                  ) : (
-                    'N/A'
+            <div className="border-t border-gray-100" />
+
+            {/* Contact Details */}
+            <section>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Contact Information</h3>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Email Address</p>
+                  <p className="text-sm font-medium text-gray-900">{user.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Contact Number</p>
+                  <p className="text-sm font-medium text-gray-900">{user.phone || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Current Location</p>
+                  <p className="text-sm font-medium text-gray-900">{user.location || 'N/A'}</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Other Information */}
+            <section>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Other Information</h3>
+              <div className="space-y-6">
+                {/* Account Timestamps */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Account Created</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      }) : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Last Login</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      }) : 'Never'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100" />
+
+                {/* Verification Summary */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs text-gray-500">Verification Status</p>
+                    <p className={`text-xs font-bold ${user.isVerified ? 'text-green-600' : 'text-orange-500'}`}>
+                      {user.isVerified ? 'VERIFIED' : 'PENDING'}
+                    </p>
+                  </div>
+                  {user.isVerified && (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-gray-500">Verified By</p>
+                        <p className="text-xs font-medium text-gray-900">
+                          {loadingVerification ? '...' : (verificationDetails?.reviewedBy as any)?.name || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-gray-500">Verification Date</p>
+                        <p className="text-xs font-medium text-gray-900">
+                          {loadingVerification ? '...' : verificationDetails?.reviewedAt ? new Date(verificationDetails.reviewedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                        </p>
+                      </div>
+                    </>
                   )}
-                </p>
-              </div>
-            </div>
+                </div>
 
-            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
+                <div className="border-t border-gray-100" />
 
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact</h3>
-              <div className="space-y-2.5">
-                <p className="text-base text-gray-900"><span className="text-gray-600">Email Address:</span> {user.email}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Contact Number:</span> {user.phone || 'N/A'}</p>
-                <p className="text-base text-gray-900"><span className="text-gray-600">Location:</span> {user.location || 'N/A'}</p>
-              </div>
-            </div>
+                {/* Wallet - Keep Container */}
+                <div className="bg-blue-50/50 rounded-lg p-4 border border-blue-100">
+                  <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Wallet Overview</p>
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-xs text-blue-700">Available Balance</p>
+                      <p className="text-xl font-black text-blue-900">₱{user.wallet?.availableBalance?.toLocaleString() || '0'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-blue-600">Held: ₱{user.wallet?.heldBalance?.toLocaleString() || '0'}</p>
+                    </div>
+                  </div>
+                </div>
 
-            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
-
-            <div className="flex-1 mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Other Information</h3>
-              <div className="space-y-2.5">
-                <p className="text-base text-gray-900"><span className="text-gray-600">Verification Status:</span> {user.isVerified ? 'Verified' : 'Not Verified'}</p>
-                {user.isVerified && (
-                  <>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Verified By:</span> {loadingVerification ? (
-                        <span>Loading...</span>
-                      ) : verificationDetails?.verifiedBy ? (
-                        <span>
-                          {verificationDetails.verifiedBy.name} ({formatKYDNumber(verificationDetails.verifiedBy._id)})
+                {user.categories && user.categories.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Professional Categories</p>
+                    <div className="flex flex-wrap gap-2">
+                      {user.categories.map((cat, i) => (
+                        <span key={i} className="px-2 py-1 bg-gray-100 text-gray-700 text-[10px] font-bold rounded uppercase">
+                          {cat}
                         </span>
-                      ) : (
-                        <span>N/A</span>
-                      )}
-                    </p>
-                    <p className="text-base text-gray-900">
-                      <span className="text-gray-600">Verification Date:</span> {loadingVerification ? (
-                        <span>Loading...</span>
-                      ) : verificationDetails?.verifiedAt ? (
-                        <span>
-                          {new Date(verificationDetails.verifiedAt).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
-                        </span>
-                      ) : (
-                        <span>N/A</span>
-                      )}
-                    </p>
-                  </>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-            </div>
+            </section>
 
-            <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
+            <div className="border-t border-gray-100" />
 
-            <div className="flex-1 mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Penalty Tracker</h3>
+            {/* Penalty Tracker */}
+            <section className="pb-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Security Audit</h3>
               {loadingPenalties ? (
                 <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto"></div>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Total Penalties:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${penaltyData.totalPenalties > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                      {penaltyData.totalPenalties}
-                    </span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 text-center">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Total Bans</p>
+                      <p className="text-lg font-bold text-red-600">{penaltyData.totalPenalties}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 text-center">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Warnings</p>
+                      <p className="text-lg font-bold text-yellow-600">{penaltyData.activeWarnings}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Active Warnings:</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${penaltyData.activeWarnings > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                      {penaltyData.activeWarnings}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">Last Penalty:</p>
-                    <p className="text-sm text-gray-900">
-                      {penaltyData.lastPenalty
-                        ? new Date(penaltyData.lastPenalty).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })
-                        : 'None'
-                      }
-                    </p>
-                  </div>
+
                   {isRestricted && restrictionTimer && (
-                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-sm font-semibold text-red-900 mb-1">Restriction Time Remaining:</p>
-                      <p className="text-2xl font-bold text-red-600">{restrictionTimer}</p>
-                      {user.restrictionDetails?.type && (
-                        <p className="text-xs text-red-700 mt-1 capitalize">{user.restrictionDetails.type}</p>
-                      )}
-                      {user.restrictionDetails?.restrictedBy && (
-                        <div className="mt-2 pt-2 border-t border-red-200">
-                          <p className="text-xs text-red-700">
-                            <span className="font-semibold">Restricted By:</span>{' '}
-                            {loadingRestrictedBy ? (
-                              <span>Loading...</span>
-                            ) : restrictedByAdmin ? (
-                              <span>
-                                {restrictedByAdmin.name} ({formatKYDNumber(restrictedByAdmin._id)})
-                              </span>
-                            ) : (
-                              <span>N/A</span>
-                            )}
-                          </p>
-                        </div>
+                    <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Ban className="w-4 h-4 text-red-600" />
+                        <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Active Restriction</p>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-2xl font-bold text-red-600">{restrictionTimer}</p>
+                        <p className="text-[10px] text-red-700 font-medium uppercase">Remaining</p>
+                      </div>
+                      {user.restrictionDetails?.reason && (
+                        <p className="mt-2 text-xs text-red-800 italic">"{user.restrictionDetails.reason}"</p>
                       )}
                     </div>
                   )}
                 </div>
               )}
-            </div>
+            </section>
           </div>
+        </div>
 
-          <div className="flex flex-col items-center gap-2 justify-center mt-auto pt-6 -mx-4 md:-mx-6 px-4 md:px-6">
-            {confirmingAction ? (
-              <>
-                {confirmingAction !== 'unrestrict' && (
-                  <div className="w-full mb-4 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">{getActionLabel()} for:</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {/* Days Input */}
-                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
-                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Days</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={durationDays}
-                            onFocus={(e) => {
-                              if (parseInt(e.target.value) === 0) {
-                                setDurationDays(0);
-                                e.target.select();
-                              }
-                            }}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/[^0-9]/g, '');
-                              if (value === '') {
-                                setDurationDays(0);
-                              } else {
-                                setDurationDays(parseInt(value));
-                              }
-                            }}
-                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
-                          />
-                        </div>
-
-                        {/* Hours Input */}
-                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
-                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Hours</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={durationHours}
-                            onFocus={(e) => {
-                              if (parseInt(e.target.value) === 0) {
-                                setDurationHours(0);
-                                e.target.select();
-                              }
-                            }}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/[^0-9]/g, '');
-                              if (value === '') {
-                                setDurationHours(0);
-                              } else {
-                                const num = parseInt(value);
-                                setDurationHours(Math.min(23, num));
-                              }
-                            }}
-                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
-                          />
-                        </div>
-
-                        {/* Minutes Input */}
-                        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 hover:border-blue-400 focus-within:border-blue-500 transition-colors">
-                          <label className="block text-xs font-medium text-gray-600 text-center mb-2">Minutes</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={durationMinutes}
-                            onFocus={(e) => {
-                              if (parseInt(e.target.value) === 0) {
-                                setDurationMinutes(0);
-                                e.target.select();
-                              }
-                            }}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/[^0-9]/g, '');
-                              if (value === '') {
-                                setDurationMinutes(0);
-                              } else {
-                                const num = parseInt(value);
-                                setDurationMinutes(Math.min(59, num));
-                              }
-                            }}
-                            className="w-full text-2xl font-bold text-center text-gray-900 bg-transparent border-none focus:outline-none p-0"
-                          />
-                        </div>
-                      </div>
+        {/* Footer Actions */}
+        <div className="sticky bottom-0 z-30 bg-white border-t border-gray-200 px-4 md:px-6 py-4">
+          {confirmingAction ? (
+            <div className="space-y-4">
+              {confirmingAction !== 'unrestrict' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase">Days</p>
+                      <input
+                        type="number"
+                        value={durationDays}
+                        onChange={(e) => setDurationDays(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
                     </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Reason:</label>
-                      <textarea
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        rows={3}
-                        placeholder="Enter the reason for this restriction..."
-                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none text-sm"
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase">Hours</p>
+                      <input
+                        type="number"
+                        value={durationHours}
+                        onChange={(e) => setDurationHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase">Mins</p>
+                      <input
+                        type="number"
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
                   </div>
-                )}
-                <div className="w-full flex gap-3">
-                  <button
-                    onClick={handleConfirmNo}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmYes}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
-                  >
-                    Confirm
-                  </button>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Enter reason for restriction..."
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
+                  />
                 </div>
-              </>
-            ) : (
-              <div className="flex flex-wrap gap-2 justify-center">
-                {!isRestricted ? (
-                  <>
-                    <button
-                      onClick={() => handleActionClick('restrict')}
-                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
-                    >
-                      <Shield className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                      Restrict
-                    </button>
-                    <button
-                      onClick={() => handleActionClick('suspend')}
-                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg transition-colors"
-                    >
-                      <Clock className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                      Suspend
-                    </button>
-                    <button
-                      onClick={() => handleActionClick('ban')}
-                      className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
-                    >
-                      <Ban className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                      Ban
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleActionClick('unrestrict')}
-                    className="flex items-center justify-center gap-1.5 px-4 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors"
-                  >
-                    <UserX className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                    Remove Restrictions
-                  </button>
-                )}
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleConfirmNo}
+                  className="flex-1 h-11 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmYes}
+                  className="flex-1 h-11 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
+                >
+                  Confirm
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              {!isRestricted ? (
+                <>
+                  <button
+                    onClick={() => handleActionClick('restrict')}
+                    className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-100 rounded-lg hover:bg-orange-100"
+                  >
+                    <Shield className="w-5 h-5" />
+                    Restrict
+                  </button>
+                  <button
+                    onClick={() => handleActionClick('suspend')}
+                    className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 rounded-lg hover:bg-yellow-100"
+                  >
+                    <Clock className="w-5 h-5" />
+                    Suspend
+                  </button>
+                  <button
+                    onClick={() => handleActionClick('ban')}
+                    className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100"
+                  >
+                    <Ban className="w-5 h-5" />
+                    Ban
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => handleActionClick('unrestrict')}
+                  className="w-full h-12 flex items-center justify-center gap-2 text-sm font-bold text-green-700 bg-green-50 border border-green-100 rounded-lg hover:bg-green-100"
+                >
+                  <UserX className="w-5 h-5" />
+                  Restore Account Access
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>,

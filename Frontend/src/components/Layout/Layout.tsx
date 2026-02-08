@@ -375,7 +375,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         </div>
 
         {/* Static sidebar for desktop */}
-        <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0">
+        <div className="hidden md:flex md:w-72 md:flex-col md:fixed md:inset-y-0">
           <div className="flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white">
             <div className="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
               <div className="flex items-center flex-shrink-0 px-4">
@@ -618,7 +618,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
         {/* Main content */}
         {/* Main content */}
-        <div className="md:pl-64 flex flex-col flex-1">
+        <div className="md:pl-72 flex flex-col flex-1">
           {/* Mobile Header */}
           {!location.pathname.startsWith('/settings/configuration') && !isHeaderHidden && (
             <header className="sticky top-0 z-30 md:hidden bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4">

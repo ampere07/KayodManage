@@ -148,7 +148,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="fixed inset-0 md:left-64 h-[100dvh] bg-white shadow-2xl z-[100] flex flex-col md:flex-row overflow-hidden">
+      <div className="fixed inset-0 md:left-72 h-[100dvh] bg-white shadow-2xl z-[100] flex flex-col md:flex-row overflow-hidden">
         {/* Column 1: Chat Area */}
         <div className={`flex-1 flex flex-col min-h-0 ${showMobileDetails ? 'hidden md:flex' : 'flex'}`}>
           {/* Header */}
@@ -794,7 +794,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
           </div>
 
           {/* Sticky Footer Actions */}
-          {((selectedChat.status === 'open' && selectedChat.acceptedBy) || selectedChat.status === 'closed' || selectedChat.status === 'resolved') && (user?.role === 'admin' || user?.role === 'superadmin') && (
+          {((selectedChat.status === 'open' && selectedChat.acceptedBy) || selectedChat.status === 'closed') && (user?.role === 'admin' || user?.role === 'superadmin') && (
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 bg-gray-50 z-[50]">
               {selectedChat.status === 'open' ? (
                 <button

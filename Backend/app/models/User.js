@@ -16,7 +16,7 @@ const UserSchema = new Schema({
   },
   password: {
     type: String,
-    required: function() { 
+    required: function () {
       return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support' || this.userType === 'support';
     }
   },
@@ -61,11 +61,11 @@ const UserSchema = new Schema({
     type: {
       type: String,
       enum: ['restricted', 'suspended', 'banned'],
-      required: function() { return this.accountStatus !== 'active'; }
+      required: function () { return this.accountStatus !== 'active'; }
     },
     reason: {
       type: String,
-      required: function() { return this.accountStatus !== 'active'; }
+      required: function () { return this.accountStatus !== 'active'; }
     },
     restrictedBy: {
       type: Schema.Types.ObjectId,
@@ -75,11 +75,11 @@ const UserSchema = new Schema({
     restrictedAt: {
       type: Date,
       default: Date.now,
-      required: function() { return this.accountStatus !== 'active'; }
+      required: function () { return this.accountStatus !== 'active'; }
     },
     suspendedUntil: {
       type: Date,
-      required: function() { return this.accountStatus === 'suspended'; }
+      required: function () { return this.accountStatus === 'suspended'; }
     },
     expiresAt: {
       type: Date,
@@ -105,7 +105,7 @@ const UserSchema = new Schema({
   ticketsResolved: {
     type: Number,
     default: 0,
-    required: function() {
+    required: function () {
       return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support' || this.userType === 'support';
     }
   },
@@ -146,7 +146,7 @@ UserSchema.virtual('fees', {
 });
 
 // Virtual to check if user is currently restricted
-UserSchema.virtual('isCurrentlyRestricted').get(function() {
+UserSchema.virtual('isCurrentlyRestricted').get(function () {
   if (this.accountStatus === 'active') return false;
   if (this.accountStatus === 'suspended') {
     return new Date() < this.restrictionDetails.suspendedUntil;
@@ -155,7 +155,7 @@ UserSchema.virtual('isCurrentlyRestricted').get(function() {
 });
 
 // Virtual to get restriction status display
-UserSchema.virtual('restrictionStatus').get(function() {
+UserSchema.virtual('restrictionStatus').get(function () {
   if (this.accountStatus === 'active') return null;
   if (this.accountStatus === 'suspended') {
     if (new Date() >= this.restrictionDetails.suspendedUntil) {
@@ -167,13 +167,12 @@ UserSchema.virtual('restrictionStatus').get(function() {
 });
 
 // Pre-save middleware to sync legacy isRestricted field
-UserSchema.pre('save', function(next) {
+UserSchema.pre('save', function (next) {
   this.isRestricted = this.accountStatus !== 'active';
   next();
 });
 
 // Indexes for better query performance
-UserSchema.index({ email: 1 });
 UserSchema.index({ isVerified: 1 });
 UserSchema.index({ accountStatus: 1 });
 UserSchema.index({ 'restrictionDetails.suspendedUntil': 1 });

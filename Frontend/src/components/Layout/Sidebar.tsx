@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Briefcase, 
-  CreditCard, 
+import {
+  LayoutDashboard,
+  Users,
+  Briefcase,
+  CreditCard,
   Settings,
   AlertTriangle,
   Activity,
@@ -109,12 +109,12 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-900 text-white w-64 min-h-screen flex flex-col">
+    <div className="bg-gray-900 text-white w-72 min-h-screen flex flex-col">
       <div className="p-6">
         <h1 className="text-xl font-bold">Admin Panel v2</h1>
         <p className="text-gray-400 text-sm mt-1">Service Platform</p>
       </div>
-      
+
       <nav className="flex-1 px-4 py-4 overflow-y-auto">
         <ul className="space-y-2 pb-4">
           {navItems.map((item) => {
@@ -128,11 +128,10 @@ const Sidebar: React.FC = () => {
                     if (!allowed) {
                       return 'flex items-center space-x-3 px-4 py-3 rounded-lg opacity-40 cursor-not-allowed text-gray-500';
                     }
-                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                      isActive
+                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${isActive
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                    }`;
+                      }`;
                   }}
                 >
                   <item.icon size={20} />
@@ -141,19 +140,18 @@ const Sidebar: React.FC = () => {
               </li>
             );
           })}
-          
+
           <li>
             <button
               type="button"
               onClick={handleJobsClick}
               disabled={!hasPermission('jobs')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                !hasPermission('jobs')
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${!hasPermission('jobs')
                   ? 'opacity-40 cursor-not-allowed text-gray-500'
                   : isJobPage
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`}
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
             >
               <div className="flex items-center space-x-3">
                 <Briefcase size={20} />
@@ -165,7 +163,7 @@ const Sidebar: React.FC = () => {
                 <ChevronRight size={16} />
               )}
             </button>
-            
+
             {isJobsOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
                 {jobItems.map((item) => {
@@ -180,11 +178,10 @@ const Sidebar: React.FC = () => {
                           if (!allowed) {
                             return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
                           }
-                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                            isActive
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${isActive
                               ? 'bg-blue-500 text-white'
                               : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                          }`;
+                            }`;
                         }}
                       >
                         {item.label}
@@ -195,19 +192,18 @@ const Sidebar: React.FC = () => {
               </ul>
             )}
           </li>
-          
+
           <li>
             <button
               type="button"
               onClick={handleUsersClick}
               disabled={!hasPermission('users')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                !hasPermission('users')
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${!hasPermission('users')
                   ? 'opacity-40 cursor-not-allowed text-gray-500'
                   : isUserPage
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`}
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
             >
               <div className="flex items-center space-x-3">
                 <Users size={20} />
@@ -219,7 +215,7 @@ const Sidebar: React.FC = () => {
                 <ChevronRight size={16} />
               )}
             </button>
-            
+
             {isUsersOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
                 {userItems.map((item) => {
@@ -234,11 +230,10 @@ const Sidebar: React.FC = () => {
                           if (!allowed) {
                             return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
                           }
-                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                            isActive
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${isActive
                               ? 'bg-blue-500 text-white'
                               : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                          }`;
+                            }`;
                         }}
                       >
                         {item.label}
@@ -249,19 +244,18 @@ const Sidebar: React.FC = () => {
               </ul>
             )}
           </li>
-          
+
           <li>
             <button
               type="button"
               onClick={handleTransactionClick}
               disabled={!hasPermission('transactions')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                !hasPermission('transactions')
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${!hasPermission('transactions')
                   ? 'opacity-40 cursor-not-allowed text-gray-500'
                   : isTransactionPage
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`}
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
             >
               <div className="flex items-center space-x-3">
                 <CreditCard size={20} />
@@ -273,7 +267,7 @@ const Sidebar: React.FC = () => {
                 <ChevronRight size={16} />
               )}
             </button>
-            
+
             {isTransactionsOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
                 {transactionItems.map((item) => {
@@ -287,11 +281,10 @@ const Sidebar: React.FC = () => {
                           if (!allowed) {
                             return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
                           }
-                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                            isActive
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${isActive
                               ? 'bg-blue-500 text-white'
                               : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                          }`;
+                            }`;
                         }}
                       >
                         {item.label}
@@ -302,11 +295,11 @@ const Sidebar: React.FC = () => {
               </ul>
             )}
           </li>
-          
+
           <li className="pt-4 mt-4 border-t border-gray-700">
             <div className="text-xs text-gray-500 uppercase tracking-wider mb-2 px-4">Management</div>
           </li>
-          
+
           {bottomNavItems.map((item) => {
             const allowed = hasPermission(item.permission);
             return (
@@ -318,11 +311,10 @@ const Sidebar: React.FC = () => {
                     if (!allowed) {
                       return 'flex items-center space-x-3 px-4 py-3 rounded-lg opacity-40 cursor-not-allowed text-gray-500';
                     }
-                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                      isActive
+                    return `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${isActive
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                    }`;
+                      }`;
                   }}
                 >
                   <item.icon size={20} />
@@ -331,19 +323,18 @@ const Sidebar: React.FC = () => {
               </li>
             );
           })}
-          
+
           <li>
             <button
               type="button"
               onClick={handleSettingsClick}
               disabled={!hasPermission('settings')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
-                !hasPermission('settings')
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${!hasPermission('settings')
                   ? 'opacity-40 cursor-not-allowed text-gray-500'
                   : isSettingsPage
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`}
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
             >
               <div className="flex items-center space-x-3">
                 <Settings size={20} />
@@ -355,7 +346,7 @@ const Sidebar: React.FC = () => {
                 <ChevronRight size={16} />
               )}
             </button>
-            
+
             {isSettingsOpen && (
               <ul className="mt-2 space-y-1 bg-gray-800 rounded-lg p-2">
                 {settingsItems.map((item) => {
@@ -369,11 +360,10 @@ const Sidebar: React.FC = () => {
                           if (!allowed) {
                             return 'block px-4 py-2 rounded-lg text-sm opacity-40 cursor-not-allowed text-gray-500';
                           }
-                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${
-                            isActive
+                          return `block px-4 py-2 rounded-lg transition-colors duration-200 text-sm ${isActive
                               ? 'bg-blue-500 text-white'
                               : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                          }`;
+                            }`;
                         }}
                       >
                         {item.label}
@@ -386,7 +376,7 @@ const Sidebar: React.FC = () => {
           </li>
         </ul>
       </nav>
-      
+
       <div className="p-4 border-t border-gray-800">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
