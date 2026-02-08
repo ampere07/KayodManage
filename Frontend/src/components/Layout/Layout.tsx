@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Settings,
   Menu,
-  X,
   LogOut,
   Shield,
   MessageSquare,
@@ -18,7 +17,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-export const SidebarContext = React.createContext<{ setSidebarOpen: (open: boolean) => void }>({ setSidebarOpen: () => { } });
+export const SidebarContext = React.createContext<{
+  setSidebarOpen: (open: boolean) => void,
+  setIsHeaderHidden?: (hidden: boolean) => void
+}>({ setSidebarOpen: () => { } });
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -28,6 +30,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [isUsersOpen, setIsUsersOpen] = useState(false);
   const [isJobsOpen, setIsJobsOpen] = useState(false);
@@ -101,7 +104,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const isSettingsPage = location.pathname.startsWith('/settings');
 
   return (
-    <SidebarContext.Provider value={{ setSidebarOpen }}>
+    <SidebarContext.Provider value={{ setSidebarOpen, setIsHeaderHidden }}>
       <div className="min-h-screen bg-gray-50">
         {/* Mobile sidebar */}
         <div className={`fixed inset-0 flex z-50 md:hidden ${sidebarOpen ? '' : 'pointer-events-none'}`}>
@@ -617,7 +620,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         {/* Main content */}
         <div className="md:pl-64 flex flex-col flex-1">
           {/* Mobile Header */}
-          {!location.pathname.startsWith('/settings/configuration') && (
+          {!location.pathname.startsWith('/settings/configuration') && !isHeaderHidden && (
             <header className="sticky top-0 z-30 md:hidden bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4">
               <div className="flex items-center gap-3">
                 <button

@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { 
-  Search, 
-  Shield, 
-  UserCheck, 
-  UserX, 
-  Ban, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  MessageSquare, 
+import {
+  Search,
+  Shield,
+  UserCheck,
+  UserX,
+  Ban,
+  Clock,
+  CheckCircle,
+  XCircle,
+  MessageSquare,
   Calendar,
   Activity as ActivityIcon,
-  MousePointerClick
+  MousePointerClick,
+  Briefcase
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -145,7 +146,7 @@ const Activity: React.FC = () => {
     page: 1,
     limit: 20
   });
-  
+
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -171,18 +172,18 @@ const Activity: React.FC = () => {
       console.log('🔔 NEW ACTIVITY LOG RECEIVED!');
       console.log('🔔 Data:', data);
       console.log('🔔 ========================================');
-      
+
       // Log before invalidation
       console.log('📤 About to invalidate queries...');
-      
+
       // Invalidate and immediately refetch
-      queryClient.invalidateQueries({ 
+      queryClient.invalidateQueries({
         queryKey: ['activity'],
         refetchType: 'active'
       });
-      
+
       console.log('✅ Queries invalidated');
-      
+
       // Also trigger manual refetch
       console.log('📤 About to manually refetch...');
       refetch().then(() => {
@@ -190,7 +191,7 @@ const Activity: React.FC = () => {
       }).catch((err) => {
         console.error('❌ Manual refetch failed:', err);
       });
-      
+
       toast.success('New activity log', {
         duration: 2000,
         icon: '📝'
@@ -202,7 +203,7 @@ const Activity: React.FC = () => {
 
     // Test the socket connection
     socket.emit('test:ping', { page: 'activity' });
-    
+
     // Listen for test response
     socket.on('test:pong', (data) => {
       console.log('🏓 Received test:pong:', data);
@@ -217,16 +218,16 @@ const Activity: React.FC = () => {
 
   const formatDescriptionWithDuration = (activity: ActivityLog) => {
     const { description, actionType, metadata } = activity;
-    
+
     if (
-      (actionType === 'user_restricted' || 
-       actionType === 'user_suspended' || 
-       actionType === 'user_banned') && 
+      (actionType === 'user_restricted' ||
+        actionType === 'user_suspended' ||
+        actionType === 'user_banned') &&
       metadata?.duration
     ) {
       const duration = metadata.duration;
       let durationText = '';
-      
+
       if (duration === -1) {
         durationText = 'indefinitely';
       } else if (duration === 1) {
@@ -234,10 +235,10 @@ const Activity: React.FC = () => {
       } else {
         durationText = `for ${duration} days`;
       }
-      
+
       return `${description} ${durationText}`;
     }
-    
+
     return description;
   };
 
@@ -253,7 +254,7 @@ const Activity: React.FC = () => {
             setUserModalOpen(true);
           }
           break;
-          
+
         case 'transaction':
           const transactionResponse = await transactionsService.getTransactionById(activity.targetId._id);
           if (transactionResponse?.transaction) {
@@ -261,15 +262,15 @@ const Activity: React.FC = () => {
             setTransactionModalOpen(true);
           }
           break;
-          
+
         case 'support':
           navigate('/support');
           break;
-          
+
         case 'verification':
           navigate('/verifications');
           break;
-          
+
         case 'job':
           navigate('/jobs');
           break;
@@ -282,22 +283,22 @@ const Activity: React.FC = () => {
 
   const filteredActivities = useMemo(() => {
     return activities.filter(activity => {
-    const matchesSearch = 
-      activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      activity.adminId.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
-    
-    const matchesType = 
-      typeFilter === 'all' ||
-      (typeFilter === 'user' && USER_ACTIONS.includes(activity.actionType)) ||
-      (typeFilter === 'job' && JOB_ACTIONS.includes(activity.actionType)) ||
-      (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
-    
-    return matchesSearch && matchesAction && matchesType;
+      const matchesSearch =
+        activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        activity.adminId.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
+
+      const matchesType =
+        typeFilter === 'all' ||
+        (typeFilter === 'user' && USER_ACTIONS.includes(activity.actionType)) ||
+        (typeFilter === 'job' && JOB_ACTIONS.includes(activity.actionType)) ||
+        (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
+
+      return matchesSearch && matchesAction && matchesType;
     });
   }, [activities, searchTerm, actionFilter, typeFilter]);
 
@@ -327,7 +328,7 @@ const Activity: React.FC = () => {
         console.log('Activity found:', activity);
         // Set as highlighted
         setHighlightedActivityId(activityId);
-        
+
         // Find which page this activity is on
         const activityIndex = filteredActivities.findIndex(a => a._id === activityId);
         console.log('Activity index in filtered list:', activityIndex);
@@ -351,18 +352,18 @@ const Activity: React.FC = () => {
       // Wait for pagination to render
       const scrollTimer = setTimeout(() => {
         const element = activityRefs.current[activityId];
-        
+
         if (element) {
           console.log('Scrolling to activity:', activityId);
           console.log('Element found:', element);
-          
+
           // Use scrollIntoView which is more reliable
           element.scrollIntoView({
             behavior: 'smooth',
             block: 'center',
             inline: 'nearest'
           });
-          
+
           // After scrolling, open the modal for this activity
           setTimeout(() => {
             const activity = activities.find(a => a._id === activityId);
@@ -376,13 +377,13 @@ const Activity: React.FC = () => {
           console.log('Available refs:', Object.keys(activityRefs.current));
         }
       }, 500);
-      
+
       // Remove highlight after 6 seconds
       const highlightTimer = setTimeout(() => {
         setHighlightedActivityId(null);
         setSearchParams({});
       }, 6000);
-      
+
       return () => {
         clearTimeout(scrollTimer);
         clearTimeout(highlightTimer);
@@ -391,9 +392,9 @@ const Activity: React.FC = () => {
   }, [pagination.page, highlightedActivityId, searchParams, setSearchParams, activities, handleActivityClick]);
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50 mt-16 md:mt-0">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Activity Logs</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
@@ -402,12 +403,63 @@ const Activity: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {/* Mobile: Compact Grid */}
+        <div className="grid grid-cols-2 gap-2 md:hidden mb-4">
           <div
             onClick={() => setTypeFilter('all')}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              typeFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-            }`}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${typeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <ActivityIcon className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">Total</span>
+            </div>
+            <span className="text-sm font-bold text-blue-700">{totalActivityLogs}</span>
+          </div>
+
+          <div
+            onClick={() => setTypeFilter('user')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-purple-50 border-purple-200 ${typeFilter === 'user' ? 'border-purple-400 ring-2 ring-purple-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium text-gray-700">User</span>
+            </div>
+            <span className="text-sm font-bold text-purple-700">{userActivityLogs}</span>
+          </div>
+
+          <div
+            onClick={() => setTypeFilter('job')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-orange-50 border-orange-200 ${typeFilter === 'job' ? 'border-orange-400 ring-2 ring-orange-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-orange-600" />
+              <span className="text-sm font-medium text-gray-700">Job</span>
+            </div>
+            <span className="text-sm font-bold text-orange-700">{activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length}</span>
+          </div>
+
+          <div
+            onClick={() => setTypeFilter('system')}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${typeFilter === 'system' ? 'border-green-400 ring-2 ring-green-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium text-gray-700">System</span>
+            </div>
+            <span className="text-sm font-bold text-green-700">{systemActivityLogs}</span>
+          </div>
+        </div>
+
+        {/* Desktop: Full Grid */}
+        <div className="hidden md:grid grid-cols-4 gap-3 mb-4">
+          <div
+            onClick={() => setTypeFilter('all')}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Total Activity Logs</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{totalActivityLogs}</p>
@@ -415,9 +467,8 @@ const Activity: React.FC = () => {
 
           <div
             onClick={() => setTypeFilter('user')}
-            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              typeFilter === 'user' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-            }`}
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'user' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">User Actions</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{userActivityLogs}</p>
@@ -425,19 +476,17 @@ const Activity: React.FC = () => {
 
           <div
             onClick={() => setTypeFilter('job')}
-            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              typeFilter === 'job' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
-            }`}
+            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'job' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Job Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{activities.filter(activity => JOB_ACTIONS.includes(activity.actionType)).length}</p>
+            <p className="text-xl md:text-2xl font-bold text-gray-900">{activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length}</p>
           </div>
 
           <div
             onClick={() => setTypeFilter('system')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              typeFilter === 'system' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-            }`}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'system' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">System Actions</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{systemActivityLogs}</p>
@@ -455,7 +504,7 @@ const Activity: React.FC = () => {
               className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
           </div>
-          
+
           <select
             value={actionFilter}
             onChange={(e) => setActionFilter(e.target.value)}
@@ -513,7 +562,7 @@ const Activity: React.FC = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedActivities.map((activity) => (
-                      <tr 
+                      <tr
                         key={activity._id}
                         ref={(el) => {
                           activityRefs.current[activity._id] = el as HTMLTableRowElement;
@@ -531,15 +580,13 @@ const Activity: React.FC = () => {
                           }
                         }}
                         onClick={() => handleActivityClick(activity)}
-                        className={`transition-all duration-200 ${
-                          activity.targetId && activity.targetType 
-                            ? 'hover:bg-gray-100 cursor-pointer' 
-                            : 'hover:bg-gray-50'
-                        } ${
-                          highlightedActivityId === activity._id
+                        className={`transition-all duration-200 ${activity.targetId && activity.targetType
+                          ? 'hover:bg-gray-100 cursor-pointer'
+                          : 'hover:bg-gray-50'
+                          } ${highlightedActivityId === activity._id
                             ? 'bg-yellow-100 ring-2 ring-yellow-400'
                             : ''
-                        }`}
+                          }`}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -562,9 +609,8 @@ const Activity: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                            ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
-                          }`}>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                            }`}>
                             {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
                             {ACTION_LABELS[activity.actionType] || activity.actionType}
                           </span>
@@ -604,7 +650,7 @@ const Activity: React.FC = () => {
 
               <div className="md:hidden px-4 py-4 space-y-3">
                 {paginatedActivities.map((activity) => (
-                  <div 
+                  <div
                     key={activity._id}
                     ref={(el) => {
                       activityRefs.current[activity._id] = el;
@@ -622,17 +668,21 @@ const Activity: React.FC = () => {
                       }
                     }}
                     onClick={() => handleActivityClick(activity)}
-                    className={`bg-white rounded-lg border border-gray-200 p-4 transition-all duration-200 ${
-                      activity.targetId && activity.targetType 
-                        ? 'hover:bg-gray-100 cursor-pointer' 
-                        : 'hover:bg-gray-50'
-                    } ${
-                      highlightedActivityId === activity._id
+                    className={`relative bg-white rounded-lg border border-gray-200 p-4 transition-all duration-200 ${activity.targetId && activity.targetType
+                      ? 'hover:bg-gray-100 cursor-pointer'
+                      : 'hover:bg-gray-50'
+                      } ${highlightedActivityId === activity._id
                         ? 'bg-yellow-100 ring-2 ring-yellow-400'
                         : ''
-                    }`}
+                      }`}
                   >
-                    <div className="flex items-center gap-3 mb-3">
+                    {activity.adminId.userType === 'superadmin' && (
+                      <span className="absolute top-4 right-4 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                        Super Admin
+                      </span>
+                    )}
+
+                    <div className="flex items-center gap-3 mb-3 pr-20"> {/* Added padding for absolute badge */}
                       <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
                         <span className="text-base font-semibold text-gray-700">
                           {getInitials(activity.adminId.name)}
@@ -641,36 +691,39 @@ const Activity: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold text-gray-900 truncate">{activity.adminId.name}</h3>
-                          {activity.adminId.userType === 'superadmin' && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700 flex-shrink-0">
-                              Super Admin
-                            </span>
-                          )}
                         </div>
                         <p className="text-xs text-gray-500 truncate">{activity.adminId.email}</p>
                       </div>
                     </div>
 
-                    <div className="mb-3">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                        ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
-                        {ACTION_LABELS[activity.actionType] || activity.actionType}
-                      </span>
-                    </div>
+                    {!activity.targetId && (
+                      <div className="mb-3">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                          }`}>
+                          {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
+                          {ACTION_LABELS[activity.actionType] || activity.actionType}
+                        </span>
+                      </div>
+                    )}
 
                     <p className="text-sm text-gray-900 mb-3">{formatDescriptionWithDuration(activity)}</p>
 
                     {activity.targetId && (
                       <div className="mb-3 pb-3 border-b border-gray-100">
                         <p className="text-xs text-gray-500 mb-1">Target:</p>
-                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2">
-                          {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
-                          {activity.targetType && (
-                            <MousePointerClick className="h-3 w-3 text-blue-600" />
-                          )}
-                        </p>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2 flex-1">
+                            {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
+                            {activity.targetType && (
+                              <MousePointerClick className="h-3 w-3 text-blue-600" />
+                            )}
+                          </p>
+                          <span className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                            }`}>
+                            {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-3 w-3" />}
+                            {ACTION_LABELS[activity.actionType] || activity.actionType}
+                          </span>
+                        </div>
                         {activity.targetId.email && (
                           <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
                         )}
@@ -682,7 +735,7 @@ const Activity: React.FC = () => {
                       <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
                     </div>
                   </div>
-                ))}  
+                ))}
               </div>
 
               {totalPages > 1 && (

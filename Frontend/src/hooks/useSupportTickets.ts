@@ -39,22 +39,22 @@ export const useSupportTickets = () => {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket: ChatSupport) => {
-      const matchesSearch = 
+      const matchesSearch =
         ticket.subject.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
         ticket.category.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
         (ticket.userEmail && ticket.userEmail.toLowerCase().includes(filters.searchQuery.toLowerCase())) ||
         (ticket.userName && ticket.userName.toLowerCase().includes(filters.searchQuery.toLowerCase()));
-      
+
       const matchesStatus = filters.status === 'all' || ticket.status === filters.status;
       const matchesPriority = filters.priority === 'all' || ticket.priority === filters.priority;
-      
+
       const matchesUserType = filters.userTypeFilter === 'all' || ticket.userType === filters.userTypeFilter;
-      
+
       let matchesTab = true;
       if (filters.activeTab === 'open') {
-        matchesTab = ticket.status === 'open' && !ticket.assignedTo && !ticket.acceptedBy;
+        matchesTab = ticket.status === 'open' && !ticket.acceptedBy;
       } else if (filters.activeTab === 'pending') {
-        matchesTab = ticket.status === 'open' && (ticket.assignedTo || ticket.acceptedBy);
+        matchesTab = ticket.status === 'open' && !!ticket.acceptedBy;
       } else if (filters.activeTab === 'resolved') {
         const hasResolvedInHistory = ticket.ticketHistory && ticket.ticketHistory.some(t => t.closedAt);
         const isCurrentlyClosed = ticket.status === 'closed';
@@ -79,7 +79,7 @@ export const useSupportTickets = () => {
   }, [filters]);
 
   const updateTicket = useCallback((ticketId: string, updates: Partial<ChatSupport>) => {
-    queryClient.setQueryData([SUPPORT_QUERY_KEY], (oldData: ChatSupport[] = []) => 
+    queryClient.setQueryData([SUPPORT_QUERY_KEY], (oldData: ChatSupport[] = []) =>
       oldData.map(ticket =>
         ticket._id === ticketId ? { ...ticket, ...updates } : ticket
       )

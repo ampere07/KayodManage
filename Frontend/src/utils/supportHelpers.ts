@@ -1,14 +1,14 @@
 import type { ChatSupport } from '../types';
 
 export const hasPreviouslyResolved = (
-  chat: ChatSupport, 
+  chat: ChatSupport,
   currentUserId: string | undefined
 ): boolean => {
   if (!currentUserId || !chat.ticketHistory || chat.ticketHistory.length === 0) {
     return false;
   }
-  
-  return chat.ticketHistory.some((ticket: any) => 
+
+  return chat.ticketHistory.some((ticket: any) =>
     ticket.resolvedBy && ticket.resolvedBy.toString() === currentUserId.toString()
   );
 };
@@ -21,16 +21,16 @@ export const calculateTicketStats = (tickets: ChatSupport[]) => {
   }, 0);
 
   const totalMessages = tickets.reduce(
-    (sum, chat) => sum + (chat.messages?.length || 0), 
+    (sum, chat) => sum + (chat.messages?.length || 0),
     0
   );
 
   const openTickets = tickets.filter(
-    chat => chat.status === 'open' && !chat.assignedTo && !chat.acceptedBy
+    chat => chat.status === 'open' && !chat.acceptedBy
   ).length;
 
   const pendingTickets = tickets.filter(
-    chat => chat.status === 'open' && (chat.assignedTo || chat.acceptedBy)
+    chat => chat.status === 'open' && chat.acceptedBy
   ).length;
 
   const unreadTickets = tickets.filter(
@@ -46,14 +46,14 @@ export const calculateTicketStats = (tickets: ChatSupport[]) => {
   const resolvedToday = tickets.reduce((sum, chat) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const resolvedTodayInHistory = chat.ticketHistory?.filter(t => {
       if (!t.closedAt) return false;
       const closedDate = new Date(t.closedAt);
       closedDate.setHours(0, 0, 0, 0);
       return closedDate.getTime() === today.getTime();
     }).length || 0;
-    
+
     let currentResolvedToday = 0;
     if (chat.status === 'closed' && chat.closedAt) {
       const closedDate = new Date(chat.closedAt);
@@ -62,7 +62,7 @@ export const calculateTicketStats = (tickets: ChatSupport[]) => {
         currentResolvedToday = 1;
       }
     }
-    
+
     return sum + resolvedTodayInHistory + currentResolvedToday;
   }, 0);
 

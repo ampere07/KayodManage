@@ -5,16 +5,15 @@ import {
   CheckCircle,
   Calendar,
   MessageCircleQuestion,
-  Wifi,
-  WifiOff,
-  Eye
+  Eye,
+  Clock
 } from 'lucide-react';
 import { SupportChatModal } from '../components/Modals';
 import { supportService } from '../services';
 import { useAuth } from '../context/AuthContext';
 import { useSupportTickets } from '../hooks/useSupportTickets';
 import { useSupportSocket } from '../hooks/useSupportSocket';
-import { getInitials, getPriorityBadge, getStatusBadge } from '../utils';
+import { getInitials, getStatusBadge } from '../utils';
 import { hasPreviouslyResolved, calculateTicketStats } from '../utils/supportHelpers';
 import type { ChatSupport, Message } from '../types';
 
@@ -68,7 +67,7 @@ const Support: React.FC = () => {
   const handleChatUpdate = useCallback((data: any) => {
     const { chatSupportId, updates } = data;
     updateTicket(chatSupportId, updates);
-    
+
     if (selectedChat?._id === chatSupportId) {
       setSelectedChat(prev => prev ? { ...prev, ...updates } : prev);
     }
@@ -146,7 +145,7 @@ const Support: React.FC = () => {
       } else {
         const result = await supportService.sendMessage(selectedChat._id, { message: messageText });
         clearTimeout(timeoutId);
-        
+
         setSelectedChat(prev => {
           if (!prev) return prev;
           const filtered = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
@@ -155,7 +154,7 @@ const Support: React.FC = () => {
             messages: [...filtered, result.message]
           };
         });
-        
+
         setSendingMessage(false);
       }
     } catch (error) {
@@ -207,79 +206,125 @@ const Support: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-64 flex flex-col bg-gray-50">
+    <div className="fixed inset-x-0 bottom-0 top-16 md:top-0 md:left-64 flex flex-col bg-gray-50">
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Support Center</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 mt-1">
               Manage and respond to user support tickets, inquiries, and technical assistance requests
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isConnected ? (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg">
-                <Wifi className="w-4 h-4" />
-                <span className="text-xs font-medium">Live</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg">
-                <WifiOff className="w-4 h-4" />
-                <span className="text-xs font-medium">Offline</span>
-              </div>
-            )}
-          </div>
+
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div 
+        <div className="grid grid-cols-2 gap-2 md:hidden mb-4">
+          <div
             onClick={() => {
               setFilters(prev => ({ ...prev, activeTab: 'all' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filters.activeTab === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-            }`}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-purple-50 border-purple-200 ${filters.activeTab === 'all' ? 'border-purple-400 ring-2 ring-purple-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium text-gray-700">Total</span>
+            </div>
+            <span className="text-sm font-bold text-purple-700">{stats.totalTickets}</span>
+          </div>
+
+          <div
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'open' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${filters.activeTab === 'open' ? 'border-blue-400 ring-2 ring-blue-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircleQuestion className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">Open</span>
+            </div>
+            <span className="text-sm font-bold text-blue-700">{stats.openTickets}</span>
+          </div>
+
+          <div
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'pending' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${filters.activeTab === 'pending' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm font-medium text-gray-700">Pending</span>
+            </div>
+            <span className="text-sm font-bold text-yellow-700">{stats.pendingTickets}</span>
+          </div>
+
+          <div
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'resolved' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${filters.activeTab === 'resolved' ? 'border-green-400 ring-2 ring-green-300' : ''
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium text-gray-700">Resolved</span>
+            </div>
+            <span className="text-sm font-bold text-green-700">{stats.resolvedTickets}</span>
+          </div>
+        </div>
+
+        <div className="hidden md:grid grid-cols-4 gap-3 mb-4">
+          <div
+            onClick={() => {
+              setFilters(prev => ({ ...prev, activeTab: 'all' }));
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filters.activeTab === 'all' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Total Tickets</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalTickets}</p>
           </div>
 
-          <div 
+          <div
             onClick={() => {
               setFilters(prev => ({ ...prev, activeTab: 'open' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filters.activeTab === 'open' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-            }`}
+            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filters.activeTab === 'open' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Open Tickets</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.openTickets}</p>
           </div>
 
-          <div 
+          <div
             onClick={() => {
               setFilters(prev => ({ ...prev, activeTab: 'pending' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filters.activeTab === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-            }`}
+            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filters.activeTab === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Pending Response</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.pendingTickets}</p>
           </div>
 
-          <div 
+          <div
             onClick={() => {
               setFilters(prev => ({ ...prev, activeTab: 'resolved' }));
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
-              filters.activeTab === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-            }`}
+            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filters.activeTab === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+              }`}
           >
             <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.resolvedTickets}</p>
@@ -304,11 +349,10 @@ const Support: React.FC = () => {
                 setFilters(prev => ({ ...prev, userTypeFilter: 'all' }));
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                filters.userTypeFilter === 'all'
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${filters.userTypeFilter === 'all'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               All
             </button>
@@ -317,11 +361,10 @@ const Support: React.FC = () => {
                 setFilters(prev => ({ ...prev, userTypeFilter: 'client' }));
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                filters.userTypeFilter === 'client'
-                  ? 'bg-purple-50 text-purple-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${filters.userTypeFilter === 'client'
+                ? 'bg-purple-50 text-purple-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               Customer
             </button>
@@ -330,11 +373,10 @@ const Support: React.FC = () => {
                 setFilters(prev => ({ ...prev, userTypeFilter: 'provider' }));
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                filters.userTypeFilter === 'provider'
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${filters.userTypeFilter === 'provider'
+                ? 'bg-indigo-50 text-indigo-700'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               Provider
             </button>
@@ -361,7 +403,6 @@ const Support: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Subject</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Messages</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created</th>
@@ -403,11 +444,8 @@ const Support: React.FC = () => {
                           <div className="text-sm text-gray-600">{chat.category}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          {getPriorityBadge(chat.priority)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="flex items-center justify-center gap-2">
-                            {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
+                            {getStatusBadge(chat.status, chat.acceptedBy, chat.displayStatus)}
                             {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
                                 <CheckCircle className="w-3 h-3 mr-1" />
@@ -454,64 +492,95 @@ const Support: React.FC = () => {
                 </table>
               </div>
 
-              <div className="md:hidden px-4 py-4 space-y-3">
+              <div className="md:hidden px-4 py-4 space-y-4">
                 {paginatedTickets.map((chat) => (
                   <div
                     key={chat._id}
                     onClick={() => handleSelectChat(chat)}
-                    className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-shadow"
+                    className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      {chat.userProfileImage ? (
-                        <img
-                          src={chat.userProfileImage}
-                          alt={chat.userName || 'User'}
-                          className="w-12 h-12 rounded-full object-cover flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                          <span className="text-base font-semibold text-gray-700">
-                            {getInitials(chat.userName || 'Unknown')}
+                    {/* Header: User Info & Status */}
+                    <div className="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        {chat.userProfileImage ? (
+                          <img
+                            src={chat.userProfileImage}
+                            alt={chat.userName || 'User'}
+                            className="h-10 w-10 rounded-full object-cover border border-white shadow-sm"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0 border border-white shadow-sm">
+                            <span className="text-sm font-bold text-gray-700">
+                              {getInitials(chat.userName || 'Unknown')}
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 leading-tight">
+                            {chat.userName || 'Unknown User'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate max-w-[150px]">
+                            {chat.userEmail || 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="scale-90 origin-right">
+                          {getStatusBadge(chat.status, chat.acceptedBy, chat.displayStatus)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ticket Details */}
+                    <div className="p-4 border-b border-gray-100">
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Subject:</p>
+                          <h3 className="text-sm font-bold text-gray-900 truncate">{chat.subject}</h3>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Category:</p>
+                        <p className="text-sm font-bold text-gray-900 truncate">{chat.category}</p>
+                      </div>
+                    </div>
+
+                    {/* Meta Info */}
+                    <div className="p-4 border-b border-gray-100 bg-gray-50/30">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Created:</p>
+                          <p className="text-xs font-medium text-gray-900 truncate">
+                            {new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </p>
+                        </div>
+                        {(chat.unreadCount || 0) > 0 && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                            {chat.unreadCount} new
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="w-3 h-3 text-gray-400" />
+                          <span className="text-xs font-medium text-gray-900">{chat.messages?.length || 0} messages</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer: Resolved Check */}
+                    {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
+                      <div className="px-4 py-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Prev. Resolved
                           </span>
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">{chat.userName || 'Unknown'}</h3>
-                        <p className="text-xs text-gray-500 truncate">{chat.userEmail || 'N/A'}</p>
                       </div>
-                    </div>
-
-                    <h4 className="text-sm font-medium text-gray-900 mb-2 truncate">{chat.subject}</h4>
-                    <p className="text-xs text-gray-600 mb-3">{chat.category}</p>
-
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {getPriorityBadge(chat.priority)}
-                      {getStatusBadge(chat.status, chat.assignedTo, chat.acceptedBy, chat.displayStatus)}
-                      {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700" title="You previously resolved a ticket in this conversation">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Prev. Resolved
-                        </span>
-                      )}
-                      {(chat.unreadCount || 0) > 0 && (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                          {chat.unreadCount} new
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
-                        <span>{chat.messages?.length || 0} messages</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>{new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                ))}  
+                ))}
               </div>
 
               {totalPages > 1 && (

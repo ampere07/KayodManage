@@ -27,9 +27,8 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction })
       <div className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity" onClick={onClose} />
 
       <div
-        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
       >
         <div className="h-full flex flex-col">
           {/* Header */}
@@ -44,6 +43,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction })
           </div>
 
           <div className="flex-1 overflow-y-auto">
+            {/* Amount Section */}
+            <div className={`px-6 py-6 ${transaction.status === 'completed'
+                ? 'bg-green-100'
+                : transaction.status === 'pending'
+                  ? 'bg-yellow-100'
+                  : 'bg-red-100'
+              }`}>
+              <p className="text-sm text-gray-600 mb-2">Top-up Amount</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
+            </div>
+
             <div className="p-6">
               {/* User Information */}
               {customer && (
@@ -67,22 +77,18 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction })
                       )}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{customer?.name || 'Unknown'}</p>
-                      <p className="text-xs text-gray-500">{customer?.email || 'N/A'}</p>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500 w-12">Name:</span>
+                        <p className="text-sm font-medium text-gray-900">{customer?.name || 'Unknown'}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500 w-12">Email:</span>
+                        <p className="text-xs text-gray-500">{customer?.email || 'N/A'}</p>
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-3 text-sm">
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[120px]">Name:</p>
-                      <p className="text-gray-900 font-medium">{customer?.name || 'N/A'}</p>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <p className="text-gray-600 min-w-[120px]">Email:</p>
-                      <p className="text-gray-900 break-all">{customer?.email || 'N/A'}</p>
-                    </div>
-
                     <div className="flex items-start gap-2">
                       <p className="text-gray-600 min-w-[120px]">Phone:</p>
                       <p className="text-gray-900">{customer?.phone || 'N/A'}</p>
@@ -113,11 +119,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction })
                   <div className="flex items-start gap-2">
                     <p className="text-gray-600 min-w-[120px]">Status:</p>
                     <p className="text-gray-900 font-medium capitalize">{transaction.status}</p>
-                  </div>
-
-                  <div className="flex items-start gap-2">
-                    <p className="text-gray-600 min-w-[120px]">Amount:</p>
-                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(transaction.amount)}</p>
                   </div>
 
                   <div className="flex items-start gap-2">

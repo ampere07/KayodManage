@@ -76,3 +76,7 @@ code {
     padding-top: 1rem;
   }
 }
+
+.touch-none {
+  touch-action: none;
+}
