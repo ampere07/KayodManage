@@ -77,15 +77,34 @@ class SupportService {
     return response.data;
   }
 
-  /**
-   * Perform a generic action on a chat support
-   */
   async performAction(
     chatSupportId: string,
     action: string
   ): Promise<ChatActionResponse> {
     const response = await apiClient.put<ChatActionResponse>(
       `${this.baseUrl}/${chatSupportId}/${action}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Broadcast a message to a specific chat support (Admin function)
+   */
+  async broadcastMessage(
+    chatSupportId: string,
+    message: { text: string; sender: string }
+  ): Promise<any> {
+    const response = await apiClient.post(
+      `/api/support/broadcast-message`,
+      {
+        chatSupportId,
+        message
+      },
+      {
+        headers: {
+          'x-api-key': 'kayod-admin-access-key-123'
+        }
+      }
     );
     return response.data;
   }

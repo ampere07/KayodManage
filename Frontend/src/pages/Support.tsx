@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   Search,
   MessageSquare,
@@ -41,20 +41,50 @@ const Support: React.FC = () => {
     reopenTicket
   } = useSupportTickets();
 
+  // Store timeout IDs to clear them when messages arrive
+  const messageTimeoutsRef = useRef<Map<string, number>>(new Map());
+
   const handleNewMessage = useCallback((data: any) => {
     const { chatSupportId, message: newMessage } = data;
+    console.log('[handleNewMessage] Received:', { chatSupportId, newMessage });
     if (!newMessage) return;
 
+    // Clear any pending timeouts for this chat
+    const timeoutId = messageTimeoutsRef.current.get(chatSupportId);
+    if (timeoutId) {
+      console.log('[handleNewMessage] Clearing timeout for chat:', chatSupportId);
+      clearTimeout(timeoutId);
+      messageTimeoutsRef.current.delete(chatSupportId);
+    } else {
+      console.log('[handleNewMessage] No timeout found for chat:', chatSupportId);
+    }
+
     setSendingMessage(false);
-    updateTicket(chatSupportId, {
-      messages: [...(tickets.find(t => t._id === chatSupportId)?.messages?.filter(m => !m._id?.startsWith('temp-')) || []), newMessage],
-      updatedAt: new Date().toISOString()
-    });
+
+    // Check for duplicates before adding
+    const currentTicket = tickets.find(t => t._id === chatSupportId);
+    const messageExists = currentTicket?.messages?.some(m => m._id === newMessage._id);
+
+    if (!messageExists) {
+      updateTicket(chatSupportId, {
+        messages: [...(currentTicket?.messages?.filter(m => !m._id?.startsWith('temp-')) || []), newMessage],
+        updatedAt: new Date().toISOString()
+      });
+    }
 
     if (selectedChat?._id === chatSupportId) {
       setSelectedChat(prev => {
         if (!prev) return prev;
+
+        // Check if message already exists in selectedChat
+        const alreadyExists = prev.messages?.some(m => m._id === newMessage._id);
+        if (alreadyExists) {
+          console.log('[handleNewMessage] Message already exists, skipping duplicate');
+          return prev;
+        }
+
         const filteredMessages = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
+        console.log('[handleNewMessage] Updating selectedChat. Filtered:', filteredMessages.length, 'Adding:', 1);
         return {
           ...prev,
           messages: [...filteredMessages, newMessage],
@@ -107,6 +137,7 @@ const Support: React.FC = () => {
     if (!message.trim() || !selectedChat || sendingMessage) return;
 
     const messageText = message.trim();
+    console.log('[handleSendMessage] Sending message:', messageText, 'to chat:', selectedChat._id);
     setSendingMessage(true);
     setMessage('');
 
@@ -119,6 +150,7 @@ const Support: React.FC = () => {
       timestamp: new Date().toISOString()
     };
 
+    console.log('[handleSendMessage] Adding optimistic message with tempId:', tempId);
     setSelectedChat(prev => {
       if (!prev) return prev;
       return {
@@ -128,6 +160,7 @@ const Support: React.FC = () => {
     });
 
     const timeoutId = setTimeout(() => {
+      console.log('[TIMEOUT FIRED] Removing temp message after 10s:', tempId);
       setSelectedChat(prev => {
         if (!prev) return prev;
         return {
@@ -137,14 +170,22 @@ const Support: React.FC = () => {
       });
       setMessage(messageText);
       setSendingMessage(false);
+      messageTimeoutsRef.current.delete(selectedChat._id);
     }, 10000);
+
+    // Store the timeout ID so it can be cleared when the message arrives
+    messageTimeoutsRef.current.set(selectedChat._id, timeoutId);
+    console.log('[handleSendMessage] Timeout set and stored for chat:', selectedChat._id);
 
     try {
       if (isConnected) {
+        console.log('[handleSendMessage] Sending via socket...');
         socketSendMessage(selectedChat._id, messageText, 'Support Agent');
       } else {
+        console.log('[handleSendMessage] Socket disconnected, using HTTP API...');
         const result = await supportService.sendMessage(selectedChat._id, { message: messageText });
         clearTimeout(timeoutId);
+        messageTimeoutsRef.current.delete(selectedChat._id);
 
         setSelectedChat(prev => {
           if (!prev) return prev;
@@ -158,7 +199,9 @@ const Support: React.FC = () => {
         setSendingMessage(false);
       }
     } catch (error) {
+      console.error('[handleSendMessage] Error sending message:', error);
       clearTimeout(timeoutId);
+      messageTimeoutsRef.current.delete(selectedChat._id);
       setSelectedChat(prev => {
         if (!prev) return prev;
         return {
