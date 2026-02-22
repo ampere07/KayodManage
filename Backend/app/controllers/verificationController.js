@@ -55,11 +55,27 @@ const getVerificationById = async (req, res) => {
 const updateVerificationStatus = async (req, res) => {
   try {
     const { verificationId } = req.params;
-    const { status, adminNotes, rejectionReason } = req.body;
+    const { status, adminNotes, rejectionReason, banUser } = req.body;
+
+    console.log('----------------------------------------');
+    console.log('📦 UPDATE VERIFICATION STATUS REQUEST');
+    console.log('ID:', verificationId);
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('User ID:', req.user?.id);
+    console.log('----------------------------------------');
+
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(verificationId)) {
+      console.error('❌ Invalid ObjectId:', verificationId);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification ID format'
+      });
+    }
 
     const verification = await verificationService.updateVerificationStatus(
       verificationId,
-      { status, adminNotes, rejectionReason },
+      { status, adminNotes, rejectionReason, banUser },
       req.user?.id
     );
 
@@ -71,13 +87,15 @@ const updateVerificationStatus = async (req, res) => {
         ? `Approved verification for ${verification.userId.name}`
         : `Rejected verification for ${verification.userId.name}`;
 
+      const targetUserId = verification.userId?._id || verification.userId;
+
       await logActivity(
         req.user.id,
         actionType,
         description,
         {
           targetType: 'verification',
-          targetId: verification.userId._id,
+          targetId: targetUserId,
           targetModel: 'User',
           metadata: {
             verificationId: verification._id,
@@ -90,19 +108,25 @@ const updateVerificationStatus = async (req, res) => {
 
     // Emit socket event for user update
     try {
-      const userService = require('../services/userService');
-      const userWithData = await userService.getUserById(verification.userId._id);
-      const { io } = require('../../server');
+      const targetUserIdForSocket = verification.userId?._id || verification.userId;
+      if (targetUserIdForSocket) {
+        const userService = require('../services/userService');
+        const userWithData = await userService.getUserById(targetUserIdForSocket);
 
-      // Target the admin namespace specifically
-      const adminNamespace = io.of('/admin');
-      adminNamespace.to('admin').emit('user:updated', {
-        user: userWithData,
-        updateType: status === 'approved' ? 'verified' : 'unverified',
-        timestamp: new Date()
-      });
+        if (userWithData) {
+          const { io } = require('../../server');
 
-      console.log(`📡 Emitted user:updated for ${userWithData.name} to admin namespace`);
+          // Target the admin namespace specifically
+          const adminNamespace = io.of('/admin');
+          adminNamespace.to('admin').emit('user:updated', {
+            user: userWithData,
+            updateType: status === 'approved' ? 'verified' : 'unverified',
+            timestamp: new Date()
+          });
+
+          console.log(`📡 Emitted user:updated for ${userWithData.name} to admin namespace`);
+        }
+      }
     } catch (socketError) {
       console.error('Error emitting user update socket:', socketError);
     }
@@ -120,12 +144,16 @@ const updateVerificationStatus = async (req, res) => {
     console.error('Error stack:', error.stack);
     console.error('========================================');
 
-    const statusCode = error.message.includes('Invalid') || error.message.includes('required') ? 400 : 500;
+    let statusCode = 500;
+    if (error.name === 'ValidationError' || error.name === 'CastError' || error.message.includes('Invalid') || error.message.includes('required')) {
+      statusCode = 400;
+    }
 
     res.status(statusCode).json({
       success: false,
       message: error.message,
-      error: error.message
+      error: error.message,
+      details: error.errors || null
     });
   }
 };
