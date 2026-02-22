@@ -48,7 +48,7 @@ interface VerificationDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   verification: Verification | null;
-  onStatusUpdate: (verificationId: string, status: string, notes?: string, reason?: string) => Promise<void>;
+  onStatusUpdate: (verificationId: string, status: string, notes?: string, reason?: string, banUser?: boolean) => Promise<void>;
 }
 
 const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
@@ -145,7 +145,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   };
 
   const handleQuickReject = async () => {
-    const reason = window.prompt('Please provide a reason for rejection:');
+    const reason = window.prompt('Please provide a reason for rejection (this will also BAN the user):');
     if (!reason || reason.trim() === '') {
       toast.error('Rejection reason is required');
       return;
@@ -153,10 +153,42 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
     setUpdating(true);
     try {
-      await onStatusUpdate(verification._id, 'rejected', 'Rejected by admin', reason.trim());
-      toast.success('Verification rejected');
+      await onStatusUpdate(verification._id, 'rejected', 'Rejected and Banned by admin', reason.trim(), true);
+      toast.success('Verification rejected and user banned');
     } catch (error) {
-      toast.error('Failed to reject verification');
+      toast.error('Failed to reject and ban user');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleRequestResubmission = async () => {
+    const notes = window.prompt('Please specify what the user needs to resubmit:');
+    if (!notes || notes.trim() === '') {
+      toast.error('Resubmission notes are required');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      await onStatusUpdate(verification._id, 'resubmission_requested', notes.trim());
+      toast.success('Resubmission requested');
+    } catch (error) {
+      toast.error('Failed to request resubmission');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleFlagForReview = async () => {
+    const notes = window.prompt('Reason for flagging (optional):');
+
+    setUpdating(true);
+    try {
+      await onStatusUpdate(verification._id, 'flagged', notes?.trim() || 'Flagged for further review');
+      toast.success('Verification flagged for review');
+    } catch (error) {
+      toast.error('Failed to flag verification');
     } finally {
       setUpdating(false);
     }
@@ -634,6 +666,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                       Reject & Ban
                     </button>
                     <button
+                      onClick={handleRequestResubmission}
                       disabled={updating}
                       className="flex-1 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
@@ -643,6 +676,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                       Request Resubmission
                     </button>
                     <button
+                      onClick={handleFlagForReview}
                       disabled={updating}
                       className="flex-1 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 hidden md:flex"
                     >

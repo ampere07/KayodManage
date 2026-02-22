@@ -20,7 +20,7 @@ export interface VerificationDocument {
   type?: string;
 }
 
-export type VerificationStatus = 'approved' | 'rejected' | 'pending' | 'under_review';
+export type VerificationStatus = 'approved' | 'rejected' | 'pending' | 'under_review' | 'resubmission_requested' | 'flagged';
 
 export interface Verification {
   _id: string;
@@ -65,6 +65,7 @@ export interface UpdateVerificationStatusRequest {
   status: VerificationStatus;
   adminNotes?: string;
   rejectionReason?: string;
+  banUser?: boolean;
 }
 
 export interface UpdateVerificationStatusResponse {

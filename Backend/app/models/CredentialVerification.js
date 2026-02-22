@@ -25,12 +25,32 @@ const credentialVerificationSchema = new mongoose.Schema({
     index: true
   },
   faceVerification: {
-    type: [documentSchema],
-    required: true
+    type: mongoose.Schema.Types.Mixed, // Allow both single object and array
+    required: true,
+    validate: {
+      validator: function (value) {
+        if (Array.isArray(value)) {
+          return value.length >= 1 && value.every(item => item.cloudinaryUrl && item.publicId);
+        } else {
+          return value && value.cloudinaryUrl && value.publicId;
+        }
+      },
+      message: 'Face verification must have cloudinaryUrl and publicId'
+    }
   },
   validId: {
-    type: [documentSchema],
-    required: true
+    type: mongoose.Schema.Types.Mixed, // Allow both single object and array
+    required: true,
+    validate: {
+      validator: function (value) {
+        if (Array.isArray(value)) {
+          return value.length >= 1 && value.every(item => item.cloudinaryUrl && item.publicId);
+        } else {
+          return value && value.cloudinaryUrl && value.publicId;
+        }
+      },
+      message: 'Valid ID must have cloudinaryUrl and publicId'
+    }
   },
   credentials: {
     type: [documentSchema],
@@ -38,7 +58,7 @@ const credentialVerificationSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['approved', 'rejected', 'under_review'],
+    enum: ['pending', 'approved', 'rejected', 'under_review', 'resubmission_requested', 'flagged'],
     default: 'under_review',
     index: true
   },

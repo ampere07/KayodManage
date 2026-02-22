@@ -20,21 +20,24 @@ export const useUpdateVerificationStatus = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ 
-      verificationId, 
-      status, 
-      adminNotes, 
-      rejectionReason 
-    }: { 
-      verificationId: string; 
-      status: string; 
-      adminNotes?: string; 
+    mutationFn: async ({
+      verificationId,
+      status,
+      adminNotes,
+      rejectionReason,
+      banUser
+    }: {
+      verificationId: string;
+      status: string;
+      adminNotes?: string;
       rejectionReason?: string;
+      banUser?: boolean;
     }) => {
       const response = await verificationsService.updateVerificationStatus(verificationId, {
         status: status as any,
         adminNotes,
-        rejectionReason
+        rejectionReason,
+        banUser
       });
       return response;
     },

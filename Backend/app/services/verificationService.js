@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const CredentialVerification = require('../models/CredentialVerification');
 const User = require('../models/User');
 
@@ -44,49 +45,111 @@ class VerificationService {
    * Update verification status
    */
   async updateVerificationStatus(verificationId, statusData, reviewerId) {
-    const { status, adminNotes, rejectionReason } = statusData;
+    const { status, adminNotes, rejectionReason, banUser } = statusData;
 
-    const validStatuses = ['approved', 'rejected', 'under_review'];
-    if (!validStatuses.includes(status)) {
-      throw new Error('Invalid status value');
+    const validStatuses = ['pending', 'approved', 'rejected', 'under_review', 'resubmission_requested', 'flagged'];
+    console.log('📥 RECEIVED RAW STATUS:', JSON.stringify(status));
+
+    // Normalize status
+    let normalizedStatus = status?.trim()?.toLowerCase();
+
+    // Lenient mapping for common variations
+    const statusMapping = {
+      'resubmission_requested': 'resubmission_requested',
+      'resubmission requested': 'resubmission_requested',
+      'request resubmission': 'resubmission_requested',
+      'request for resubmission': 'resubmission_requested',
+      'reqeust for resubmission': 'resubmission_requested',
+      'resubmit': 'resubmission_requested'
+    };
+
+    if (statusMapping[normalizedStatus]) {
+      normalizedStatus = statusMapping[normalizedStatus];
     }
 
-    if (status === 'rejected' && (!rejectionReason || rejectionReason.trim() === '')) {
+    // Update the local status variable to use the normalized one
+    const finalStatus = normalizedStatus;
+
+    if (!validStatuses.includes(finalStatus)) {
+      console.error(`❌ INVALID STATUS REJECTED: "${finalStatus}" (Original: "${status}")`);
+      throw new Error(`Invalid status value: ${finalStatus}`);
+    }
+
+    // Ensure we use the finalStatus for the rest of the function
+    const statusToUse = finalStatus;
+
+    if (statusToUse === 'rejected' && (!rejectionReason || rejectionReason.trim() === '')) {
       throw new Error('Rejection reason is required when rejecting a verification');
     }
 
     const updateData = {
-      status,
+      status: statusToUse,
       adminNotes,
       reviewedAt: new Date(),
-      reviewedBy: reviewerId
+      reviewedBy: mongoose.Types.ObjectId.isValid(reviewerId) ? reviewerId : null
     };
 
-    if (status === 'rejected') {
+    console.log('📝 LOG: updateData to be applied:', JSON.stringify(updateData, null, 2));
+
+    if (statusToUse === 'rejected' || statusToUse === 'resubmission_requested' || statusToUse === 'flagged') {
       updateData.rejectionReason = rejectionReason;
     }
 
     // Use a transaction or at least update both if needed
-    const verification = await CredentialVerification.findByIdAndUpdate(
+    // Use updateOne to bypass any potential schema validation issues that findByIdAndUpdate might trigger
+    const updatedVerification = await CredentialVerification.findByIdAndUpdate(
       verificationId,
-      updateData,
+      { $set: updateData },
       { new: true }
     )
       .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email');
 
-    if (!verification) {
+    if (!updatedVerification) {
       throw new Error('Verification not found');
     }
 
-    // Sync isVerified status to User model
-    if (status === 'approved') {
-      await User.findByIdAndUpdate(verification.userId._id, { isVerified: true });
-    } else if (status === 'rejected') {
-      await User.findByIdAndUpdate(verification.userId._id, { isVerified: false });
+    // Sync verification status and account status to User model
+    if (updatedVerification?.userId) {
+      const userUpdate = { credentialVerificationStatus: statusToUse };
+
+      if (statusToUse === 'approved') {
+        userUpdate.isVerified = true;
+      } else if (statusToUse === 'rejected') {
+        userUpdate.isVerified = false;
+
+        if (banUser) {
+          userUpdate.accountStatus = 'banned';
+          userUpdate.restrictionDetails = {
+            type: 'banned',
+            reason: rejectionReason || 'Verification rejected and user banned',
+            restrictedBy: reviewerId,
+            restrictedAt: new Date(),
+            appealAllowed: false,
+            expiresAt: null
+          };
+        }
+      } else {
+        userUpdate.isVerified = false;
+      }
+
+      try {
+        console.log('👤 LOG: Updating user status with:', JSON.stringify(userUpdate, null, 2));
+        const userUpdateResult = await User.updateOne(
+          { _id: updatedVerification.userId._id || updatedVerification.userId },
+          { $set: userUpdate }
+        );
+        console.log('✅ User update result:', JSON.stringify(userUpdateResult, null, 2));
+      } catch (userError) {
+        console.error('❌ User Sync Error:', userError.message);
+        console.error('User Update Data:', JSON.stringify(userUpdate, null, 2));
+        // We don't necessarily want to fail the whole verification update if the user sync fails,
+        // but it's good to know. However, for debugging 400, we should probably know if it's hitting here.
+        throw userError;
+      }
     }
 
-    return verification.toObject();
+    return updatedVerification.toObject();
   }
 
   /**
@@ -125,7 +188,9 @@ class VerificationService {
       pending: statusCounts.pending || 0,
       approved: statusCounts.approved || 0,
       rejected: statusCounts.rejected || 0,
-      under_review: statusCounts.under_review || 0
+      under_review: statusCounts.under_review || 0,
+      resubmission_requested: statusCounts.resubmission_requested || 0,
+      flagged: statusCounts.flagged || 0
     };
   }
 
