@@ -60,6 +60,8 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'face' | 'credentials'>('face');
   const [showMobileDocs, setShowMobileDocs] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<number>(1);
+  const [attemptImages, setAttemptImages] = useState<any>(null);
 
   // Dragging refs
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -73,6 +75,60 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
       sheetRef.current.style.transition = '';
     }
   }, [showMobileDocs]);
+
+  // Reset selected attempt when verification changes
+  useEffect(() => {
+    if (verification) {
+      setSelectedAttempt(verification.verificationAttempts || 1);
+      setAttemptImages(null); // Reset attempt images
+    }
+  }, [verification]);
+
+  // Fetch images for a specific attempt
+  const fetchAttemptImages = async (attemptNumber: number) => {
+    if (!verification?.userId?._id) return;
+    
+    try {
+      // In a real implementation, you would have an API endpoint to fetch images for a specific attempt
+      // For now, we'll simulate this with a placeholder
+      console.log(`Fetching images for attempt ${attemptNumber} of user ${verification.userId._id}`);
+      
+      // TODO: Replace with actual API call
+      // const response = await fetch(`/api/verifications/images/${verification.userId._id}/attempt/${attemptNumber}`);
+      // const data = await response.json();
+      // setAttemptImages(data);
+      
+      // For now, we'll use the current verification images as a placeholder
+      setAttemptImages({
+        faceVerification: verification!.faceVerification,
+        validId: verification!.validId,
+        credentials: verification!.credentials
+      });
+    } catch (error) {
+      console.error('Failed to fetch attempt images:', error);
+      toast.error('Failed to load images for this attempt');
+    }
+  };
+
+  // Handle attempt click
+  const handleAttemptClick = (attemptNumber: number) => {
+    setSelectedAttempt(attemptNumber);
+    fetchAttemptImages(attemptNumber);
+  };
+
+  // Get current images based on selected attempt
+  const getCurrentImages = () => {
+    if (attemptImages && selectedAttempt !== verification?.verificationAttempts) {
+      return attemptImages;
+    }
+    return {
+      faceVerification: verification?.faceVerification,
+      validId: verification?.validId,
+      credentials: verification?.credentials
+    };
+  };
+
+  const currentImages = getCurrentImages();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     isDragging.current = true;
@@ -291,7 +347,12 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
                   {/* Verification Details */}
                   <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Verification Details</h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Verification Details</h3>
+                        <div className="text-sm text-gray-600">
+                          Viewing: <span className="font-medium text-indigo-600">Attempt {selectedAttempt}</span>
+                        </div>
+                      </div>
                     <div className="space-y-2.5">
                       <p className="text-sm md:text-base text-gray-900">
                         <span className="text-gray-600">Verification Status:</span>{' '}
@@ -310,7 +371,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                         }) : 'N/A'}
                       </p>
                       <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Attempts:</span> 1
+                        <span className="text-gray-600">Attempts:</span> {verification.verificationAttempts}
                       </p>
                       <p className="text-sm md:text-base text-gray-900">
                         <span className="text-gray-600">Documents Uploaded:</span> {documentsSubmitted} out of 3
@@ -385,6 +446,41 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           </p>
                         </div>
                       </div>
+                      {/* Render all verification attempts */}
+                      {Array.from({ length: verification.verificationAttempts }, (_, index) => {
+                        const attemptNumber = index + 1;
+                        const isSelected = selectedAttempt === attemptNumber;
+                        return (
+                          <div 
+                            key={index} 
+                            className={`flex items-start gap-3 relative cursor-pointer transition-all duration-200 ${isSelected ? 'bg-indigo-50 -mx-4 px-4 py-2 rounded-lg' : 'hover:bg-gray-50 -mx-4 px-4 py-2 rounded-lg'}`}
+                            onClick={() => handleAttemptClick(attemptNumber)}
+                          >
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center z-10 transition-colors ${isSelected ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                              <svg className={`w-4 h-4 transition-colors ${isSelected ? 'text-white' : 'text-indigo-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </div>
+                            <div className="flex-1">
+                              <p className={`text-sm font-medium transition-colors ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt {attemptNumber}</p>
+                              <p className="text-xs text-gray-500">
+                                {new Date(verification.submittedAt).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                })} - {index === verification.verificationAttempts - 1 ? 'Current attempt' : `Previous attempt ${attemptNumber}`}
+                              </p>
+                            </div>
+                            {isSelected && (
+                              <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       <div className="flex items-start gap-3 relative">
                         <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center z-10">
                           <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -476,17 +572,17 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <h3 className="text-base font-semibold text-gray-900">Face Verification</h3>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          {Array.isArray(verification.faceVerification) && verification.faceVerification.length > 0 ? (
+                          {Array.isArray(currentImages.faceVerification) && currentImages.faceVerification.length > 0 ? (
                             <>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Left Side</p>
-                                {verification.faceVerification[0] ? (
+                                {currentImages.faceVerification[0] ? (
                                   <ClickableImage
-                                    src={verification.faceVerification[0].cloudinaryUrl}
+                                    src={currentImages.faceVerification[0].cloudinaryUrl}
                                     alt="Face Left Side"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
-                                    title={`Face Verification - ${user.name}`}
+                                    title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -496,13 +592,13 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               </div>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
-                                {verification.faceVerification[1] ? (
+                                {currentImages.faceVerification[1] ? (
                                   <ClickableImage
-                                    src={verification.faceVerification[1].cloudinaryUrl}
+                                    src={currentImages.faceVerification[1].cloudinaryUrl}
                                     alt="Face Front"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
-                                    title={`Face Verification - ${user.name}`}
+                                    title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -512,13 +608,13 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               </div>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Right Side</p>
-                                {verification.faceVerification[2] ? (
+                                {currentImages.faceVerification[2] ? (
                                   <ClickableImage
-                                    src={verification.faceVerification[2].cloudinaryUrl}
+                                    src={currentImages.faceVerification[2].cloudinaryUrl}
                                     alt="Face Right Side"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
-                                    title={`Face Verification - ${user.name}`}
+                                    title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -527,7 +623,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 )}
                               </div>
                             </>
-                          ) : verification.faceVerification && !Array.isArray(verification.faceVerification) ? (
+                          ) : currentImages.faceVerification && !Array.isArray(currentImages.faceVerification) ? (
                             <>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Left Side</p>
@@ -538,11 +634,11 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 <ClickableImage
-                                  src={verification.faceVerification.cloudinaryUrl}
+                                  src={currentImages.faceVerification.cloudinaryUrl}
                                   alt="Face Verification"
                                   className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="face"
-                                  title={`Face Verification - ${user.name}`}
+                                  title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
                                 />
                               </div>
                               <div>
@@ -564,17 +660,17 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <h3 className="text-base font-semibold text-gray-900">Identification Card</h3>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {Array.isArray(verification.validId) && verification.validId.length > 0 ? (
+                          {Array.isArray(currentImages.validId) && currentImages.validId.length > 0 ? (
                             <>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
-                                {verification.validId[0] ? (
+                                {currentImages.validId[0] ? (
                                   <ClickableImage
-                                    src={verification.validId[0].cloudinaryUrl}
+                                    src={currentImages.validId[0].cloudinaryUrl}
                                     alt="ID Front"
                                     className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
-                                    title={`Valid ID - ${user.name}`}
+                                    title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
                                 ) : (
                                   <div className="w-full h-48 md:h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -584,13 +680,13 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               </div>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Back</p>
-                                {verification.validId[1] ? (
+                                {currentImages.validId[1] ? (
                                   <ClickableImage
-                                    src={verification.validId[1].cloudinaryUrl}
+                                    src={currentImages.validId[1].cloudinaryUrl}
                                     alt="ID Back"
                                     className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
-                                    title={`Valid ID - ${user.name}`}
+                                    title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
                                 ) : (
                                   <div className="w-full h-48 md:h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -599,16 +695,16 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 )}
                               </div>
                             </>
-                          ) : verification.validId && !Array.isArray(verification.validId) ? (
+                          ) : currentImages.validId && !Array.isArray(currentImages.validId) ? (
                             <>
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 <ClickableImage
-                                  src={verification.validId.cloudinaryUrl}
+                                  src={currentImages.validId.cloudinaryUrl}
                                   alt="Valid ID"
                                   className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="id"
-                                  title={`Valid ID - ${user.name}`}
+                                  title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                 />
                               </div>
                               <div>
@@ -628,10 +724,10 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
                   {activeTab === 'credentials' && (
                     <div className="h-full">
-                      {verification.credentials.length > 0 ? (
+                      {currentImages.credentials && currentImages.credentials.length > 0 ? (
                         <div className="overflow-x-auto pb-4">
                           <div className="flex flex-col md:flex-row gap-6 min-w-full md:min-w-min">
-                            {verification.credentials.map((credential, index) => (
+                            {currentImages.credentials.map((credential: any, index: number) => (
                               <div key={index} className="flex-shrink-0 w-full md:w-[500px]">
                                 <p className="text-sm font-medium text-gray-700 mb-2">{credential.originalName || `Credential ${index + 1}`}</p>
                                 <ClickableImage
@@ -639,7 +735,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                   alt={credential.originalName || `Credential ${index + 1}`}
                                   className="w-full h-[300px] md:h-[600px] object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="credential"
-                                  title={`${credential.originalName || `Credential ${index + 1}`} - ${user.name}`}
+                                  title={`${credential.originalName || `Credential ${index + 1}`} - Attempt ${selectedAttempt} - ${user.name}`}
                                 />
                               </div>
                             ))}
@@ -655,7 +751,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
               {/* Actions */}
               <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 md:p-6">
-                {verification.status === 'pending' || verification.status === 'under_review' ? (
+                {verification.status === 'pending' || verification.status === 'under_review' || verification.status === 'flagged' ? (
                   <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-2 md:gap-3">
                     <button
                       onClick={handleQuickReject}
@@ -675,16 +771,18 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                       </svg>
                       Request Resubmission
                     </button>
-                    <button
-                      onClick={handleFlagForReview}
-                      disabled={updating}
-                      className="flex-1 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 hidden md:flex"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                      </svg>
-                      Flag for Review
-                    </button>
+                    {verification.status !== 'flagged' && (
+                      <button
+                        onClick={handleFlagForReview}
+                        disabled={updating}
+                        className="flex-1 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 hidden md:flex"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                        </svg>
+                        Flag for Review
+                      </button>
+                    )}
                     <button
                       onClick={handleQuickApprove}
                       disabled={updating}
