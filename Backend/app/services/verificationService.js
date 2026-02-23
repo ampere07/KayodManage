@@ -18,27 +18,62 @@ class VerificationService {
       query.status = status;
     }
 
+    // Get all verifications with basic populate
     const verifications = await CredentialVerification.find(query)
       .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .sort({ submittedAt: -1 })
-      .limit(parseInt(limit))
-      .skip(parseInt(skip))
       .lean();
 
-    return verifications;
+    // Group by user and count attempts
+    const userAttempts = {};
+    verifications.forEach(v => {
+      const userId = v.userId?._id?.toString() || v.userId?.toString();
+      if (userId) {
+        userAttempts[userId] = (userAttempts[userId] || 0) + 1;
+      }
+    });
+
+    // Add verificationAttempts to each verification
+    const verificationsWithAttempts = verifications.map(v => {
+      const userId = v.userId?._id?.toString() || v.userId?.toString();
+      return {
+        ...v,
+        verificationAttempts: userAttempts[userId] || 1
+      };
+    });
+
+    // Apply pagination after processing
+    const paginatedResults = verificationsWithAttempts
+      .slice(parseInt(skip), parseInt(skip) + parseInt(limit));
+
+    return paginatedResults;
   }
 
   /**
    * Get a single verification by ID
    */
   async getVerificationById(verificationId) {
+    // Get the specific verification
     const verification = await CredentialVerification.findById(verificationId)
       .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .lean();
 
-    return verification;
+    if (!verification) {
+      return null;
+    }
+
+    // Count all verifications for this user
+    const totalAttempts = await CredentialVerification.countDocuments({
+      userId: verification.userId
+    });
+
+    // Add verificationAttempts to the result
+    return {
+      ...verification,
+      verificationAttempts: totalAttempts || 1
+    };
   }
 
   /**
@@ -198,13 +233,25 @@ class VerificationService {
    * Get latest verification for a user
    */
   async getVerificationByUserId(userId) {
+    // Get the latest verification for this user
     const verification = await CredentialVerification.findOne({ userId })
       .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
       .sort({ submittedAt: -1 })
       .lean();
 
-    return verification;
+    if (!verification) {
+      return null;
+    }
+
+    // Count all verifications for this user
+    const totalAttempts = await CredentialVerification.countDocuments({ userId });
+
+    // Add verificationAttempts to the result
+    return {
+      ...verification,
+      verificationAttempts: totalAttempts || 1
+    };
   }
 
   /**
