@@ -80,6 +80,7 @@ export interface UsersQueryParams {
   userType?: 'client' | 'provider';
   restricted?: string;
   isVerified?: string;
+  accountStatus?: string;
 }
 
 export interface UsersResponse {

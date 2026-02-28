@@ -50,7 +50,6 @@ const Jobs: React.FC = () => {
   const [urgentFilter, setUrgentFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [pagination, setPagination] = useState<JobsPagination>({
     page: 1,
     limit: 20,
@@ -621,68 +620,6 @@ const Jobs: React.FC = () => {
         job={selectedJob}
       />
 
-      {/* Image Lightbox Modal */}
-      {selectedJob && selectedJob.media && selectedJob.media.length > 0 && selectedImageIndex !== null && (
-        <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-90 z-[60] transition-opacity"
-            onClick={() => setSelectedImageIndex(null)}
-          />
-
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <button
-              onClick={() => setSelectedImageIndex(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors p-2 bg-black bg-opacity-50 rounded-full"
-              aria-label="Close image viewer"
-            >
-              <X className="w-6 h-6" />
-            </button>
-
-            {selectedJob.media.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === 0 ? selectedJob.media.length - 1 : prev! - 1
-                    );
-                  }}
-                  className="absolute left-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Previous image"
-                >
-                  <ChevronDown className="w-6 h-6 rotate-90" />
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === selectedJob.media.length - 1 ? 0 : prev! + 1
-                    );
-                  }}
-                  className="absolute right-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Next image"
-                >
-                  <ChevronDown className="w-6 h-6 -rotate-90" />
-                </button>
-              </>
-            )}
-
-            <div className="max-w-7xl max-h-full w-full h-full flex items-center justify-center">
-              <img
-                src={selectedJob.media[selectedImageIndex]}
-                alt={`Job media ${selectedImageIndex + 1}`}
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">
-              {selectedImageIndex + 1} / {selectedJob.media.length}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 };
