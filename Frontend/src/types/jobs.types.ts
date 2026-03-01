@@ -25,7 +25,7 @@ export interface Job {
   date: Date | string;
   isUrgent: boolean;
   serviceTier: 'basic' | 'standard' | 'premium';
-  paymentMethod: 'wallet' | 'cash' | 'xendit';
+  paymentMethod: 'wallet' | 'xendit';
   status: 'open' | 'in_progress' | 'completed' | 'cancelled';
   user?: {
     _id: string;
@@ -109,6 +109,6 @@ export interface UpdateJobStatusResponse {
 
 export type JobStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type ServiceTier = 'basic' | 'standard' | 'premium';
-export type PaymentMethod = 'wallet' | 'cash' | 'xendit';
+export type PaymentMethod = 'wallet' | 'xendit';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 export type ApplicationStatus = 'pending' | 'accepted' | 'rejected';

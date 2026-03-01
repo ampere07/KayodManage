@@ -304,13 +304,15 @@ const Jobs: React.FC = () => {
             <select
               value={paymentMethodFilter}
               onChange={(e) => setPaymentMethodFilter(e.target.value)}
-              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
-            >
-              <option value="all">Payment Method</option>
-              <option value="wallet">Wallet</option>
-              <option value="cash">Cash</option>
-              <option value="xendit">Xendit</option>
-            </select>
+                         <select
+                           value={paymentMethodFilter}
+                           onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                           className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
+                         >
+                           <option value="all">Payment Method</option>
+                           <option value="wallet">Wallet</option>
+                           <option value="xendit">Xendit</option>
+                         </select>
 
             <select
               value={urgentFilter}

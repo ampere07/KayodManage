@@ -66,8 +66,9 @@ const JobSchema = new Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['wallet', 'cash', 'xendit'],
-    required: true
+    enum: ['wallet', 'xendit'],
+    required: true,
+    default: 'wallet'
   },
   status: {
     type: String,
@@ -102,7 +103,8 @@ const JobSchema = new Schema({
   paymentDetails: {
     method: {
       type: String,
-      enum: ['wallet', 'cash', 'xendit'],
+      enum: ['wallet', 'xendit'],
+      default: 'wallet'
     },
     isPaid: {
       type: Boolean,
@@ -112,14 +114,7 @@ const JobSchema = new Schema({
       type: Date,
       default: null
     },
-    cashPaymentConfirmed: {
-      type: Boolean,
-      default: false
-    },
-    cashPaymentConfirmedAt: {
-      type: Date,
-      default: null
-    },
+
     feeStatus: {
       type: String,
       enum: ['not_applicable', 'pending', 'paid', 'waived'],

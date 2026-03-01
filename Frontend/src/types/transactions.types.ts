@@ -110,4 +110,4 @@ export interface UpdateTransactionStatusResponse {
 
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
 export type TransactionType = 'transaction' | 'fee_record';
-export type PaymentMethod = 'wallet' | 'cash' | 'xendit';
+export type PaymentMethod = 'wallet' | 'xendit';

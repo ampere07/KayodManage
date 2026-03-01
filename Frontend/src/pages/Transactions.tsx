@@ -785,7 +785,6 @@ const Transactions: React.FC = () => {
               >
                 <option value="all">All Methods</option>
                 <option value="wallet">Wallet</option>
-                <option value="cash">Cash</option>
                 <option value="xendit">Xendit</option>
               </select>
             </div>

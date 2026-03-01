@@ -27,7 +27,7 @@ const FeeRecordSchema = new Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['wallet', 'cash', 'xendit', 'bank_transfer'],
+    enum: ['wallet', 'xendit', 'bank_transfer'],
     default: 'wallet'
   },
   transaction: {
