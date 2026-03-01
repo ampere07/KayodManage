@@ -25,6 +25,8 @@ export interface ChatSupport {
   status: 'open' | 'closed';
   displayStatus?: 'open' | 'pending' | 'resolved';
   priority: 'urgent' | 'high' | 'medium' | 'low';
+  metadata?: any;
+  jobDetailsSnapshot?: any;
   messages?: Message[];
   createdAt: string;
   updatedAt?: string;

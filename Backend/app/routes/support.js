@@ -33,11 +33,32 @@ router.post('/notify-new-ticket', (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/notify-new-message', (req, res) => {
+// Upsert metadata/snapshot and emit new message
+router.post('/notify-new-message', async (req, res) => {
   console.log('New support message notification received:', req.body);
   const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_message');
-  res.json({ success: true });
+  const ChatSupport = require('../models/ChatSupport');
+
+  try {
+    const { chatSupportId, jobDetailsSnapshot, metadata } = req.body;
+
+    if (chatSupportId) {
+      await ChatSupport.findByIdAndUpdate(
+        chatSupportId,
+        {
+          ...(metadata ? { metadata } : {}),
+          ...(jobDetailsSnapshot ? { jobDetailsSnapshot } : {})
+        },
+        { new: true }
+      );
+    }
+
+    emitSupportUpdate({ ticketId: req.body.ticketId || chatSupportId, jobDetailsSnapshot, metadata }, 'new_message');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error handling notify-new-message:', err);
+    res.status(500).json({ success: false, message: 'Failed to process support notification' });
+  }
 });
 
 // Admin routes (require authentication)

@@ -158,7 +158,15 @@ const EditProfessionModal: React.FC<EditProfessionModalProps> = ({
                   {iconPreview ? (
                     <img src={iconPreview} alt="Preview" className="w-12 h-12 object-contain" />
                   ) : profession.icon ? (
-                    <ImageIcon className="w-8 h-8 text-gray-400" />
+                    <img 
+                      src={`/assets/icons/professions/${profession.icon.replace('custom:', '')}?t=${Date.now()}`} 
+                      alt={profession.name} 
+                      className="w-12 h-12 object-contain"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
                   ) : null}
                 </div>
               )}
