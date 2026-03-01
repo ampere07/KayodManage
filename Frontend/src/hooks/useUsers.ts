@@ -1,16 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersService } from '../services';
 import toast from 'react-hot-toast';
-import type { User } from '../types';
 
 interface UseUsersParams {
   page: number;
   limit: number;
   search?: string;
-  userType?: string;
+  userType?: 'client' | 'provider';
   isVerified?: string;
   status?: string;
   restricted?: string;
+  accountStatus?: string;
 }
 
 const USERS_QUERY_KEY = 'users';
@@ -26,15 +26,15 @@ export const useUsers = (params: UseUsersParams) => {
 
 export const useUserCounts = (params?: any) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'counts', params],
+    queryKey: [USERS_QUERY_KEY, 'counts', params, 'v2'],
     queryFn: async () => {
       const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData] = await Promise.all([
         usersService.getUsers({ limit: 1, page: 1 }),
         usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
         usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, status: 'suspended', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, status: 'restricted', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, status: 'banned', limit: 1, page: 1 })
+        usersService.getUsers({ ...params, accountStatus: 'suspended', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, accountStatus: 'restricted', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, accountStatus: 'banned', limit: 1, page: 1 })
       ]);
 
       return {
@@ -76,22 +76,40 @@ export const useStatusCounts = (baseParams: any) => {
 
 export const useFlaggedUserCounts = () => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'flaggedCounts'],
+    queryKey: [USERS_QUERY_KEY, 'flaggedCounts', 'v4'],
     queryFn: async () => {
-      const [flaggedTotalData, flaggedCustomersData, flaggedProvidersData] = await Promise.all([
-        usersService.getUsers({ restricted: 'true', limit: 1, page: 1 }),
-        usersService.getUsers({ restricted: 'true', userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ restricted: 'true', userType: 'provider', limit: 1, page: 1 })
+      console.log('Fetching flagged user counts...');
+      const [
+        flaggedTotalData,
+        flaggedCustomersData,
+        flaggedProvidersData,
+        flaggedSuspendedData,
+        flaggedRestrictedData,
+        flaggedBannedData
+      ] = await Promise.all([
+        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', userType: 'client', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', userType: 'provider', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'suspended', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'restricted', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'banned', limit: 1, page: 1 })
       ]);
+
+      console.log('Flagged restricted count:', flaggedRestrictedData.pagination?.total || 0);
+      console.log('Query params for restricted count:', { accountStatus: 'restricted' });
+      console.log('Flagged total count:', flaggedTotalData.pagination?.total || 0);
+      console.log('Query params for total flagged count:', { accountStatus: 'restricted,suspended,banned' });
 
       return {
         total: flaggedTotalData.pagination?.total || 0,
         customers: flaggedCustomersData.pagination?.total || 0,
-        providers: flaggedProvidersData.pagination?.total || 0
+        providers: flaggedProvidersData.pagination?.total || 0,
+        suspended: flaggedSuspendedData.pagination?.total || 0,
+        restricted: flaggedRestrictedData.pagination?.total || 0,
+        banned: flaggedBannedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
+    staleTime: 5 * 60 * 1000
   });
 };
 

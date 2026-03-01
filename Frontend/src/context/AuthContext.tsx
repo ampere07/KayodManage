@@ -55,9 +55,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('[Auth] Checking authentication status...');
       const response = await apiClient.get('/api/auth/check');
-      
+
       console.log('[Auth] Auth check response:', response.data);
-      
+
       if (response.data.success && response.data.isAuthenticated) {
         console.log('[Auth] User authenticated:', response.data.user);
         setIsAuthenticated(true);
@@ -100,7 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('[Auth] Attempting login for user:', username);
       setLoading(true);
-      
+
       const response = await apiClient.post('/api/auth/login', {
         username,
         password
@@ -110,18 +110,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (response.data.success) {
         console.log('[Auth] Login successful, updating state');
-        
+
         // Update state immediately
         setIsAuthenticated(true);
         setUser(response.data.user);
         setLoading(false);
-        
+
         // Force a small delay and then double-check auth status
         setTimeout(async () => {
           console.log('[Auth] Double-checking auth status after login...');
           await checkAuthStatus();
         }, 200);
-        
+
         return { success: true };
       } else {
         console.log('[Auth] Login failed:', response.data.error);
@@ -131,9 +131,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error: any) {
       console.error('[Auth] Login error:', error);
       setLoading(false);
-      return { 
-        success: false, 
-        error: error.response?.data?.error || 'Login failed' 
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Login failed'
       };
     }
   };
@@ -142,9 +142,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('[Auth] Attempting logout...');
       setLoading(true);
-      
+
       await apiClient.post('/api/auth/logout', {});
-      
+
       console.log('[Auth] Logout successful');
       setIsAuthenticated(false);
       setUser(null);

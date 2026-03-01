@@ -51,6 +51,32 @@ const UserSchema = new Schema({
     type: Boolean,
     default: false
   },
+  credentialVerificationStatus: {
+    type: String,
+    enum: ["none", "pending", "approved", "rejected", "resubmission_requested", "flagged"],
+    default: "none",
+  },
+  jobVerificationStatus: [
+    {
+      category: String,
+      status: {
+        type: String,
+        enum: ["none", "pending", "approved", "rejected", "resubmission_requested", "flagged"],
+        default: "none",
+      },
+      documents: [
+        {
+          cloudinaryUrl: String,
+          publicId: String,
+          uploadedAt: Date,
+          originalName: String,
+        },
+      ],
+      reviewedAt: Date,
+      reviewedBy: Schema.Types.ObjectId,
+      adminNotes: String,
+    },
+  ],
   // Enhanced restriction system
   accountStatus: {
     type: String,

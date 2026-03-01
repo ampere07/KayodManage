@@ -7,84 +7,85 @@ const ChatSupport = require('../models/ChatSupport');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const FeeRecord = require('../models/FeeRecord');
+const axios = require('axios');
 
 let adminNamespace = null;
-let mainIo = null;
 let chatSupportChangeStream = null;
 let activeIntervals = new Map();
 
+// Mobile backend URL for HTTP broadcasts
+const MOBILE_BACKEND_URL = process.env.MOBILE_BACKEND_URL || 'http://localhost:8080';
+
 const setupSocketHandlers = (io) => {
-  mainIo = io;
   adminNamespace = io.of('/admin');
-  
+
   setupChatSupportChangeStream();
-  setupMainNamespaceHandlers(io);
-  
+
   // Track connected admins to avoid duplicate logs
   const connectedAdmins = new Set();
-  
+
   adminNamespace.on('connection', async (socket) => {
     socket.join('admin');
     socket.emit('connection:status', 'connected');
-    
+
     const adminId = socket.handshake.auth?.adminId || socket.handshake.query?.adminId;
     if (adminId) {
       socket.data.adminId = adminId;
     }
-    
+
     await sendInitialData(socket, adminId);
     const intervals = setupRealtimeIntervals(socket, adminId);
-    
+
     socket.on('request:dashboard', () => broadcastDashboardStats());
     socket.on('request:alerts', async () => {
       const alerts = await getActiveAlerts(adminId);
       socket.emit('alerts:update', { alerts, timestamp: new Date() });
     });
-    
+
     // Test handler for Activity page socket connection
     socket.on('test:ping', (data) => {
       console.log('🏓 Received test:ping from:', data);
       socket.emit('test:pong', { message: 'Socket connection working!', page: data.page });
     });
-    
+
     socket.on('support:join_chat', (data) => {
       if (data.chatSupportId) {
         socket.join(`support:${data.chatSupportId}`);
         socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
       }
     });
-    
+
     socket.on('support:leave_chat', (data) => {
       if (data.chatSupportId) {
         socket.leave(`support:${data.chatSupportId}`);
       }
     });
-    
+
     socket.on('support:send_message', async (data) => {
       if (data.chatSupportId && data.message) {
         try {
           const chatSupport = await ChatSupport.findById(data.chatSupportId);
-          
+
           if (!chatSupport) {
-            socket.emit('support:message_error', { 
+            socket.emit('support:message_error', {
               error: 'Chat support not found',
-              chatSupportId: data.chatSupportId 
+              chatSupportId: data.chatSupportId
             });
             return;
           }
-          
+
           if (chatSupport.status !== 'open') {
-            socket.emit('support:message_error', { 
+            socket.emit('support:message_error', {
               error: 'Chat support is closed',
-              chatSupportId: data.chatSupportId 
+              chatSupportId: data.chatSupportId
             });
             return;
           }
-          
+
           const mongoose = require('mongoose');
           const adminId = '000000000000000000000000';
           const adminObjectId = new mongoose.Types.ObjectId(adminId);
-          
+
           const newMessage = {
             senderId: data.senderId || adminObjectId,
             senderName: data.senderName || 'Support Agent',
@@ -92,19 +93,40 @@ const setupSocketHandlers = (io) => {
             message: data.message.trim(),
             timestamp: new Date()
           };
-          
+
           chatSupport.messages.push(newMessage);
           await chatSupport.save();
+
+          const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
+
+          const messageData = {
+            chatSupportId: data.chatSupportId,
+            message: {
+              _id: savedMessage._id.toString(),
+              senderId: savedMessage.senderId.toString(),
+              senderName: savedMessage.senderName,
+              senderType: savedMessage.senderType,
+              message: savedMessage.message,
+              timestamp: savedMessage.timestamp.toISOString()
+            }
+          };
+
+          // Send confirmation back to the admin who sent it
+          // NOTE: Commented out to prevent duplicate messages. The MongoDB change stream
+          // will automatically broadcast this message to all connected clients.
+          // socket.emit('support:new_message', messageData);
+          // Also broadcast to anyone in the support room
+          // adminNamespace.to(`support:${data.chatSupportId}`).emit('support:new_message', messageData);
         } catch (error) {
           console.error('❌ Error sending admin message:', error.message);
-          socket.emit('support:message_error', { 
+          socket.emit('support:message_error', {
             error: 'Failed to send message',
-            chatSupportId: data.chatSupportId 
+            chatSupportId: data.chatSupportId
           });
         }
       }
     });
-    
+
     socket.on('disconnect', () => {
       connectedAdmins.delete(socket.id);
       const intervals = activeIntervals.get(socket.id);
@@ -114,69 +136,69 @@ const setupSocketHandlers = (io) => {
       }
     });
   });
-  
+
   return adminNamespace;
 };
 
 const setupMainNamespaceHandlers = (io) => {
   const connectedUsers = new Set();
-  
+
   io.on('connection', (socket) => {
-    
+
     socket.on('authenticate', (data) => {
       socket.emit('authenticated');
     });
-    
+
     socket.on('support:join_chat', (data) => {
       if (data.chatSupportId) {
         socket.join(`support:${data.chatSupportId}`);
         socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
       }
     });
-    
+
     socket.on('support:leave_chat', (data) => {
       if (data.chatSupportId) {
         socket.leave(`support:${data.chatSupportId}`);
       }
     });
-    
+
     socket.on('support:send_message', async (data) => {
       if (!data.chatSupportId) {
         socket.emit('support:message_error', { error: 'Missing chatSupportId' });
         return;
       }
-      
+
       if (!data.message) {
         socket.emit('support:message_error', { error: 'Missing message', chatSupportId: data.chatSupportId });
         return;
       }
-      
+
       try {
         const chatSupport = await ChatSupport.findById(data.chatSupportId);
-        
+
         if (!chatSupport) {
-          socket.emit('support:message_error', { 
+          socket.emit('support:message_error', {
             error: 'Chat support not found',
-            chatSupportId: data.chatSupportId 
+            chatSupportId: data.chatSupportId
           });
           return;
         }
-        
+
         if (chatSupport.status !== 'open') {
-          socket.emit('support:message_error', { 
+          socket.emit('support:message_error', {
             error: 'Chat support is closed',
-            chatSupportId: data.chatSupportId 
+            chatSupportId: data.chatSupportId
           });
           return;
         }
-        
+
         const mongoose = require('mongoose');
         const userId = data.userId || socket.handshake.auth?.userId || '000000000000000000000000';
-        
-        const userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+
+        const userObjectId = mongoose.Types.ObjectId.isValid(userId)
           ? new mongoose.Types.ObjectId(userId)
           : new mongoose.Types.ObjectId('000000000000000000000000');
-        
+
         const newMessage = {
           senderId: userObjectId,
           senderName: data.senderName || 'User',
@@ -184,12 +206,12 @@ const setupMainNamespaceHandlers = (io) => {
           message: data.message.trim(),
           timestamp: new Date()
         };
-        
+
         chatSupport.messages.push(newMessage);
         await chatSupport.save();
-        
+
         const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
-        
+
         // Immediately send confirmation back to sender
         const messageData = {
           chatSupportId,
@@ -202,19 +224,19 @@ const setupMainNamespaceHandlers = (io) => {
             timestamp: savedMessage.timestamp.toISOString()
           }
         };
-        
+
         socket.emit('support:new_message', messageData);
         io.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
-        
+
       } catch (error) {
         console.error('❌ Error sending message:', error.message);
-        socket.emit('support:message_error', { 
+        socket.emit('support:message_error', {
           error: 'Failed to send message: ' + error.message,
-          chatSupportId: data.chatSupportId 
+          chatSupportId: data.chatSupportId
         });
       }
     });
-    
+
     socket.on('disconnect', () => {
       connectedUsers.delete(socket.id);
     });
@@ -225,7 +247,7 @@ const sendInitialData = async (socket, adminId) => {
   try {
     const stats = await getRealtimeStats();
     socket.emit('stats:initial', stats);
-    
+
     const alerts = await getActiveAlerts(adminId);
     socket.emit('alerts:initial', alerts);
   } catch (error) {
@@ -235,11 +257,11 @@ const sendInitialData = async (socket, adminId) => {
 
 const setupRealtimeIntervals = (socket, adminId) => {
   const intervals = {};
-  
+
   intervals.stats = setInterval(async () => {
     await broadcastDashboardStats();
   }, 5000);
-  
+
   intervals.alerts = setInterval(async () => {
     const alerts = await getActiveAlerts(adminId);
     socket.emit('alerts:update', {
@@ -247,9 +269,9 @@ const setupRealtimeIntervals = (socket, adminId) => {
       timestamp: new Date()
     });
   }, 20000);
-  
+
   activeIntervals.set(socket.id, intervals);
-  
+
   return intervals;
 };
 
@@ -267,7 +289,7 @@ const broadcastDashboardStats = async () => {
 const getRealtimeStats = async () => {
   try {
     const mongoose = require('mongoose');
-    
+
     // Check if database is connected before querying
     if (mongoose.connection.readyState !== 1) {
       return { timestamp: new Date() };
@@ -282,52 +304,52 @@ const getRealtimeStats = async () => {
     const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
     const onlineUsers = await User.countDocuments({ isOnline: true });
     const completedTransactions = await Transaction.find({ status: 'completed' });
-    
+
     // Get pending fees from FeeRecord collection
-    const pendingFeeRecords = await FeeRecord.find({ 
-      status: { $in: ['pending', 'overdue'] } 
+    const pendingFeeRecords = await FeeRecord.find({
+      status: { $in: ['pending', 'overdue'] }
     });
-    
-    const newUsersToday = await User.countDocuments({ 
+
+    const newUsersToday = await User.countDocuments({
       userType: 'client',
-      createdAt: { $gte: today } 
+      createdAt: { $gte: today }
     });
-    const newProvidersToday = await User.countDocuments({ 
+    const newProvidersToday = await User.countDocuments({
       userType: 'provider',
-      createdAt: { $gte: today } 
+      createdAt: { $gte: today }
     });
-    const jobsCreatedToday = await Job.countDocuments({ 
-      createdAt: { $gte: today } 
+    const jobsCreatedToday = await Job.countDocuments({
+      createdAt: { $gte: today }
     });
-    const completedJobsToday = await Job.countDocuments({ 
-      status: 'completed', 
-      completedAt: { $gte: today } 
+    const completedJobsToday = await Job.countDocuments({
+      status: 'completed',
+      completedAt: { $gte: today }
     });
-    const todayTransactions = await Transaction.find({ 
-      status: 'completed', 
-      completedAt: { $gte: today } 
+    const todayTransactions = await Transaction.find({
+      status: 'completed',
+      completedAt: { $gte: today }
     });
     const pendingTransactions = await Transaction.countDocuments({ status: 'pending' });
     const totalJobs = await Job.countDocuments();
 
-    const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
-      status: 'approved' 
+    const verifiedProviderIds = await CredentialVerification.distinct('userId', {
+      status: 'approved'
     });
     const verifiedProviders = verifiedProviderIds.length;
-    
-    const pendingVerifications = await CredentialVerification.countDocuments({ 
-      status: 'pending' 
+
+    const pendingVerifications = await CredentialVerification.countDocuments({
+      status: 'pending'
     });
 
-    const completedJobs = await Job.find({ 
+    const completedJobs = await Job.find({
       status: 'completed',
       'rating.stars': { $exists: true, $ne: null }
     }).select('rating.stars');
-    
+
     const totalRatings = completedJobs.reduce((sum, job) => {
       return sum + (job.rating?.stars || 0);
     }, 0);
-    const averageRating = completedJobs.length > 0 
+    const averageRating = completedJobs.length > 0
       ? (totalRatings / completedJobs.length).toFixed(1)
       : '0.0';
 
@@ -359,10 +381,10 @@ const getRealtimeStats = async () => {
     };
   } catch (error) {
     // Silently handle session and connection errors
-    if (error.name === 'MongoExpiredSessionError' || 
-        error.name === 'MongoNotConnectedError' ||
-        error.name === 'MongoServerError' ||
-        error.message?.includes('session')) {
+    if (error.name === 'MongoExpiredSessionError' ||
+      error.name === 'MongoNotConnectedError' ||
+      error.name === 'MongoServerError' ||
+      error.message?.includes('session')) {
       return { timestamp: new Date() };
     }
     return { timestamp: new Date() };
@@ -372,7 +394,7 @@ const getRealtimeStats = async () => {
 const broadcastAlertUpdates = async () => {
   try {
     const alerts = await getActiveAlerts();
-    
+
     if (adminNamespace) {
       adminNamespace.to('admin').emit('alerts:update', {
         alerts,
@@ -388,7 +410,7 @@ const getActiveAlerts = async (adminId) => {
   try {
     const mongoose = require('mongoose');
     const DismissedAlert = require('../models/DismissedAlert');
-    
+
     if (mongoose.connection.readyState !== 1) {
       return [];
     }
@@ -453,7 +475,7 @@ const getActiveAlerts = async (adminId) => {
         .lean();
 
       for (const ticket of openSupportTickets) {
-        const hasUnreadMessages = ticket.messages.some(msg => 
+        const hasUnreadMessages = ticket.messages.some(msg =>
           msg.senderType === 'User' && !msg.isRead
         );
 
@@ -487,16 +509,16 @@ const getActiveAlerts = async (adminId) => {
     if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
       const dismissedAlerts = await DismissedAlert.find({ adminId }).select('alertId');
       const dismissedAlertIds = dismissedAlerts.map(d => d.alertId.toString());
-      
+
       alerts = alerts.filter(alert => !dismissedAlertIds.includes(alert._id.toString()));
     }
 
     return alerts;
   } catch (error) {
-    if (error.name === 'MongoExpiredSessionError' || 
-        error.name === 'MongoNotConnectedError' ||
-        error.name === 'MongoServerError' ||
-        error.message?.includes('session')) {
+    if (error.name === 'MongoExpiredSessionError' ||
+      error.name === 'MongoNotConnectedError' ||
+      error.name === 'MongoServerError' ||
+      error.message?.includes('session')) {
       return [];
     }
     return [];
@@ -525,30 +547,30 @@ const emitChatSupportMessage = (chatSupportId, message) => {
 const emitChatSupportUpdate = (chatSupport, updates) => {
   if (adminNamespace && chatSupport) {
     const chatSupportId = chatSupport._id.toString();
-    
+
     // Calculate displayStatus
     let displayStatus = 'open';
     const effectiveStatus = updates.status || chatSupport.status;
     const effectiveAcceptedBy = updates.acceptedBy !== undefined ? updates.acceptedBy : chatSupport.acceptedBy;
-    
+
     if (effectiveStatus === 'closed') {
       displayStatus = 'resolved';
     } else if (effectiveStatus === 'open') {
       displayStatus = effectiveAcceptedBy ? 'pending' : 'open';
     }
-    
+
     // Include displayStatus in updates
     const updatesWithDisplay = {
       ...updates,
       displayStatus
     };
-    
+
     adminNamespace.to('admin').emit('support:chat_updated', {
       chatSupportId,
       updates: updatesWithDisplay,
       timestamp: new Date()
     });
-    
+
     adminNamespace.to(`support:${chatSupportId}`).emit('support:chat_updated', {
       chatSupportId,
       updates: updatesWithDisplay,
@@ -573,14 +595,14 @@ const emitSupportUpdate = (ticket, updateType) => {
       updateType,
       timestamp: new Date()
     });
-    
+
     if (updateType === 'new_ticket') {
       adminNamespace.to('admin').emit('support:new_ticket', {
         ticket,
         timestamp: new Date()
       });
     }
-    
+
     if (ticket.ticketId || ticket._id) {
       const ticketId = ticket.ticketId || ticket._id;
       adminNamespace.to(`support:${ticketId}`).emit('support:ticket_updated', {
@@ -607,7 +629,7 @@ const setupChatSupportChangeStream = () => {
       try {
         if ((change.operationType === 'update' || change.operationType === 'insert')) {
           const chatSupportId = change.documentKey._id.toString();
-          
+
           if (change.operationType === 'insert') {
             const chatSupport = change.fullDocument;
             if (chatSupport && adminNamespace) {
@@ -618,17 +640,17 @@ const setupChatSupportChangeStream = () => {
             }
             return;
           }
-          
+
           const chatSupport = change.fullDocument || await ChatSupport.findById(chatSupportId);
-          
+
           if (chatSupport) {
-            const hasNewMessage = change.updateDescription?.updatedFields?.messages || 
-                                 change.updateDescription?.updatedFields?.['messages.0'] ||
-                                 Object.keys(change.updateDescription?.updatedFields || {}).some(key => key.startsWith('messages.'));
-            
+            const hasNewMessage = change.updateDescription?.updatedFields?.messages ||
+              change.updateDescription?.updatedFields?.['messages.0'] ||
+              Object.keys(change.updateDescription?.updatedFields || {}).some(key => key.startsWith('messages.'));
+
             if (hasNewMessage && chatSupport.messages.length > 0) {
               const lastMessage = chatSupport.messages[chatSupport.messages.length - 1];
-              
+
               const messageData = {
                 chatSupportId,
                 message: {
@@ -640,23 +662,23 @@ const setupChatSupportChangeStream = () => {
                   timestamp: lastMessage.timestamp.toISOString()
                 }
               };
-              
+
+
               if (adminNamespace) {
                 adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
                 adminNamespace.to('admin').emit('support:new_message', messageData);
               }
-              
-              if (mainIo) {
-                mainIo.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
-              }
+
+              // Note: Mobile clients receive notifications via their global socket connection
+              // No HTTP broadcast needed - the mobile app SocketContext handles this
             }
-            
+
             if (change.updateDescription?.updatedFields?.status) {
               const updates = { status: chatSupport.status };
               if (chatSupport.closedAt) {
                 updates.closedAt = chatSupport.closedAt;
               }
-              
+
               // Calculate displayStatus
               let displayStatus = 'open';
               if (chatSupport.status === 'closed') {
@@ -665,21 +687,21 @@ const setupChatSupportChangeStream = () => {
                 displayStatus = chatSupport.acceptedBy ? 'pending' : 'open';
               }
               updates.displayStatus = displayStatus;
-              
+
               if (adminNamespace) {
                 adminNamespace.to('admin').emit('support:chat_updated', {
                   chatSupportId,
                   updates,
                   timestamp: new Date()
                 });
-                
+
                 adminNamespace.to(`support:${chatSupportId}`).emit('support:chat_updated', {
                   chatSupportId,
                   updates,
                   timestamp: new Date()
                 });
               }
-              
+
               if (mainIo) {
                 mainIo.to(`support:${chatSupportId}`).emit('support:chat_updated', {
                   chatSupportId,
@@ -714,7 +736,7 @@ const closeChatSupportChangeStream = () => {
       console.error('Error closing chat support change stream:', error);
     }
   }
-  
+
   activeIntervals.forEach((intervals, socketId) => {
     Object.values(intervals).forEach(interval => clearInterval(interval));
   });

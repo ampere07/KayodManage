@@ -164,6 +164,21 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     });
 
+    // Configuration update events
+    newSocket.on('configuration:updated', (data) => {
+      console.log('[Socket] Configuration updated:', data.type);
+      
+      if (data.type === 'profession' && data.action === 'icon-updated') {
+        // Invalidate job categories query to refresh profession data
+        queryClient.invalidateQueries({ queryKey: ['job-categories'] });
+        toast.success('Profession icon updated');
+      }
+      
+      if (data.type === 'category') {
+        queryClient.invalidateQueries({ queryKey: ['job-categories'] });
+      }
+    });
+
     setSocket(newSocket);
   };
 

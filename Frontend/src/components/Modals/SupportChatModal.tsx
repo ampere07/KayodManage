@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { X, CheckCircle, RefreshCw, MessageSquare, MoreVertical, ArrowLeft, Send } from 'lucide-react';
-import { getPriorityBadge, getStatusBadge } from '../../utils';
+import { X, CheckCircle, RefreshCw, MessageSquare, MoreVertical, ArrowLeft, Send, Eye } from 'lucide-react';
+import { getStatusBadge } from '../../utils';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import { useAuth } from '../../context/AuthContext';
+import { jobsService } from '../../services';
+import JobDetailsModal from './JobDetailsModal';
 
 interface Message {
   _id?: string;
@@ -27,6 +29,8 @@ interface ChatSupport {
   description?: string;
   status: 'open' | 'closed';
   priority: 'urgent' | 'high' | 'medium' | 'low';
+  metadata?: any;
+  jobDetailsSnapshot?: any;
   messages?: Message[];
   createdAt: string;
   updatedAt?: string;
@@ -98,6 +102,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   const [showMobileDetails, setShowMobileDetails] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const [jobModalOpen, setJobModalOpen] = useState(false);
+  const [jobModalLoading, setJobModalLoading] = useState(false);
+  const [jobModalData, setJobModalData] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -138,6 +145,32 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
   if (!isOpen || !selectedChat) return null;
 
+  const getJobIdFromSnapshot = () => {
+    const snapshot = selectedChat.jobDetailsSnapshot || selectedChat.metadata;
+    if (!snapshot) return null;
+    return snapshot.jobId || snapshot['Job ID'] || snapshot['jobId'];
+  };
+
+  const handleViewJobDetails = async () => {
+    const jobId = getJobIdFromSnapshot();
+    if (!jobId) {
+      alert('Job ID not available for this ticket.');
+      return;
+    }
+
+    try {
+      setJobModalLoading(true);
+      const data = await jobsService.getJobById(jobId);
+      setJobModalData(data);
+      setJobModalOpen(true);
+    } catch (error) {
+      console.error('Failed to load job details:', error);
+      alert('Failed to load job details.');
+    } finally {
+      setJobModalLoading(false);
+    }
+  };
+
   const firstName = selectedChat.userName?.split(' ')[0] || '';
   const lastName = selectedChat.userName?.split(' ').slice(1).join(' ') || firstName;
 
@@ -152,7 +185,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
         {/* Column 1: Chat Area */}
         <div className={`flex-1 flex flex-col min-h-0 ${showMobileDetails ? 'hidden md:flex' : 'flex'}`}>
           {/* Header */}
-          <div className="flex-shrink-0 px-4 py-3 md:px-6 md:py-5 border-b bg-white">
+          <div className="flex-shrink-0 px-4 py-3 md:px-6 md:py-5 border-b bg-white relative">
             <div className="flex items-center justify-between">
               {/* Mobile Header Content */}
               <div className="md:hidden flex items-center gap-3 flex-1 min-w-0">
@@ -188,7 +221,17 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 ml-2">
+              <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                {selectedChat.acceptedBy && (
+                  <button
+                    onClick={handleViewJobDetails}
+                    disabled={jobModalLoading}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {jobModalLoading ? 'Loading…' : 'View Job Details'}
+                  </button>
+                )}
                 {selectedChat.status === 'open' && !selectedChat.acceptedBy && (user?.role === 'admin' || user?.role === 'superadmin') && (
                   <button
                     onClick={() => handleAcceptTicket(selectedChat._id)}
@@ -213,6 +256,14 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               </div>
             </div>
           </div>
+
+          {jobModalOpen && (
+            <JobDetailsModal
+              isOpen={jobModalOpen}
+              onClose={() => setJobModalOpen(false)}
+              job={jobModalData?.job || jobModalData}
+            />
+          )}
 
           {/* Messages Area */}
           <div className="flex-1 overflow-y-auto bg-gray-50 p-6 min-h-0">

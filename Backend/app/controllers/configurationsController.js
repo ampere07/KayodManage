@@ -2,6 +2,14 @@ const JobCategory = require('../models/JobCategory');
 const fs = require('fs');
 const path = require('path');
 
+// Get socket.io instance
+let io;
+try {
+  io = require('../../server').getIO();
+} catch (err) {
+  console.warn('Socket.io not available for real-time updates');
+}
+
 // Job Categories
 exports.getJobCategories = async (req, res) => {
   try {
@@ -434,7 +442,7 @@ exports.uploadProfessionIcon = async (req, res) => {
 
     const fileExtension = path.extname(originalname);
     const sanitizedName = professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const fileName = `${sanitizedName}${fileExtension}`;
+    let fileName = `${sanitizedName}${fileExtension}`;
 
     const kayodPath = path.join(
       __dirname,
@@ -482,8 +490,46 @@ exports.uploadProfessionIcon = async (req, res) => {
       }
     }
 
-    fs.writeFileSync(kayodPath, buffer);
-    fs.writeFileSync(kayodManagePath, buffer);
+    // Write files with fallback to timestamped filename
+    let writeSuccess = false;
+    let finalFileName = fileName;
+
+    try {
+      // Try to write with original filename first
+      fs.writeFileSync(kayodPath, buffer);
+      fs.writeFileSync(kayodManagePath, buffer);
+      writeSuccess = true;
+    } catch (err) {
+      console.warn('Failed to write with original filename, trying with timestamp:', err.message);
+      
+      // If write fails, try with timestamp
+      const timestamp = Date.now();
+      finalFileName = `${sanitizedName}-${timestamp}${fileExtension}`;
+      
+      const kayodPathTimestamped = path.join(
+        __dirname,
+        '../../../..',
+        'kayod/client/src/assets/icons/professions',
+        finalFileName
+      );
+      
+      const kayodManagePathTimestamped = path.join(
+        __dirname,
+        '../../..',
+        'Frontend/public/assets/icons/professions',
+        finalFileName
+      );
+      
+      try {
+        fs.writeFileSync(kayodPathTimestamped, buffer);
+        fs.writeFileSync(kayodManagePathTimestamped, buffer);
+        writeSuccess = true;
+        fileName = finalFileName;
+      } catch (timestampErr) {
+        console.error('Failed to write even with timestamp:', timestampErr);
+        throw new Error(`Failed to save icon: ${timestampErr.message}`);
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -491,6 +537,24 @@ exports.uploadProfessionIcon = async (req, res) => {
       fullPath: `/assets/icons/professions/${fileName}`,
       message: 'Profession icon uploaded successfully',
     });
+
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'profession',
+          action: 'icon-updated',
+          professionId: profession._id,
+          professionName,
+          iconName: `custom:${fileName}`,
+          timestamp: new Date()
+        });
+        console.log('Socket emitted: configuration:updated - profession icon updated');
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
   } catch (error) {
     console.error('Error uploading profession icon:', error);
     res.status(500).json({

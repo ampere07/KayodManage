@@ -18,6 +18,18 @@ export const useSupportSocket = (
   const [isConnected, setIsConnected] = useState(false);
   const joinedChats = useRef<Set<string>>(new Set());
 
+  // Use refs to store the latest callbacks without triggering re-renders
+  const onNewMessageRef = useRef(onNewMessage);
+  const onChatUpdateRef = useRef(onChatUpdate);
+  const onNewChatRef = useRef(onNewChat);
+
+  // Update refs when callbacks change
+  useEffect(() => {
+    onNewMessageRef.current = onNewMessage;
+    onChatUpdateRef.current = onChatUpdate;
+    onNewChatRef.current = onNewChat;
+  }, [onNewMessage, onChatUpdate, onNewChat]);
+
   useEffect(() => {
     const newSocket = io('http://localhost:5000/admin', {
       transports: ['websocket', 'polling'],
@@ -43,9 +55,10 @@ export const useSupportSocket = (
       setIsConnected(status === 'connected');
     });
 
-    newSocket.on('support:new_message', onNewMessage);
-    newSocket.on('support:chat_updated', onChatUpdate);
-    newSocket.on('support:new_chat', onNewChat);
+    // Use the refs instead of the callbacks directly
+    newSocket.on('support:new_message', (data) => onNewMessageRef.current(data));
+    newSocket.on('support:chat_updated', (data) => onChatUpdateRef.current(data));
+    newSocket.on('support:new_chat', () => onNewChatRef.current());
     newSocket.on('support:message_error', () => {
       console.error('Message send error');
     });
@@ -59,7 +72,7 @@ export const useSupportSocket = (
       joinedChats.current.clear();
       newSocket.disconnect();
     };
-  }, [onNewMessage, onChatUpdate, onNewChat]);
+  }, []); // Empty dependency array - only run once on mount
 
   const joinChat = useCallback((chatSupportId: string) => {
     if (socket && isConnected) {

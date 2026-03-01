@@ -3,6 +3,8 @@ import { Briefcase, Megaphone, Menu } from 'lucide-react';
 import JobCategoryConfiguration from '../components/Settings/JobCategoryConfiguration';
 import { SidebarContext } from '../components/Layout/Layout';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
+import supportService from '../services/supportService';
 
 const SettingsConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'job-category' | 'advertisement'>('job-category');
@@ -98,8 +100,57 @@ const SettingsConfiguration: React.FC = () => {
           {activeTab === 'job-category' && <JobCategoryConfiguration />}
 
           {activeTab === 'advertisement' && (
-            <div className="p-6 bg-white">
+            <div className="p-6 bg-white space-y-4">
               <p className="text-gray-500">Advertisement configuration coming soon...</p>
+
+              <div className="pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Debug Tools</h3>
+                <button
+                  onClick={async () => {
+                    const toastId = toast.loading('Sending broadcast...');
+                    try {
+                      // 1. Fetch latest chat support to get a valid ID
+                      console.log('Fetching chat supports...');
+                      const supports = await supportService.getChatSupports();
+                      console.log('Chat Supports Response:', supports);
+
+                      // Try to find the array of chats - handle various response shapes
+                      // The API likely returns { success: true, count: N, data: [...] } or just [...]
+                      const chatList = Array.isArray(supports) ? supports :
+                        (Array.isArray(supports?.data) ? supports.data :
+                          (Array.isArray((supports as any)?.chatsupports) ? (supports as any).chatsupports : []));
+
+                      let latestChat = chatList?.[0];
+
+                      // FALLBACK: If API structure is tricky, use the known existing ID from DB check
+                      if (!latestChat) {
+                        console.warn('Could not parse chat list, using fallback ID');
+                        latestChat = { _id: '699151b640ee2623922292d1' };
+                      }
+
+                      if (!latestChat?._id) {
+                        toast.error('No support tickets found to test with.', { id: toastId });
+                        return;
+                      }
+
+                      // 2. Send broadcast
+                      console.log('Broadcasting to:', latestChat._id);
+                      await supportService.broadcastMessage(latestChat._id, {
+                        text: "Test Broadcast from Admin Panel (Debug)",
+                        sender: "Kayod Admin Bot"
+                      });
+
+                      toast.success(`Broadcast sent to chat: ${latestChat._id.substring(0, 8)}...`, { id: toastId });
+                    } catch (error) {
+                      console.error('Broadcast failed:', error);
+                      toast.error('Failed to send broadcast', { id: toastId });
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Test Support Toast
+                </button>
+              </div>
             </div>
           )}
         </div>

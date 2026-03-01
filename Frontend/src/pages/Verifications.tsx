@@ -28,7 +28,9 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     approved: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
     rejected: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
     pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
-    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle }
+    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
+    resubmission_requested: { bg: 'bg-orange-100', text: 'text-orange-800', icon: AlertCircle },
+    flagged: { bg: 'bg-red-100', text: 'text-red-800', icon: AlertCircle }
   };
 
   const config = configs[status as keyof typeof configs] || configs.pending;
@@ -125,14 +127,16 @@ const Verifications: React.FC = () => {
     verificationId: string,
     status: string,
     notes?: string,
-    reason?: string
+    reason?: string,
+    banUser?: boolean
   ): Promise<void> => {
     try {
       await updateStatusMutation.mutateAsync({
         verificationId,
         status,
         adminNotes: notes,
-        rejectionReason: reason
+        rejectionReason: reason,
+        banUser
       });
       setModalOpen(false);
       toast.success('Verification status updated successfully');
