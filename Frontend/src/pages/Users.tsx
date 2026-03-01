@@ -78,7 +78,7 @@ const Users: React.FC = () => {
     if (userType === 'customers') params.userType = 'client';
     if (userType === 'providers') params.userType = 'provider';
     if (userType === 'flagged') {
-      params.restricted = 'true';
+      params.accountStatus = 'restricted,suspended,banned';
       if (flaggedUserTypeFilter !== 'all') {
         params.userType = flaggedUserTypeFilter;
       }
@@ -118,7 +118,7 @@ const Users: React.FC = () => {
   const { data: usersData, isLoading: usersLoading } = useUsers(queryParams);
   const { data: userTypeCounts = { total: 0, customers: 0, providers: 0, suspended: 0, restricted: 0, banned: 0, verified: 0, unverified: 0 } } = useUserCounts(userCountsParams);
   const { data: statusCounts = { all: 0, verified: 0, unverified: 0 } } = useStatusCounts(statusCountsParams);
-  const { data: flaggedUserCounts = { total: 0, customers: 0, providers: 0 } } = useFlaggedUserCounts();
+  const { data: flaggedUserCounts = { total: 0, customers: 0, providers: 0, suspended: 0, restricted: 0, banned: 0 } } = useFlaggedUserCounts();
   const mutations = useUserMutations();
 
   const users = usersData?.users || [];
@@ -354,7 +354,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('suspended')}
+                onClick={() => handleCounterClick('suspended')}
                 className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
                   }`}
               >
@@ -366,7 +366,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('restricted')}
+                onClick={() => handleCounterClick('restricted')}
                 className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
                   }`}
               >
@@ -378,7 +378,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('banned')}
+                onClick={() => handleCounterClick('banned')}
                 className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
                   }`}
               >
@@ -503,7 +503,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('suspended')}
+                onClick={() => handleCounterClick('suspended')}
                 className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
                   }`}
               >
@@ -515,7 +515,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('restricted')}
+                onClick={() => handleCounterClick('restricted')}
                 className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
                   }`}
               >
@@ -527,7 +527,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('banned')}
+                onClick={() => handleCounterClick('banned')}
                 className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
                   }`}
               >
@@ -590,7 +590,7 @@ const Users: React.FC = () => {
                   <Clock className="h-4 w-4 text-yellow-600" />
                   <span className="text-sm font-medium text-gray-700">Suspended</span>
                 </div>
-                <span className="text-sm font-bold text-yellow-700">{userTypeCounts.suspended.toLocaleString()}</span>
+                <span className="text-sm font-bold text-yellow-700">{flaggedUserCounts.suspended.toLocaleString()}</span>
               </div>
 
               <div
@@ -602,7 +602,7 @@ const Users: React.FC = () => {
                   <Shield className="h-4 w-4 text-orange-600" />
                   <span className="text-sm font-medium text-gray-700">Restricted</span>
                 </div>
-                <span className="text-sm font-bold text-orange-700">{userTypeCounts.restricted.toLocaleString()}</span>
+                <span className="text-sm font-bold text-orange-700">{flaggedUserCounts.restricted.toLocaleString()}</span>
               </div>
 
               <div
@@ -614,7 +614,7 @@ const Users: React.FC = () => {
                   <Ban className="h-4 w-4 text-red-600" />
                   <span className="text-sm font-medium text-gray-700">Banned</span>
                 </div>
-                <span className="text-sm font-bold text-red-700">{userTypeCounts.banned.toLocaleString()}</span>
+                <span className="text-sm font-bold text-red-700">{flaggedUserCounts.banned.toLocaleString()}</span>
               </div>
             </div>
 
@@ -657,7 +657,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('suspended')}
+                onClick={() => handleCounterClick('suspended')}
                 className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
                   }`}
               >
@@ -665,11 +665,11 @@ const Users: React.FC = () => {
                   <span className="text-xs font-medium text-yellow-600">Suspended</span>
                   <Clock className="h-4 w-4 text-yellow-600" />
                 </div>
-                <p className="text-2xl font-bold text-yellow-900">{userTypeCounts.suspended.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-yellow-900">{flaggedUserCounts.suspended.toLocaleString()}</p>
               </div>
 
               <div
-                onClick={() => setStatusFilter('restricted')}
+                onClick={() => handleCounterClick('restricted')}
                 className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
                   }`}
               >
@@ -677,11 +677,11 @@ const Users: React.FC = () => {
                   <span className="text-xs font-medium text-orange-600">Restricted</span>
                   <Shield className="h-4 w-4 text-orange-600" />
                 </div>
-                <p className="text-2xl font-bold text-orange-900">{userTypeCounts.restricted.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-orange-900">{flaggedUserCounts.restricted.toLocaleString()}</p>
               </div>
 
               <div
-                onClick={() => setStatusFilter('banned')}
+                onClick={() => handleCounterClick('banned')}
                 className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'banned' ? 'border-2 border-red-600 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
                   }`}
               >
@@ -689,7 +689,7 @@ const Users: React.FC = () => {
                   <span className="text-xs font-medium text-red-600">Banned</span>
                   <Ban className="h-4 w-4 text-red-600" />
                 </div>
-                <p className="text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-red-900">{flaggedUserCounts.banned.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -805,7 +805,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('suspended')}
+                onClick={() => handleCounterClick('suspended')}
                 className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'suspended' ? 'border-2 border-yellow-600 ring-2 ring-yellow-400 shadow-lg' : 'border border-yellow-200'
                   }`}
               >
@@ -817,7 +817,7 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('restricted')}
+                onClick={() => handleCounterClick('restricted')}
                 className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'restricted' ? 'border-2 border-orange-600 ring-2 ring-orange-400 shadow-lg' : 'border border-orange-200'
                   }`}
               >
@@ -829,8 +829,8 @@ const Users: React.FC = () => {
               </div>
 
               <div
-                onClick={() => setStatusFilter('banned')}
-                className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'banned' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                onClick={() => handleCounterClick('banned')}
+                className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'banned' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border border-red-200'
                   }`}
               >
                 <div className="flex items-center justify-between mb-1">

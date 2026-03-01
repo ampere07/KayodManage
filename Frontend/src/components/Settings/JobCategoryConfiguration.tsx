@@ -209,7 +209,9 @@ const JobCategoryConfiguration: React.FC = () => {
                                     className="relative z-10 w-16 h-16 object-contain drop-shadow-sm transition-opacity opacity-100"
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
-                                      target.style.display = 'none';
+                                      // Fallback to a default category icon to keep alignment consistent
+                                      const fallback = getIconByName(category.icon || 'professional-services');
+                                      target.src = `${fallback.imagePath}?t=${iconTimestamp}`;
                                     }}
                                   />
                                 </div>

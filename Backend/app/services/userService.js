@@ -211,7 +211,7 @@ class UserService {
    * Build query for user filtering
    */
   buildUserQuery(filters) {
-    const { search, status, userType, restricted, isVerified } = filters;
+    const { search, status, userType, restricted, isVerified, accountStatus } = filters;
     const query = {};
 
     if (search) {
@@ -252,7 +252,17 @@ class UserService {
       query.userType = userType;
     }
 
-    if (restricted === 'true') {
+    // Handle accountStatus filter (more specific than restricted)
+    if (accountStatus) {
+      // Support comma-separated values for multiple accountStatus
+      if (accountStatus.includes(',')) {
+        query.accountStatus = { $in: accountStatus.split(',').map(s => s.trim()) };
+      } else {
+        query.accountStatus = accountStatus;
+      }
+    }
+    // Only use restricted filter if accountStatus is not specified
+    else if (restricted === 'true') {
       query.$or = [
         { accountStatus: { $in: ['restricted', 'suspended', 'banned'] } },
         { isRestricted: true }
