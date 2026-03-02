@@ -151,6 +151,8 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
     return snapshot.jobId || snapshot['Job ID'] || snapshot['jobId'];
   };
 
+  const hasJobId = getJobIdFromSnapshot() !== null;
+
   const handleViewJobDetails = async () => {
     const jobId = getJobIdFromSnapshot();
     if (!jobId) {
@@ -222,7 +224,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
               {/* Actions */}
               <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-                {selectedChat.acceptedBy && (
+                {selectedChat.acceptedBy && hasJobId && (
                   <button
                     onClick={handleViewJobDetails}
                     disabled={jobModalLoading}

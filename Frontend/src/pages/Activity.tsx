@@ -284,11 +284,11 @@ const Activity: React.FC = () => {
   const filteredActivities = useMemo(() => {
     return activities.filter(activity => {
       const matchesSearch =
-        activity.adminId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (activity.adminId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
         activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        activity.adminId.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()));
+        (activity.adminId?.email?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+        (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+        (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
 
       const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
 
@@ -592,19 +592,19 @@ const Activity: React.FC = () => {
                           <div className="flex items-center">
                             <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
                               <span className="text-sm font-semibold text-gray-700">
-                                {getInitials(activity.adminId.name)}
+                                {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
                               </span>
                             </div>
                             <div className="ml-3">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold text-gray-900">{activity.adminId.name}</div>
-                                {activity.adminId.userType === 'superadmin' && (
+                                <div className="text-sm font-semibold text-gray-900">{activity.adminId?.name || 'Unknown Admin'}</div>
+                                {activity.adminId?.userType === 'superadmin' && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
                                     Super Admin
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-500 truncate max-w-[150px]">{activity.adminId.email}</div>
+                              <div className="text-xs text-gray-500 truncate max-w-[150px]">{activity.adminId?.email || 'No email'}</div>
                             </div>
                           </div>
                         </td>
@@ -676,7 +676,7 @@ const Activity: React.FC = () => {
                         : ''
                       }`}
                   >
-                    {activity.adminId.userType === 'superadmin' && (
+                    {activity.adminId?.userType === 'superadmin' && (
                       <span className="absolute top-4 right-4 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
                         Super Admin
                       </span>
@@ -685,14 +685,14 @@ const Activity: React.FC = () => {
                     <div className="flex items-center gap-3 mb-3 pr-20"> {/* Added padding for absolute badge */}
                       <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
                         <span className="text-base font-semibold text-gray-700">
-                          {getInitials(activity.adminId.name)}
+                          {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">{activity.adminId.name}</h3>
+                          <h3 className="text-sm font-semibold text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</h3>
                         </div>
-                        <p className="text-xs text-gray-500 truncate">{activity.adminId.email}</p>
+                        <p className="text-xs text-gray-500 truncate">{activity.adminId?.email || 'No email'}</p>
                       </div>
                     </div>
 

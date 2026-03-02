@@ -19,6 +19,7 @@ const adminRoutes = require('./app/routes/admin');
 const supportRoutes = require('./app/routes/support');
 const debugRoutes = require('./app/routes/debug');
 const configurationRoutes = require('./app/routes/configurations');
+const reportRoutes = require('./app/routes/reportRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -81,12 +82,22 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/debug', debugRoutes);
-// Public configurations endpoint (for mobile app users to get categories)
 app.use('/api/configurations', configurationRoutes);
-// Admin configurations endpoint (for backward compatibility)
+app.use('/api/reports', reportRoutes);
 app.use('/api/admin/configurations', configurationRoutes);
 
 // Log registered routes for debugging
+console.log('\n📡 Registered report routes:');
+const reportRouter = require('./app/routes/reportRoutes');
+if (reportRouter && reportRouter.stack) {
+  reportRouter.stack.forEach((layer) => {
+    if (layer.route) {
+      const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+      console.log(`  ${methods} /api/reports${layer.route.path}`);
+    }
+  });
+}
+
 console.log('\n📡 Registered support routes:');
 const supportRouter = require('./app/routes/support');
 if (supportRouter && supportRouter.stack) {
