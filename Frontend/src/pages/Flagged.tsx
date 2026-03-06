@@ -117,7 +117,13 @@ const Flagged: React.FC = () => {
       delete: 'resolved'
     };
 
-    await handleUpdateReport(selectedReport._id, statusMap[action], action);
+    const actionMap = {
+      approve: 'post_approved',
+      dismiss: 'report_dismissed',
+      delete: 'post_deleted'
+    };
+
+    await handleUpdateReport(selectedReport._id, statusMap[action], actionMap[action]);
   };
 
   const handleViewReport = (report: Report) => {
