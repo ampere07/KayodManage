@@ -18,6 +18,15 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
+// Function to format normalized profession names to display format
+const formatCredentialName = (name: string): string => {
+  // Convert camelCase or lowercase with spaces to proper format
+  return name
+    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+    .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+    .trim();
+};
+
 const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
   const sizeClasses = {
     sm: 'w-8 h-8 text-sm',
@@ -729,13 +738,15 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <div className="flex flex-col md:flex-row gap-6 min-w-full md:min-w-min">
                             {currentImages.credentials.map((credential: any, index: number) => (
                               <div key={index} className="flex-shrink-0 w-full md:w-[500px]">
-                                <p className="text-sm font-medium text-gray-700 mb-2">{credential.originalName || `Credential ${index + 1}`}</p>
+                                <p className="text-sm font-medium text-gray-700 mb-2">
+                                  {formatCredentialName(credential.originalName || `Credential ${index + 1}`)}
+                                </p>
                                 <ClickableImage
                                   src={credential.cloudinaryUrl}
-                                  alt={credential.originalName || `Credential ${index + 1}`}
+                                  alt={formatCredentialName(credential.originalName || `Credential ${index + 1}`)}
                                   className="w-full h-[300px] md:h-[600px] object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="credential"
-                                  title={`${credential.originalName || `Credential ${index + 1}`} - Attempt ${selectedAttempt} - ${user.name}`}
+                                  title={`${formatCredentialName(credential.originalName || `Credential ${index + 1}`)} - Attempt ${selectedAttempt} - ${user.name}`}
                                 />
                               </div>
                             ))}
