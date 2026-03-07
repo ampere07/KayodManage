@@ -129,6 +129,32 @@ class UserService {
   }
 
   /**
+   * Soft delete a user
+   */
+  async softDeleteUser(userId, reason, deletedBy) {
+    const restrictionDetails = {
+      type: 'deleted',
+      reason: reason.trim(),
+      restrictedAt: new Date(),
+      appealAllowed: false
+    };
+
+    if (deletedBy && mongoose.Types.ObjectId.isValid(deletedBy)) {
+      restrictionDetails.restrictedBy = deletedBy;
+    }
+
+    return await User.findByIdAndUpdate(
+      userId,
+      {
+        accountStatus: 'deleted',
+        isRestricted: true,
+        restrictionDetails
+      },
+      { new: true }
+    );
+  }
+
+  /**
    * Ban a user
    */
   async banUser(userId, reason, restrictedBy, duration) {

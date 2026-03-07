@@ -70,6 +70,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/users/customers" element={<ProtectedRoute><Layout title="Customers"><Users /></Layout></ProtectedRoute>} />
         <Route path="/users/providers" element={<ProtectedRoute><Layout title="Service Providers"><Users /></Layout></ProtectedRoute>} />
         <Route path="/users/flagged" element={<ProtectedRoute><Layout title="Flagged & Suspended"><Users /></Layout></ProtectedRoute>} />
+        <Route path="/users/deleted" element={<ProtectedRoute><Layout title="Deleted Users"><Users /></Layout></ProtectedRoute>} />
         <Route path="/jobs" element={<ProtectedRoute><Layout title="Jobs"><Jobs /></Layout></ProtectedRoute>} />
         <Route path="/jobs/archived" element={<ProtectedRoute><Layout title="Archived Jobs"><ArchivedJobs /></Layout></ProtectedRoute>} />
         <Route path="/transactions/fee-records" element={<ProtectedRoute><Layout title="Fee Records"><Transactions /></Layout></ProtectedRoute>} />

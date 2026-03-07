@@ -28,13 +28,14 @@ export const useUserCounts = (params?: any) => {
   return useQuery({
     queryKey: [USERS_QUERY_KEY, 'counts', params, 'v2'],
     queryFn: async () => {
-      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData] = await Promise.all([
+      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData, deletedData] = await Promise.all([
         usersService.getUsers({ limit: 1, page: 1 }),
         usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
         usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
         usersService.getUsers({ ...params, accountStatus: 'suspended', limit: 1, page: 1 }),
         usersService.getUsers({ ...params, accountStatus: 'restricted', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'banned', limit: 1, page: 1 })
+        usersService.getUsers({ ...params, accountStatus: 'banned', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, accountStatus: 'deleted', limit: 1, page: 1 })
       ]);
 
       return {
@@ -44,6 +45,7 @@ export const useUserCounts = (params?: any) => {
         suspended: suspendedData.pagination?.total || 0,
         restricted: restrictedData.pagination?.total || 0,
         banned: bannedData.pagination?.total || 0,
+        deleted: deletedData.pagination?.total || 0,
         verified: 0,
         unverified: 0
       };
@@ -179,11 +181,24 @@ export const useUserMutations = () => {
     },
   });
 
+  const softDeleteUser = useMutation({
+    mutationFn: ({ userId, reason }: { userId: string; reason: string }) =>
+      usersService.softDeleteUser(userId, reason),
+    onSuccess: () => {
+      invalidateUsers();
+      toast.success('User deleted successfully');
+    },
+    onError: () => {
+      toast.error('Failed to delete user');
+    },
+  });
+
   return {
     verifyUser,
     banUser,
     suspendUser,
     restrictUser,
     unrestrictUser,
+    softDeleteUser,
   };
 };

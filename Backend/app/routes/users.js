@@ -6,7 +6,8 @@ const {
   suspendUser, 
   unrestrictUser, 
   verifyUser, 
-  getUserDetails 
+  getUserDetails,
+  softDeleteUser 
 } = require('../controllers/userController');
 const { adminAuth } = require('../middleware/auth');
 
@@ -26,5 +27,6 @@ router.patch('/:userId/restrict', adminAuth, restrictUser);
 router.patch('/:userId/ban', adminAuth, banUser);
 router.patch('/:userId/suspend', adminAuth, suspendUser);
 router.patch('/:userId/unrestrict', adminAuth, unrestrictUser);
+router.patch('/:userId/delete', adminAuth, softDeleteUser);
 
 module.exports = router;
