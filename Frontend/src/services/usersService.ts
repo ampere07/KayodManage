@@ -93,6 +93,17 @@ class UsersService {
   }
 
   /**
+   * Soft delete a user
+   */
+  async softDeleteUser(userId: string, reason: string): Promise<UserActionResponse> {
+    const response = await apiClient.patch<UserActionResponse>(
+      `${this.baseUrl}/${userId}/delete`,
+      { reason }
+    );
+    return response.data;
+  }
+
+  /**
    * Get penalty data for a user
    */
   async getPenaltyData(userId: string): Promise<PenaltyData> {

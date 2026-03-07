@@ -6,8 +6,8 @@ import {
   Clock,
   Ban,
   UserX,
-  Calendar,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import { usersService } from '../../services';
 import type {
@@ -30,7 +30,7 @@ interface UserDetailsModalProps {
   onClose: () => void;
   user: User | null;
   onVerify: (userId: string, isVerified: boolean) => void;
-  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number, reason?: string) => void;
+  onAction: (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number, reason?: string) => void;
 }
 
 const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
@@ -42,7 +42,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 }) => {
   const [verificationDetails, setVerificationDetails] = useState<Verification | null>(null);
   const [loadingVerification, setLoadingVerification] = useState(false);
-  const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | null>(null);
+  const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete' | null>(null);
   const [durationDays, setDurationDays] = useState<number>(0);
   const [durationHours, setDurationHours] = useState<number>(0);
   const [durationMinutes, setDurationMinutes] = useState<number>(0);
@@ -54,8 +54,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   });
   const [loadingPenalties, setLoadingPenalties] = useState(false);
   const [restrictionTimer, setRestrictionTimer] = useState<string | null>(null);
-  const [restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
-  const [loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
+  const [_restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
+  const [_loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
 
   // Calculate remaining restriction time
   useEffect(() => {
@@ -65,7 +65,11 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     }
 
     const calculateTimeRemaining = () => {
-      const expiresAt = new Date(user!.restrictionDetails!.expiresAt);
+      if (!user?.restrictionDetails?.expiresAt) {
+        setRestrictionTimer(null);
+        return;
+      }
+      const expiresAt = new Date(user.restrictionDetails.expiresAt);
       const now = new Date();
       const diffMs = expiresAt.getTime() - now.getTime();
 
@@ -158,7 +162,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     try {
       const data = await usersService.getPenaltyData(user._id);
 
-      const activeWarnings = user.accountStatus !== 'active' ? 1 : 0;
+      const activeWarnings = (user.accountStatus === 'restricted' || user.accountStatus === 'suspended' || user.accountStatus === 'banned') ? 1 : 0;
 
       setPenaltyData({
         ...data,
@@ -171,7 +175,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     }
   };
 
-  const handleActionClick = (actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict') => {
+  const handleActionClick = (actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete') => {
     setConfirmingAction(actionType);
   };
 
@@ -179,7 +183,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     if (confirmingAction && user) {
       const totalDays = durationDays + (durationHours / 24) + (durationMinutes / (24 * 60));
 
-      if (confirmingAction !== 'unrestrict' && totalDays <= 0) {
+      if (confirmingAction !== 'unrestrict' && confirmingAction !== 'delete' && totalDays <= 0) {
         toast.error('Please enter a duration for the restriction');
         return;
       }
@@ -219,6 +223,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       case 'ban': return 'Ban';
       case 'suspend': return 'Suspend';
       case 'restrict': return 'Restrict';
+      case 'delete': return 'Delete';
       default: return '';
     }
   };
@@ -493,7 +498,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         <div className="sticky bottom-0 z-30 bg-white border-t border-gray-200 px-4 md:px-6 py-4">
           {confirmingAction ? (
             <div className="space-y-4">
-              {confirmingAction !== 'unrestrict' && (
+              {confirmingAction !== 'unrestrict' && confirmingAction !== 'delete' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="space-y-1">
@@ -532,6 +537,25 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   />
                 </div>
               )}
+              {confirmingAction === 'delete' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-5 h-5 text-red-600" />
+                      <p className="text-sm font-bold text-red-600">Warning: This action cannot be undone</p>
+                    </div>
+                    <p className="text-sm text-red-700">
+                      Deleting this user will permanently remove their account from the system. They will not be able to access the platform anymore.
+                    </p>
+                  </div>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Enter reason for deletion..."
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
+                  />
+                </div>
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirmNo}
@@ -543,7 +567,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   onClick={handleConfirmYes}
                   className="flex-1 h-11 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
                 >
-                  Confirm
+                  Confirm {getActionLabel()}
                 </button>
               </div>
             </div>
@@ -571,6 +595,13 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   >
                     <Ban className="w-5 h-5" />
                     Ban
+                  </button>
+                  <button
+                    onClick={() => handleActionClick('delete')}
+                    className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    Delete
                   </button>
                 </>
               ) : (
