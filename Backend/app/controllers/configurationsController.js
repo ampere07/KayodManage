@@ -31,7 +31,7 @@ exports.getJobCategories = async (req, res) => {
 
 exports.createJobCategory = async (req, res) => {
   try {
-    const { name, icon } = req.body;
+    const { name, icon, professions } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -51,11 +51,33 @@ exports.createJobCategory = async (req, res) => {
       });
     }
 
+    // Create the category first
     const category = await JobCategory.create({
       name: name.trim(),
       icon: icon || undefined,
       professions: [],
     });
+
+    // If professions were provided, create them
+    if (professions && Array.isArray(professions)) {
+      for (const professionData of professions) {
+        if (professionData.name && professionData.name.trim()) {
+          const existingProfession = category.professions.find(
+            p => p.name.toLowerCase() === professionData.name.trim().toLowerCase()
+          );
+
+          if (!existingProfession) {
+            category.professions.push({
+              name: professionData.name.trim(),
+              icon: professionData.icon || undefined,
+            });
+          }
+        }
+      }
+
+      // Save the category with professions
+      await category.save();
+    }
 
     res.status(201).json({
       success: true,

@@ -276,7 +276,17 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
   const getProfessionIconData = (profession: Profession) => {
     const iconName = getProfessionIconName(profession);
-    const iconData = getProfessionIconByName(iconName || '', categoryIcon);
+
+    // If profession has no icon, use the default icon
+    if (!iconName) {
+      const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
+      return {
+        color: '#0F766E', // Use consistent color for all profession icons
+        imagePath: `/src/assets/icons/Default_Icon.webp?t=${timestamp}`
+      };
+    }
+
+    const iconData = getProfessionIconByName(iconName, categoryIcon);
     // Use the most recent timestamp for this profession
     const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
     return {
@@ -373,97 +383,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Category Icon
-            </label>
-            <div className="flex items-center gap-3">
-              <div 
-                className="flex-shrink-0 p-3 rounded-lg border border-gray-300" 
-                style={{ backgroundColor: `${getIconByName(categoryIcon).color}15` }}
-              >
-                <img 
-                  src={`${getIconByName(categoryIcon).imagePath}?t=${iconTimestamp}`}
-                  alt={getIconByName(categoryIcon).label}
-                  className="w-6 h-6"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
-                />
-              </div>
-              <button
-                onClick={() => setShowIconPicker(!showIconPicker)}
-                className="flex-1 px-4 py-2.5 text-left border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-              >
-                <ImageIcon className="w-4 h-4" />
-                <span>Change Icon</span>
-              </button>
-            </div>
-
-            {showIconPicker && (
-              <div className="mt-3 p-4 border border-gray-300 rounded-lg bg-gray-50 max-h-64 overflow-y-auto">
-                <div className="mb-4">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingIcon}
-                    className="w-full px-4 py-3 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-blue-600 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {uploadingIcon ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                        <span>Uploading...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ImageIcon className="w-5 h-5" />
-                        <span>Upload Custom Image</span>
-                      </>
-                    )}
-                  </button>
-                  <p className="text-xs text-gray-500 mt-2 text-center">PNG, JPG up to 5MB</p>
-                </div>
-
-                <div className="border-t border-gray-300 pt-4">
-                  <p className="text-xs text-gray-600 font-medium mb-3">Or choose from existing:</p>
-                </div>
-
-                <div className="grid grid-cols-5 gap-2">
-                  {getAllIcons().map((icon) => (
-                    <button
-                      key={icon.name}
-                      onClick={() => {
-                        setCategoryIcon(icon.name);
-                        setIconTimestamp(Date.now());
-                        setShowIconPicker(false);
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all hover:scale-105 ${
-                        categoryIcon === icon.name
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                      style={{ backgroundColor: `${icon.color}10` }}
-                      title={icon.label}
-                    >
-                      <img 
-                        src={icon.imagePath}
-                        alt={icon.label}
-                        className="w-5 h-5 mx-auto"
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Category icon UI removed per request */}
 
           <div>
             <div className="flex items-center justify-between mb-4">
