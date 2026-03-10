@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2, ImageIcon } from 'lucide-react';
+import { X, Plus, Trash2, ImageIcon, Search } from 'lucide-react';
 import { settingsService } from '../../services';
 import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getAllIcons } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
@@ -21,6 +21,7 @@ interface EditCategoryDrawerProps {
     icon?: string;
     professions: Profession[];
   };
+  profession?: Profession | null; // Optional profession to edit
 }
 
 const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
@@ -28,6 +29,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   onClose,
   onSuccess,
   category,
+  profession: initialProfession,
 }) => {
   const [categoryName, setCategoryName] = useState(category.name);
   const [categoryIcon, setCategoryIcon] = useState(category.icon || getDefaultIconForCategory(category.name));
@@ -35,13 +37,15 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [professions, setProfessions] = useState<Profession[]>(category.professions);
-  const [editingProfession, setEditingProfession] = useState<Profession | null>(null);
-  const [editingProfessionName, setEditingProfessionName] = useState('');
-  const [editingProfessionIcon, setEditingProfessionIcon] = useState<string | undefined>(undefined);
+  const [editingProfession, setEditingProfession] = useState<Profession | null>(initialProfession || null);
+  const [editingProfessionName, setEditingProfessionName] = useState(initialProfession?.name || '');
+  const [editingProfessionIcon, setEditingProfessionIcon] = useState<string | undefined>(initialProfession?.icon || undefined);
   const [uploadingProfessionIcon, setUploadingProfessionIcon] = useState<string | null>(null);
   const [professionIconTimestamps, setProfessionIconTimestamps] = useState<Record<string, number>>({});
   const [newProfessionName, setNewProfessionName] = useState('');
+  const [professionSearchQuery, setProfessionSearchQuery] = useState('');
   const [isAddingProfession, setIsAddingProfession] = useState(false);
+  const [isEditingProfession, setIsEditingProfession] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -49,6 +53,29 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const professionFileInputRef = React.useRef<HTMLInputElement>(null);
   const [currentProfessionForUpload, setCurrentProfessionForUpload] = useState<string | null>(null);
   const { socket } = useSocket();
+
+  // Filter professions based on search query
+  const filteredProfessions = professions.filter(profession =>
+    profession.name.toLowerCase().includes(professionSearchQuery.toLowerCase())
+  );
+
+  // Handle initial profession when drawer opens
+  React.useEffect(() => {
+    if (isOpen && initialProfession) {
+      setEditingProfession(initialProfession);
+      setEditingProfessionName(initialProfession.name);
+      setEditingProfessionIcon(initialProfession.icon);
+      // Don't open add form, just set the profession for editing
+    } else if (!isOpen) {
+      // Reset when drawer closes
+      setEditingProfession(null);
+      setEditingProfessionName('');
+      setEditingProfessionIcon(undefined);
+      setIsAddingProfession(false);
+      setIsEditingProfession(false);
+      setProfessionSearchQuery('');
+    }
+  }, [isOpen, initialProfession]);
 
   // Listen for real-time profession icon updates
   React.useEffect(() => {
@@ -93,32 +120,69 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     setEditingProfession(profession);
     setEditingProfessionName(profession.name);
     setEditingProfessionIcon(profession.icon);
+    setIsEditingProfession(true);
+    setIsAddingProfession(false);
   };
 
-  const handleSaveProfessionEdit = () => {
+  const handleSaveProfessionEdit = async () => {
     if (!editingProfessionName.trim()) {
       toast.error('Profession name cannot be empty');
       return;
     }
 
-    if (editingProfession) {
-      setProfessions(prev =>
-        prev.map(prof =>
-          prof._id === editingProfession._id
-            ? { ...prof, name: editingProfessionName.trim(), icon: editingProfessionIcon }
-            : prof
-        )
-      );
+    try {
+      if (editingProfession) {
+        // Update existing profession
+        const updateData: any = {};
+        if (editingProfessionName.trim() !== editingProfession.name) {
+          updateData.name = editingProfessionName.trim();
+        }
+        if (editingProfessionIcon !== editingProfession.icon) {
+          updateData.icon = editingProfessionIcon;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await settingsService.updateProfession(editingProfession._id, updateData);
+          
+          setProfessions(prev =>
+            prev.map(prof =>
+              prof._id === editingProfession._id
+                ? { ...prof, ...updateData }
+                : prof
+            )
+          );
+          
+          toast.success('Profession updated successfully');
+        }
+      } else {
+        // Add new profession
+        const response = await settingsService.createProfession({
+          name: editingProfessionName.trim(),
+          categoryId: category._id,
+        });
+        
+        setProfessions(prev => [...prev, response.profession]);
+        toast.success('Profession added successfully');
+      }
+      
+      // Reset editing state
+      setEditingProfession(null);
+      setEditingProfessionName('');
+      setEditingProfessionIcon(undefined);
+      setIsAddingProfession(false);
+      setIsEditingProfession(false);
+      setNewProfessionName('');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to save profession');
     }
-    setEditingProfession(null);
-    setEditingProfessionName('');
-    setEditingProfessionIcon(undefined);
   };
 
   const handleCancelProfessionEdit = () => {
     setEditingProfession(null);
     setEditingProfessionName('');
     setEditingProfessionIcon(undefined);
+    setIsAddingProfession(false);
+    setIsEditingProfession(false);
   };
 
   const handleDeleteProfession = async (professionId: string) => {
@@ -391,7 +455,11 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                 Professions ({professions.length})
               </label>
               <button
-                onClick={() => setIsAddingProfession(true)}
+                onClick={() => {
+                  setIsAddingProfession(true);
+                  setIsEditingProfession(false);
+                  setEditingProfession(null);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <Plus className="w-4 h-4" />
@@ -399,34 +467,56 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
               </button>
             </div>
 
-            {isAddingProfession && (
+            {/* Search Bar */}
+            {professions.length > 0 && (
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search professions..."
+                  value={professionSearchQuery}
+                  onChange={(e) => setProfessionSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            )}
+
+            {(isAddingProfession || isEditingProfession) && (
               <div className="mb-4 p-4 border border-blue-200 bg-blue-50 rounded-lg">
                 <input
                   type="text"
-                  value={newProfessionName}
-                  onChange={(e) => setNewProfessionName(e.target.value)}
-                  placeholder="New profession name"
+                  value={editingProfessionName}
+                  onChange={(e) => setEditingProfessionName(e.target.value)}
+                  placeholder={isEditingProfession ? "Edit profession name" : "New profession name"}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddProfession();
+                    if (e.key === 'Enter') {
+                      handleSaveProfessionEdit();
+                    }
                     if (e.key === 'Escape') {
                       setIsAddingProfession(false);
+                      setIsEditingProfession(false);
                       setNewProfessionName('');
+                      setEditingProfession(null);
+                      setEditingProfessionName('');
                     }
                   }}
                 />
                 <div className="flex gap-2">
                   <button
-                    onClick={handleAddProfession}
+                    onClick={handleSaveProfessionEdit}
                     className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Save
+                    {isEditingProfession ? 'Update' : 'Save'}
                   </button>
                   <button
                     onClick={() => {
                       setIsAddingProfession(false);
+                      setIsEditingProfession(false);
                       setNewProfessionName('');
+                      setEditingProfession(null);
+                      setEditingProfessionName('');
                     }}
                     className="flex-1 px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
@@ -444,54 +534,53 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
               className="hidden"
             />
 
-            {professions.length === 0 ? (
+            {filteredProfessions.length === 0 ? (
               <div className="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
-                <p className="text-sm">No professions yet</p>
-                <p className="text-xs mt-1">Click Add to create your first profession</p>
+                <p className="text-sm">
+                  {professionSearchQuery ? 'No professions found' : 'No professions yet'}
+                </p>
+                <p className="text-xs mt-1">
+                  {professionSearchQuery ? 'Try a different search term' : 'Click Add to create your first profession'}
+                </p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {professions.map((profession) => {
+              <div className="space-y-3">
+                {filteredProfessions.map((profession) => {
                   const professionIcon = getProfessionIconData(profession);
 
                   return (
                     <div
                       key={profession._id}
-                      className="relative group flex flex-col items-stretch"
+                      className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all group cursor-pointer"
+                      onClick={() => handleEditProfession(profession)}
                     >
-                      <div
-                        onClick={() => handleEditProfession(profession)}
-                        className="w-full aspect-square rounded-lg border-2 border-gray-200 hover:border-blue-400 transition-all cursor-pointer flex flex-col p-3 relative group"
-                        style={{ backgroundColor: `${professionIcon.color}08` }}
-                      >
-                        <div className="flex flex-col items-center h-full">
-                          <div 
-                            className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
-                            style={{ backgroundColor: `${professionIcon.color}15` }}
-                          >
-                            <img 
-                              src={professionIcon.imagePath}
-                              alt={profession.name}
-                              className="w-8 h-8" 
-                            />
-                          </div>
-                          <div className="flex-grow flex items-center">
-                            <p className="text-xs text-gray-900 text-center font-medium line-clamp-2 w-full">
-                              {profession.name}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteProfession(profession._id);
-                          }}
-                          className="absolute top-2 right-2 p-1.5 bg-white border border-red-200 text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
-                          title="Delete profession"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                      {/* Icon on the left - larger, no border */}
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <img 
+                          src={professionIcon.imagePath}
+                          alt={profession.name}
+                          className="w-12 h-12 object-contain" 
+                        />
                       </div>
+                      
+                      {/* Profession name on the right */}
+                      <div className="flex-1">
+                        <p className="text-base text-gray-900 font-medium">
+                          {profession.name}
+                        </p>
+                      </div>
+                      
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProfession(profession._id);
+                        }}
+                        className="p-2 bg-white border border-red-200 text-red-600 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+                        title="Delete profession"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   );
                 })}
