@@ -5,6 +5,16 @@ import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getA
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
 
+// Helper function to generate consistent icon filename from profession name
+const generateIconFilename = (professionName: string): string => {
+  return professionName
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s]/g, '') // Remove special characters except spaces
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    + '.webp';
+};
+
 interface Profession {
   _id: string;
   name: string;
@@ -134,10 +144,27 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       if (editingProfession) {
         // Update existing profession
         const updateData: any = {};
-        if (editingProfessionName.trim() !== editingProfession.name) {
+        const nameChanged = editingProfessionName.trim() !== editingProfession.name;
+        
+        if (nameChanged) {
           updateData.name = editingProfessionName.trim();
+          
+          // Automatically update icon filename when profession name changes
+          // Only if the current icon follows the naming pattern or if there's no custom icon
+          const currentIcon = editingProfessionIcon || editingProfession.icon;
+          const shouldUpdateIcon = !currentIcon || 
+            currentIcon.includes(editingProfession.name.toLowerCase().replace(/\s+/g, '-'));
+          
+          if (shouldUpdateIcon) {
+            const newIconFilename = generateIconFilename(editingProfessionName.trim());
+            updateData.icon = newIconFilename;
+            setEditingProfessionIcon(newIconFilename);
+            
+            toast.success(`Icon filename will be updated to: ${newIconFilename}`);
+          }
         }
-        if (editingProfessionIcon !== editingProfession.icon) {
+        
+        if (editingProfessionIcon !== editingProfession.icon && !nameChanged) {
           updateData.icon = editingProfessionIcon;
         }
 
@@ -152,7 +179,13 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             )
           );
           
-          toast.success('Profession updated successfully');
+          const message = nameChanged && updateData.icon 
+            ? 'Profession name and icon updated successfully'
+            : nameChanged 
+            ? 'Profession name updated successfully'
+            : 'Profession icon updated successfully';
+          
+          toast.success(message);
         }
       } else {
         // Add new profession
@@ -389,8 +422,26 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
           
           if (nameChanged || iconChanged) {
             const updateData: { name?: string; icon?: string } = {};
-            if (nameChanged) updateData.name = prof.name;
-            if (iconChanged) updateData.icon = currentIcon;
+            
+            if (nameChanged) {
+              updateData.name = prof.name;
+              
+              // Automatically update icon filename when profession name changes
+              // Only if the current icon follows the naming pattern or if there's no custom icon
+              const shouldUpdateIcon = !currentIcon || 
+                currentIcon.includes(original.name.toLowerCase().replace(/\s+/g, '-'));
+              
+              if (shouldUpdateIcon) {
+                const newIconFilename = generateIconFilename(prof.name);
+                updateData.icon = newIconFilename;
+                // Update the local profession icon as well
+                prof.icon = newIconFilename;
+              }
+            }
+            
+            if (iconChanged && !nameChanged) {
+              updateData.icon = currentIcon;
+            }
             
             updates.push(
               settingsService.updateProfession(prof._id, updateData)
@@ -681,6 +732,18 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                     if (e.key === 'Escape') handleCancelProfessionEdit();
                   }}
                 />
+                
+                {/* Show icon filename preview when name changes */}
+                {editingProfession && editingProfessionName.trim() !== editingProfession.name && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-700">
+                      <strong>Icon will be renamed to:</strong> {generateIconFilename(editingProfessionName.trim())}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      This prevents icon mismatches when profession names change
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
