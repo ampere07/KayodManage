@@ -6,6 +6,7 @@ import {
   AlertCircle,
   TrendingUp
 } from 'lucide-react';
+import StatsCard from '../components/Dashboard/StatsCard';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -120,34 +121,34 @@ function StatCards() {
   const statCards = [
     {
       icon: Users,
-      label: 'Total Users',
+      title: 'Total Users',
       value: stats.totalUsers.toLocaleString(),
-      change: comparison ? formatPercentage(comparison.users.percentage) : 'Loading...',
-      changeType: comparison ? getChangeType(comparison.users.percentage) : 'neutral' as const,
+      trend: comparison ? { value: comparison.users.percentage, isPositive: comparison.users.percentage >= 0 } : undefined,
+      color: 'blue' as const,
       onClick: () => navigate('/users')
     },
     {
       icon: Briefcase,
-      label: 'Total Jobs',
+      title: 'Total Jobs',
       value: stats.totalJobs.toLocaleString(),
-      change: comparison ? formatPercentage(comparison.jobs.percentage) : 'Loading...',
-      changeType: comparison ? getChangeType(comparison.jobs.percentage) : 'neutral' as const,
+      trend: comparison ? { value: comparison.jobs.percentage, isPositive: comparison.jobs.percentage >= 0 } : undefined,
+      color: 'green' as const,
       onClick: () => navigate('/jobs')
     },
     {
       icon: DollarSign,
-      label: 'Total Revenue',
+      title: 'Total Revenue',
       value: formatCurrency(stats.totalRevenue),
-      change: comparison ? formatPercentage(comparison.revenue.percentage) : 'Loading...',
-      changeType: comparison ? getChangeType(comparison.revenue.percentage) : 'neutral' as const,
+      trend: comparison ? { value: comparison.revenue.percentage, isPositive: comparison.revenue.percentage >= 0 } : undefined,
+      color: 'indigo' as const,
       onClick: () => navigate('/transactions')
     },
     {
       icon: AlertCircle,
-      label: 'Pending Fees',
+      title: 'Pending Fees',
       value: stats.pendingFeesCount?.toLocaleString() || '0',
-      change: `Requires Attention (${stats.pendingFeesCount || 0} Pending)`,
-      changeType: 'neutral' as const,
+      trend: undefined,
+      color: 'red' as const,
       onClick: () => navigate('/transactions/fee-records?status=pending')
     },
   ];
@@ -156,25 +157,17 @@ function StatCards() {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2 mb-2 md:mb-3">
       {statCards.map((stat) => (
         <div
-          key={stat.label}
+          key={stat.title}
           onClick={stat.onClick}
-          className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+          className="cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-1 md:mb-1.5">
-            <span className="text-xs text-gray-600">{stat.label}</span>
-            <stat.icon className="w-3 sm:w-4 h-3 sm:h-4 text-gray-400" />
-          </div>
-
-          <div className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-0.5 md:mb-1">
-            {stat.value}
-          </div>
-
-          <div className={`text-xs flex items-center gap-1 ${stat.changeType === 'positive' ? 'text-green-600' :
-            stat.changeType === 'negative' ? 'text-red-600' : 'text-gray-600'
-            }`}>
-            {stat.changeType === 'positive' && <TrendingUp className="w-3 h-3 hidden sm:inline" />}
-            <span className="truncate text-xs">{stat.change}</span>
-          </div>
+          <StatsCard
+            title={stat.title}
+            value={stat.value}
+            icon={stat.icon}
+            trend={stat.trend ? { value: stat.trend.value, isPositive: stat.trend.isPositive } : undefined}
+            color={stat.color}
+          />
         </div>
       ))}
     </div>

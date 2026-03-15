@@ -12,27 +12,56 @@ import {
   Clock,
   XCircle,
   Flag,
-  Activity as ActivityIcon,
   MessageSquare,
   Users,
   CreditCard,
   Star,
   MoreHorizontal
 } from 'lucide-react';
-import { formatBudgetWithType } from '../utils/currency';
-import { getInitials } from '../utils';
-import { ReviewReportModal } from '../components/Modals';
+import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
 import { useReports, useUpdateReport } from '../hooks';
+import { transactionsService } from '../services';
 import type { ReportFilterStatus } from '../types/alerts.types';
 import type { Report } from '../services/flaggedService';
+import type { Transaction } from '../types';
 import type { ReportedPost } from '../types/flagged.types';
 
 const Flagged: React.FC = () => {
   const { data: reportsData, isLoading } = useReports();
   const updateReportMutation = useUpdateReport();
   
-  const reports = reportsData?.reports || [];
-  const stats = reportsData?.stats || { total: 0, pending: 0, reviewed: 0, resolved: 0, dismissed: 0 };
+  const allReports = reportsData?.reports || [];
+  
+  const reports = useMemo(() => {
+    return allReports.filter((report: Report) => {
+      const type = (report.reportType || '').toLowerCase();
+      const reason = (report.reason || '').toLowerCase();
+      const comment = (report.comment || '').toLowerCase();
+      
+      // Strict exclusion of anything related to refunds or payments
+      // as these are handled in the Transactions -> Refund section
+      const isRefundRelated = 
+        type.includes('refund') || 
+        type.includes('payment') ||
+        reason.includes('refund') || 
+        reason.includes('payment') ||
+        comment.includes('refund') ||
+        comment.includes('payment');
+        
+      return !isRefundRelated;
+    });
+  }, [allReports]);
+
+  const stats = useMemo(() => {
+    // Recalculate stats based ONLY on the filtered reports
+    return {
+      total: reports.length,
+      pending: reports.filter((r: Report) => r.status === 'pending').length,
+      reviewed: reports.filter((r: Report) => r.status === 'reviewed').length,
+      resolved: reports.filter((r: Report) => r.status === 'resolved').length,
+      dismissed: reports.filter((r: Report) => r.status === 'dismissed').length,
+    };
+  }, [reports]);
   
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -41,6 +70,9 @@ const Flagged: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [isFetchingTransaction, setIsFetchingTransaction] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
@@ -108,7 +140,7 @@ const Flagged: React.FC = () => {
     }
   };
 
-  const handleReview = async (postId: string, action: 'approve' | 'dismiss' | 'delete') => {
+  const handleReview = async (_postId: string, action: 'approve' | 'dismiss' | 'delete') => {
     if (!selectedReport) return;
 
     const statusMap = {
@@ -126,7 +158,60 @@ const Flagged: React.FC = () => {
     await handleUpdateReport(selectedReport._id, statusMap[action], actionMap[action]);
   };
 
-  const handleViewReport = (report: Report) => {
+  const handleViewReport = async (report: Report) => {
+    // Check if it's potentially a refund-related report (direct tag or job-related)
+    const reportType = (report.reportType || '').toLowerCase();
+    const reason = (report.reason || '').toLowerCase();
+    const comment = (report.comment || '').toLowerCase();
+
+    const isPotentialRefund = 
+      reportType === 'payment' || 
+      reportType === 'job' ||
+      reportType === 'refund_request' ||
+      reason.includes('refund') || 
+      comment.includes('refund');
+
+    if (isPotentialRefund && report.relatedId) {
+      setIsFetchingTransaction(true);
+      try {
+        let transaction: Transaction | null = null;
+        
+        // 1. Try to fetch as a direct transaction ID first
+        try {
+          const directTransaction = await transactionsService.getTransactionById(report.relatedId);
+          if (directTransaction && (directTransaction.type === 'refund_request' || directTransaction.type === 'refund')) {
+            transaction = directTransaction;
+          }
+        } catch (e) {
+          // Ignore failure, try job search next
+        }
+
+        // 2. Fallback: Fetch transactions related to the relatedId (assuming it's a jobId)
+        if (!transaction) {
+          const response = await transactionsService.getTransactions({ 
+            jobId: report.relatedId,
+            limit: 10 
+          });
+          
+          // Look for any refund-related transaction for this job
+          transaction = response.transactions.find(t => 
+            t.type === 'refund_request' || t.type === 'refund'
+          ) || null;
+        }
+
+        if (transaction) {
+          setSelectedTransaction(transaction as any);
+          setIsTransactionModalOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching transaction for report:', err);
+      } finally {
+        setIsFetchingTransaction(false);
+      }
+    }
+
+    // Default to regular report modal
     setSelectedReport(report);
     setIsModalOpen(true);
   };
@@ -190,7 +275,7 @@ const Flagged: React.FC = () => {
       _id: report._id,
       jobId: { 
         _id: report.relatedId,
-        title: `${report.reportType} Report`,
+        title: `${report.reportType ? (report.reportType.charAt(0).toUpperCase() + report.reportType.slice(1)) : 'Post'} Report`,
         description: report.comment || 'No description',
         category: report.reportType,
         budget: 0,
@@ -198,29 +283,23 @@ const Flagged: React.FC = () => {
         paymentMethod: 'Not specified',
         location: {
           address: 'Not specified',
-          city: 'Not specified'
+          city: 'Not specified',
+          region: 'Not specified',
+          country: 'Not specified'
         },
         createdAt: report.createdAt,
         isDeleted: false,
         media: []
       },
-      jobDetails: {
-        title: `${report.reportType} Report`,
-        description: report.comment,
-        budget: 0,
-        budgetType: 'fixed'
-      },
-      jobPosterId: report.reportedUserId || {
-        _id: '',
-        name: 'Unknown',
-        email: ''
-      },
-      reportedBy: report.reportedBy._id,
-      reportedByDetails: {
+      reportedBy: {
         _id: report.reportedBy._id,
+        providerId: report.reportedBy._id,
         providerName: report.reportedBy.name,
-        email: report.reportedBy.email
+        providerEmail: report.reportedBy.email
       },
+      jobPosterId: typeof report.reportedUserId === 'string' 
+        ? report.reportedUserId 
+        : (report.reportedUserId?._id || ''),
       reason: report.reason,
       comment: report.comment,
       status: report.status as 'pending' | 'resolved' | 'dismissed',
@@ -234,12 +313,12 @@ const Flagged: React.FC = () => {
     let filtered = reports;
 
     if (filter !== 'all') {
-      filtered = filtered.filter(report => report.status === filter);
+      filtered = filtered.filter((report: Report) => report.status === filter);
     }
 
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(report =>
+      filtered = filtered.filter((report: Report) =>
         report.reportType.toLowerCase().includes(search) ||
         report.reportedBy.name.toLowerCase().includes(search) ||
         report.reason.toLowerCase().includes(search) ||
@@ -438,7 +517,7 @@ const Flagged: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedReports.map((report) => (
+                    {paginatedReports.map((report: Report) => (
                       <tr
                         key={report._id}
                         ref={highlightedPostId === report._id ? highlightedRowRef : null}
@@ -507,7 +586,7 @@ const Flagged: React.FC = () => {
 
               {/* Mobile Card View */}
               <div className="md:hidden px-4 py-4 space-y-3">
-                {paginatedReports.map((report) => (
+                {paginatedReports.map((report: Report) => (
                   <div
                     key={report._id}
                     ref={highlightedPostId === report._id ? highlightedRowRef : null}
@@ -652,6 +731,24 @@ const Flagged: React.FC = () => {
         onReview={handleReview}
         isLoading={actionLoading}
       />
+
+      <TransactionDetailsModal
+        isOpen={isTransactionModalOpen}
+        onClose={() => {
+          setIsTransactionModalOpen(false);
+          setSelectedTransaction(null);
+        }}
+        transaction={selectedTransaction}
+      />
+
+      {isFetchingTransaction && (
+        <div className="fixed inset-0 bg-black/20 z-[200] flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <span className="text-sm font-medium">Fetching details...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

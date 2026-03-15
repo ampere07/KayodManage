@@ -3,7 +3,9 @@ const {
   getTransactions, 
   getTransactionDetails, 
   updateTransactionStatus,
-  getTransactionStats 
+  getTransactionStats,
+  approveRefund,
+  declineRefund
 } = require('../controllers/transactionController');
 const { adminAuth } = require('../middleware/auth');
 const FeeRecord = require('../models/FeeRecord');
@@ -139,6 +141,12 @@ router.get('/stats', adminAuth, getTransactionStats);
 
 // Get specific transaction details
 router.get('/:transactionId', adminAuth, getTransactionDetails);
+
+// Approve refund
+router.post('/:transactionId/approve-refund', adminAuth, approveRefund);
+
+// Decline refund
+router.post('/:transactionId/decline-refund', adminAuth, declineRefund);
 
 // Update transaction status
 router.patch('/:transactionId/status', adminAuth, updateTransactionStatus);

@@ -28,7 +28,7 @@ exports.getActivityLogs = async (req, res) => {
       .populate('adminId', 'name email userType')
       .populate({
         path: 'targetId',
-        select: 'name email title subject'
+        select: 'name email title subject description type'
       })
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))

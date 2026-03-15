@@ -70,8 +70,28 @@ export interface ReportsResponse {
  * Handles all API calls related to reported posts/flagged content
  */
 class FlaggedService {
-  private baseUrl = '/api/admin/reported-posts';
+  // ReportedPost legacy collection (backend is under /api/reports/reported-posts)
+  private baseUrl = '/api/reports/reported-posts';
   private reportsUrl = '/api/reports';
+
+  // Legacy reported-posts collection (ReportedPost)
+  async getAllReportedPosts(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    reason?: string;
+  }): Promise<ReportedPostsResponse & { success?: boolean }> {
+    const response = await apiClient.get<ReportedPostsResponse & { success?: boolean }>(`${this.baseUrl}/admin/all`, { params });
+    // Normalize shape to match existing expectations
+    return {
+      success: (response.data as any).success ?? true,
+      reportedPosts: (response.data as any).reports || (response.data as any).reportedPosts || [],
+      stats: (response.data as any).stats,
+      pagination: (response.data as any).pagination,
+    } as any;
+  }
 
   /**
    * Fetch all reports from the new unified reports collection
@@ -121,7 +141,7 @@ class FlaggedService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }): Promise<ReportedPostsResponse> {
-    const response = await apiClient.get<ReportedPostsResponse>(this.baseUrl, { params });
+    const response = await apiClient.get<ReportedPostsResponse>(`${this.baseUrl}/admin/all`, { params });
     return response.data;
   }
 

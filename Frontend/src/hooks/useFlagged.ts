@@ -1,7 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { flaggedService, usersService } from '../services';
-import type { ReportedPost } from '../types/flagged.types';
-import type { Report } from '../services/flaggedService';
 
 const FLAGGED_QUERY_KEY = 'flagged';
 const FLAGGED_STATS_QUERY_KEY = 'flagged-stats';
@@ -19,10 +17,14 @@ export const useReports = (params?: {
     queryKey: [REPORTS_QUERY_KEY, params],
     queryFn: async () => {
       const response = await flaggedService.getAllReports(params);
-      return response.data;
+      return {
+        reports: response.data?.reports || [],
+        stats: response.data?.stats || { total: 0, pending: 0, reviewed: 0, resolved: 0, dismissed: 0 },
+        pagination: response.data?.pagination,
+      };
     },
     staleTime: 2 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData: any) => previousData,
   });
 };
 
