@@ -25,9 +25,9 @@ export type VerificationStatus = 'approved' | 'rejected' | 'pending' | 'under_re
 export interface Verification {
   _id: string;
   userId: UserInfo;
-  faceVerification: VerificationDocument[] | VerificationDocument;
-  validId: (VerificationDocument & { type: string })[] | (VerificationDocument & { type: string });
-  credentials: VerificationDocument[];
+  faceVerification?: VerificationDocument[] | VerificationDocument; // legacy top-level
+  validId?: (VerificationDocument & { type: string })[] | (VerificationDocument & { type: string }); // legacy top-level
+  credentials?: VerificationDocument[]; // legacy top-level
   status: VerificationStatus;
   submittedAt: string;
   reviewedAt?: string;
@@ -35,6 +35,13 @@ export interface Verification {
   adminNotes?: string;
   rejectionReason?: string;
   verificationAttempts: number;
+  attempts?: Array<{
+    attemptNumber: number;
+    submittedAt: string;
+    faceVerification?: VerificationDocument[] | VerificationDocument;
+    validId?: (VerificationDocument & { type: string })[] | (VerificationDocument & { type: string });
+    credentials?: VerificationDocument[];
+  }>;
 }
 
 export interface VerificationStats {

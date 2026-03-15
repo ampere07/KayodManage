@@ -1,6 +1,5 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   User,
   CheckCircle,
@@ -8,49 +7,70 @@ import {
   Image,
   Calendar,
   AlertCircle,
-  Search
-} from 'lucide-react';
-import toast from 'react-hot-toast';
+  Search,
+} from "lucide-react";
+import toast from "react-hot-toast";
 
-import { VerificationDetailsModal } from '../components/Modals';
-import UserTypeBadge from '../components/UI/UserTypeBadge';
-import { useVerifications, useUpdateVerificationStatus } from '../hooks';
-import type { Verification, UserInfo } from '../types';
+import { VerificationDetailsModal } from "../components/Modals";
+import UserTypeBadge from "../components/UI/UserTypeBadge";
+import { useVerifications, useUpdateVerificationStatus } from "../hooks";
+import type { Verification, UserInfo } from "../types";
 
 const getInitials = (name: string): string => {
-  const nameParts = name.trim().split(' ').filter(part => part.length > 0);
-  if (nameParts.length === 0) return '?';
+  const nameParts = name
+    .trim()
+    .split(" ")
+    .filter((part) => part.length > 0);
+  if (nameParts.length === 0) return "?";
   return nameParts[0][0].toUpperCase();
 };
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const configs = {
-    approved: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
-    rejected: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
-    pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
-    under_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: AlertCircle },
-    resubmission_requested: { bg: 'bg-orange-100', text: 'text-orange-800', icon: AlertCircle },
-    flagged: { bg: 'bg-red-100', text: 'text-red-800', icon: AlertCircle }
+    approved: { bg: "bg-green-100", text: "text-green-800", icon: CheckCircle },
+    rejected: { bg: "bg-red-100", text: "text-red-800", icon: XCircle },
+    pending: {
+      bg: "bg-yellow-100",
+      text: "text-yellow-800",
+      icon: AlertCircle,
+    },
+    under_review: {
+      bg: "bg-yellow-100",
+      text: "text-yellow-800",
+      icon: AlertCircle,
+    },
+    resubmission_requested: {
+      bg: "bg-orange-100",
+      text: "text-orange-800",
+      icon: AlertCircle,
+    },
+    flagged: { bg: "bg-red-100", text: "text-red-800", icon: AlertCircle },
   };
 
   const config = configs[status as keyof typeof configs] || configs.pending;
   const Icon = config.icon;
 
-  const displayStatus = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+  const displayStatus =
+    status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ");
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}
+    >
       <Icon className="w-3 h-3 mr-1" />
       {displayStatus}
     </span>
   );
 };
 
-const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
+const UserAvatar: React.FC<{ user: UserInfo; size?: "sm" | "md" | "lg" }> = ({
+  user,
+  size = "md",
+}) => {
   const sizeClasses = {
-    sm: 'w-8 h-8 text-sm',
-    md: 'w-10 h-10 text-sm',
-    lg: 'w-16 h-16 text-2xl'
+    sm: "w-8 h-8 text-sm",
+    md: "w-10 h-10 text-sm",
+    lg: "w-16 h-16 text-2xl",
   };
 
   if (user.profileImage) {
@@ -58,13 +78,15 @@ const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ u
       <img
         src={user.profileImage}
         alt={user.name}
-        className={`${sizeClasses[size].split(' ').slice(0, 2).join(' ')} rounded-full object-cover`}
+        className={`${sizeClasses[size].split(" ").slice(0, 2).join(" ")} rounded-full object-cover`}
       />
     );
   }
 
   return (
-    <div className={`${sizeClasses[size]} rounded-full bg-gray-300 flex items-center justify-center`}>
+    <div
+      className={`${sizeClasses[size]} rounded-full bg-gray-300 flex items-center justify-center`}
+    >
       <span className="font-semibold text-gray-700">
         {getInitials(user.name)}
       </span>
@@ -75,28 +97,33 @@ const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ u
 const Verifications: React.FC = () => {
   const { data: verifications = [], isLoading: loading } = useVerifications();
   const updateStatusMutation = useUpdateVerificationStatus();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
-  const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [userTypeFilter, setUserTypeFilter] = useState<
+    "all" | "client" | "provider"
+  >("all");
+  const [selectedVerification, setSelectedVerification] =
+    useState<Verification | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
-  const [highlightedUserId, setHighlightedUserId] = useState<string | null>(null);
+  const [highlightedUserId, setHighlightedUserId] = useState<string | null>(
+    null,
+  );
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 20
+    limit: 20,
   });
 
   useEffect(() => {
-    const id = searchParams.get('id');
-    const verificationId = searchParams.get('verificationId');
+    const id = searchParams.get("id");
+    const verificationId = searchParams.get("verificationId");
     const targetId = id || verificationId;
 
     if (targetId && verifications.length > 0) {
       // Find verification by ID or by userId
-      const verification = verifications.find(v =>
-        v._id === targetId || v.userId?._id === targetId
+      const verification = verifications.find(
+        (v) => v._id === targetId || v.userId?._id === targetId,
       );
 
       if (verification) {
@@ -110,14 +137,14 @@ const Verifications: React.FC = () => {
         // Scroll to the highlighted row after a short delay
         setTimeout(() => {
           highlightedRowRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center'
+            behavior: "smooth",
+            block: "center",
           });
         }, 300);
 
         // Clear the URL parameter after processing
-        searchParams.delete('id');
-        searchParams.delete('verificationId');
+        searchParams.delete("id");
+        searchParams.delete("verificationId");
         setSearchParams(searchParams, { replace: true });
       }
     }
@@ -128,7 +155,7 @@ const Verifications: React.FC = () => {
     status: string,
     notes?: string,
     reason?: string,
-    banUser?: boolean
+    banUser?: boolean,
   ): Promise<void> => {
     try {
       await updateStatusMutation.mutateAsync({
@@ -136,12 +163,12 @@ const Verifications: React.FC = () => {
         status,
         adminNotes: notes,
         rejectionReason: reason,
-        banUser
+        banUser,
       });
       setModalOpen(false);
-      toast.success('Verification status updated successfully');
+      toast.success("Verification status updated successfully");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update status');
+      toast.error(error.message || "Failed to update status");
       throw error;
     }
   };
@@ -161,19 +188,22 @@ const Verifications: React.FC = () => {
   };
 
   const userVerifications = useMemo(() => {
-    const grouped = verifications.reduce((acc, verification) => {
-      if (!verification.userId) return acc;
+    const grouped = verifications.reduce(
+      (acc, verification) => {
+        if (!verification.userId) return acc;
 
-      const userId = verification.userId._id;
-      if (!acc[userId]) {
-        acc[userId] = {
-          user: verification.userId,
-          verifications: []
-        };
-      }
-      acc[userId].verifications.push(verification);
-      return acc;
-    }, {} as Record<string, { user: UserInfo; verifications: Verification[] }>);
+        const userId = verification.userId._id;
+        if (!acc[userId]) {
+          acc[userId] = {
+            user: verification.userId,
+            verifications: [],
+          };
+        }
+        acc[userId].verifications.push(verification);
+        return acc;
+      },
+      {} as Record<string, { user: UserInfo; verifications: Verification[] }>,
+    );
 
     return Object.values(grouped);
   }, [verifications]);
@@ -181,18 +211,20 @@ const Verifications: React.FC = () => {
   const filteredUsers = useMemo(() => {
     return userVerifications.filter(({ user, verifications }) => {
       const matchesSearch =
-        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase());
+        (user.name?.toLowerCase() ?? "").includes(searchTerm.toLowerCase()) ||
+        (user.email?.toLowerCase() ?? "").includes(searchTerm.toLowerCase());
 
-      const matchesStatus = statusFilter === 'all' ||
-        verifications.some(v => {
-          if (statusFilter === 'under_review') {
-            return v.status === 'under_review' || v.status === 'pending';
+      const matchesStatus =
+        statusFilter === "all" ||
+        verifications.some((v) => {
+          if (statusFilter === "under_review") {
+            return v.status === "under_review" || v.status === "pending";
           }
           return v.status === statusFilter;
         });
 
-      const matchesUserType = userTypeFilter === 'all' || user.userType === userTypeFilter;
+      const matchesUserType =
+        userTypeFilter === "all" || user.userType === userTypeFilter;
 
       return matchesSearch && matchesStatus && matchesUserType;
     });
@@ -200,7 +232,7 @@ const Verifications: React.FC = () => {
 
   // Reset to page 1 when filters change
   useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   }, [searchTerm, statusFilter, userTypeFilter]);
 
   // Paginate filtered users
@@ -229,8 +261,13 @@ const Verifications: React.FC = () => {
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
         <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">User Verifications</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1 hidden md:block">Review and manage user verification submissions including identity documents, credentials, and face verification</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+              User Verifications
+            </h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1 hidden md:block">
+              Review and manage user verification submissions including identity
+              documents, credentials, and face verification
+            </p>
           </div>
         </div>
 
@@ -240,73 +277,102 @@ const Verifications: React.FC = () => {
           <div className="grid grid-cols-2 gap-2 md:hidden">
             <div
               onClick={() => {
-                setStatusFilter('all');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("all");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${statusFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
-                }`}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${
+                statusFilter === "all"
+                  ? "border-blue-400 ring-2 ring-blue-300"
+                  : ""
+              }`}
             >
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-blue-600" />
                 <span className="text-sm font-medium text-gray-700">Total</span>
               </div>
-              <span className="text-sm font-bold text-blue-700">{userVerifications.length}</span>
+              <span className="text-sm font-bold text-blue-700">
+                {userVerifications.length}
+              </span>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('under_review');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("under_review");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${statusFilter === 'under_review' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
-                }`}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${
+                statusFilter === "under_review"
+                  ? "border-yellow-400 ring-2 ring-yellow-300"
+                  : ""
+              }`}
             >
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">Pending</span>
+                <span className="text-sm font-medium text-gray-700">
+                  Pending
+                </span>
               </div>
               <span className="text-sm font-bold text-yellow-700">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'pending' || v.status === 'under_review')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some(
+                      (v) =>
+                        v.status === "pending" || v.status === "under_review",
+                    ),
+                  ).length
+                }
               </span>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('approved');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("approved");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${statusFilter === 'approved' ? 'border-green-400 ring-2 ring-green-300' : ''
-                }`}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${
+                statusFilter === "approved"
+                  ? "border-green-400 ring-2 ring-green-300"
+                  : ""
+              }`}
             >
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">Approved</span>
+                <span className="text-sm font-medium text-gray-700">
+                  Approved
+                </span>
               </div>
               <span className="text-sm font-bold text-green-700">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'approved')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some((v) => v.status === "approved"),
+                  ).length
+                }
               </span>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('rejected');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("rejected");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${statusFilter === 'rejected' ? 'border-red-400 ring-2 ring-red-300' : ''
-                }`}
+              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${
+                statusFilter === "rejected"
+                  ? "border-red-400 ring-2 ring-red-300"
+                  : ""
+              }`}
             >
               <div className="flex items-center gap-2">
                 <XCircle className="h-4 w-4 text-red-600" />
-                <span className="text-sm font-medium text-gray-700">Rejected</span>
+                <span className="text-sm font-medium text-gray-700">
+                  Rejected
+                </span>
               </div>
               <span className="text-sm font-bold text-red-700">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'rejected')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some((v) => v.status === "rejected"),
+                  ).length
+                }
               </span>
             </div>
           </div>
@@ -315,73 +381,104 @@ const Verifications: React.FC = () => {
           <div className="hidden md:grid grid-cols-4 gap-3">
             <div
               onClick={() => {
-                setStatusFilter('all');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("all");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-                }`}
+              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === "all"
+                  ? "border-blue-500 ring-2 ring-blue-400 shadow-lg"
+                  : "border-blue-200"
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-blue-600">Total Users</span>
+                <span className="text-xs font-medium text-blue-600">
+                  Total Users
+                </span>
                 <User className="h-4 w-4 text-blue-600" />
               </div>
-              <p className="text-2xl font-bold text-gray-900">{userVerifications.length}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {userVerifications.length}
+              </p>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('under_review');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("under_review");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'under_review' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-                }`}
+              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === "under_review"
+                  ? "border-yellow-500 ring-2 ring-yellow-400 shadow-lg"
+                  : "border-yellow-200"
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-yellow-800">Pending Review</span>
+                <span className="text-xs font-medium text-yellow-800">
+                  Pending Review
+                </span>
                 <AlertCircle className="h-4 w-4 text-yellow-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'pending' || v.status === 'under_review')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some(
+                      (v) =>
+                        v.status === "pending" || v.status === "under_review",
+                    ),
+                  ).length
+                }
               </p>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('approved');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("approved");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'approved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-                }`}
+              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === "approved"
+                  ? "border-green-500 ring-2 ring-green-400 shadow-lg"
+                  : "border-green-200"
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-green-800">Approved</span>
+                <span className="text-xs font-medium text-green-800">
+                  Approved
+                </span>
                 <CheckCircle className="h-4 w-4 text-green-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'approved')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some((v) => v.status === "approved"),
+                  ).length
+                }
               </p>
             </div>
 
             <div
               onClick={() => {
-                setStatusFilter('rejected');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setStatusFilter("rejected");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'rejected' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-                }`}
+              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${
+                statusFilter === "rejected"
+                  ? "border-red-500 ring-2 ring-red-400 shadow-lg"
+                  : "border-red-200"
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-red-800">Rejected</span>
+                <span className="text-xs font-medium text-red-800">
+                  Rejected
+                </span>
                 <XCircle className="h-4 w-4 text-red-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {userVerifications.filter(({ verifications }) =>
-                  verifications.some(v => v.status === 'rejected')
-                ).length}
+                {
+                  userVerifications.filter(({ verifications }) =>
+                    verifications.some((v) => v.status === "rejected"),
+                  ).length
+                }
               </p>
             </div>
           </div>
@@ -403,37 +500,40 @@ const Verifications: React.FC = () => {
           <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
             <button
               onClick={() => {
-                setUserTypeFilter('all');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setUserTypeFilter("all");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'all'
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-50'
-                }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                userTypeFilter === "all"
+                  ? "bg-blue-50 text-blue-700"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
             >
               All
             </button>
             <button
               onClick={() => {
-                setUserTypeFilter('client');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setUserTypeFilter("client");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'client'
-                ? 'bg-purple-50 text-purple-700'
-                : 'text-gray-600 hover:bg-gray-50'
-                }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                userTypeFilter === "client"
+                  ? "bg-purple-50 text-purple-700"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
             >
               Customer
             </button>
             <button
               onClick={() => {
-                setUserTypeFilter('provider');
-                setPagination(prev => ({ ...prev, page: 1 }));
+                setUserTypeFilter("provider");
+                setPagination((prev) => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${userTypeFilter === 'provider'
-                ? 'bg-indigo-50 text-indigo-700'
-                : 'text-gray-600 hover:bg-gray-50'
-                }`}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                userTypeFilter === "provider"
+                  ? "bg-indigo-50 text-indigo-700"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
             >
               Provider
             </button>
@@ -450,7 +550,9 @@ const Verifications: React.FC = () => {
                 <Search className="h-12 w-12 mx-auto" />
               </div>
               <p className="text-gray-600 font-medium">No users found</p>
-              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Try adjusting your search or filters
+              </p>
             </div>
           ) : (
             <>
@@ -459,36 +561,68 @@ const Verifications: React.FC = () => {
                 <table className="min-w-full">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Verification Attempts</th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Documents</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Submitted</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        User
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Verification Attempts
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Documents
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Submitted
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedUsers.map(({ user, verifications }) => {
                       const latestVerification = verifications[0];
-                      const totalDocuments = verifications.reduce((sum, v) =>
-                        sum + 1 + 1 + v.credentials.length, 0
-                      );
+                      const totalDocuments = verifications.reduce((sum, v) => {
+                        const latestAttempt = Array.isArray(v.attempts) && v.attempts.length > 0
+                          ? v.attempts[v.attempts.length - 1]
+                          : null;
+                        const faceCount = latestAttempt?.faceVerification ? 1 : 0;
+                        const idCount = latestAttempt?.validId ? (Array.isArray(latestAttempt.validId) ? latestAttempt.validId.length : 1) : 0;
+                        const credCount = latestAttempt?.credentials ? (Array.isArray(latestAttempt.credentials) ? latestAttempt.credentials.length : 1) : 0;
+                        return sum + faceCount + idCount + credCount;
+                      }, 0);
                       const isHighlighted = highlightedUserId === user._id;
+
+                      const attemptCount = verifications.reduce((max, v) => {
+                        const fromAttempts = Array.isArray(v.attempts) ? v.attempts.length : 0;
+                        const fromField = v.verificationAttempts || 0;
+                        const candidate = Math.max(fromAttempts, fromField);
+                        return Math.max(max, candidate);
+                      }, 0) || 1;
 
                       return (
                         <tr
                           key={user._id}
                           ref={isHighlighted ? highlightedRowRef : null}
                           onClick={() => openModal(latestVerification)}
-                          className={`hover:bg-gray-50 transition-all duration-300 cursor-pointer ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg' : ''
-                            }`}
+                          className={`hover:bg-gray-50 transition-all duration-300 cursor-pointer ${
+                            isHighlighted
+                              ? "bg-blue-50 ring-2 ring-blue-400 ring-inset shadow-lg"
+                              : ""
+                          }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <UserAvatar user={user} size="md" />
                               <div className="ml-3">
-                                <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                                <div className="text-xs text-gray-500">{user.email}</div>
+                                <div className="text-sm font-semibold text-gray-900">
+                                  {user.name}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {user.email}
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -499,7 +633,9 @@ const Verifications: React.FC = () => {
                             <StatusBadge status={latestVerification.status} />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <span className="text-sm font-medium text-gray-900">{verifications.length}</span>
+                            <span className="text-sm font-medium text-gray-900">
+                              {attemptCount}
+                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className="inline-flex items-center text-sm text-gray-600">
@@ -509,11 +645,22 @@ const Verifications: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-xs text-gray-500">
-                              {new Date(latestVerification.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                              {new Date(
+                                latestVerification.submittedAt,
+                              ).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              })}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                               <Calendar className="h-3 w-3" />
-                              {new Date(latestVerification.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(
+                                latestVerification.submittedAt,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </div>
                           </td>
                         </tr>
@@ -527,23 +674,36 @@ const Verifications: React.FC = () => {
               <div className="md:hidden px-4 pb-4 pt-2 space-y-3">
                 {paginatedUsers.map(({ user, verifications }) => {
                   const latestVerification = verifications[0];
-                  const totalDocuments = verifications.reduce((sum, v) =>
-                    sum + 1 + 1 + v.credentials.length, 0
-                  );
+                  const totalDocuments = verifications.reduce((sum, v) => {
+                    const latestAttempt = Array.isArray(v.attempts) && v.attempts.length > 0
+                      ? v.attempts[v.attempts.length - 1]
+                      : null;
+                    const faceCount = latestAttempt?.faceVerification ? 1 : 0;
+                    const idCount = latestAttempt?.validId ? (Array.isArray(latestAttempt.validId) ? latestAttempt.validId.length : 1) : 0;
+                    const credCount = latestAttempt?.credentials ? (Array.isArray(latestAttempt.credentials) ? latestAttempt.credentials.length : 1) : 0;
+                    return sum + faceCount + idCount + credCount;
+                  }, 0);
                   const isHighlighted = highlightedUserId === user._id;
 
                   return (
                     <div
                       key={user._id}
                       onClick={() => openModal(latestVerification)}
-                      className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-all duration-300 ${isHighlighted ? 'bg-blue-50 ring-2 ring-blue-400 shadow-lg' : ''
-                        }`}
+                      className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-all duration-300 ${
+                        isHighlighted
+                          ? "bg-blue-50 ring-2 ring-blue-400 shadow-lg"
+                          : ""
+                      }`}
                     >
                       <div className="flex items-center gap-3 mb-3">
                         <UserAvatar user={user} size="md" />
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">{user.name}</h3>
-                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                          <h3 className="text-sm font-semibold text-gray-900 truncate">
+                            {user.name}
+                          </h3>
+                          <p className="text-xs text-gray-500 truncate">
+                            {user.email}
+                          </p>
                         </div>
                       </div>
 
@@ -554,8 +714,12 @@ const Verifications: React.FC = () => {
 
                       <div className="space-y-2 mb-3 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Verification Attempts:</span>
-                          <span className="font-medium">{verifications.length}</span>
+                          <span className="text-gray-500">
+                            Verification Attempts:
+                          </span>
+                          <span className="font-medium">
+                            {verifications.length}
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Documents:</span>
@@ -563,7 +727,15 @@ const Verifications: React.FC = () => {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Submitted:</span>
-                          <span>{new Date(latestVerification.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                          <span>
+                            {new Date(
+                              latestVerification.submittedAt,
+                            ).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -577,28 +749,44 @@ const Verifications: React.FC = () => {
                   <div className="flex items-center justify-between w-full">
                     <div>
                       <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
-                        Showing{' '}
+                        Showing{" "}
                         <span className="font-medium">
-                          {((pagination.page - 1) * pagination.limit) + 1}
-                        </span>{' '}
-                        to{' '}
+                          {(pagination.page - 1) * pagination.limit + 1}
+                        </span>{" "}
+                        to{" "}
                         <span className="font-medium">
-                          {Math.min(pagination.page * pagination.limit, filteredUsers.length)}
-                        </span>{' '}
-                        of{' '}
-                        <span className="font-medium">{filteredUsers.length}</span> results
+                          {Math.min(
+                            pagination.page * pagination.limit,
+                            filteredUsers.length,
+                          )}
+                        </span>{" "}
+                        of{" "}
+                        <span className="font-medium">
+                          {filteredUsers.length}
+                        </span>{" "}
+                        results
                       </p>
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                        onClick={() =>
+                          setPagination((prev) => ({
+                            ...prev,
+                            page: Math.max(1, prev.page - 1),
+                          }))
+                        }
                         disabled={pagination.page === 1}
                         className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Previous
                       </button>
                       <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+                        onClick={() =>
+                          setPagination((prev) => ({
+                            ...prev,
+                            page: Math.min(totalPages, prev.page + 1),
+                          }))
+                        }
                         disabled={pagination.page === totalPages}
                         className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >

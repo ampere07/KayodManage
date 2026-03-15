@@ -1,6 +1,115 @@
 const mongoose = require('mongoose');
 const CredentialVerification = require('../models/CredentialVerification');
 const User = require('../models/User');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary once (expects env vars)
+if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+}
+
+const sanitizeName = (value = '') => value.replace(/[^a-zA-Z0-9]/g, '');
+
+const getUserFolder = (user) => {
+  const parts = (user?.name || '').trim().split(/\s+/).filter(Boolean);
+  let first = 'User';
+  let last = '';
+  if (parts.length >= 2) {
+    first = sanitizeName(parts[0]);
+    last = sanitizeName(parts[parts.length - 1]);
+  } else if (parts.length === 1) {
+    first = sanitizeName(parts[0]);
+  }
+  return last ? `${first}_${last}` : first;
+};
+
+const mapCloudinaryAssetsToDocuments = (resources = []) => {
+  const faceVerification = [];
+  const validId = [];
+  const credentials = [];
+
+  resources.forEach((res, idx) => {
+    const doc = {
+      cloudinaryUrl: res.secure_url,
+      publicId: res.public_id,
+      uploadedAt: res.created_at
+    };
+
+    const basename = res.public_id.split('/').pop() || '';
+
+    if (basename.startsWith('face_')) {
+      faceVerification.push(doc);
+      return;
+    }
+
+    if (basename.startsWith('frontID_')) {
+      validId[0] = { ...doc, type: 'front' };
+      return;
+    }
+
+    if (basename.startsWith('backID_')) {
+      validId[1] = { ...doc, type: 'back' };
+      return;
+    }
+
+    // Anything else treat as credential
+    credentials.push(doc);
+  });
+
+  // If no prefix matches, map first items by position for usability
+  if (faceVerification.length === 0 && resources.length > 0) {
+    faceVerification.push({
+      cloudinaryUrl: resources[0].secure_url,
+      publicId: resources[0].public_id,
+      uploadedAt: resources[0].created_at
+    });
+  }
+
+  // If only one face image, position it as the center (front) slot
+  if (faceVerification.length === 1) {
+    faceVerification.splice(0, 0, null);
+    faceVerification.push(null);
+  }
+
+  if (validId.length === 0 && resources.length > 1) {
+    validId[0] = {
+      cloudinaryUrl: resources[resources.length > 2 ? 1 : 1].secure_url,
+      publicId: resources[resources.length > 2 ? 1 : 1].public_id,
+      uploadedAt: resources[resources.length > 2 ? 1 : 1].created_at,
+      type: 'front'
+    };
+  }
+
+  if (validId.length <= 1 && resources.length > 2) {
+    validId[1] = {
+      cloudinaryUrl: resources[2].secure_url,
+      publicId: resources[2].public_id,
+      uploadedAt: resources[2].created_at,
+      type: 'back'
+    };
+  }
+
+  // Remaining go to credentials
+  if (resources.length > 3 && credentials.length === 0) {
+    resources.slice(3).forEach((res) => {
+      credentials.push({
+        cloudinaryUrl: res.secure_url,
+        publicId: res.public_id,
+        uploadedAt: res.created_at
+      });
+    });
+  }
+
+  return {
+    faceVerification,
+    validId,
+    credentials
+  };
+};
 
 /**
  * Verification Service
@@ -257,19 +366,83 @@ class VerificationService {
   /**
    * Get user images from latest verification
    */
-  async getUserImages(userId) {
+  async getUserImages(userId, attemptNumber) {
+    // Prefer Cloudinary folder listing when configured; fallback to DB
+    const attemptNum = attemptNumber || null;
+
+    // Load all attempts for timestamps and DB fallback
     const verifications = await CredentialVerification.find({ userId })
-      .sort({ submittedAt: -1 })
-      .limit(1)
+      .sort({ submittedAt: 1 })
       .lean();
 
     if (!verifications || verifications.length === 0) {
       return null;
     }
 
-    const verification = verifications[0];
+    const attemptTimestamps = verifications.map((v, idx) => {
+      const submittedAtFromAttempts = Array.isArray(v.attempts) && v.attempts.length > 0
+        ? v.attempts.find((a) => a.attemptNumber === idx + 1)?.submittedAt
+        : null;
+      return {
+        attempt: idx + 1,
+        submittedAt: submittedAtFromAttempts || v.submittedAt || v.createdAt
+      };
+    });
+
+    const attemptIndex = attemptNum
+      ? Math.max(0, Math.min(verifications.length - 1, attemptNum - 1))
+      : verifications.length - 1;
+    const attemptSubmittedAt = attemptTimestamps[attemptIndex]?.submittedAt || null;
+    // Use the requested attempt number if provided; otherwise fall back to the index-derived attempt
+    const attemptSuffix = attemptNum || (attemptTimestamps[attemptIndex]?.attempt ?? attemptIndex + 1);
+
+    // Try Cloudinary if credentials exist
+    if (cloudinary.config()?.cloud_name) {
+      const user = await User.findById(userId).lean();
+      if (user) {
+        const folder = getUserFolder(user);
+        const prefix = `verificationUpload/${folder}/Attempt${attemptSuffix}`;
+
+        try {
+          console.log('[VerificationImages] Fetching from Cloudinary', {
+            userId,
+            userName: user.name,
+            attempt: attemptSuffix,
+            prefix
+          });
+          const { resources } = await cloudinary.search
+            .expression(`folder:${prefix}`)
+            .sort_by('public_id', 'asc')
+            .max_results(100)
+            .execute();
+
+          if (resources && resources.length > 0) {
+            console.log('[VerificationImages] Cloudinary resources found', resources.length, resources.map((r) => r.public_id));
+            return {
+              userId,
+              attemptNumber: attemptSuffix,
+              attemptSubmittedAt,
+              attemptTimestamps,
+              images: mapCloudinaryAssetsToDocuments(resources)
+            };
+          }
+          console.log('[VerificationImages] No Cloudinary resources found, falling back to DB');
+        } catch (err) {
+          console.error('Cloudinary fetch failed, falling back to DB:', err.message);
+        }
+      }
+    }
+
+    // Fallback: fetch stored verification documents
+    console.log('[VerificationImages] Using DB fallback for user', { userId, attempt: attemptNum });
+
+    const verification = verifications[attemptIndex];
+
     return {
       userId,
+      attemptNumber: attemptIndex + 1,
+      attemptSubmittedAt,
+      attemptTimestamps,
       images: {
         faceVerification: verification.faceVerification,
         validId: verification.validId,

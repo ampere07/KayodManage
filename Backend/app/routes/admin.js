@@ -51,6 +51,7 @@ router.get('/verifications/user/:userId', adminAuth, getVerificationByUserId);
 router.get('/verifications/:verificationId', adminAuth, getVerificationById);
 router.patch('/verifications/:verificationId', adminAuth, updateVerificationStatus);
 
+// Optional query param: ?attempt=1 (1-based)
 router.get('/users/:userId/images', adminAuth, getUserImages);
 
 router.get('/activity-logs', adminAuth, getActivityLogs);
