@@ -214,12 +214,14 @@ const Transactions: React.FC = () => {
                   ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
                   : category === 'withdrawal'
                     ? 'Monitor and manage user withdrawal requests to external payment methods'
-                    : `${pagination.total} total transactions`
+                    : category === 'refund_request'
+                      ? 'Review and process user refund requests for job payments'
+                      : `${pagination.total} total transactions`
               }
             </p>
           </div>
 
-          {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
+          {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
             <div className="hidden md:flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1.5">
                 <CheckCircle className="h-4 w-4 text-green-600" />
@@ -747,6 +749,130 @@ const Transactions: React.FC = () => {
           </div>
         )}
 
+        {/* Refund Status Counters */}
+        {category === 'refund_request' && (
+          <div className="mb-4">
+            {/* Mobile: Compact Grid */}
+            <div className="grid grid-cols-2 gap-2 md:hidden">
+              <div
+                onClick={() => {
+                  setStatusFilter('all');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-orange-50 ${statusFilter === 'all' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm font-medium text-gray-700">All</span>
+                </div>
+                <span className="text-sm font-bold text-orange-700">{statusCounts.total.toLocaleString()}</span>
+              </div>
+              <div
+                onClick={() => {
+                  setStatusFilter('completed');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 ${statusFilter === 'completed' ? 'border-green-400 ring-2 ring-green-300' : 'border-green-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium text-gray-700">Approved</span>
+                </div>
+                <span className="text-sm font-bold text-green-700">{statusCounts.completed.toLocaleString()}</span>
+              </div>
+              <div
+                onClick={() => {
+                  setStatusFilter('pending');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 ${statusFilter === 'pending' ? 'border-yellow-400 ring-2 ring-yellow-300' : 'border-yellow-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-yellow-600" />
+                  <span className="text-sm font-medium text-gray-700">Pending</span>
+                </div>
+                <span className="text-sm font-bold text-yellow-700">{statusCounts.pending.toLocaleString()}</span>
+              </div>
+              <div
+                onClick={() => {
+                  setStatusFilter('failed');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 ${statusFilter === 'failed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-600" />
+                  <span className="text-sm font-medium text-gray-700">Denied</span>
+                </div>
+                <span className="text-sm font-bold text-red-700">{statusCounts.failed.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Desktop: Grid Layout */}
+            <div className="hidden md:grid grid-cols-4 gap-3">
+              <div
+                onClick={() => {
+                  setStatusFilter('all');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-orange-600">All</span>
+                  <CreditCard className="h-4 w-4 text-orange-600" />
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-orange-900">{statusCounts.total.toLocaleString()}</p>
+              </div>
+
+              <div
+                onClick={() => {
+                  setStatusFilter('completed');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'completed' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-green-600">Approved</span>
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-green-900">{statusCounts.completed.toLocaleString()}</p>
+              </div>
+
+              <div
+                onClick={() => {
+                  setStatusFilter('pending');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-yellow-600">Pending</span>
+                  <Clock className="h-4 w-4 text-yellow-600" />
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-yellow-900">{statusCounts.pending.toLocaleString()}</p>
+              </div>
+
+              <div
+                onClick={() => {
+                  setStatusFilter('failed');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'failed' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-red-600">Denied</span>
+                  <XCircle className="h-4 w-4 text-red-600" />
+                </div>
+                <p className="text-xl sm:text-2xl font-bold text-red-900">{statusCounts.failed.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="space-y-3">
           <div className="flex flex-col md:flex-row gap-3">
@@ -772,7 +898,7 @@ const Transactions: React.FC = () => {
             </div>
 
             <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-              {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
+              {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
@@ -844,7 +970,7 @@ const Transactions: React.FC = () => {
                       <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Date
                       </th>
-                      {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
+                      {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
                         <th className="w-[10%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                           Actions
                         </th>
@@ -975,7 +1101,7 @@ const Transactions: React.FC = () => {
                                 </div>
                               </div>
                             </td>
-                            {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && (
+                            {category !== 'fee_record' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
                               <td className="px-6 py-4">
                                 <div className="flex items-center justify-center gap-2">
                                   {transaction.status === 'pending' &&
@@ -1020,7 +1146,7 @@ const Transactions: React.FC = () => {
                           </tr>
                           {index < transactions.length - 1 && (
                             <tr>
-                              <td colSpan={category === 'fee_record' || category === 'wallet_topup' || category === 'withdrawal' ? 6 : 7} className="p-0">
+                              <td colSpan={category === 'fee_record' || category === 'wallet_topup' || category === 'withdrawal' || category === 'refund_request' ? 6 : 7} className="p-0">
                                 <div className="border-b border-gray-200" />
                               </td>
                             </tr>

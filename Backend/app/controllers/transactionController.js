@@ -16,9 +16,14 @@ const getTransactions = async (req, res) => {
     const paymentMethod = req.query.paymentMethod;
     const dateFrom = req.query.dateFrom;
     const dateTo = req.query.dateTo;
+    const jobId = req.query.jobId;
     const includeFeatures = req.query.includeFees === 'true';
     
     let query = {};
+    
+    if (jobId) {
+      query.jobId = jobId;
+    }
     let dateQuery = {};
     
     // Search functionality
@@ -616,7 +621,9 @@ const approveRefund = async (req, res) => {
   try {
     const { transactionId } = req.params;
     
-    const transaction = await Transaction.findById(transactionId);
+    const transaction = await Transaction.findById(transactionId)
+      .populate('fromUser', 'name')
+      .populate('fromUserId', 'name');
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
@@ -653,19 +660,14 @@ const approveRefund = async (req, res) => {
     const clientId = transaction.fromUser || transaction.fromUserId;
     
     // Update Client's Wallet (Add back to availableBalance)
+    // Use atomic findOneAndUpdate to avoid Mongoose schema validation issues
+    // (kayod server uses 'userId', KayodManage uses 'user' — both map to the same collection)
     if (clientId && refundAmount > 0) {
-      let clientWallet = await Wallet.findOne({ $or: [{ user: clientId }, { userId: clientId }] });
-      if (clientWallet) {
-        clientWallet.balance += refundAmount;
-        clientWallet.availableBalance += refundAmount;
-        await clientWallet.save();
-      } else {
-        await Wallet.findOneAndUpdate(
-          { $or: [{ user: clientId }, { userId: clientId }] },
-          { $inc: { balance: refundAmount, availableBalance: refundAmount } },
-          { upsert: true }
-        );
-      }
+      const clientResult = await Wallet.collection.findOneAndUpdate(
+        { $or: [{ user: clientId }, { userId: clientId }] },
+        { $inc: { availableBalance: refundAmount } }
+      );
+      console.log('[approveRefund] Client wallet update result:', clientResult ? 'found & updated' : 'NOT FOUND', 'clientId:', clientId);
     }
     
     // Process Job update and Provider's incoming funds
@@ -677,18 +679,11 @@ const approveRefund = async (req, res) => {
        
        // If the job has a provider assigned to it, deduct their incoming funds
        if (job.assignedToId && refundAmount > 0) {
-         let providerWallet = await Wallet.findOne({ $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] });
-         
-         if (providerWallet) {
-           // We deduct from balance (Incoming Funds) but NOT availableBalance
-           providerWallet.balance = Math.max(0, providerWallet.balance - refundAmount);
-           await providerWallet.save();
-         } else {
-           await Wallet.findOneAndUpdate(
-             { $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] },
-             { $inc: { balance: -refundAmount } }
-           );
-         }
+         const providerResult = await Wallet.collection.findOneAndUpdate(
+           { $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] },
+           { $inc: { balance: -refundAmount } }
+         );
+         console.log('[approveRefund] Provider wallet update result:', providerResult ? 'found & updated' : 'NOT FOUND', 'providerId:', job.assignedToId);
          
          // Additionally, mark any pending escrow_payment transactions to this provider for this job as cancelled
          await Transaction.updateMany(
@@ -704,10 +699,13 @@ const approveRefund = async (req, res) => {
     }
     
     if (req.user && req.user.id) {
+      const requester = transaction.fromUser || transaction.fromUserId;
+      const userName = requester?.name || 'user';
+      
       await logActivity(
         req.user.id,
         'transaction_completed',
-        `Approved refund request for transaction ${transactionId}`,
+        `Approved refund request of ${userName}`,
         {
           targetType: 'transaction',
           targetId: transactionId,
@@ -735,7 +733,9 @@ const declineRefund = async (req, res) => {
   try {
     const { transactionId } = req.params;
     
-    const transaction = await Transaction.findById(transactionId);
+    const transaction = await Transaction.findById(transactionId)
+      .populate('fromUser', 'name')
+      .populate('fromUserId', 'name');
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
@@ -755,10 +755,13 @@ const declineRefund = async (req, res) => {
     await transaction.save();
     
     if (req.user && req.user.id) {
+      const requester = transaction.fromUser || transaction.fromUserId;
+      const userName = requester?.name || 'user';
+      
       await logActivity(
         req.user.id,
         'transaction_failed',
-        `Declined refund request for transaction ${transactionId}`,
+        `Declined refund request of ${userName}`,
         {
           targetType: 'transaction',
           targetId: transactionId,

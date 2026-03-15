@@ -337,33 +337,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50 flex-wrap gap-3">
-              {isRefundRequest && (
-                <div className="flex gap-2">
+            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+              {isRefundRequest ? (
+                <>
                   <button
-                    onClick={() => declineMutation.mutate()}
-                    disabled={declineMutation.isPending || approveMutation.isPending}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
                   >
-                    <XCircle className="h-4 w-4" />
-                    Decline
+                    Close
                   </button>
-                  <button
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending || declineMutation.isPending}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    Approve & Refund
-                  </button>
-                </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => declineMutation.mutate()}
+                      disabled={declineMutation.isPending || approveMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending || declineMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Approve & Refund
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={onClose}
+                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
               )}
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-200 transition-colors"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>
@@ -507,33 +516,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
-              {isRefundRequest && (
-                <div className="flex gap-2 justify-center mb-4">
+            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+              {isRefundRequest ? (
+                <>
                   <button
-                    onClick={() => declineMutation.mutate()}
-                    disabled={declineMutation.isLoading || approveMutation.isLoading || !isPendingRefund}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
                   >
-                    <XCircle className="h-4 w-4" />
-                    Decline
+                    Close
                   </button>
-                  <button
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isLoading || declineMutation.isLoading || !isPendingRefund}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    Approve & Refund
-                  </button>
-                </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => declineMutation.mutate()}
+                      disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Approve & Refund
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={onClose}
+                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
               )}
-              <button
-                onClick={onClose}
-                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>
@@ -712,33 +730,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
           </div>
 
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
-            {isRefundRequest && (
-              <div className="flex gap-2 justify-center mb-4">
+          <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+            {isRefundRequest ? (
+              <>
                 <button
-                  onClick={() => declineMutation.mutate()}
-                  disabled={declineMutation.isLoading || approveMutation.isLoading || !isPendingRefund}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                  onClick={onClose}
+                  className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
                 >
-                  <XCircle className="h-4 w-4" />
-                  Decline
+                  Close
                 </button>
-                <button
-                  onClick={() => approveMutation.mutate()}
-                  disabled={approveMutation.isLoading || declineMutation.isLoading || !isPendingRefund}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
-                >
-                  <CheckCircle className="h-4 w-4" />
-                  Approve & Refund
-                </button>
-              </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => declineMutation.mutate()}
+                    disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Decline
+                  </button>
+                  <button
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    Approve & Refund
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Close
+              </button>
             )}
-            <button
-              onClick={onClose}
-              className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              Close
-            </button>
           </div>
         </div>
       </div>

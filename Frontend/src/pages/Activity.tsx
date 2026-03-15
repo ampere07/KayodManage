@@ -38,6 +38,8 @@ interface TargetInfo {
   email?: string;
   title?: string;
   subject?: string;
+  description?: string;
+  type?: string;
 }
 
 interface ActivityLog {
@@ -243,12 +245,26 @@ const Activity: React.FC = () => {
   };
 
   const handleActivityClick = useCallback(async (activity: ActivityLog) => {
-    if (!activity.targetId || !activity.targetType) return;
+    // Determine target from either targetId or metadata/description if targetId is missing
+    let targetType = activity.targetType;
+    let targetId = typeof activity.targetId === 'object' ? activity.targetId?._id : activity.targetId;
+
+    // Fallback detection for refund/transaction actions if targetType is missing
+    if (!targetType && (activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed')) {
+      targetType = 'transaction';
+      // Try to extract ID from description if targetId is missing
+      if (!targetId) {
+        const idMatch = activity.description.match(/[a-f\d]{24}/i);
+        if (idMatch) targetId = idMatch[0];
+      }
+    }
+
+    if (!targetId || !targetType) return;
 
     try {
-      switch (activity.targetType) {
+      switch (targetType) {
         case 'user':
-          const user = await usersService.getUserById(activity.targetId._id);
+          const user = await usersService.getUserById(targetId);
           if (user) {
             setSelectedUser(user);
             setUserModalOpen(true);
@@ -256,9 +272,9 @@ const Activity: React.FC = () => {
           break;
 
         case 'transaction':
-          const transactionResponse = await transactionsService.getTransactionById(activity.targetId._id);
-          if (transactionResponse?.transaction) {
-            setSelectedTransaction(transactionResponse.transaction);
+          const transaction = await transactionsService.getTransactionById(targetId);
+          if (transaction) {
+            setSelectedTransaction(transaction as any);
             setTransactionModalOpen(true);
           }
           break;
@@ -282,7 +298,7 @@ const Activity: React.FC = () => {
   }, [navigate]);
 
   const filteredActivities = useMemo(() => {
-    return activities.filter(activity => {
+    return activities.filter((activity: ActivityLog) => {
       const matchesSearch =
         (activity.adminId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
         activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -314,8 +330,8 @@ const Activity: React.FC = () => {
   const totalPages = Math.ceil(filteredActivities.length / pagination.limit);
 
   const totalActivityLogs = activities.length;
-  const userActivityLogs = activities.filter(activity => USER_ACTIONS.includes(activity.actionType)).length;
-  const systemActivityLogs = activities.filter(activity => SYSTEM_ACTIONS.includes(activity.actionType)).length;
+  const userActivityLogs = activities.filter((activity: ActivityLog) => USER_ACTIONS.includes(activity.actionType)).length;
+  const systemActivityLogs = activities.filter((activity: ActivityLog) => SYSTEM_ACTIONS.includes(activity.actionType)).length;
 
   // Handle activity ID from URL parameter
   useEffect(() => {
@@ -323,14 +339,14 @@ const Activity: React.FC = () => {
     if (activityId && activities.length > 0 && !highlightedActivityId) {
       console.log('Processing activity ID from URL:', activityId);
       // Find the activity
-      const activity = activities.find(a => a._id === activityId);
+      const activity = activities.find((a: ActivityLog) => a._id === activityId);
       if (activity) {
         console.log('Activity found:', activity);
         // Set as highlighted
         setHighlightedActivityId(activityId);
 
         // Find which page this activity is on
-        const activityIndex = filteredActivities.findIndex(a => a._id === activityId);
+        const activityIndex = filteredActivities.findIndex((a: ActivityLog) => a._id === activityId);
         console.log('Activity index in filtered list:', activityIndex);
         if (activityIndex !== -1) {
           const targetPage = Math.floor(activityIndex / pagination.limit) + 1;
@@ -366,7 +382,7 @@ const Activity: React.FC = () => {
 
           // After scrolling, open the modal for this activity
           setTimeout(() => {
-            const activity = activities.find(a => a._id === activityId);
+            const activity = activities.find((a: ActivityLog) => a._id === activityId);
             if (activity) {
               console.log('Opening modal for activity:', activity);
               handleActivityClick(activity);
@@ -561,7 +577,7 @@ const Activity: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedActivities.map((activity) => (
+                    {paginatedActivities.map((activity: ActivityLog) => (
                       <tr
                         key={activity._id}
                         ref={(el) => {
@@ -580,10 +596,11 @@ const Activity: React.FC = () => {
                           }
                         }}
                         onClick={() => handleActivityClick(activity)}
-                        className={`transition-all duration-200 ${activity.targetId && activity.targetType
+                        className={`transition-all duration-200 ${(activity.targetId && activity.targetType) ||
+                          ((activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed') && activity.description.match(/[a-f\d]{24}/i))
                           ? 'hover:bg-gray-100 cursor-pointer'
                           : 'hover:bg-gray-50'
-                          } ${highlightedActivityId === activity._id
+                        } ${highlightedActivityId === activity._id
                             ? 'bg-yellow-100 ring-2 ring-yellow-400'
                             : ''
                           }`}
@@ -619,19 +636,36 @@ const Activity: React.FC = () => {
                           <div className="text-sm text-gray-900 max-w-[300px]">{formatDescriptionWithDuration(activity)}</div>
                         </td>
                         <td className="px-6 py-4">
-                          {activity.targetId && (
-                            <div className="text-sm">
-                              <div className="font-medium text-gray-900 truncate max-w-[200px] flex items-center gap-2">
-                                {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
-                                {activity.targetType && (
-                                  <MousePointerClick className="h-3 w-3 text-blue-600" />
-                                )}
-                              </div>
-                              {activity.targetId.email && (
-                                <div className="text-xs text-gray-500 truncate max-w-[200px]">{activity.targetId.email}</div>
-                              )}
-                            </div>
-                          )}
+                          {(() => {
+                            const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
+                            const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
+                            const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
+
+                            if (activity.targetId || showTransactionTarget) {
+                              return (
+                                <div className="text-sm">
+                                  <div className="font-medium text-gray-900 truncate max-w-[200px] flex items-center gap-2">
+                                    {typeof activity.targetId === 'object' && activity.targetId !== null ? (
+                                      activity.targetId.name ||
+                                      activity.targetId.title ||
+                                      activity.targetId.subject ||
+                                      activity.targetId.description ||
+                                      ((activity.targetType === 'transaction' || isTransactionAction) ? 'Transaction' : 'Target')
+                                    ) : (
+                                      (activity.targetType === 'transaction' || showTransactionTarget || isTransactionAction) ? 'Transaction' : 'N/A'
+                                    )}
+                                    {(activity.targetType || showTransactionTarget || isTransactionAction) && (
+                                      <MousePointerClick className="h-3 w-3 text-blue-600" />
+                                    )}
+                                  </div>
+                                  {activity.targetId?.email && (
+                                    <div className="text-xs text-gray-500 truncate max-w-[200px]">{activity.targetId.email}</div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-xs text-gray-500">
@@ -649,7 +683,7 @@ const Activity: React.FC = () => {
               </div>
 
               <div className="md:hidden px-4 py-4 space-y-3">
-                {paginatedActivities.map((activity) => (
+                {paginatedActivities.map((activity: ActivityLog) => (
                   <div
                     key={activity._id}
                     ref={(el) => {
@@ -696,39 +730,50 @@ const Activity: React.FC = () => {
                       </div>
                     </div>
 
-                    {!activity.targetId && (
-                      <div className="mb-3">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
-                          }`}>
-                          {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
-                          {ACTION_LABELS[activity.actionType] || activity.actionType}
-                        </span>
-                      </div>
-                    )}
+                    {(() => {
+                      const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
+                      const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
+                      const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
 
-                    <p className="text-sm text-gray-900 mb-3">{formatDescriptionWithDuration(activity)}</p>
+                      return (
+                        <>
+                          <div className="mb-3">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                              }`}>
+                              {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
+                              {ACTION_LABELS[activity.actionType] || activity.actionType}
+                            </span>
+                          </div>
 
-                    {activity.targetId && (
-                      <div className="mb-3 pb-3 border-b border-gray-100">
-                        <p className="text-xs text-gray-500 mb-1">Target:</p>
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2 flex-1">
-                            {activity.targetId.name || activity.targetId.title || activity.targetId.subject || 'N/A'}
-                            {activity.targetType && (
-                              <MousePointerClick className="h-3 w-3 text-blue-600" />
-                            )}
-                          </p>
-                          <span className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
-                            }`}>
-                            {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-3 w-3" />}
-                            {ACTION_LABELS[activity.actionType] || activity.actionType}
-                          </span>
-                        </div>
-                        {activity.targetId.email && (
-                          <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
-                        )}
-                      </div>
-                    )}
+                          <p className="text-sm text-gray-900 mb-3">{formatDescriptionWithDuration(activity)}</p>
+
+                          {(activity.targetId || showTransactionTarget) && (
+                            <div className="mb-3 pb-3 border-b border-gray-100">
+                              <p className="text-xs text-gray-500 mb-1">Target:</p>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2 flex-1">
+                                  {typeof activity.targetId === 'object' && activity.targetId !== null ? (
+                                    activity.targetId.name ||
+                                    activity.targetId.title ||
+                                    activity.targetId.subject ||
+                                    activity.targetId.description ||
+                                    ((activity.targetType === 'transaction' || isTransactionAction) ? 'Transaction' : 'Target')
+                                  ) : (
+                                    (activity.targetType === 'transaction' || showTransactionTarget || isTransactionAction) ? 'Transaction' : 'N/A'
+                                  )}
+                                  {(activity.targetType || showTransactionTarget || isTransactionAction) && (
+                                    <MousePointerClick className="h-3 w-3 text-blue-600" />
+                                  )}
+                                </p>
+                              </div>
+                              {activity.targetId?.email && (
+                                <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Calendar className="h-3 w-3" />
@@ -795,7 +840,7 @@ const Activity: React.FC = () => {
             toast.error('Failed to update verification');
           }
         }}
-        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number) => {
+        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number) => {
           try {
             switch (actionType) {
               case 'ban':
