@@ -85,7 +85,7 @@ const Transactions: React.FC = () => {
     if (path.includes('fee-records')) return 'fee_record';
     if (path.includes('top-up')) return 'wallet_topup';
     if (path.includes('cashout')) return 'withdrawal';
-    if (path.includes('refund')) return 'refund';
+    if (path.includes('refund')) return 'refund_request';
     return 'all';
   };
 
@@ -107,6 +107,8 @@ const Transactions: React.FC = () => {
       params.includeFees = 'true';
     } else if (category === 'wallet_topup') {
       params.type = 'xendit_topup';
+    } else if (category === 'refund_request') {
+      params.type = 'refund_request';
     } else if (category !== 'all') {
       params.type = category;
     } else {
@@ -116,7 +118,13 @@ const Transactions: React.FC = () => {
     return params;
   }, [pagination.page, pagination.limit, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo, category]);
 
-  const transactionType = category === 'wallet_topup' ? 'xendit_topup' : category === 'fee_record' ? 'fee_record' : category;
+  const transactionType = category === 'wallet_topup'
+    ? 'xendit_topup'
+    : category === 'fee_record'
+      ? 'fee_record'
+      : category === 'refund_request'
+        ? 'refund_request'
+        : category;
 
   const { data: transactionsData, isLoading, refetch } = useTransactions(queryParams);
   const { data: statusCounts = { total: 0, pending: 0, completed: 0, failed: 0, cancelled: 0 } } = useTransactionCounts(transactionType);

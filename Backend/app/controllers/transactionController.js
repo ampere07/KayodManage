@@ -67,7 +67,20 @@ const getTransactions = async (req, res) => {
       .populate('toUser', 'name email phone location profileImage')
       .populate('fromUserId', 'name email phone location profileImage')
       .populate('toUserId', 'name email phone location profileImage')
-      .populate('jobId', 'title category')
+      .populate({
+        path: 'jobId',
+        select: 'title category userId assignedToId budget',
+        populate: [
+          {
+            path: 'userId',
+            select: 'name email phone location userType profileImage'
+          },
+          {
+            path: 'assignedToId',
+            select: 'name email phone location userType profileImage'
+          }
+        ]
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -329,7 +342,20 @@ const getTransactionDetails = async (req, res) => {
         .populate('toUser', 'name email phone location profileImage')
         .populate('fromUserId', 'name email phone location profileImage')
         .populate('toUserId', 'name email phone location profileImage')
-        .populate('jobId', 'title description category')
+        .populate({
+          path: 'jobId',
+          select: 'title description category userId assignedToId budget',
+          populate: [
+            {
+              path: 'userId',
+              select: 'name email phone location userType profileImage'
+            },
+            {
+              path: 'assignedToId',
+              select: 'name email phone location userType profileImage'
+            }
+          ]
+        })
         .lean();
       
       if (transactionData) {
@@ -471,7 +497,20 @@ const updateTransactionStatus = async (req, res) => {
     .populate('toUser', 'name email phone location')
     .populate('fromUserId', 'name email phone location')
     .populate('toUserId', 'name email phone location')
-    .populate('jobId', 'title category')
+    .populate({
+      path: 'jobId',
+      select: 'title category userId assignedToId budget',
+      populate: [
+        {
+          path: 'userId',
+          select: 'name email phone location userType profileImage'
+        },
+        {
+          path: 'assignedToId',
+          select: 'name email phone location userType profileImage'
+        }
+      ]
+    })
     .lean();
     
     if (updatedTransaction) {
@@ -573,9 +612,181 @@ const getTransactionStats = async (req, res) => {
   }
 };
 
+const approveRefund = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.type !== 'refund_request' && transaction.type !== 'refund') {
+      return res.status(400).json({ error: 'Transaction is not a refund request' });
+    }
+    
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({ error: `Transaction is already ${transaction.status}` });
+    }
+    
+    // Determine the actual refund amount — use transaction.amount if set,
+    // otherwise fall back to the job's escrowAmount / agreedPrice / budget
+    let refundAmount = transaction.amount || 0;
+    let job = null;
+    
+    if (transaction.jobId) {
+      job = await Job.findById(transaction.jobId);
+    }
+    
+    if (refundAmount === 0 && job) {
+      refundAmount = job.escrowAmount || job.agreedPrice || job.budget || 0;
+      // Also update the transaction's amount so the record is correct
+      transaction.amount = refundAmount;
+    }
+    
+    transaction.status = 'completed';
+    transaction.completedAt = new Date();
+    transaction.refundStatus = 'approved';
+    await transaction.save();
+
+    const Wallet = require('../models/Wallet');
+    const clientId = transaction.fromUser || transaction.fromUserId;
+    
+    // Update Client's Wallet (Add back to availableBalance)
+    if (clientId && refundAmount > 0) {
+      let clientWallet = await Wallet.findOne({ $or: [{ user: clientId }, { userId: clientId }] });
+      if (clientWallet) {
+        clientWallet.balance += refundAmount;
+        clientWallet.availableBalance += refundAmount;
+        await clientWallet.save();
+      } else {
+        await Wallet.findOneAndUpdate(
+          { $or: [{ user: clientId }, { userId: clientId }] },
+          { $inc: { balance: refundAmount, availableBalance: refundAmount } },
+          { upsert: true }
+        );
+      }
+    }
+    
+    // Process Job update and Provider's incoming funds
+    if (job) {
+       await Job.findByIdAndUpdate(transaction.jobId, {
+         $inc: { escrowAmount: -refundAmount },
+         paymentStatus: 'refunded'
+       });
+       
+       // If the job has a provider assigned to it, deduct their incoming funds
+       if (job.assignedToId && refundAmount > 0) {
+         let providerWallet = await Wallet.findOne({ $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] });
+         
+         if (providerWallet) {
+           // We deduct from balance (Incoming Funds) but NOT availableBalance
+           providerWallet.balance = Math.max(0, providerWallet.balance - refundAmount);
+           await providerWallet.save();
+         } else {
+           await Wallet.findOneAndUpdate(
+             { $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] },
+             { $inc: { balance: -refundAmount } }
+           );
+         }
+         
+         // Additionally, mark any pending escrow_payment transactions to this provider for this job as cancelled
+         await Transaction.updateMany(
+           {
+             jobId: transaction.jobId,
+             $or: [{ toUser: job.assignedToId }, { toUserId: job.assignedToId }],
+             type: 'escrow_payment',
+             status: 'pending'
+           },
+           { status: 'cancelled' }
+         );
+       }
+    }
+    
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'transaction_completed',
+        `Approved refund request for transaction ${transactionId}`,
+        {
+          targetType: 'transaction',
+          targetId: transactionId,
+          targetModel: 'Transaction',
+          metadata: { amount: refundAmount, type: transaction.type },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('transaction:updated', {
+      transaction: transaction,
+      updateType: 'approved refund'
+    });
+    
+    res.json({ success: true, message: 'Refund approved successfully', transaction });
+  } catch (error) {
+    console.error('Error approving refund:', error);
+    res.status(500).json({ error: 'Failed to approve refund' });
+  }
+};
+
+const declineRefund = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.type !== 'refund_request' && transaction.type !== 'refund') {
+      return res.status(400).json({ error: 'Transaction is not a refund request' });
+    }
+    
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({ error: `Transaction is already ${transaction.status}` });
+    }
+    
+    transaction.status = 'failed';
+    transaction.failedAt = new Date();
+    transaction.failureReason = 'Declined by admin';
+    transaction.refundStatus = 'declined';
+    await transaction.save();
+    
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'transaction_failed',
+        `Declined refund request for transaction ${transactionId}`,
+        {
+          targetType: 'transaction',
+          targetId: transactionId,
+          targetModel: 'Transaction',
+          metadata: { amount: transaction.amount, type: transaction.type },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('transaction:updated', {
+      transaction: transaction,
+      updateType: 'declined refund'
+    });
+    
+    res.json({ success: true, message: 'Refund declined successfully', transaction });
+  } catch (error) {
+    console.error('Error declining refund:', error);
+    res.status(500).json({ error: 'Failed to decline refund' });
+  }
+};
+
 module.exports = { 
   getTransactions, 
   getTransactionDetails, 
   updateTransactionStatus,
-  getTransactionStats 
+  getTransactionStats,
+  approveRefund,
+  declineRefund
 };

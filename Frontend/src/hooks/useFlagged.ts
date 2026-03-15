@@ -18,8 +18,12 @@ export const useReports = (params?: {
   return useQuery({
     queryKey: [REPORTS_QUERY_KEY, params],
     queryFn: async () => {
-      const response = await flaggedService.getAllReports(params);
-      return response.data;
+      const response = await flaggedService.getAllReportedPosts(params);
+      return {
+        reports: (response as any).reportedPosts || [],
+        stats: (response as any).stats || { total: 0, pending: 0, reviewed: 0, resolved: 0, dismissed: 0 },
+        pagination: (response as any).pagination,
+      };
     },
     staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,

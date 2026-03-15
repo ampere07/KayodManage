@@ -32,6 +32,7 @@ const TransactionSchema = new Schema({
       'wallet_topup', 
       'fee_payment', 
       'refund', 
+      'refund_request',
       'platform_fee',
       'withdrawal',
       'xendit_topup',
@@ -103,6 +104,11 @@ const TransactionSchema = new Schema({
   failureReason: {
     type: String,
     trim: true
+  },
+  refundStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'declined'],
+    default: 'pending'
   }
 }, {
   timestamps: true,

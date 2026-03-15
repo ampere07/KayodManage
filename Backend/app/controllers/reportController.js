@@ -1,4 +1,5 @@
 const Report = require("../models/Report");
+const ReportedPost = require("../models/ReportedPost");
 const User = require("../models/User");
 
 // Create a new report
@@ -72,6 +73,132 @@ exports.createReport = async (req, res) => {
       message: "Failed to submit report",
       error: error.message
     });
+  }
+};
+
+// Admin: update status for ReportedPost
+exports.updateReportedPostStatus = async (req, res) => {
+  try {
+    const { status, adminNotes } = req.body;
+    const { reportId } = req.params;
+    const adminId = req.user.id;
+
+    const allowed = ["pending", "reviewed", "resolved", "dismissed"];
+    if (status && !allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    const report = await ReportedPost.findById(reportId);
+    if (!report) {
+      return res.status(404).json({ success: false, message: "Reported post not found" });
+    }
+
+    if (status) {
+      report.status = status;
+      report.reviewedBy = adminId;
+      report.reviewedAt = new Date();
+    }
+    if (adminNotes !== undefined) {
+      report.adminNotes = adminNotes;
+    }
+
+    await report.save();
+
+    const updated = await ReportedPost.findById(reportId)
+      .populate("jobId", "title description category budget budgetType paymentMethod location media createdAt status")
+      .populate("reportedBy", "name email userType")
+      .populate("jobPosterId", "name email userType")
+      .populate("reportedUserId", "name email userType")
+      .lean();
+
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("updateReportedPostStatus error", error);
+    return res.status(500).json({ success: false, message: "Failed to update reported post" });
+  }
+};
+
+// Admin: list reported posts (ReportedPost collection)
+exports.getAllReportedPosts = async (req, res) => {
+  try {
+    const {
+      status,
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      reason
+    } = req.query;
+
+    const query = {};
+    if (status) query.status = status;
+    if (reason) query.reason = reason;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = parseInt(limit);
+    const sort = { [sortBy]: sortOrder === "asc" ? 1 : -1 };
+
+    const [reports, total] = await Promise.all([
+      ReportedPost.find(query)
+        .populate(
+          "jobId",
+          "title description category budget budgetType paymentMethod location media createdAt status"
+        )
+        .populate("reportedBy", "name email userType")
+        .populate("jobPosterId", "name email userType")
+        .populate("reportedUserId", "name email userType")
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      ReportedPost.countDocuments(query)
+    ]);
+
+    const statsAgg = await ReportedPost.aggregate([
+      { $match: query },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const stats = { total: total, pending: 0, reviewed: 0, resolved: 0, dismissed: 0 };
+    statsAgg.forEach((s) => {
+      stats[s._id] = s.count;
+    });
+
+    const normalizedReports = reports.map((r) => {
+      const jobDetails = r.jobDetails || {};
+      const jobIdObj = r.jobId || {
+        _id: jobDetails._id || jobDetails.jobId || undefined,
+        title: jobDetails.title,
+        description: jobDetails.description,
+        category: jobDetails.category,
+        budget: jobDetails.budget,
+        budgetType: jobDetails.budgetType,
+        paymentMethod: jobDetails.paymentMethod,
+        location: jobDetails.location,
+        createdAt: jobDetails.createdAt,
+      };
+
+      return {
+        ...r,
+        jobId: jobIdObj,
+      };
+    });
+
+    return res.json({
+      success: true,
+      reports: normalizedReports,
+      stats,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / limitNum),
+        totalReports: total,
+        hasNext: skip + reports.length < total,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching reported posts:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch reported posts" });
   }
 };
 

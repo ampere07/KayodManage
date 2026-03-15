@@ -12,6 +12,12 @@ router.post("/", reportController.createReport);
 // GET /api/reports/admin/all - Get all reports (admin only)
 router.get("/admin/all", adminAuth, reportController.getAllReports);
 
+// GET /api/reported-posts/admin/all - Get all reported posts (legacy collection)
+router.get("/reported-posts/admin/all", adminAuth, reportController.getAllReportedPosts);
+
+// PUT /api/reported-posts/:reportId/status - Update reported post status (admin)
+router.put("/reported-posts/:reportId/status", adminAuth, reportController.updateReportedPostStatus);
+
 // GET /api/reports/admin/stats - Get report statistics (admin only)
 router.get("/admin/stats", adminAuth, reportController.getReportStats);
 

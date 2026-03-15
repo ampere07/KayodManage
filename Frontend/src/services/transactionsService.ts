@@ -46,6 +46,20 @@ class TransactionsService {
     return response.data;
   }
 
+  async approveRefund(transactionId: string): Promise<{ success: boolean; message: string; refundTransactionId?: string }> {
+    const response = await apiClient.post<{ success: boolean; message: string; refundTransactionId?: string }>(
+      `${this.baseUrl}/${transactionId}/approve-refund`
+    );
+    return response.data;
+  }
+
+  async declineRefund(transactionId: string): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      `${this.baseUrl}/${transactionId}/decline-refund`
+    );
+    return response.data;
+  }
+
   /**
    * Delete a transaction
    */
