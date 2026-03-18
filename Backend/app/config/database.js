@@ -12,6 +12,7 @@ const connectDatabase = async () => {
     }
 
     await mongoose.connect(mongoUri, {
+      dbName: 'test',
       retryWrites: true,
       w: 'majority',
       serverSelectionTimeoutMS: 5000,
@@ -20,7 +21,7 @@ const connectDatabase = async () => {
       minPoolSize: 2
     });
 
-    console.log('✅ MongoDB connected');
+    console.log('✅ MongoDB connected to database:', mongoose.connection.name);
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
     process.exit(1);

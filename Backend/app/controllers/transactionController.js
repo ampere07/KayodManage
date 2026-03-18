@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const FeeRecord = require('../models/FeeRecord');
 const User = require('../models/User');
@@ -657,17 +658,49 @@ const approveRefund = async (req, res) => {
     await transaction.save();
 
     const Wallet = require('../models/Wallet');
-    const clientId = transaction.fromUser || transaction.fromUserId;
+    const fromUser = transaction.fromUser || transaction.fromUserId;
+    let clientId = fromUser;
+    if (fromUser && typeof fromUser === 'object' && fromUser._id) {
+      clientId = fromUser._id;
+    }
     
-    // Update Client's Wallet (Add back to availableBalance)
-    // Use atomic findOneAndUpdate to avoid Mongoose schema validation issues
-    // (kayod server uses 'userId', KayodManage uses 'user' — both map to the same collection)
+    console.log('[approveRefund] Processing wallet for DB:', mongoose.connection.name);
+    console.log('[approveRefund] Target Client:', clientId, 'Amount:', refundAmount);
+
     if (clientId && refundAmount > 0) {
-      const clientResult = await Wallet.collection.findOneAndUpdate(
-        { $or: [{ user: clientId }, { userId: clientId }] },
-        { $inc: { availableBalance: refundAmount } }
-      );
-      console.log('[approveRefund] Client wallet update result:', clientResult ? 'found & updated' : 'NOT FOUND', 'clientId:', clientId);
+      try {
+        // Ensure we use ObjectId for the query
+        const queryId = new mongoose.Types.ObjectId(clientId.toString());
+        
+        // Update Client's Wallet: ONLY add to availableBalance
+        // In this app, 'balance' maps to 'Incoming Funds', which refunds are NOT.
+        // We use findOneAndUpdate on the RAW collection to avoid any schema/model mismatch
+        const clientResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+          { userId: queryId },
+          { $inc: { availableBalance: refundAmount } },
+          { returnDocument: 'after' }
+        );
+        
+        if (clientResult && (clientResult.value || clientResult._id)) {
+           console.log('[approveRefund] SUCCESS: Wallet updated. New Avail Balance:', 
+             (clientResult.value ? clientResult.value.availableBalance : 'Updated'));
+        } else {
+           console.log('[approveRefund] WARNING: No wallet found with userId:', queryId);
+           // Fallback to searching by string just in case
+           const fallbackResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+             { userId: queryId.toString() },
+             { $inc: { availableBalance: refundAmount } },
+             { returnDocument: 'after' }
+           );
+           if (fallbackResult && (fallbackResult.value || fallbackResult._id)) {
+             console.log('[approveRefund] SUCCESS: Wallet updated via String ID fallback.');
+           } else {
+             console.log('[approveRefund] ERROR: Failed to find wallet after fallback.');
+           }
+        }
+      } catch (e) {
+        console.error('[approveRefund] Wallet update error:', e.message);
+      }
     }
     
     // Process Job update and Provider's incoming funds
@@ -676,20 +709,36 @@ const approveRefund = async (req, res) => {
          $inc: { escrowAmount: -refundAmount },
          paymentStatus: 'refunded'
        });
+
+       // Resolve any associated ReportedPosts
+       const ReportedPost = require('../models/ReportedPost');
+       const reportUpdateResult = await ReportedPost.updateMany(
+         { jobId: transaction.jobId, status: 'pending' },
+         { 
+           status: 'resolved',
+           reviewedBy: req.user?.id,
+           reviewedAt: new Date(),
+           adminNotes: `Refund approved for ${refundAmount} PHP. Status auto-resolved.`
+         }
+       );
+       console.log('[approveRefund] ReportedPost resolution result:', reportUpdateResult.modifiedCount, 'reports updated');
        
        // If the job has a provider assigned to it, deduct their incoming funds
-       if (job.assignedToId && refundAmount > 0) {
-         const providerResult = await Wallet.collection.findOneAndUpdate(
-           { $or: [{ user: job.assignedToId }, { userId: job.assignedToId }] },
-           { $inc: { balance: -refundAmount } }
-         );
-         console.log('[approveRefund] Provider wallet update result:', providerResult ? 'found & updated' : 'NOT FOUND', 'providerId:', job.assignedToId);
+       const providerId = job.assignedToId || job.acceptedProvider;
+       if (providerId && refundAmount > 0) {
+         const providerQueryId = new mongoose.Types.ObjectId(providerId.toString());
+         const providerResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+            { $or: [{ userId: providerQueryId }, { user: providerQueryId }] },
+            { $inc: { balance: -refundAmount } },
+            { returnDocument: 'after' }
+          );
+          console.log('[approveRefund] Provider wallet update result:', providerResult ? 'found & updated' : 'NOT FOUND', 'providerId:', providerId);
          
          // Additionally, mark any pending escrow_payment transactions to this provider for this job as cancelled
          await Transaction.updateMany(
            {
              jobId: transaction.jobId,
-             $or: [{ toUser: job.assignedToId }, { toUserId: job.assignedToId }],
+             $or: [{ toUser: providerId }, { toUserId: providerId }],
              type: 'escrow_payment',
              status: 'pending'
            },
@@ -753,6 +802,20 @@ const declineRefund = async (req, res) => {
     transaction.failureReason = 'Declined by admin';
     transaction.refundStatus = 'declined';
     await transaction.save();
+
+    // Dismiss any associated ReportedPosts
+    if (transaction.jobId) {
+      const ReportedPost = require('../models/ReportedPost');
+      await ReportedPost.updateMany(
+        { jobId: transaction.jobId, status: 'pending' },
+        { 
+          status: 'dismissed',
+          reviewedBy: req.user?.id,
+          reviewedAt: new Date(),
+          adminNotes: 'Refund declined by admin. Report auto-dismissed.'
+        }
+      );
+    }
     
     if (req.user && req.user.id) {
       const requester = transaction.fromUser || transaction.fromUserId;
