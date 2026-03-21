@@ -664,6 +664,13 @@ function PopularJobsChart() {
   const { data: rawChartData = [], isLoading: loading } = useDashboardPopularJobs(period);
   const [categories, setCategories] = useState<JobCategory[]>([]);
   const [chartType, setChartType] = useState<'bar' | 'pie'>('pie');
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     settingsService.getJobCategories().then(res => {
@@ -687,7 +694,7 @@ function PopularJobsChart() {
       <style>{`
         .popular-pie-slice {
           transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s !important;
-          transform-origin: 72% 50%;
+          transform-origin: ${isMobile ? '50% 50%' : '72% 50%'};
           cursor: pointer;
         }
         .popular-pie-slice:hover {
@@ -748,38 +755,46 @@ function PopularJobsChart() {
             <p className="text-sm font-medium text-gray-500">No popular jobs found for this timeframe.</p>
           </div>
         ) : chartType === 'bar' ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0" />
-              <XAxis
-                dataKey="name"
-                axisLine={false}
-                tickLine={false}
-                interval={0}
-                height={100}
-                tick={(props) => <CustomXAxisTick {...props} data={chartData} categories={categories} />}
-              />
-              <YAxis
-                type="number"
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
-                tick={{ fontSize: 10, fill: '#6b7280' }}
-              />
-              <Tooltip
-                cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                content={<CustomTooltip categories={categories} />}
-              />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
-                {chartData.map((_entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="w-full h-full overflow-x-auto no-scrollbar">
+            <div className="min-w-[650px] h-full pb-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    interval={0}
+                    height={100}
+                    tick={(props) => <CustomXAxisTick {...props} data={chartData} categories={categories} />}
+                  />
+                  <YAxis
+                    type="number"
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                    tick={{ fontSize: 10, fill: '#6b7280' }}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
+                    content={<CustomTooltip categories={categories} />}
+                  />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
+                    {chartData.map((_entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         ) : (
-          <div className="w-full h-full flex justify-center items-center py-4 relative">
-            <ul className="grid grid-cols-2 gap-x-3 md:gap-x-6 gap-y-3 sm:gap-y-4 m-0 p-0 absolute top-1/2 -translate-y-1/2 left-0 z-10 max-h-[90%] overflow-y-auto no-scrollbar py-2 px-2 w-[55%] pointer-events-auto">
+          <div className="w-full h-full flex flex-col md:block justify-start md:justify-center items-center py-2 md:py-4 relative">
+            <ul className={`grid grid-cols-2 gap-x-2 md:gap-x-6 gap-y-2 sm:gap-y-4 m-0 p-0 pointer-events-auto z-10 ${
+              isMobile 
+                ? 'w-full px-2 mt-4 order-2' 
+                : 'absolute top-1/2 -translate-y-1/2 left-0 max-h-[90%] overflow-y-auto no-scrollbar py-2 px-2 w-[55%]'
+            }`}>
               {chartData.map((_: any, i: number) => {
                 const half = Math.ceil(chartData.length / 2);
                 const actualIndex = i % 2 === 0 ? Math.floor(i / 2) : half + Math.floor(i / 2);
@@ -787,45 +802,47 @@ function PopularJobsChart() {
                 if (!entry) return <div key={`legend-empty-${i}`} />;
                 const iconData = resolveIconData(entry, categories);
                 return (
-                  <li key={`legend-item-${actualIndex}`} className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm md:text-base text-gray-700" title={entry.name}>
+                  <li key={`legend-item-${actualIndex}`} className="flex items-center gap-1.5 sm:gap-3 text-[11px] sm:text-sm md:text-base text-gray-700" title={entry.name}>
                     <span className="font-bold text-gray-400 w-3 sm:w-4 text-right flex-shrink-0">{actualIndex + 1}.</span>
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: POPULAR_JOBS_COLORS[actualIndex % POPULAR_JOBS_COLORS.length] }} />
+                    <div className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: POPULAR_JOBS_COLORS[actualIndex % POPULAR_JOBS_COLORS.length] }} />
                     {iconData?.imagePath ? (
-                      <img src={iconData.imagePath} alt={entry.name} className="w-7 sm:w-10 h-7 sm:h-10 object-contain drop-shadow-sm filter contrast-125 brightness-105 flex-shrink-0" />
+                      <img src={iconData.imagePath} alt={entry.name} className="w-6 sm:w-10 h-6 sm:h-10 object-contain drop-shadow-sm filter contrast-125 brightness-105 flex-shrink-0" />
                     ) : (
-                      <img src="/src/assets/icons/Default_Icon.webp" alt="default" className="w-7 sm:w-10 h-7 sm:h-10 object-contain opacity-50 sepia-[.2] flex-shrink-0" />
+                      <img src="/src/assets/icons/Default_Icon.webp" alt="default" className="w-6 sm:w-10 h-6 sm:h-10 object-contain opacity-50 sepia-[.2] flex-shrink-0" />
                     )}
-                    <span className="truncate max-w-[90px] sm:max-w-[120px] md:max-w-[140px] font-medium leading-tight" title={entry.name}>
+                    <span className="truncate max-w-[75px] sm:max-w-[120px] md:max-w-[140px] font-medium leading-tight" title={entry.name}>
                       {entry.name}
                     </span>
                   </li>
                 );
               })}
             </ul>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="72%"
-                  cy="50%"
-                  innerRadius={0}
-                  outerRadius={140}
-                  paddingAngle={0}
-                  dataKey="count"
-                  nameKey="name"
-                >
-                  {chartData.map((_entry: any, index: number) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} 
-                      className="popular-pie-slice"
-                      style={{ outline: 'none' }}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip categories={categories} />} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className={`${isMobile ? 'w-full h-[220px] order-1' : 'w-full h-full'}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    cx={isMobile ? "50%" : "72%"}
+                    cy="50%"
+                    innerRadius={0}
+                    outerRadius={isMobile ? 100 : 140}
+                    paddingAngle={0}
+                    dataKey="count"
+                    nameKey="name"
+                  >
+                    {chartData.map((_entry: any, index: number) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} 
+                        className="popular-pie-slice"
+                        style={{ outline: 'none' }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip categories={categories} />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
       </div>
