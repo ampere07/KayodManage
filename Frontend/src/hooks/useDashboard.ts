@@ -45,3 +45,22 @@ export const useDashboardRevenueChart = (period: 'week' | 'month' | 'year') => {
     placeholderData: (previousData) => previousData,
   });
 };
+
+export const useDashboardPopularJobs = (period: 'overall' | 'week' | 'month' | '6months' | 'year' = 'overall') => {
+  return useQuery({
+    queryKey: [DASHBOARD_QUERY_KEY, 'popular-jobs', period],
+    queryFn: async () => {
+      try {
+        const response = await apiClient.get(`/api/dashboard/popular-jobs?period=${period}`);
+        return response.data;
+      } catch (error: any) {
+        if (error.code === 'ECONNABORTED' || error.isNetworkError) {
+          return [];
+        }
+        throw error;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+};

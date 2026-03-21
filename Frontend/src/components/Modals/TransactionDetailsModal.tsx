@@ -596,7 +596,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     <div className="h-24 w-24 rounded-full bg-blue-100 flex items-center justify-center mb-3">
                       <span className="text-3xl font-bold text-blue-600">{getInitials(displayCustomer?.name || 'Unknown')}</span>
                     </div>
-                    <p className="text-base font-medium text-gray-900">Username</p>
+                    <p className="text-base font-medium text-gray-900 text-center">{displayCustomer?.username || displayCustomer?.name || 'Unknown'}</p>
                   </div>
 
                   <div className="space-y-4 text-sm">
@@ -635,7 +635,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     <div className="h-24 w-24 rounded-full bg-green-100 flex items-center justify-center mb-3">
                       <span className="text-3xl font-bold text-green-600">{getInitials(displayProvider?.name || 'Unknown')}</span>
                     </div>
-                    <p className="text-base font-medium text-gray-900">Username</p>
+                    <p className="text-base font-medium text-gray-900 text-center">{displayProvider?.username || displayProvider?.name || 'Unknown'}</p>
                   </div>
 
                   <div className="space-y-4 text-sm">

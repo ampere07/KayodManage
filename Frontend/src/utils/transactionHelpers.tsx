@@ -18,7 +18,7 @@ import type { Transaction } from '../types';
  * Get type color classes based on transaction type
  */
 export const getTypeColor = (type: string, transactionType: string): string => {
-  if (transactionType === 'fee_record') {
+  if (transactionType === 'platform_fee') {
     return 'bg-yellow-100 text-yellow-800';
   }
 
@@ -33,6 +33,7 @@ export const getTypeColor = (type: string, transactionType: string): string => {
     case 'xendit_topup':
       return 'bg-emerald-100 text-emerald-800';
     case 'fee_payment':
+    case 'platform_fee':
       return 'bg-yellow-100 text-yellow-800';
     case 'refund':
       return 'bg-orange-100 text-orange-800';
@@ -82,7 +83,7 @@ export const getTransactionStatusIcon = (status: string): JSX.Element | null => 
  * Get transaction icon based on type
  */
 export const getTransactionIcon = (type: string, transactionType: string): JSX.Element => {
-  if (transactionType === 'fee_record') {
+  if (transactionType === 'platform_fee') {
     return <DollarSign className="h-4 w-4" />;
   }
 
@@ -95,6 +96,7 @@ export const getTransactionIcon = (type: string, transactionType: string): JSX.E
     case 'xendit_topup':
       return <ArrowDownLeft className="h-4 w-4" />;
     case 'fee_payment':
+    case 'platform_fee':
       return <DollarSign className="h-4 w-4" />;
     case 'refund':
       return <ArrowDownLeft className="h-4 w-4" />;
@@ -122,7 +124,7 @@ export const getToUser = (transaction: Transaction) => {
  */
 export const isOverdue = (transaction: Transaction): boolean => {
   return (
-    transaction.transactionType === 'fee_record' &&
+    transaction.type === 'platform_fee' &&
     !!transaction.dueDate &&
     new Date(transaction.dueDate) < new Date() &&
     transaction.status !== 'completed'
@@ -134,7 +136,7 @@ export const isOverdue = (transaction: Transaction): boolean => {
  */
 export const getCategoryTitle = (category: string): string => {
   switch (category) {
-    case 'fee_record':
+    case 'platform_fee':
       return 'Fee Records';
     case 'wallet_topup':
       return 'Top-up Transactions';

@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Briefcase,
   DollarSign,
   AlertCircle,
-  TrendingUp
+  TrendingUp,
+  PieChart as PieChartIcon,
+  BarChart4 as BarChartIcon // Lucide has BarChart, BarChart2, BarChart3, BarChart4 with axes
 } from 'lucide-react';
 import StatsCard from '../components/Dashboard/StatsCard';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Sector } from 'recharts';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useDashboardComparison, useDashboardRevenueChart } from '../hooks/useDashboard';
+import { useDashboardComparison, useDashboardRevenueChart, useDashboardPopularJobs } from '../hooks/useDashboard';
+import { getProfessionIconByName } from '../constants/categoryIcons';
+import { settingsService } from '../services';
+import { JobCategory } from '../types/configuration.types';
 import { alertsService } from '../services';
 
 function Header() {
@@ -512,7 +517,7 @@ function ActivityBreakdown() {
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+    <div className="flex flex-col gap-1.5 sm:gap-2">
       <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
         <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">Today's Activity</h3>
 
@@ -557,6 +562,277 @@ function ActivityBreakdown() {
   );
 }
 
+const resolveIconData = (dataItem: any, categories: any[]) => {
+  if (!dataItem) return getProfessionIconByName('');
+  
+  let iconStr = dataItem.icon || '';
+  let categoryIconStr = '';
+  const cleanName = dataItem.name || '';
+  const rawName = dataItem.rawName || '';
+
+  if (!iconStr && categories?.length) {
+    for (const cat of categories) {
+      if (cat.name.toLowerCase() === cleanName.toLowerCase() || cat.name.toLowerCase() === rawName.toLowerCase()) {
+        iconStr = cat.icon;
+        categoryIconStr = cat.icon;
+        break;
+      }
+      const prof = cat.professions?.find((p: any) => p.name.toLowerCase() === cleanName.toLowerCase() || p.name.toLowerCase() === rawName.toLowerCase());
+      if (prof) {
+        iconStr = prof.icon;
+        categoryIconStr = cat.icon;
+        break;
+      }
+    }
+  }
+
+  if (!iconStr) {
+    const legacyMap: Record<string, string> = {
+      'catering': 'custom:catering.webp',
+      'painting': 'custom:painter.webp',
+      'beauty': 'custom:beauty--personal-care.webp',
+      'cleaning': 'custom:house-cleaning.webp',
+      'carpentry': 'custom:carpentry--cabinetry.webp',
+      'ac refrigeration': 'custom:ac--refrigerator.webp',
+      'gardening': 'custom:gardening--landscaping.webp',
+      'moving': 'custom:lipat-bahay-mover.webp',
+      'computer repair': 'custom:computer-technician.webp',
+      'auto mechanic': 'custom:auto-mechanic.webp'
+    };
+    iconStr = legacyMap[cleanName.toLowerCase()] || '';
+  }
+
+  return getProfessionIconByName(iconStr, categoryIconStr);
+};
+
+const CustomXAxisTick = ({ x, y, payload, data, categories }: any) => {
+  const dataItem = data.find((d: any) => d.name === payload.value);
+  const iconData = resolveIconData(dataItem, categories);
+  const words = payload.value.split(' ');
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {iconData?.imagePath ? (
+        <image href={iconData.imagePath} x={-20} y={0} height="40px" width="40px" />
+      ) : (
+        <image href="/src/assets/icons/Default_Icon.webp" x={-20} y={0} height="40px" width="40px" />
+      )}
+      <text
+        x={0}
+        y={52}
+        textAnchor="middle"
+        fill="#6b7280"
+        fontSize={9}
+      >
+        {words.map((word: string, index: number) => (
+          <tspan x={0} dy={index === 0 ? 0 : 10} key={index}>
+            {word}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+const CustomTooltip = ({ active, payload, categories }: any) => {
+  if (active && payload && payload.length) {
+    const dataItem = payload[0].payload;
+    const iconData = resolveIconData(dataItem, categories);
+
+    return (
+      <div className="bg-white p-3 border border-gray-100 rounded-xl shadow-lg flex flex-col items-center gap-2">
+        {iconData?.imagePath ? (
+          <img src={iconData.imagePath} alt={dataItem.name} className="w-12 h-12 object-contain drop-shadow-sm" />
+        ) : (
+          <img src="/src/assets/icons/Default_Icon.webp" alt="default" className="w-12 h-12" />
+        )}
+        <div className="text-center">
+          <p className="font-semibold text-gray-900 text-sm">{dataItem.name}</p>
+          <p className="text-blue-600 font-bold">₱{dataItem.count.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 font-medium">{dataItem.jobCount} {dataItem.jobCount === 1 ? 'job' : 'jobs'}</p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+const POPULAR_JOBS_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f43f5e', '#84cc16', '#a855f7', '#14b8a6'];
+
+function PopularJobsChart() {
+  const [period, setPeriod] = useState<'overall' | 'week' | 'month' | '6months' | 'year'>('overall');
+  const { data: rawChartData = [], isLoading: loading } = useDashboardPopularJobs(period);
+  const [categories, setCategories] = useState<JobCategory[]>([]);
+  const [chartType, setChartType] = useState<'bar' | 'pie'>('pie');
+
+  useEffect(() => {
+    settingsService.getJobCategories().then(res => {
+      setCategories(res.categories || []);
+    }).catch(console.error);
+  }, []);
+
+  const chartData = useMemo(() => {
+    return rawChartData.map((d: any) => {
+      const cleanName = (d.name || '')
+        .replace(/_/g, ' ')
+        .split(' ')
+        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      return { ...d, rawName: d.name, name: cleanName };
+    });
+  }, [rawChartData]);
+
+  return (
+    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col relative">
+      <style>{`
+        .popular-pie-slice {
+          transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s !important;
+          transform-origin: 72% 50%;
+          cursor: pointer;
+        }
+        .popular-pie-slice:hover {
+          transform: scale(1.08);
+          opacity: 0.9;
+          z-index: 10;
+        }
+      `}</style>
+
+      <div className="p-4 sm:p-5 md:p-6 border-b border-gray-100 flex-shrink-0 flex flex-wrap justify-between items-center gap-3">
+        <h2 className="text-base sm:text-lg font-bold text-gray-900 whitespace-nowrap">Popular Jobs</h2>
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+          <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
+            {(['overall', 'week', 'month', 'year'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                  period === p 
+                    ? 'bg-white text-gray-900 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
+            <button
+              onClick={() => setChartType('bar')}
+              title="Display as Bar Chart"
+              className={`p-1.5 rounded-md transition-colors ${
+                chartType === 'bar' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <BarChartIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setChartType('pie')}
+              title="Display as Pie Chart"
+              className={`p-1.5 rounded-md transition-colors ${
+                chartType === 'pie' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <PieChartIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex-1 w-full relative min-h-[300px] h-[400px]">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-xs text-gray-500">Loading...</div>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="w-full h-full flex flex-col items-center justify-center py-10 opacity-70">
+            <p className="text-sm font-medium text-gray-500">No popular jobs found for this timeframe.</p>
+          </div>
+        ) : chartType === 'bar' ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0" />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+                height={100}
+                tick={(props) => <CustomXAxisTick {...props} data={chartData} categories={categories} />}
+              />
+              <YAxis
+                type="number"
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                tick={{ fontSize: 10, fill: '#6b7280' }}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
+                content={<CustomTooltip categories={categories} />}
+              />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
+                {chartData.map((_entry: any, index: number) => (
+                  <Cell key={`cell-${index}`} fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="w-full h-full flex justify-center items-center py-4 relative">
+            <ul className="grid grid-cols-2 gap-x-3 md:gap-x-6 gap-y-3 sm:gap-y-4 m-0 p-0 absolute top-1/2 -translate-y-1/2 left-0 z-10 max-h-[90%] overflow-y-auto no-scrollbar py-2 px-2 w-[55%] pointer-events-auto">
+              {chartData.map((_: any, i: number) => {
+                const half = Math.ceil(chartData.length / 2);
+                const actualIndex = i % 2 === 0 ? Math.floor(i / 2) : half + Math.floor(i / 2);
+                const entry = chartData[actualIndex];
+                if (!entry) return <div key={`legend-empty-${i}`} />;
+                const iconData = resolveIconData(entry, categories);
+                return (
+                  <li key={`legend-item-${actualIndex}`} className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm md:text-base text-gray-700" title={entry.name}>
+                    <span className="font-bold text-gray-400 w-3 sm:w-4 text-right flex-shrink-0">{actualIndex + 1}.</span>
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: POPULAR_JOBS_COLORS[actualIndex % POPULAR_JOBS_COLORS.length] }} />
+                    {iconData?.imagePath ? (
+                      <img src={iconData.imagePath} alt={entry.name} className="w-7 sm:w-10 h-7 sm:h-10 object-contain drop-shadow-sm filter contrast-125 brightness-105 flex-shrink-0" />
+                    ) : (
+                      <img src="/src/assets/icons/Default_Icon.webp" alt="default" className="w-7 sm:w-10 h-7 sm:h-10 object-contain opacity-50 sepia-[.2] flex-shrink-0" />
+                    )}
+                    <span className="truncate max-w-[90px] sm:max-w-[120px] md:max-w-[140px] font-medium leading-tight" title={entry.name}>
+                      {entry.name}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="72%"
+                  cy="50%"
+                  innerRadius={0}
+                  outerRadius={140}
+                  paddingAngle={0}
+                  dataKey="count"
+                  nameKey="name"
+                >
+                  {chartData.map((_entry: any, index: number) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} 
+                      className="popular-pie-slice"
+                      style={{ outline: 'none' }}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip categories={categories} />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   return (
     <div className="h-full flex flex-col overflow-hidden px-1 sm:px-0">
@@ -572,7 +848,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <ActivityBreakdown />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 sm:gap-2">
+        <div className="lg:col-span-1">
+          <ActivityBreakdown />
+        </div>
+        <div className="lg:col-span-2">
+          <PopularJobsChart />
+        </div>
+      </div>
     </div>
   );
 }
