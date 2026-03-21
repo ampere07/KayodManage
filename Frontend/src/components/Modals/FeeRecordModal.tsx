@@ -101,7 +101,7 @@ const FeeRecordModal: React.FC<FeeRecordModalProps> = ({ isOpen, onClose, transa
                     {getInitials(customer?.name || 'Unknown')}
                   </span>
                 </div>
-                <p className="text-base font-medium text-gray-900">Username</p>
+                <p className="text-base font-medium text-gray-900 text-center">{customer?.name || 'Unknown'}</p>
               </div>
 
               <div className="space-y-4">
@@ -147,7 +147,7 @@ const FeeRecordModal: React.FC<FeeRecordModalProps> = ({ isOpen, onClose, transa
                     {getInitials(provider?.name || 'Unknown')}
                   </span>
                 </div>
-                <p className="text-base font-medium text-gray-900">Username</p>
+                <p className="text-base font-medium text-gray-900 text-center">{provider?.name || 'Unknown'}</p>
               </div>
 
               <div className="space-y-4">
