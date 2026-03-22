@@ -16,6 +16,7 @@ const JobCategoryConfiguration: React.FC = () => {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [editingCategory, setEditingCategory] = useState<JobCategory | null>(null);
+  const [editingProfession, setEditingProfession] = useState<any | null>(null);
   const [showQuickAccessManager, setShowQuickAccessManager] = useState(false);
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
 
@@ -51,6 +52,13 @@ const JobCategoryConfiguration: React.FC = () => {
 
   const handleEditClick = (category: JobCategory) => {
     setEditingCategory(category);
+    setEditingProfession(null);
+    setShowEditDrawer(true);
+  };
+
+  const handleProfessionClick = (category: JobCategory, profession: any) => {
+    setEditingCategory(category);
+    setEditingProfession(profession);
     setShowEditDrawer(true);
   };
 
@@ -97,7 +105,10 @@ const JobCategoryConfiguration: React.FC = () => {
               <span>Quick Access</span>
             </button>
             <button
-              onClick={() => setShowAddCategoryModal(true)}
+              onClick={() => {
+                setShowAddCategoryModal(true);
+                setEditingProfession(null);
+              }}
               className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap text-sm"
             >
               <Plus className="w-4 h-4" />
@@ -142,26 +153,11 @@ const JobCategoryConfiguration: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="flex-shrink-0 p-2 rounded-lg" style={{ backgroundColor: `${categoryIcon.color}15` }}>
-                          <img
-                            key={category._id + iconName}
-                            src={`${categoryIcon.imagePath}?t=${iconTimestamp}`}
-                            alt={categoryIcon.label}
-                            className="w-5 h-5"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              console.log('Image load error:', categoryIcon.imagePath);
-                              target.style.display = 'none';
-                            }}
-                          />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-gray-900 leading-tight">{category.name}</span>
-                          <span className="text-xs text-gray-500">
-                            {category.professions.length} profession{category.professions.length !== 1 ? 's' : ''}
-                          </span>
-                        </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-900 leading-tight">{category.name}</span>
+                        <span className="text-xs text-gray-500">
+                          {category.professions.length} profession{category.professions.length !== 1 ? 's' : ''}
+                        </span>
                       </div>
                     </div>
 
@@ -188,11 +184,15 @@ const JobCategoryConfiguration: React.FC = () => {
                       ) : (
                         <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-4">
                           {category.professions.map((profession) => {
-                            const professionIcon = getProfessionIconByName(profession.icon || '', category.icon);
+                            // If profession has no icon, use the default icon
+                            const professionIcon = profession.icon 
+                              ? getProfessionIconByName(profession.icon, category.icon)
+                              : { imagePath: '/src/assets/icons/Default_Icon.webp', color: '#0F766E' };
                             return (
                               <div
                                 key={profession._id}
-                                className="flex flex-col items-center w-full sm:w-24 group relative"
+                                className="flex flex-col items-center w-full sm:w-24 group relative cursor-pointer"
+                                onClick={() => handleProfessionClick(category, profession)}
                               >
                                 <div className="h-8 w-full flex items-end justify-center mb-2">
                                   <span className="text-xs text-gray-700 text-center line-clamp-2 leading-tight group-hover:text-blue-600 transition-colors break-words hyphens-auto w-full">
@@ -202,18 +202,25 @@ const JobCategoryConfiguration: React.FC = () => {
                                 <div
                                   className="relative flex items-center justify-center transition-transform duration-200 group-hover:scale-105"
                                 >
-                                  <div className="absolute inset-0 m-auto w-12 h-12 rounded-xl bg-orange-100/80"></div>
+                                  <div className="absolute inset-0 m-auto w-12 h-12 rounded-xl bg-orange-100/80 group-hover:bg-blue-100/80 transition-colors"></div>
                                   <img
                                     src={`${professionIcon.imagePath}?t=${iconTimestamp}`}
                                     alt={profession.name}
                                     className="relative z-10 w-16 h-16 object-contain drop-shadow-sm transition-opacity opacity-100"
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
-                                      // Fallback to a default category icon to keep alignment consistent
-                                      const fallback = getIconByName(category.icon || 'professional-services');
-                                      target.src = `${fallback.imagePath}?t=${iconTimestamp}`;
+                                      // Fallback to the default icon if the profession icon fails to load
+                                      target.src = `/src/assets/icons/Default_Icon.webp?t=${iconTimestamp}`;
                                     }}
                                   />
+                                </div>
+                                {/* Edit indicator on hover */}
+                                <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className="bg-blue-600 text-white rounded-full p-1">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                    </svg>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -242,9 +249,11 @@ const JobCategoryConfiguration: React.FC = () => {
           onClose={() => {
             setShowEditDrawer(false);
             setEditingCategory(null);
+            setEditingProfession(null);
           }}
           onSuccess={loadCategories}
           category={editingCategory}
+          profession={editingProfession}
         />
       )}
 

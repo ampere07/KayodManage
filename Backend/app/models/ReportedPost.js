@@ -1,11 +1,76 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const jobDetailsSchema = new Schema({
+  title: { type: String, required: true },
+  description: { type: String, default: "" },
+  category: { type: String },
+  icon: { type: String },
+  media: [{ type: String }],
+  video: {
+    uri: String,
+    cloudinaryUrl: String,
+    publicId: String,
+    originalName: String,
+    duration: Number,
+    format: String,
+    size: Number,
+    type: { type: String, default: "video" },
+  },
+  location: {
+    latitude: Number,
+    longitude: Number,
+    address: String,
+    name: String,
+    city: String,
+    region: String,
+    country: { type: String, default: "Philippines" },
+  },
+  locationDetails: { type: String, default: "" },
+  date: { type: Date },
+  isUrgent: { type: Boolean, default: false },
+  serviceTier: { type: String, default: "standard" },
+  paymentMethod: { type: String, default: "wallet" },
+  status: { type: String },
+  softLimitBudget: { type: Number, default: 0 },
+  budget: { type: Number, default: 0 },
+  budgetType: { type: String, default: "fixed" },
+  createdAt: { type: Date },
+  updatedAt: { type: Date },
+}, { _id: false });
+
 const ReportedPostSchema = new Schema({
   jobId: {
     type: Schema.Types.ObjectId,
     ref: 'Job',
     required: true
+  },
+  jobDetails: {
+    type: jobDetailsSchema,
+    required: true
+  },
+  reportedByDetails: {
+    providerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    providerName: {
+      type: String,
+      required: true
+    },
+    providerEmail: {
+      type: String,
+      required: true
+    },
+    providerUserType: {
+      type: String,
+      required: true
+    },
+    reportedAt: {
+      type: Date,
+      required: true
+    },
   },
   reportedBy: {
     type: Schema.Types.ObjectId,
@@ -17,30 +82,35 @@ const ReportedPostSchema = new Schema({
     ref: 'User',
     required: true
   },
+  reportedUserId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   reason: {
     type: String,
     required: true,
     enum: [
-      'inappropriate_content',
       'spam',
-      'scam_or_fraud',
+      'inappropriate_content',
+      'fake_job',
       'misleading_information',
-      'copyright_violation',
-      'discrimination',
       'harassment',
-      'violence_or_threats',
-      'adult_content',
-      'fake_job_posting',
-      'duplicate_posting',
+      'unfinished_work',
+      'substandard_work',
+      'discrimination',
+      'scam',
+      'unsafe_work_conditions',
+      'payment_issues',
       'other'
     ],
     trim: true
   },
   comment: {
     type: String,
-    required: true,
-    trim: true,
-    maxlength: 1000
+    default: "",
+    maxlength: 1000,
+    trim: true
   },
   status: {
     type: String,
@@ -49,7 +119,7 @@ const ReportedPostSchema = new Schema({
   },
   reviewedBy: {
     type: Schema.Types.ObjectId,
-    ref: 'User', // Admin user
+    ref: 'User',
     default: null
   },
   reviewedAt: {
@@ -58,35 +128,21 @@ const ReportedPostSchema = new Schema({
   },
   adminNotes: {
     type: String,
-    trim: true,
-    maxlength: 2000,
-    default: ''
+    maxlength: 1000,
+    default: ""
   },
-  actionTaken: {
-    type: String,
-    enum: ['none', 'post_deleted', 'post_approved', 'user_warned', 'user_restricted', 'report_dismissed'],
-    default: 'none'
-  },
-  // Additional metadata for tracking
-  reportMetadata: {
-    reporterIP: String,
-    reporterUserAgent: String,
-    reportSource: {
-      type: String,
-      enum: ['web', 'mobile', 'api'],
-      default: 'web'
-    }
-  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
+ReportedPostSchema.index({ jobId: 1, reportedBy: 1 }, { unique: true });
+
 // Populate job details when querying
-ReportedPostSchema.virtual('jobDetails', {
-  ref: 'Job',
-  localField: 'jobId',
+ReportedPostSchema.virtual('jobPosterDetails', {
+  ref: 'User',
+  localField: 'jobPosterId',
   foreignField: '_id',
   justOne: true
 });
@@ -95,14 +151,6 @@ ReportedPostSchema.virtual('jobDetails', {
 ReportedPostSchema.virtual('reporterDetails', {
   ref: 'User',
   localField: 'reportedBy',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Populate job poster details
-ReportedPostSchema.virtual('jobPosterDetails', {
-  ref: 'User',
-  localField: 'jobPosterId',
   foreignField: '_id',
   justOne: true
 });
@@ -118,18 +166,6 @@ ReportedPostSchema.virtual('reviewerDetails', {
 // Indexes for better query performance
 ReportedPostSchema.index({ status: 1 });
 ReportedPostSchema.index({ jobId: 1 });
-ReportedPostSchema.index({ reportedBy: 1 });
-ReportedPostSchema.index({ jobPosterId: 1 });
-ReportedPostSchema.index({ createdAt: -1 });
-ReportedPostSchema.index({ reviewedAt: -1 });
-ReportedPostSchema.index({ reason: 1 });
-
-// Compound indexes for common queries
-ReportedPostSchema.index({ status: 1, createdAt: -1 });
-ReportedPostSchema.index({ jobId: 1, status: 1 });
-
-// Prevent duplicate reports from same user for same job
-ReportedPostSchema.index({ jobId: 1, reportedBy: 1 }, { unique: true });
 
 // Pre-save middleware to set reviewedAt when status changes to reviewed
 ReportedPostSchema.pre('save', function(next) {
@@ -175,4 +211,4 @@ ReportedPostSchema.methods.markAsReviewed = function(adminId, notes = '') {
   return this.save();
 };
 
-module.exports = mongoose.model('ReportedPost', ReportedPostSchema);
+module.exports = mongoose.models.ReportedPost || mongoose.model("ReportedPost", ReportedPostSchema);

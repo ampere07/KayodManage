@@ -27,20 +27,27 @@ const TransactionSchema = new Schema({
     type: String,
     enum: [
       'immediate_payment',
+      'job_budget_deduction',
+      'job_budget_refund',
+      'job_escrow',
       'escrow_payment',
       'escrow_release',
       'wallet_topup',
       'fee_payment',
       'refund',
+      'refund_request',
+      'compensation',
       'platform_fee',
       'withdrawal',
-      'xendit_topup'
+      'xendit_topup',
+      'referral_bonus',
+      'premium_subscription'
     ],
     required: true
   },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'cancelled', 'held'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'cancelled', 'held', 'expired', 'refunded', 'escrowed'],
     default: 'pending'
   },
   jobId: {
@@ -102,6 +109,11 @@ const TransactionSchema = new Schema({
   failureReason: {
     type: String,
     trim: true
+  },
+  refundStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'declined'],
+    default: 'pending'
   }
 }, {
   timestamps: true,

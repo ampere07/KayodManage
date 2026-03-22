@@ -259,6 +259,51 @@ const verifyUser = async (req, res) => {
   }
 };
 
+const softDeleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+    
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({ error: 'Delete reason is required' });
+    }
+    
+    const user = await userService.softDeleteUser(userId, reason, req.session.adminId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userWithData = await userService.getUserById(userId);
+    
+    if (req.user && req.user.id) {
+      await logActivity(
+        req.user.id,
+        'user_deleted',
+        `Soft deleted user ${user.name}`,
+        {
+          targetType: 'user',
+          targetId: userId,
+          targetModel: 'User',
+          metadata: { reason },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('user:updated', {
+      user: userWithData,
+      updateType: 'deleted'
+    });
+    
+    res.json(userWithData);
+  } catch (error) {
+    console.error('Error soft deleting user:', error);
+    res.status(500).json({ error: 'Failed to soft delete user' });
+  }
+};
+
 const checkSuspendedUsers = async () => {
   try {
     const count = await userService.checkSuspendedUsers();
@@ -270,9 +315,6 @@ const checkSuspendedUsers = async () => {
   }
 };
 
-// Run suspension check every hour
-setInterval(checkSuspendedUsers, 60 * 60 * 1000);
-
 module.exports = { 
   getUsers, 
   restrictUser, 
@@ -281,5 +323,6 @@ module.exports = {
   unrestrictUser, 
   verifyUser, 
   getUserDetails,
+  softDeleteUser,
   checkSuspendedUsers 
 };

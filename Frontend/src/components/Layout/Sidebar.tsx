@@ -19,7 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 const Sidebar: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
-  // Force rebuild
+  // Force rebuild - Deleted Users item added
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [isUsersOpen, setIsUsersOpen] = useState(false);
   const [isJobsOpen, setIsJobsOpen] = useState(false);
@@ -54,7 +54,8 @@ const Sidebar: React.FC = () => {
     { to: '/users', label: 'All Users' },
     { to: '/users/customers', label: 'Customers' },
     { to: '/users/providers', label: 'Service Providers' },
-    { to: '/users/flagged', label: 'Flagged & Suspended' }
+    { to: '/users/flagged', label: 'Flagged & Suspended' },
+    { to: '/users/deleted', label: 'Deleted Users' }
   ];
 
   const jobItems = [

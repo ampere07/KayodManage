@@ -14,7 +14,8 @@ import {
   Phone,
   CheckCircle,
   XCircle,
-  Users as UsersIcon
+  Users as UsersIcon,
+  Trash2
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { UserDetailsModal } from '../components/Modals';
@@ -31,7 +32,7 @@ const Users: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'unverified' | 'suspended' | 'restricted' | 'banned'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'unverified' | 'suspended' | 'restricted' | 'banned' | 'deleted'>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
   const [flaggedUserTypeFilter, setFlaggedUserTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
@@ -47,6 +48,7 @@ const Users: React.FC = () => {
     if (path === '/users/customers') return 'customers';
     if (path === '/users/providers') return 'providers';
     if (path === '/users/flagged') return 'flagged';
+    if (path === '/users/deleted') return 'deleted';
     return 'all';
   };
 
@@ -55,6 +57,7 @@ const Users: React.FC = () => {
     if (type === 'customers') return 'Customers';
     if (type === 'providers') return 'Service Providers';
     if (type === 'flagged') return 'Flagged & Suspended Users';
+    if (type === 'deleted') return 'Deleted Accounts';
     return 'All Users';
   };
 
@@ -63,6 +66,7 @@ const Users: React.FC = () => {
     if (type === 'customers') return 'Manage customer accounts and their service requests';
     if (type === 'providers') return 'Manage service providers and their verification status';
     if (type === 'flagged') return 'Review and manage restricted, suspended, and banned user accounts';
+    if (type === 'deleted') return 'View and manage soft deleted user accounts';
     return 'Manage and monitor all user accounts, including customers and service providers';
   };
 
@@ -83,12 +87,15 @@ const Users: React.FC = () => {
         params.userType = flaggedUserTypeFilter;
       }
     }
+    if (userType === 'deleted') {
+      params.accountStatus = 'deleted';
+    }
 
     if (statusFilter === 'verified') params.isVerified = 'true';
     if (statusFilter === 'unverified') params.isVerified = 'false';
     if (statusFilter === 'suspended') params.accountStatus = 'suspended';
     if (statusFilter === 'restricted') params.accountStatus = 'restricted';
-    if (statusFilter === 'banned') params.accountStatus = 'banned';
+    if (statusFilter === 'deleted') params.accountStatus = 'deleted';
 
     return params;
   }, [pagination.page, pagination.limit, searchTerm, statusFilter, flaggedUserTypeFilter, userType]);
@@ -149,6 +156,22 @@ const Users: React.FC = () => {
     return user.isRestricted;
   };
 
+  const getStatusLabel = (user: User) => {
+    if (user.accountStatus === 'deleted') return 'Deleted';
+    if (user.accountStatus === 'banned') return 'Banned';
+    if (user.accountStatus === 'suspended') return 'Suspended';
+    if (user.isRestricted || user.accountStatus === 'restricted') return 'Restricted';
+    return '';
+  };
+
+  const getStatusColor = (user: User) => {
+    if (user.accountStatus === 'deleted') return 'bg-gray-100 text-gray-700';
+    if (user.accountStatus === 'banned') return 'bg-red-100 text-red-700';
+    if (user.accountStatus === 'suspended') return 'bg-yellow-100 text-yellow-700';
+    if (user.isRestricted || user.accountStatus === 'restricted') return 'bg-orange-100 text-orange-700';
+    return '';
+  };
+
   const getOverdueFees = (fees: User['fees']) => {
     if (!fees || !Array.isArray(fees)) return [];
     return fees.filter(fee => !fee.isPaid && new Date(fee.dueDate) < new Date());
@@ -178,6 +201,9 @@ const Users: React.FC = () => {
           break;
         case 'restrict':
           await mutations.restrictUser.mutateAsync({ userId: selectedUser._id, duration, reason: reason || 'Restricted by admin' });
+          break;
+        case 'delete':
+          await mutations.softDeleteUser.mutateAsync({ userId: selectedUser._id, reason: reason || 'Deleted by admin' });
           break;
         case 'unrestrict':
           await mutations.unrestrictUser.mutateAsync(selectedUser._id);
@@ -210,12 +236,12 @@ const Users: React.FC = () => {
     setTimeout(() => setSelectedUser(null), 300);
   };
 
-  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict', duration?: number, reason?: string) => {
+  const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number, reason?: string) => {
     setSelectedUser(user);
     await handleUserAction(actionType, duration, reason);
   };
 
-  const handleCounterClick = (type: 'all' | 'customers' | 'providers' | 'suspended' | 'restricted' | 'banned') => {
+  const handleCounterClick = (type: 'all' | 'customers' | 'providers' | 'suspended' | 'restricted' | 'banned' | 'deleted') => {
     if (type === 'all') {
       navigate('/users');
       setStatusFilter('all');
@@ -224,6 +250,9 @@ const Users: React.FC = () => {
       setStatusFilter('all');
     } else if (type === 'providers') {
       navigate('/users/providers');
+      setStatusFilter('all');
+    } else if (type === 'deleted') {
+      navigate('/users/deleted');
       setStatusFilter('all');
     } else {
       setStatusFilter(type);
@@ -319,7 +348,7 @@ const Users: React.FC = () => {
             </div>
 
             {/* Desktop: Grid Layout */}
-            <div className="hidden md:grid grid-cols-6 gap-3">
+            <div className="hidden md:grid grid-cols-7 gap-3">
               <div
                 onClick={() => handleCounterClick('all')}
                 className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border-2 border-blue-600 ring-2 ring-blue-400 shadow-lg cursor-pointer hover:shadow-lg transition-all"
@@ -387,6 +416,18 @@ const Users: React.FC = () => {
                   <Ban className="h-4 w-4 text-red-600" />
                 </div>
                 <p className="text-2xl font-bold text-red-900">{userTypeCounts.banned.toLocaleString()}</p>
+              </div>
+
+              <div
+                onClick={() => navigate('/users/deleted')}
+                className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${userType === 'deleted' ? 'border-2 border-gray-600 ring-2 ring-gray-400 shadow-lg' : 'border border-gray-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-gray-600">Deleted</span>
+                  <Trash2 className="h-4 w-4 text-gray-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{(userTypeCounts.deleted || 0).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -959,15 +1000,9 @@ const Users: React.FC = () => {
                           </td>
                           <td className="px-4 lg:px-6 py-4">
                             <div className="text-xs text-gray-900 flex items-center gap-1">
-                              <Mail className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                              <span className="truncate max-w-[150px] lg:max-w-[200px]">{user.email}</span>
+                              <Phone className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                              <span className="truncate">{user.phone || user.phoneNumber || user.phoneNumberWithCountryCode || 'N/A'}</span>
                             </div>
-                            {user.phone && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                                <Phone className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                                <span className="truncate">{user.phone}</span>
-                              </div>
-                            )}
                           </td>
                           <td className="px-4 lg:px-6 py-4 text-center">
                             {user.userType && (
@@ -1002,9 +1037,9 @@ const Users: React.FC = () => {
                                   </>
                                 )}
                               </span>
-                              {isRestricted && (
-                                <span className="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 whitespace-nowrap">
-                                  Restricted
+                              {getStatusLabel(user) && (
+                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${getStatusColor(user)}`}>
+                                  {getStatusLabel(user)}
                                 </span>
                               )}
                             </div>
@@ -1096,9 +1131,9 @@ const Users: React.FC = () => {
                               {user.userType === 'provider' ? 'Provider' : 'Customer'}
                             </span>
                           )}
-                          {isRestricted && (
-                            <span className="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                              Restricted
+                          {getStatusLabel(user) && (
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${getStatusColor(user)}`}>
+                              {getStatusLabel(user)}
                             </span>
                           )}
                         </div>

@@ -179,6 +179,7 @@ const getVerificationStats = async (req, res) => {
 const getUserImages = async (req, res) => {
   try {
     const { userId } = req.params;
+    const attemptNumber = req.query.attempt ? parseInt(req.query.attempt, 10) : undefined;
 
     if (!userId) {
       return res.status(400).json({
@@ -187,7 +188,7 @@ const getUserImages = async (req, res) => {
       });
     }
 
-    const data = await verificationService.getUserImages(userId);
+    const data = await verificationService.getUserImages(userId, attemptNumber);
 
     if (!data) {
       return res.status(404).json({

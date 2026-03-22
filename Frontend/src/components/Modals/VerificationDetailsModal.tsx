@@ -7,6 +7,7 @@ import {
   FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import verificationsService from '../../services/verificationsService';
 import ClickableImage from '../UI/ClickableImage';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
@@ -16,6 +17,15 @@ const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
   if (nameParts.length === 0) return '?';
   return nameParts[0][0].toUpperCase();
+};
+
+// Function to format normalized profession names to display format
+const formatCredentialName = (name: string): string => {
+  // Convert camelCase or lowercase with spaces to proper format
+  return name
+    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+    .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+    .trim();
 };
 
 const UserAvatar: React.FC<{ user: UserInfo; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
@@ -57,11 +67,30 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   verification,
   onStatusUpdate
 }) => {
+  const formatDateTime = (value?: string | number | Date | null) => {
+    if (!value) return 'N/A';
+    try {
+      return new Date(value).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return 'N/A';
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<'face' | 'credentials'>('face');
   const [showMobileDocs, setShowMobileDocs] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<number>(1);
   const [attemptImages, setAttemptImages] = useState<any>(null);
+  const [attemptCache, setAttemptCache] = useState<Record<number, { images: any; submittedAt: string | null }>>({});
+  const [attemptTimestamps, setAttemptTimestamps] = useState<{ attempt: number; submittedAt: string | Date | null }[] | null>(null);
+  const [currentAttemptSubmittedAt, setCurrentAttemptSubmittedAt] = useState<string | Date | null>(null);
+  const prevVerificationId = useRef<string | null>(null);
 
   // Dragging refs
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -76,34 +105,96 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
     }
   }, [showMobileDocs]);
 
-  // Reset selected attempt when verification changes
+  // Reset selected attempt only when verification id changes
   useEffect(() => {
     if (verification) {
-      setSelectedAttempt(verification.verificationAttempts || 1);
-      setAttemptImages(null); // Reset attempt images
+      if (prevVerificationId.current !== verification._id) {
+        const attemptsFromVerification = (verification as any)?.attempts;
+        const latestAttemptNumber = Array.isArray(attemptsFromVerification) && attemptsFromVerification.length > 0
+          ? attemptsFromVerification[attemptsFromVerification.length - 1].attemptNumber || attemptsFromVerification.length
+          : verification.verificationAttempts || 1;
+        setSelectedAttempt(latestAttemptNumber);
+        // Seed cache from attempts if media exists
+        const seededCache: Record<number, { images: any; submittedAt: string | null }> = {};
+        if (Array.isArray(attemptsFromVerification) && attemptsFromVerification.length > 0) {
+          attemptsFromVerification.forEach((a: any, idx: number) => {
+            const attemptNum = a?.attemptNumber ?? idx + 1;
+            seededCache[attemptNum] = {
+              images: {
+                faceVerification: a?.faceVerification || [],
+                validId: a?.validId || [],
+                credentials: a?.credentials || [],
+              },
+              submittedAt: a?.submittedAt || null,
+            };
+          });
+        }
+        setAttemptCache(seededCache);
+        setAttemptImages(seededCache[latestAttemptNumber]?.images || null); // show latest immediately if present
+        // Seed attempt timestamps from verification attempts if present
+        if (Array.isArray((verification as any).attempts) && (verification as any).attempts.length > 0) {
+          const mapped = (verification as any).attempts
+            .filter((a: any) => a)
+            .map((a: any, idx: number) => ({
+              attempt: a.attemptNumber ?? idx + 1,
+              submittedAt: a.submittedAt ?? null
+            }));
+          setAttemptTimestamps(mapped);
+        } else {
+          setAttemptTimestamps(null);
+        }
+        setCurrentAttemptSubmittedAt(verification.submittedAt || null);
+        prevVerificationId.current = verification._id;
+      }
     }
   }, [verification]);
 
-  // Fetch images for a specific attempt
+  // Fetch images for a specific attempt from backend (Cloudinary URLs already stored)
   const fetchAttemptImages = async (attemptNumber: number) => {
     if (!verification?.userId?._id) return;
-    
+
+    // Serve from cache if already fetched
+    if (attemptCache[attemptNumber]) {
+      setAttemptImages(attemptCache[attemptNumber].images);
+      setCurrentAttemptSubmittedAt(attemptCache[attemptNumber].submittedAt || null);
+      return;
+    }
+
     try {
-      // In a real implementation, you would have an API endpoint to fetch images for a specific attempt
-      // For now, we'll simulate this with a placeholder
-      console.log(`Fetching images for attempt ${attemptNumber} of user ${verification.userId._id}`);
-      
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/verifications/images/${verification.userId._id}/attempt/${attemptNumber}`);
-      // const data = await response.json();
-      // setAttemptImages(data);
-      
-      // For now, we'll use the current verification images as a placeholder
-      setAttemptImages({
-        faceVerification: verification!.faceVerification,
-        validId: verification!.validId,
-        credentials: verification!.credentials
-      });
+      const { data } = await verificationsService.getUserImages(
+        verification.userId._id,
+        attemptNumber
+      );
+
+      // API returns images from DB (Cloudinary URLs) for the requested attempt
+      const cacheBust = Date.now();
+      const addBust = (img: any) =>
+        img && img.cloudinaryUrl
+          ? { ...img, cloudinaryUrl: `${img.cloudinaryUrl}?cb=${cacheBust}` }
+          : img;
+
+      const withCacheBust = {
+        faceVerification: Array.isArray(data.images.faceVerification)
+          ? data.images.faceVerification.map(addBust)
+          : addBust(data.images.faceVerification),
+        validId: Array.isArray(data.images.validId)
+          ? data.images.validId.map(addBust)
+          : addBust(data.images.validId),
+        credentials: Array.isArray(data.images.credentials)
+          ? data.images.credentials.map(addBust)
+          : addBust(data.images.credentials)
+      };
+
+      setAttemptImages(withCacheBust);
+      setAttemptCache((prev) => ({
+        ...prev,
+        [attemptNumber]: {
+          images: withCacheBust,
+          submittedAt: data.attemptSubmittedAt || null
+        }
+      }));
+      setAttemptTimestamps(data.attemptTimestamps || null);
+      setCurrentAttemptSubmittedAt(data.attemptSubmittedAt || null);
     } catch (error) {
       console.error('Failed to fetch attempt images:', error);
       toast.error('Failed to load images for this attempt');
@@ -113,22 +204,90 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   // Handle attempt click
   const handleAttemptClick = (attemptNumber: number) => {
     setSelectedAttempt(attemptNumber);
+    const cached = attemptCache[attemptNumber];
+    if (cached) {
+      setAttemptImages(cached.images);
+      setCurrentAttemptSubmittedAt(cached.submittedAt || null);
+    } else {
+      setAttemptImages(null); // clear only if not cached
+      setCurrentAttemptSubmittedAt(null);
+    }
     fetchAttemptImages(attemptNumber);
   };
 
   // Get current images based on selected attempt
   const getCurrentImages = () => {
-    if (attemptImages && selectedAttempt !== verification?.verificationAttempts) {
-      return attemptImages;
+    if (attemptCache[selectedAttempt]?.images) return attemptCache[selectedAttempt].images;
+    if (attemptImages) return attemptImages;
+    const attemptsFromVerification = (verification as any)?.attempts;
+    if (Array.isArray(attemptsFromVerification) && attemptsFromVerification.length > 0) {
+      const match = attemptsFromVerification.find((a: any) => a?.attemptNumber === selectedAttempt);
+      const fallback = attemptsFromVerification[attemptsFromVerification.length - 1];
+      const data = match || fallback;
+      return {
+        faceVerification: data?.faceVerification || [],
+        validId: data?.validId || [],
+        credentials: data?.credentials || []
+      };
     }
     return {
-      faceVerification: verification?.faceVerification,
-      validId: verification?.validId,
-      credentials: verification?.credentials
+      faceVerification: verification?.faceVerification || [],
+      validId: verification?.validId || [],
+      credentials: verification?.credentials || []
     };
   };
 
   const currentImages = getCurrentImages();
+
+  const getAttemptTimestamp = (attemptNumber: number) => {
+    const found = attemptTimestamps?.find((a) => a.attempt === attemptNumber);
+    if (found?.submittedAt) return found.submittedAt;
+    const attemptsFromVerification = (verification as any)?.attempts;
+    if (Array.isArray(attemptsFromVerification)) {
+      const fallback = attemptsFromVerification.find((a: any) => (a?.attemptNumber ?? null) === attemptNumber);
+      if (fallback?.submittedAt) return fallback.submittedAt;
+    }
+    return null;
+  };
+
+  const attemptsForHistory = (() => {
+    const attemptsFromVerification = (verification as any)?.attempts;
+    if (Array.isArray(attemptsFromVerification) && attemptsFromVerification.length > 0) {
+      return attemptsFromVerification
+        .map((a: any, idx: number) => ({
+          attempt: a?.attemptNumber ?? idx + 1,
+          submittedAt: a?.submittedAt ?? null
+        }))
+        .sort((a, b) => {
+          const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : Number.MIN_SAFE_INTEGER;
+          const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : Number.MIN_SAFE_INTEGER;
+          if (bTime !== aTime) return bTime - aTime;
+          return b.attempt - a.attempt;
+        });
+    }
+    const total = verification?.verificationAttempts || 1;
+    const map = new Map<number, string | Date | null>();
+    attemptTimestamps?.forEach((a) => map.set(a.attempt, a.submittedAt ?? null));
+    const arr = Array.from({ length: total }, (_, idx) => {
+      const attemptNum = idx + 1;
+      return {
+        attempt: attemptNum,
+        submittedAt: map.has(attemptNum) ? map.get(attemptNum) || null : null
+      };
+    });
+    return arr.sort((a, b) => {
+      const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : Number.MIN_SAFE_INTEGER;
+      const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : Number.MIN_SAFE_INTEGER;
+      if (bTime !== aTime) return bTime - aTime;
+      return b.attempt - a.attempt; // fallback to attempt number desc
+    });
+  })();
+
+  const sortedAttempts = attemptsForHistory.length ? attemptsForHistory : null;
+
+  const latestAttemptForHistory = sortedAttempts?.length
+    ? sortedAttempts[0].attempt
+    : verification?.verificationAttempts || 1;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     isDragging.current = true;
@@ -175,12 +334,29 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
   const user = verification.userId;
 
-  // Count submitted documents
-  const hasFaceVerification = verification.faceVerification &&
-    (Array.isArray(verification.faceVerification) ? verification.faceVerification.length > 0 : true);
-  const hasValidId = verification.validId &&
-    (Array.isArray(verification.validId) ? verification.validId.length > 0 : true);
-  const hasCredentials = verification.credentials && verification.credentials.length > 0;
+  // Attempt-level helpers
+  const attemptsFromVerification = (verification as any)?.attempts;
+  const latestAttemptNumber = attemptsFromVerification?.length
+    ? attemptsFromVerification[attemptsFromVerification.length - 1].attemptNumber
+    : verification.verificationAttempts || 1;
+  const displayAttemptCount = attemptsFromVerification?.length || verification.verificationAttempts || 1;
+
+  const selectedAttemptData = attemptsFromVerification?.find((a: any) => a?.attemptNumber === selectedAttempt)
+    || attemptsFromVerification?.[attemptsFromVerification.length - 1]
+    || null;
+
+  // Count submitted documents for the selected attempt
+  const hasFaceVerification = selectedAttemptData?.faceVerification
+    ? (Array.isArray(selectedAttemptData.faceVerification) ? selectedAttemptData.faceVerification.length > 0 : true)
+    : Array.isArray(currentImages.faceVerification) ? currentImages.faceVerification.length > 0 : !!currentImages.faceVerification;
+
+  const hasValidId = selectedAttemptData?.validId
+    ? (Array.isArray(selectedAttemptData.validId) ? selectedAttemptData.validId.length > 0 : true)
+    : Array.isArray(currentImages.validId) ? currentImages.validId.length > 0 : !!currentImages.validId;
+
+  const hasCredentials = selectedAttemptData?.credentials
+    ? Array.isArray(selectedAttemptData.credentials) ? selectedAttemptData.credentials.length > 0 : !!selectedAttemptData.credentials
+    : Array.isArray(currentImages.credentials) ? currentImages.credentials.length > 0 : !!currentImages.credentials;
 
   const documentsSubmitted = [hasFaceVerification, hasValidId, hasCredentials].filter(Boolean).length;
 
@@ -371,7 +547,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                         }) : 'N/A'}
                       </p>
                       <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Attempts:</span> {verification.verificationAttempts}
+                        <span className="text-gray-600">Attempts:</span> {displayAttemptCount}
                       </p>
                       <p className="text-sm md:text-base text-gray-900">
                         <span className="text-gray-600">Documents Uploaded:</span> {documentsSubmitted} out of 3
@@ -403,11 +579,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <div className="flex-1">
                             <p className="text-sm font-medium text-gray-900">Verification Approved</p>
                             <p className="text-xs text-gray-500">
-                              {new Date(verification.reviewedAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                              })} - {verification.reviewedBy?.name || 'System Auto-Approval'}
+                              {formatDateTime(verification.reviewedAt)} - {verification.reviewedBy?.name || 'System Auto-Approval'}
                             </p>
                           </div>
                         </div>
@@ -420,15 +592,44 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <div className="flex-1">
                             <p className="text-sm font-medium text-gray-900">Verification Rejected</p>
                             <p className="text-xs text-gray-500">
-                              {new Date(verification.reviewedAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                              })} - {verification.reviewedBy?.name || 'Admin'}
+                              {formatDateTime(verification.reviewedAt)} - {verification.reviewedBy?.name || 'Admin'}
                             </p>
                           </div>
                         </div>
                       )}
+                      {/* Render attempts >1 in descending order before documents using attemptTimestamps when available */}
+                      {attemptsForHistory
+                        .filter((a) => a.attempt > 1)
+                        .map(({ attempt: attemptNumber, submittedAt }) => {
+                          const isSelected = selectedAttempt === attemptNumber;
+                          const isCurrent = attemptNumber === latestAttemptForHistory;
+                          return (
+                            <div
+                              key={`attempt-${attemptNumber}`}
+                              className={`flex items-start gap-3 relative cursor-pointer transition-all duration-200 ${isSelected ? 'bg-indigo-50 -mx-4 px-4 py-2 rounded-lg' : 'hover:bg-gray-50 -mx-4 px-4 py-2 rounded-lg'}`}
+                              onClick={() => handleAttemptClick(attemptNumber)}
+                            >
+                              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center z-10 transition-colors ${isSelected ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                                <svg className={`w-4 h-4 transition-colors ${isSelected ? 'text-white' : 'text-indigo-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              </div>
+                              <div className="flex-1">
+                                <p className={`text-sm font-medium transition-colors ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt {attemptNumber}</p>
+                                <p className="text-xs text-gray-500">
+                                  {submittedAt ? formatDateTime(submittedAt) : 'N/A'} - {isCurrent ? 'Current attempt' : `Previous attempt ${attemptNumber}`}
+                                </p>
+                              </div>
+                              {isSelected && (
+                                <div className="flex-shrink-0">
+                                  <svg className="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       <div className="flex items-start gap-3 relative">
                         <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center z-10">
                           <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -439,48 +640,38 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <p className="text-sm font-medium text-gray-900">Documents Submitted</p>
                           <p className="text-xs text-gray-500">
                             {new Date(verification.submittedAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric'
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
                             })} - {documentsSubmitted} document{documentsSubmitted !== 1 ? 's' : ''} uploaded
                           </p>
                         </div>
                       </div>
-                      {/* Render all verification attempts */}
-                      {Array.from({ length: verification.verificationAttempts }, (_, index) => {
-                        const attemptNumber = index + 1;
-                        const isSelected = selectedAttempt === attemptNumber;
-                        return (
-                          <div 
-                            key={index} 
-                            className={`flex items-start gap-3 relative cursor-pointer transition-all duration-200 ${isSelected ? 'bg-indigo-50 -mx-4 px-4 py-2 rounded-lg' : 'hover:bg-gray-50 -mx-4 px-4 py-2 rounded-lg'}`}
-                            onClick={() => handleAttemptClick(attemptNumber)}
-                          >
-                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center z-10 transition-colors ${isSelected ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                              <svg className={`w-4 h-4 transition-colors ${isSelected ? 'text-white' : 'text-indigo-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      {(sortedAttempts?.length ? sortedAttempts.some((a) => a.attempt === 1) : displayAttemptCount >= 1) && (
+                        <div
+                          className={`flex items-start gap-3 relative cursor-pointer transition-all duration-200 ${selectedAttempt === 1 ? 'bg-indigo-50 -mx-4 px-4 py-2 rounded-lg' : 'hover:bg-gray-50 -mx-4 px-4 py-2 rounded-lg'}`}
+                          onClick={() => handleAttemptClick(1)}
+                        >
+                          <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center z-10 transition-colors ${selectedAttempt === 1 ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                            <svg className={`w-4 h-4 transition-colors ${selectedAttempt === 1 ? 'text-white' : 'text-indigo-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className={`text-sm font-medium transition-colors ${selectedAttempt === 1 ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt 1</p>
+                            <p className="text-xs text-gray-500">
+                              {formatDateTime(getAttemptTimestamp(1))} - {latestAttemptForHistory === 1 ? 'Current attempt' : 'Previous attempt 1'}
+                            </p>
+                          </div>
+                          {selectedAttempt === 1 && (
+                            <div className="flex-shrink-0">
+                              <svg className="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                               </svg>
                             </div>
-                            <div className="flex-1">
-                              <p className={`text-sm font-medium transition-colors ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt {attemptNumber}</p>
-                              <p className="text-xs text-gray-500">
-                                {new Date(verification.submittedAt).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })} - {index === verification.verificationAttempts - 1 ? 'Current attempt' : `Previous attempt ${attemptNumber}`}
-                              </p>
-                            </div>
-                            {isSelected && (
-                              <div className="flex-shrink-0">
-                                <svg className="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                </svg>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-start gap-3 relative">
                         <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center z-10">
                           <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -489,13 +680,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                         </div>
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-900">Account Created</p>
-                          <p className="text-xs text-gray-500">
-                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric'
-                            }) : 'N/A'}
-                          </p>
+                          <p className="text-xs text-gray-500">{formatDateTime(user.createdAt)}</p>
                         </div>
                       </div>
                     </div>
@@ -556,7 +741,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                       : 'text-gray-600 hover:bg-gray-100'
                       }`}
                   >
-                    Certificates/Credentials ({verification.credentials.length})
+                    Certificates/Credentials ({Array.isArray(currentImages.credentials) ? currentImages.credentials.length : 0})
                   </button>
                 </div>
               </div>
@@ -578,6 +763,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 <p className="text-sm text-gray-600 mb-2">Left Side</p>
                                 {currentImages.faceVerification[0] ? (
                                   <ClickableImage
+                                    key={currentImages.faceVerification[0].cloudinaryUrl}
                                     src={currentImages.faceVerification[0].cloudinaryUrl}
                                     alt="Face Left Side"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
@@ -594,6 +780,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 {currentImages.faceVerification[1] ? (
                                   <ClickableImage
+                                    key={currentImages.faceVerification[1].cloudinaryUrl}
                                     src={currentImages.faceVerification[1].cloudinaryUrl}
                                     alt="Face Front"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
@@ -610,6 +797,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 <p className="text-sm text-gray-600 mb-2">Right Side</p>
                                 {currentImages.faceVerification[2] ? (
                                   <ClickableImage
+                                    key={currentImages.faceVerification[2].cloudinaryUrl}
                                     src={currentImages.faceVerification[2].cloudinaryUrl}
                                     alt="Face Right Side"
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
@@ -634,6 +822,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 <ClickableImage
+                                  key={currentImages.faceVerification.cloudinaryUrl}
                                   src={currentImages.faceVerification.cloudinaryUrl}
                                   alt="Face Verification"
                                   className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
@@ -666,9 +855,10 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 {currentImages.validId[0] ? (
                                   <ClickableImage
+                                    key={currentImages.validId[0].cloudinaryUrl}
                                     src={currentImages.validId[0].cloudinaryUrl}
                                     alt="ID Front"
-                                    className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
+                                    className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
                                     title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
@@ -682,9 +872,10 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                 <p className="text-sm text-gray-600 mb-2">Back</p>
                                 {currentImages.validId[1] ? (
                                   <ClickableImage
+                                    key={currentImages.validId[1].cloudinaryUrl}
                                     src={currentImages.validId[1].cloudinaryUrl}
                                     alt="ID Back"
-                                    className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
+                                    className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
                                     title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                   />
@@ -700,9 +891,10 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               <div>
                                 <p className="text-sm text-gray-600 mb-2">Front</p>
                                 <ClickableImage
+                                  key={currentImages.validId.cloudinaryUrl}
                                   src={currentImages.validId.cloudinaryUrl}
                                   alt="Valid ID"
-                                  className="w-full h-48 md:h-64 object-cover rounded-lg shadow-md bg-gray-100"
+                                  className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="id"
                                   title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
                                 />
@@ -725,18 +917,23 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                   {activeTab === 'credentials' && (
                     <div className="h-full">
                       {currentImages.credentials && currentImages.credentials.length > 0 ? (
-                        <div className="overflow-x-auto pb-4">
-                          <div className="flex flex-col md:flex-row gap-6 min-w-full md:min-w-min">
+                        <div className="pb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
                             {currentImages.credentials.map((credential: any, index: number) => (
-                              <div key={index} className="flex-shrink-0 w-full md:w-[500px]">
-                                <p className="text-sm font-medium text-gray-700 mb-2">{credential.originalName || `Credential ${index + 1}`}</p>
-                                <ClickableImage
-                                  src={credential.cloudinaryUrl}
-                                  alt={credential.originalName || `Credential ${index + 1}`}
-                                  className="w-full h-[300px] md:h-[600px] object-cover rounded-lg shadow-md bg-gray-100"
-                                  imageType="credential"
-                                  title={`${credential.originalName || `Credential ${index + 1}`} - Attempt ${selectedAttempt} - ${user.name}`}
-                                />
+                              <div key={index} className="w-full">
+                                <p className="text-sm font-medium text-gray-700 mb-2">
+                                  {formatCredentialName(credential.originalName || `Credential ${index + 1}`)}
+                                </p>
+                                <div className="w-full h-[32rem] md:h-[38rem] bg-gray-100 rounded-lg shadow-md flex items-center justify-center">
+                                  <ClickableImage
+                                    key={credential.cloudinaryUrl}
+                                    src={credential.cloudinaryUrl}
+                                    alt={formatCredentialName(credential.originalName || `Credential ${index + 1}`)}
+                                    className="max-h-full max-w-full object-contain"
+                                    imageType="credential"
+                                    title={`${formatCredentialName(credential.originalName || `Credential ${index + 1}`)} - Attempt ${selectedAttempt} - ${user.name}`}
+                                  />
+                                </div>
                               </div>
                             ))}
                           </div>

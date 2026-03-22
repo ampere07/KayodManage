@@ -25,11 +25,16 @@ class TransactionsService {
   /**
    * Get a single transaction by ID
    */
-  async getTransactionById(transactionId: string): Promise<{ success: boolean; transaction: Transaction }> {
-    const response = await apiClient.get<{ success: boolean; transaction: Transaction }>(
-      `${this.baseUrl}/${transactionId}`
-    );
-    return response.data;
+  async getTransactionById(transactionId: string): Promise<Transaction | null> {
+    try {
+      const response = await apiClient.get<Transaction>(
+        `${this.baseUrl}/${transactionId}`
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching transaction:', error);
+      return null;
+    }
   }
 
   /**
@@ -42,6 +47,20 @@ class TransactionsService {
     const response = await apiClient.patch<UpdateTransactionStatusResponse>(
       `${this.baseUrl}/${transactionId}/status`,
       data
+    );
+    return response.data;
+  }
+
+  async approveRefund(transactionId: string): Promise<{ success: boolean; message: string; refundTransactionId?: string }> {
+    const response = await apiClient.post<{ success: boolean; message: string; refundTransactionId?: string }>(
+      `${this.baseUrl}/${transactionId}/approve-refund`
+    );
+    return response.data;
+  }
+
+  async declineRefund(transactionId: string): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      `${this.baseUrl}/${transactionId}/decline-refund`
     );
     return response.data;
   }

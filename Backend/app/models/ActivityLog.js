@@ -14,6 +14,7 @@ const activityLogSchema = new mongoose.Schema({
       'user_restricted',
       'user_suspended',
       'user_banned',
+      'user_deleted',
       'user_unrestricted',
       'transaction_completed',
       'transaction_failed',

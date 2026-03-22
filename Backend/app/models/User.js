@@ -80,13 +80,13 @@ const UserSchema = new Schema({
   // Enhanced restriction system
   accountStatus: {
     type: String,
-    enum: ['active', 'restricted', 'suspended', 'banned'],
+    enum: ['active', 'restricted', 'suspended', 'banned', 'deleted'],
     default: 'active'
   },
   restrictionDetails: {
     type: {
       type: String,
-      enum: ['restricted', 'suspended', 'banned'],
+      enum: ['restricted', 'suspended', 'banned', 'deleted'],
       required: function () { return this.accountStatus !== 'active'; }
     },
     reason: {

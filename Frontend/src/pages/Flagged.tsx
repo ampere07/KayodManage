@@ -12,28 +12,67 @@ import {
   Clock,
   XCircle,
   Flag,
-  Activity as ActivityIcon
+  MessageSquare,
+  Users,
+  CreditCard,
+  Star,
+  MoreHorizontal
 } from 'lucide-react';
-import { formatBudgetWithType } from '../utils/currency';
-import { getInitials } from '../utils';
-import { ReviewReportModal } from '../components/Modals';
-import { useFlaggedPosts, useReviewReportedPost } from '../hooks';
-import type {
-  ReportedPost,
-  ReportFilterStatus
-} from '../types/flagged.types';
+import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
+import { useReports, useUpdateReport } from '../hooks';
+import { transactionsService } from '../services';
+import type { ReportFilterStatus } from '../types/alerts.types';
+import type { Report } from '../services/flaggedService';
+import type { Transaction } from '../types';
+import type { ReportedPost } from '../types/flagged.types';
 
 const Flagged: React.FC = () => {
-  const { data: reportedPosts = [], isLoading: loading } = useFlaggedPosts();
-  const reviewPostMutation = useReviewReportedPost();
+  const { data: reportsData, isLoading } = useReports();
+  const updateReportMutation = useUpdateReport();
+  
+  const allReports = reportsData?.reports || [];
+  
+  const reports = useMemo(() => {
+    return allReports.filter((report: Report) => {
+      const type = (report.reportType || '').toLowerCase();
+      const reason = (report.reason || '').toLowerCase();
+      const comment = (report.comment || '').toLowerCase();
+      
+      // Strict exclusion of anything related to refunds or payments
+      // as these are handled in the Transactions -> Refund section
+      const isRefundRelated = 
+        type.includes('refund') || 
+        type.includes('payment') ||
+        reason.includes('refund') || 
+        reason.includes('payment') ||
+        comment.includes('refund') ||
+        comment.includes('payment');
+        
+      return !isRefundRelated;
+    });
+  }, [allReports]);
 
-  const [selectedPost, setSelectedPost] = useState<ReportedPost | null>(null);
+  const stats = useMemo(() => {
+    // Recalculate stats based ONLY on the filtered reports
+    return {
+      total: reports.length,
+      pending: reports.filter((r: Report) => r.status === 'pending').length,
+      reviewed: reports.filter((r: Report) => r.status === 'reviewed').length,
+      resolved: reports.filter((r: Report) => r.status === 'resolved').length,
+      dismissed: reports.filter((r: Report) => r.status === 'dismissed').length,
+    };
+  }, [reports]);
+  
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [filter, setFilter] = useState<ReportFilterStatus>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [isFetchingTransaction, setIsFetchingTransaction] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
@@ -51,11 +90,11 @@ const Flagged: React.FC = () => {
     const alertId = searchParams.get('alertId');
     const targetId = reportId || alertId;
 
-    if (targetId && reportedPosts.length > 0) {
-      const post = reportedPosts.find(p => p._id === targetId);
-      if (post) {
+    if (targetId && reports.length > 0) {
+      const report = reports.find((p: Report) => p._id === targetId);
+      if (report) {
         setHighlightedPostId(targetId);
-        setSelectedPost(post);
+        setSelectedReport(report);
         setIsModalOpen(true);
 
         setTimeout(() => {
@@ -70,47 +109,132 @@ const Flagged: React.FC = () => {
         setSearchParams(searchParams, { replace: true });
       }
     }
-  }, [reportedPosts, searchParams, setSearchParams]);
+  }, [reports, searchParams, setSearchParams]);
 
-  const handleReviewPost = async (postId: string, action: 'approve' | 'dismiss' | 'delete') => {
+  const handleUpdateReport = async (reportId: string, status: string, action: string = 'none') => {
     setActionLoading(true);
     try {
-      await reviewPostMutation.mutateAsync({
-        postId,
-        action,
-        adminNotes: 'Action taken by admin'
+      await updateReportMutation.mutateAsync({
+        reportId,
+        status,
+        adminNotes: 'Action taken by admin',
+        actionTaken: action
       });
 
       setIsModalOpen(false);
-      setSelectedPost(null);
+      setSelectedReport(null);
 
       const actionMessages = {
-        approve: 'Post approved and kept',
-        dismiss: 'Report dismissed',
-        delete: 'Post deleted successfully'
+        reviewed: 'Report marked as reviewed',
+        resolved: 'Report resolved',
+        dismissed: 'Report dismissed'
       };
 
-      alert(actionMessages[action]);
+      alert(actionMessages[status as keyof typeof actionMessages] || 'Report updated');
 
     } catch (err: any) {
-      console.error('Error reviewing post:', err);
-      alert(err?.response?.data?.message || err?.message || 'An error occurred while reviewing the post');
+      console.error('Error updating report:', err);
+      alert(err?.response?.data?.message || err?.message || 'An error occurred while updating the report');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleViewPost = (post: ReportedPost) => {
-    setSelectedPost(post);
+  const handleReview = async (_postId: string, action: 'approve' | 'dismiss' | 'delete') => {
+    if (!selectedReport) return;
+
+    const statusMap = {
+      approve: 'resolved',
+      dismiss: 'dismissed',
+      delete: 'resolved'
+    };
+
+    const actionMap = {
+      approve: 'post_approved',
+      dismiss: 'report_dismissed',
+      delete: 'post_deleted'
+    };
+
+    await handleUpdateReport(selectedReport._id, statusMap[action], actionMap[action]);
+  };
+
+  const handleViewReport = async (report: Report) => {
+    // Check if it's potentially a refund-related report (direct tag or job-related)
+    const reportType = (report.reportType || '').toLowerCase();
+    const reason = (report.reason || '').toLowerCase();
+    const comment = (report.comment || '').toLowerCase();
+
+    const isPotentialRefund = 
+      reportType === 'payment' || 
+      reportType === 'job' ||
+      reportType === 'refund_request' ||
+      reason.includes('refund') || 
+      comment.includes('refund');
+
+    if (isPotentialRefund && report.relatedId) {
+      setIsFetchingTransaction(true);
+      try {
+        let transaction: Transaction | null = null;
+        
+        // 1. Try to fetch as a direct transaction ID first
+        try {
+          const directTransaction = await transactionsService.getTransactionById(report.relatedId);
+          if (directTransaction && (directTransaction.type === 'refund_request' || directTransaction.type === 'refund')) {
+            transaction = directTransaction;
+          }
+        } catch (e) {
+          // Ignore failure, try job search next
+        }
+
+        // 2. Fallback: Fetch transactions related to the relatedId (assuming it's a jobId)
+        if (!transaction) {
+          const response = await transactionsService.getTransactions({ 
+            jobId: report.relatedId,
+            limit: 10 
+          });
+          
+          // Look for any refund-related transaction for this job
+          transaction = response.transactions.find(t => 
+            t.type === 'refund_request' || t.type === 'refund'
+          ) || null;
+        }
+
+        if (transaction) {
+          setSelectedTransaction(transaction as any);
+          setIsTransactionModalOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching transaction for report:', err);
+      } finally {
+        setIsFetchingTransaction(false);
+      }
+    }
+
+    // Default to regular report modal
+    setSelectedReport(report);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setSelectedPost(null);
+    setSelectedReport(null);
     setTimeout(() => {
       setHighlightedPostId(null);
     }, 3000);
+  };
+
+  const getReportTypeIcon = (reportType: string) => {
+    const icons = {
+      job: <ImageIcon className="h-4 w-4" />,
+      user: <Users className="h-4 w-4" />,
+      message: <MessageSquare className="h-4 w-4" />,
+      conversation: <MessageSquare className="h-4 w-4" />,
+      review: <Star className="h-4 w-4" />,
+      payment: <CreditCard className="h-4 w-4" />,
+      other: <MoreHorizontal className="h-4 w-4" />
+    };
+    return icons[reportType as keyof typeof icons] || icons.other;
   };
 
   const getStatusBadge = (status: string) => {
@@ -145,44 +269,80 @@ const Flagged: React.FC = () => {
     return reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const filteredPosts = useMemo(() => {
-    let filtered = reportedPosts;
+  // Convert Report to ReportedPost format for the existing modal
+  const convertReportToReportedPost = (report: Report): ReportedPost => {
+    return {
+      _id: report._id,
+      jobId: { 
+        _id: report.relatedId,
+        title: `${report.reportType ? (report.reportType.charAt(0).toUpperCase() + report.reportType.slice(1)) : 'Post'} Report`,
+        description: report.comment || 'No description',
+        category: report.reportType,
+        budget: 0,
+        budgetType: 'fixed',
+        paymentMethod: 'Not specified',
+        location: {
+          address: 'Not specified',
+          city: 'Not specified',
+          region: 'Not specified',
+          country: 'Not specified'
+        },
+        createdAt: report.createdAt,
+        isDeleted: false,
+        media: []
+      },
+      reportedBy: {
+        _id: report.reportedBy._id,
+        providerId: report.reportedBy._id,
+        providerName: report.reportedBy.name,
+        providerEmail: report.reportedBy.email
+      },
+      jobPosterId: typeof report.reportedUserId === 'string' 
+        ? report.reportedUserId 
+        : (report.reportedUserId?._id || ''),
+      reason: report.reason,
+      comment: report.comment,
+      status: report.status as 'pending' | 'resolved' | 'dismissed',
+      adminNotes: report.adminNotes,
+      createdAt: report.createdAt,
+      updatedAt: report.updatedAt
+    };
+  };
 
-    // Debug: Log the first post to see the structure
-    if (filtered.length > 0) {
-      console.log('First post jobId:', filtered[0].jobId);
-      console.log('First post jobId.media:', filtered[0].jobId.media);
-    }
+  const filteredReports = useMemo(() => {
+    let filtered = reports;
 
     if (filter !== 'all') {
-      filtered = filtered.filter(post => post.status === filter);
+      filtered = filtered.filter((report: Report) => report.status === filter);
     }
 
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(post =>
-        post.jobId.title.toLowerCase().includes(search) ||
-        post.reportedBy.providerName.toLowerCase().includes(search) ||
-        post.reason.toLowerCase().includes(search) ||
-        post.comment.toLowerCase().includes(search)
+      filtered = filtered.filter((report: Report) =>
+        report.reportType.toLowerCase().includes(search) ||
+        report.reportedBy.name.toLowerCase().includes(search) ||
+        report.reason.toLowerCase().includes(search) ||
+        report.comment.toLowerCase().includes(search) ||
+        (report.reportedUserId?.name || '').toLowerCase().includes(search)
       );
     }
 
     return filtered;
-  }, [reportedPosts, filter, searchTerm]);
+  }, [reports, filter, searchTerm]);
 
   const statusCounts = useMemo(() => ({
-    all: reportedPosts.length,
-    pending: reportedPosts.filter(post => post.status === 'pending').length,
-    resolved: reportedPosts.filter(post => post.status === 'resolved').length,
-    dismissed: reportedPosts.filter(post => post.status === 'dismissed').length
-  }), [reportedPosts]);
+    all: stats.total,
+    pending: stats.pending,
+    reviewed: stats.reviewed,
+    resolved: stats.resolved,
+    dismissed: stats.dismissed
+  }), [stats]);
 
-  const totalPages = Math.ceil(filteredPosts.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedPosts = filteredPosts.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedReports = filteredReports.slice(startIndex, startIndex + itemsPerPage);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -307,14 +467,14 @@ const Flagged: React.FC = () => {
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                 <p className="text-gray-500">Loading reported posts...</p>
               </div>
             </div>
-          ) : paginatedPosts.length === 0 ? (
+          ) : paginatedReports.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
                 <Flag className="h-12 w-12 mx-auto" />
@@ -323,7 +483,7 @@ const Flagged: React.FC = () => {
               <p className="text-sm text-gray-500 mt-1">
                 {filter !== 'all'
                   ? 'Try adjusting your filters or search term.'
-                  : 'No posts have been reported yet.'}
+                  : 'No reports have been submitted yet.'}
               </p>
             </div>
           ) : (
@@ -334,7 +494,10 @@ const Flagged: React.FC = () => {
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Job Post
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Reported User
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Reported By
@@ -349,89 +512,64 @@ const Flagged: React.FC = () => {
                         Status
                       </th>
                       <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Action
+                        Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedPosts.map((post) => (
+                    {paginatedReports.map((report: Report) => (
                       <tr
-                        key={post._id}
-                        ref={highlightedPostId === post._id ? highlightedRowRef : null}
-                        onClick={() => handleViewPost(post)}
-                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${highlightedPostId === post._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
+                        key={report._id}
+                        ref={highlightedPostId === report._id ? highlightedRowRef : null}
+                        onClick={() => handleViewReport(report)}
+                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${highlightedPostId === report._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
                           }`}
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center">
-                            <div className="flex-shrink-0 h-10 w-10">
-                              {(() => {
-                                // Try different possible image sources
-                                let imageUrl = null;
-
-                                // Check media array
-                                if (post.jobId.media && post.jobId.media.length > 0) {
-                                  imageUrl = post.jobId.media[0].url || post.jobId.media[0];
-                                }
-
-                                // Check images array (fallback)
-                                if (!imageUrl && (post.jobId as any).images && (post.jobId as any).images.length > 0) {
-                                  imageUrl = (post.jobId as any).images[0];
-                                }
-
-                                return imageUrl ? (
-                                  <img
-                                    className="h-10 w-10 rounded object-cover"
-                                    src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
-                                    alt="Job"
-                                    onError={(e) => {
-                                      console.error('Image failed to load:', imageUrl);
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                      (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="h-10 w-10 rounded bg-gray-200 flex items-center justify-center"><svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>';
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-                                    <ImageIcon className="h-5 w-5 text-gray-400" />
-                                  </div>
-                                );
-                              })()}
+                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
+                              {getReportTypeIcon(report.reportType)}
                             </div>
-                            <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                                {post.jobId.title}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
-                              </div>
+                            <div className="text-sm font-medium text-gray-900 capitalize">
+                              {report.reportType}
                             </div>
                           </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            {report.reportedUserId?.name || 'N/A'}
+                          </div>
+                          {report.reportedUserId?.email && (
+                            <div className="text-xs text-gray-500">
+                              {report.reportedUserId.email}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center">
-                            <User className="h-5 w-5 text-gray-400 mr-2" />
+                            <User className="h-4 w-4 text-gray-400 mr-2" />
                             <div className="text-sm text-gray-900">
-                              {post.reportedBy.providerName}
+                              {report.reportedBy.name}
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{formatReason(post.reason)}</div>
-                          {post.comment && (
+                          <div className="text-sm text-gray-900">{formatReason(report.reason)}</div>
+                          {report.comment && (
                             <div className="text-xs text-gray-500 mt-1 max-w-xs truncate">
-                              {post.comment}
+                              {report.comment}
                             </div>
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center text-sm text-gray-500">
                             <Calendar className="h-4 w-4 mr-1" />
-                            {formatDate(post.createdAt)}
+                            {formatDate(report.createdAt)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(post.status)}`}>
-                            {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(report.status)}`}>
+                            {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -448,127 +586,99 @@ const Flagged: React.FC = () => {
 
               {/* Mobile Card View */}
               <div className="md:hidden px-4 py-4 space-y-3">
-                {paginatedPosts.map((post) => (
+                {paginatedReports.map((report: Report) => (
                   <div
-                    key={post._id}
-                    ref={highlightedPostId === post._id ? highlightedRowRef : null}
-                    onClick={() => handleViewPost(post)}
-                    className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-300 cursor-pointer active:scale-[0.98] ${highlightedPostId === post._id ? 'ring-2 ring-yellow-400 bg-yellow-50' : 'hover:shadow-md'
+                    key={report._id}
+                    ref={highlightedPostId === report._id ? highlightedRowRef : null}
+                    onClick={() => handleViewReport(report)}
+                    className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-300 cursor-pointer active:scale-[0.98] ${highlightedPostId === report._id ? 'ring-2 ring-yellow-400 bg-yellow-50' : 'hover:shadow-md'
                       }`}
                   >
-                    {/* Card Header: Reported User Info */}
-                    <div className="p-4 flex items-center gap-3 bg-gray-50/50 border-b border-gray-100">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-white shadow-sm flex items-center justify-center flex-shrink-0">
-                        <span className="text-sm font-bold text-gray-600">
-                          {getInitials((post.jobPosterId as any)?.name || 'Unknown')}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-bold text-gray-900 truncate">
-                            {(post.jobPosterId as any)?.name || 'Unknown User'}
-                          </h3>
-                          <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-[10px] font-bold border border-gray-200/50 shadow-sm ml-2 flex-shrink-0">
-                            Job ID: {post.jobId._id.slice(-6).toUpperCase()}
-                          </span>
+                    {/* Card Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center">
+                          {getReportTypeIcon(report.reportType)}
                         </div>
-                        <p className="text-xs text-gray-500 truncate mt-0.5">
-                          {(post.jobPosterId as any)?.email || 'No email provided'}
-                        </p>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 leading-tight capitalize">
+                            {report.reportType} Report
+                          </p>
+                          <p className="text-xs text-gray-500 truncate mt-0.5">
+                            ID: {report._id.slice(-6).toUpperCase()}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Card Body: Report Details */}
+                    {/* Card Body */}
                     <div className="p-4">
-                      {/* Section 1: Reason */}
+                      {/* Reported User */}
+                      {report.reportedUserId && (
+                        <div className="flex items-start gap-2 mb-4">
+                          <Users className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="text-sm font-bold text-gray-900 leading-tight">
+                              {report.reportedUserId.name}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {report.reportedUserId.email}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Reporter */}
+                      <div className="flex items-start gap-2 mb-4">
+                        <User className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <div className="text-sm font-bold text-gray-900 leading-tight">
+                            Reported by: {report.reportedBy.name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {report.reportedBy.email}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reason */}
                       <div className="flex items-start gap-2 mb-4">
                         <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <div className="text-sm font-bold text-gray-900 leading-tight">
-                            {formatReason(post.reason)}
+                            {formatReason(report.reason)}
                           </div>
-                          <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1">
-                            <User className="h-3 w-3" />
-                            <span>Reported by: </span>
-                            <span className="font-semibold text-gray-700">{post.reportedBy.providerName}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Section 2: Reported Content (Separation Line) */}
-                      <div className="pt-4 border-t border-gray-100 -mx-4">
-                        <p className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.15em] flex items-center gap-1.5 ml-0.5 mb-3">
-                          <ActivityIcon className="h-3 w-3" />
-                          Reported Content Details
-                        </p>
-
-                        {/* Full-width Image with Separation Lines */}
-                        <div className="w-full h-52 bg-gray-50 relative border-y border-gray-100 overflow-hidden">
-                          {(() => {
-                            let imageUrl = null;
-                            if (post.jobId.media && post.jobId.media.length > 0) {
-                              imageUrl = post.jobId.media[0].url || post.jobId.media[0];
-                            }
-
-                            return imageUrl ? (
-                              <img
-                                src={typeof imageUrl === 'string' ? imageUrl : imageUrl.url}
-                                alt="Reported"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 gap-2">
-                                <ImageIcon className="h-10 w-10 text-gray-300" />
-                              </div>
-                            );
-                          })()}
-
-                          {post.jobId.category && (
-                            <div className="absolute top-3 right-3">
-                              <span className="px-2 py-1 bg-white/90 backdrop-blur-sm shadow-sm rounded-md text-[10px] font-black text-blue-600 uppercase tracking-widest border border-white">
-                                {post.jobId.category}
-                              </span>
+                          {report.comment && (
+                            <div className="text-xs text-gray-500 mt-1 max-w-xs">
+                              {report.comment}
                             </div>
                           )}
                         </div>
-
-                        {/* Text details below the separation line */}
-                        <div className="px-4 pt-4">
-                          <h4 className="text-base font-bold text-gray-800 leading-tight mb-3">
-                            {post.jobId.title}
-                          </h4>
-                          <div className="flex flex-wrap gap-2 text-[11px]">
-                            <span className="px-2 py-1 bg-green-50 text-green-700 rounded-lg font-bold border border-green-100/50 shadow-sm">
-                              {formatBudgetWithType(post.jobId.budget, post.jobId.budgetType)}
-                            </span>
-                          </div>
-                        </div>
                       </div>
 
-                      {/* Section 3: Comment (Separation Line) */}
-                      {post.comment && (
-                        <div className="mt-5 pt-4 border-t border-gray-100">
-                          <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                            <ActivityIcon className="h-3 w-3" />
-                            Reporter's Comment
-                          </p>
-                          <div className="relative pl-3 border-l-2 border-red-100">
-                            <p className="text-sm text-gray-600 leading-relaxed italic pr-4">
-                              "{post.comment}"
-                            </p>
-                          </div>
+                      {/* Status */}
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-gray-400" />
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${getStatusBadge(report.status)}`}>
+                            {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                          </span>
                         </div>
-                      )}
+                        <div className="text-xs text-gray-500">
+                          {formatDate(report.createdAt)}
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Card Footer: Metadata */}
+                    {/* Card Footer */}
                     <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between mt-auto">
                       <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
                         <Calendar className="h-3.5 w-3.5" />
-                        <span>{formatDate(post.createdAt)}</span>
+                        <span>{formatDate(report.createdAt)}</span>
                       </div>
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(post.status)}`}>
-                        {post.status.charAt(0).toUpperCase() + post.status.slice(1)}
+                      <span className="text-blue-600 font-medium inline-flex items-center text-xs">
+                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        Review
                       </span>
                     </div>
                   </div>
@@ -584,10 +694,10 @@ const Flagged: React.FC = () => {
                         <span className="font-medium">{startIndex + 1}</span>{' '}
                         to{' '}
                         <span className="font-medium">
-                          {Math.min(startIndex + itemsPerPage, filteredPosts.length)}
+                          {Math.min(startIndex + itemsPerPage, filteredReports.length)}
                         </span>{' '}
                         of{' '}
-                        <span className="font-medium">{filteredPosts.length}</span> results
+                        <span className="font-medium">{filteredReports.length}</span> results
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -615,12 +725,30 @@ const Flagged: React.FC = () => {
       </div>
 
       <ReviewReportModal
-        isOpen={isModalOpen}
+        isOpen={isModalOpen && !!selectedReport}
         onClose={handleCloseModal}
-        reportedPost={selectedPost}
-        onReview={handleReviewPost}
+        reportedPost={selectedReport ? convertReportToReportedPost(selectedReport) : null}
+        onReview={handleReview}
         isLoading={actionLoading}
       />
+
+      <TransactionDetailsModal
+        isOpen={isTransactionModalOpen}
+        onClose={() => {
+          setIsTransactionModalOpen(false);
+          setSelectedTransaction(null);
+        }}
+        transaction={selectedTransaction}
+      />
+
+      {isFetchingTransaction && (
+        <div className="fixed inset-0 bg-black/20 z-[200] flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <span className="text-sm font-medium">Fetching details...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

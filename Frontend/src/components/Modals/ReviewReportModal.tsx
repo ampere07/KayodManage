@@ -69,6 +69,20 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
 
   if (!reportedPost) return null;
 
+  const jobInfo =
+    (typeof reportedPost.jobId === 'object' && reportedPost.jobId) ||
+    (reportedPost as any).jobDetails || {};
+
+  const jobIdRef =
+    jobInfo._id || jobInfo.jobId || (typeof reportedPost.jobId === 'string' ? reportedPost.jobId : '') || '';
+  const jobTitle = jobInfo.title || 'Untitled';
+  const jobDescription = jobInfo.description || 'No description';
+  const jobCategory = jobInfo.category || 'N/A';
+  const jobBudget = jobInfo.budget ?? 0;
+  const jobBudgetType = jobInfo.budgetType || 'fixed';
+  const jobPaymentMethod = jobInfo.paymentMethod || 'Not specified';
+  const jobLocation = jobInfo.location || { address: 'Not specified', city: 'Not specified' };
+
   return (
     <SideModal
       isOpen={isOpen}
@@ -89,40 +103,40 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Job ID:</span>
               <span className="col-span-2 font-mono text-blue-600 font-semibold">
-                #{reportedPost.jobId._id.slice(-6).toUpperCase()}
+                {jobIdRef ? `#${jobIdRef.slice(-6).toUpperCase()}` : 'N/A'}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Title:</span>
-              <span className="col-span-2 text-gray-900">{reportedPost.jobId.title}</span>
+              <span className="col-span-2 text-gray-900">{jobTitle}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Description:</span>
-              <span className="col-span-2 text-gray-900">{reportedPost.jobId.description}</span>
+              <span className="col-span-2 text-gray-900">{jobDescription}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Category:</span>
-              <span className="col-span-2 text-gray-900">{reportedPost.jobId.category}</span>
+              <span className="col-span-2 text-gray-900">{jobCategory}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Budget:</span>
               <span className="col-span-2 text-gray-900">
-                {formatBudgetWithType(reportedPost.jobId.budget, reportedPost.jobId.budgetType)}
+                {formatBudgetWithType(jobBudget, jobBudgetType)}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Payment:</span>
-              <span className="col-span-2 text-gray-900">{reportedPost.jobId.paymentMethod}</span>
+              <span className="col-span-2 text-gray-900">{jobPaymentMethod}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Location:</span>
               <span className="col-span-2 text-gray-900">
-                {reportedPost.jobId.location.address}, {reportedPost.jobId.location.city}
+                {jobLocation?.address || 'N/A'}{jobLocation?.city ? `, ${jobLocation.city}` : ''}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <span className="text-gray-600 font-medium">Posted:</span>
-              <span className="col-span-2 text-gray-900">{formatDate(reportedPost.jobId.createdAt)}</span>
+              <span className="col-span-2 text-gray-900">{reportedPost.jobId?.createdAt ? formatDate(reportedPost.jobId.createdAt as any) : 'N/A'}</span>
             </div>
             {reportedPost.jobId.isDeleted && (
               <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-400 flex items-start">
@@ -139,14 +153,14 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
         <div className="px-6 py-6">
           <h3 className="font-semibold text-lg mb-4 text-gray-900">
             Job Media
-            {reportedPost.jobId.media && reportedPost.jobId.media.length > 0 && (
+            {reportedPost.jobId?.media && reportedPost.jobId.media.length > 0 && (
               <span className="ml-2 text-sm font-normal text-gray-600">
                 ({reportedPost.jobId.media.length} file{reportedPost.jobId.media.length !== 1 ? 's' : ''})
               </span>
             )}
           </h3>
 
-          {reportedPost.jobId.media && reportedPost.jobId.media.length > 0 ? (
+          {reportedPost.jobId?.media && reportedPost.jobId.media.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
               {reportedPost.jobId.media.map((mediaItem, index) => {
                 const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.type;

@@ -57,8 +57,11 @@ class VerificationsService {
   /**
    * Get user images from latest verification
    */
-  async getUserImages(userId: string): Promise<UserImagesResponse> {
-    const response = await apiClient.get<UserImagesResponse>(`${this.baseUrl}/user/${userId}/images`);
+  async getUserImages(userId: string, attempt?: number): Promise<UserImagesResponse> {
+    const response = await apiClient.get<UserImagesResponse>(
+      `/api/admin/users/${userId}/images`,
+      { params: attempt ? { attempt } : undefined }
+    );
     return response.data;
   }
 }

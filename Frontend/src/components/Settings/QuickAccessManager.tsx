@@ -200,7 +200,10 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
               ) : (
                 <div className="grid grid-cols-4 gap-4">
                   {selectedProfessions.map((profession, index) => {
-                    const professionIcon = getProfessionIconByName(profession.icon || '', profession.categoryIcon);
+                    // If profession has no icon, use the default icon
+                    const professionIcon = profession.icon 
+                      ? getProfessionIconByName(profession.icon, profession.categoryIcon)
+                      : { imagePath: '/src/assets/icons/Default_Icon.webp', color: '#0F766E' };
                     return (
                       <div
                         key={profession._id}
@@ -235,7 +238,8 @@ const QuickAccessManager: React.FC<QuickAccessManagerProps> = ({
                             className="w-10 h-10"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
+                              // Fallback to the default icon if the profession icon fails to load
+                              target.src = '/src/assets/icons/Default_Icon.webp';
                             }}
                           />
                         </div>

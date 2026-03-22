@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const FeeRecord = require('../models/FeeRecord');
 const User = require('../models/User');
@@ -16,9 +17,14 @@ const getTransactions = async (req, res) => {
     const paymentMethod = req.query.paymentMethod;
     const dateFrom = req.query.dateFrom;
     const dateTo = req.query.dateTo;
+    const jobId = req.query.jobId;
     const includeFeatures = req.query.includeFees === 'true';
     
     let query = {};
+    
+    if (jobId) {
+      query.jobId = jobId;
+    }
     let dateQuery = {};
     
     // Search functionality
@@ -67,7 +73,20 @@ const getTransactions = async (req, res) => {
       .populate('toUser', 'name email phone location profileImage')
       .populate('fromUserId', 'name email phone location profileImage')
       .populate('toUserId', 'name email phone location profileImage')
-      .populate('jobId', 'title category')
+      .populate({
+        path: 'jobId',
+        select: 'title category userId assignedToId budget',
+        populate: [
+          {
+            path: 'userId',
+            select: 'name email phone location userType profileImage'
+          },
+          {
+            path: 'assignedToId',
+            select: 'name email phone location userType profileImage'
+          }
+        ]
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -329,7 +348,20 @@ const getTransactionDetails = async (req, res) => {
         .populate('toUser', 'name email phone location profileImage')
         .populate('fromUserId', 'name email phone location profileImage')
         .populate('toUserId', 'name email phone location profileImage')
-        .populate('jobId', 'title description category')
+        .populate({
+          path: 'jobId',
+          select: 'title description category userId assignedToId budget',
+          populate: [
+            {
+              path: 'userId',
+              select: 'name email phone location userType profileImage'
+            },
+            {
+              path: 'assignedToId',
+              select: 'name email phone location userType profileImage'
+            }
+          ]
+        })
         .lean();
       
       if (transactionData) {
@@ -471,7 +503,20 @@ const updateTransactionStatus = async (req, res) => {
     .populate('toUser', 'name email phone location')
     .populate('fromUserId', 'name email phone location')
     .populate('toUserId', 'name email phone location')
-    .populate('jobId', 'title category')
+    .populate({
+      path: 'jobId',
+      select: 'title category userId assignedToId budget',
+      populate: [
+        {
+          path: 'userId',
+          select: 'name email phone location userType profileImage'
+        },
+        {
+          path: 'assignedToId',
+          select: 'name email phone location userType profileImage'
+        }
+      ]
+    })
     .lean();
     
     if (updatedTransaction) {
@@ -573,9 +618,241 @@ const getTransactionStats = async (req, res) => {
   }
 };
 
+const approveRefund = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    
+    const transaction = await Transaction.findById(transactionId)
+      .populate('fromUser', 'name')
+      .populate('fromUserId', 'name');
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.type !== 'refund_request' && transaction.type !== 'refund') {
+      return res.status(400).json({ error: 'Transaction is not a refund request' });
+    }
+    
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({ error: `Transaction is already ${transaction.status}` });
+    }
+    
+    // Determine the actual refund amount — use transaction.amount if set,
+    // otherwise fall back to the job's escrowAmount / agreedPrice / budget
+    let refundAmount = transaction.amount || 0;
+    let job = null;
+    
+    if (transaction.jobId) {
+      job = await Job.findById(transaction.jobId);
+    }
+    
+    if (refundAmount === 0 && job) {
+      refundAmount = job.escrowAmount || job.agreedPrice || job.budget || 0;
+      // Also update the transaction's amount so the record is correct
+      transaction.amount = refundAmount;
+    }
+    
+    transaction.status = 'completed';
+    transaction.completedAt = new Date();
+    transaction.refundStatus = 'approved';
+    await transaction.save();
+
+    const Wallet = require('../models/Wallet');
+    const fromUser = transaction.fromUser || transaction.fromUserId;
+    let clientId = fromUser;
+    if (fromUser && typeof fromUser === 'object' && fromUser._id) {
+      clientId = fromUser._id;
+    }
+    
+    console.log('[approveRefund] Processing wallet for DB:', mongoose.connection.name);
+    console.log('[approveRefund] Target Client:', clientId, 'Amount:', refundAmount);
+
+    if (clientId && refundAmount > 0) {
+      try {
+        // Ensure we use ObjectId for the query
+        const queryId = new mongoose.Types.ObjectId(clientId.toString());
+        
+        // Update Client's Wallet: ONLY add to availableBalance
+        // In this app, 'balance' maps to 'Incoming Funds', which refunds are NOT.
+        // We use findOneAndUpdate on the RAW collection to avoid any schema/model mismatch
+        const clientResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+          { userId: queryId },
+          { $inc: { availableBalance: refundAmount } },
+          { returnDocument: 'after' }
+        );
+        
+        if (clientResult && (clientResult.value || clientResult._id)) {
+           console.log('[approveRefund] SUCCESS: Wallet updated. New Avail Balance:', 
+             (clientResult.value ? clientResult.value.availableBalance : 'Updated'));
+        } else {
+           console.log('[approveRefund] WARNING: No wallet found with userId:', queryId);
+           // Fallback to searching by string just in case
+           const fallbackResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+             { userId: queryId.toString() },
+             { $inc: { availableBalance: refundAmount } },
+             { returnDocument: 'after' }
+           );
+           if (fallbackResult && (fallbackResult.value || fallbackResult._id)) {
+             console.log('[approveRefund] SUCCESS: Wallet updated via String ID fallback.');
+           } else {
+             console.log('[approveRefund] ERROR: Failed to find wallet after fallback.');
+           }
+        }
+      } catch (e) {
+        console.error('[approveRefund] Wallet update error:', e.message);
+      }
+    }
+    
+    // Process Job update and Provider's incoming funds
+    if (job) {
+       await Job.findByIdAndUpdate(transaction.jobId, {
+         $inc: { escrowAmount: -refundAmount },
+         paymentStatus: 'refunded'
+       });
+
+       // Resolve any associated ReportedPosts
+       const ReportedPost = require('../models/ReportedPost');
+       const reportUpdateResult = await ReportedPost.updateMany(
+         { jobId: transaction.jobId, status: 'pending' },
+         { 
+           status: 'resolved',
+           reviewedBy: req.user?.id,
+           reviewedAt: new Date(),
+           adminNotes: `Refund approved for ${refundAmount} PHP. Status auto-resolved.`
+         }
+       );
+       console.log('[approveRefund] ReportedPost resolution result:', reportUpdateResult.modifiedCount, 'reports updated');
+       
+       // If the job has a provider assigned to it, deduct their incoming funds
+       const providerId = job.assignedToId || job.acceptedProvider;
+       if (providerId && refundAmount > 0) {
+         const providerQueryId = new mongoose.Types.ObjectId(providerId.toString());
+         const providerResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
+            { $or: [{ userId: providerQueryId }, { user: providerQueryId }] },
+            { $inc: { balance: -refundAmount } },
+            { returnDocument: 'after' }
+          );
+          console.log('[approveRefund] Provider wallet update result:', providerResult ? 'found & updated' : 'NOT FOUND', 'providerId:', providerId);
+         
+         // Additionally, mark any pending escrow_payment transactions to this provider for this job as cancelled
+         await Transaction.updateMany(
+           {
+             jobId: transaction.jobId,
+             $or: [{ toUser: providerId }, { toUserId: providerId }],
+             type: 'escrow_payment',
+             status: 'pending'
+           },
+           { status: 'cancelled' }
+         );
+       }
+    }
+    
+    if (req.user && req.user.id) {
+      const requester = transaction.fromUser || transaction.fromUserId;
+      const userName = requester?.name || 'user';
+      
+      await logActivity(
+        req.user.id,
+        'transaction_completed',
+        `Approved refund request of ${userName}`,
+        {
+          targetType: 'transaction',
+          targetId: transactionId,
+          targetModel: 'Transaction',
+          metadata: { amount: refundAmount, type: transaction.type },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('transaction:updated', {
+      transaction: transaction,
+      updateType: 'approved refund'
+    });
+    
+    res.json({ success: true, message: 'Refund approved successfully', transaction });
+  } catch (error) {
+    console.error('Error approving refund:', error);
+    res.status(500).json({ error: 'Failed to approve refund' });
+  }
+};
+
+const declineRefund = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    
+    const transaction = await Transaction.findById(transactionId)
+      .populate('fromUser', 'name')
+      .populate('fromUserId', 'name');
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.type !== 'refund_request' && transaction.type !== 'refund') {
+      return res.status(400).json({ error: 'Transaction is not a refund request' });
+    }
+    
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({ error: `Transaction is already ${transaction.status}` });
+    }
+    
+    transaction.status = 'failed';
+    transaction.failedAt = new Date();
+    transaction.failureReason = 'Declined by admin';
+    transaction.refundStatus = 'declined';
+    await transaction.save();
+
+    // Dismiss any associated ReportedPosts
+    if (transaction.jobId) {
+      const ReportedPost = require('../models/ReportedPost');
+      await ReportedPost.updateMany(
+        { jobId: transaction.jobId, status: 'pending' },
+        { 
+          status: 'dismissed',
+          reviewedBy: req.user?.id,
+          reviewedAt: new Date(),
+          adminNotes: 'Refund declined by admin. Report auto-dismissed.'
+        }
+      );
+    }
+    
+    if (req.user && req.user.id) {
+      const requester = transaction.fromUser || transaction.fromUserId;
+      const userName = requester?.name || 'user';
+      
+      await logActivity(
+        req.user.id,
+        'transaction_failed',
+        `Declined refund request of ${userName}`,
+        {
+          targetType: 'transaction',
+          targetId: transactionId,
+          targetModel: 'Transaction',
+          metadata: { amount: transaction.amount, type: transaction.type },
+          ipAddress: req.ip
+        }
+      );
+    }
+    
+    const { io } = require('../../server');
+    io.to('admin').emit('transaction:updated', {
+      transaction: transaction,
+      updateType: 'declined refund'
+    });
+    
+    res.json({ success: true, message: 'Refund declined successfully', transaction });
+  } catch (error) {
+    console.error('Error declining refund:', error);
+    res.status(500).json({ error: 'Failed to decline refund' });
+  }
+};
+
 module.exports = { 
   getTransactions, 
   getTransactionDetails, 
   updateTransactionStatus,
-  getTransactionStats 
+  getTransactionStats,
+  approveRefund,
+  declineRefund
 };

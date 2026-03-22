@@ -517,4 +517,80 @@ const getStatsComparison = async (req, res) => {
   }
 };
 
-module.exports = { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison };
+const getPopularJobs = async (req, res) => {
+  try {
+    const period = req.query.period || 'overall';
+    const matchQuery = {
+      $or: [
+        { professionName: { $exists: true, $ne: null, $ne: "" } },
+        { category: { $exists: true, $ne: null, $ne: "" } }
+      ],
+      budget: { $gt: 0 }
+    };
+
+    if (period !== 'overall') {
+      const now = new Date();
+      let startDate = new Date();
+
+      if (period === 'week') {
+        startDate.setDate(now.getDate() - 7);
+      } else if (period === 'month') {
+        startDate.setMonth(now.getMonth() - 1);
+      } else if (period === '6months') {
+        startDate.setMonth(now.getMonth() - 6);
+      } else if (period === 'year') {
+        startDate.setFullYear(now.getFullYear() - 1);
+      }
+
+      matchQuery.createdAt = { $gte: startDate };
+    }
+
+    const popularJobs = await Job.aggregate([
+      {
+        $match: matchQuery
+      },
+      { 
+        $group: { 
+          _id: { 
+            $toLower: { 
+              $cond: [
+                { $and: [ 
+                  { $ne: ["$professionName", null] }, 
+                  { $ne: ["$professionName", ""] },
+                  { $ne: [{ $type: "$professionName" }, "missing"] }
+                ] }, 
+                "$professionName", 
+                "$category"
+              ] 
+            }
+          }, 
+          count: { $sum: "$budget" },
+          jobCount: { $sum: 1 },
+          icon: { $first: "$icon" }
+        } 
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      { $project: { name: "$_id", count: 1, jobCount: 1, icon: 1, _id: 0 } }
+    ]);
+
+    const formattedData = popularJobs.map(job => {
+      const name = job.name 
+        ? job.name.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        : 'Uncategorized';
+      return {
+        name,
+        count: job.count,
+        jobCount: job.jobCount,
+        icon: job.icon || null
+      };
+    });
+
+    res.json(formattedData);
+  } catch (error) {
+    console.error('Error fetching popular jobs:', error);
+    res.status(500).json({ error: 'Failed to fetch popular jobs data' });
+  }
+};
+
+module.exports = { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison, getPopularJobs };

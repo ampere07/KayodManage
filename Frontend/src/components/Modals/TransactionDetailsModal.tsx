@@ -1,9 +1,12 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X as XIcon } from 'lucide-react';
+import { X as XIcon, CheckCircle, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Transaction } from '../../types';
 import { getInitials, formatPHPCurrency, getUser, getToUser } from '../../utils';
+import { transactionsService } from '../../services';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
@@ -26,12 +29,80 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   };
 
   const customer = getUser(transaction);
-  const provider = getToUser(transaction) || customer;
+  const provider =
+    (transaction as any).toUser ||
+    (transaction as any).toUserIdDetails ||
+    getToUser(transaction) ||
+    (transaction as any).toUserId ||
+    null;
   const isFeeRecord = transaction.transactionType === 'fee_record';
   const isWithdrawal = transaction.type === 'withdrawal';
+  const isRefundRequest = (transaction.type || '').toLowerCase().includes('refund');
+  const isPendingRefund = isRefundRequest && transaction.status === 'pending';
+
+  // For refund requests, override customer/provider to show refund requester and job poster
+  let displayCustomer: any = customer;
+  let displayProvider: any = provider;
+  if (isRefundRequest) {
+    displayCustomer = (transaction as any).fromUser || getUser(transaction); // refund requester
+    const job = (transaction as any).job || (transaction as any).jobId;
+    displayProvider =
+      (transaction as any).toUser ||
+      (transaction as any).toUserIdDetails ||
+      job?.assignedToId ||
+      job?.assignedTo ||
+      job?.jobPosterDetails ||
+      job?.jobPoster ||
+      job?.userIdDetails ||
+      job?.userId ||
+      job?.providerDetails ||
+      job?.provider ||
+      getToUser(transaction) ||
+      (transaction as any).toUserId ||
+      provider;
+  }
+
+  const getName = (user: any) =>
+    (user && typeof user === 'object' && (user.name || user.fullName || user.username || user.email || user._id)) ||
+    (typeof user === 'string' ? user : undefined);
+  const getEmail = (user: any) => (user && typeof user === 'object' && user.email) || undefined;
+  const getPhone = (user: any) => (user && typeof user === 'object' && (user.phone || user.contactNumber)) || undefined;
+  const getLocation = (user: any) =>
+    (user && typeof user === 'object' && (user.location || user.address || user.addressLine)) || undefined;
+  const getId = (user: any) =>
+    (user && typeof user === 'object' && user._id) || (typeof user === 'string' ? user : undefined);
+
+  const queryClient = useQueryClient();
+
+  const approveMutation = useMutation({
+    mutationFn: () => transactionsService.approveRefund(transaction._id),
+    onSuccess: () => {
+      toast.success('Refund approved');
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onClose();
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to approve refund';
+      toast.error(msg);
+    }
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: () => transactionsService.declineRefund(transaction._id),
+    onSuccess: () => {
+      toast.success('Refund request declined');
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onClose();
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to decline refund';
+      toast.error(msg);
+    }
+  });
 
   // Render fee record layout
   if (isFeeRecord) {
+    console.log('Rendering fee record layout');
     return createPortal(
       <>
         <div
@@ -266,13 +337,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={onClose}
-                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Close
-              </button>
+            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+              {isRefundRequest ? (
+                <>
+                  <button
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
+                  >
+                    Close
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => declineMutation.mutate()}
+                      disabled={declineMutation.isPending || approveMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending || declineMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Approve & Refund
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={onClose}
+                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -354,7 +454,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
                     <div className="space-y-3 text-sm">
 
-
                       <div className="flex items-start gap-2">
                         <p className="text-gray-600 min-w-[120px]">Phone:</p>
                         <p className="text-gray-900">{user?.phone || 'N/A'}</p>
@@ -417,13 +516,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={onClose}
-                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Close
-              </button>
+            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+              {isRefundRequest ? (
+                <>
+                  <button
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
+                  >
+                    Close
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => declineMutation.mutate()}
+                      disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Approve & Refund
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={onClose}
+                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -462,39 +590,39 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               <div className="grid grid-cols-2 gap-8">
                 {/* Customer Information */}
                 <div>
-                  <h4 className="text-base font-bold text-gray-900 mb-6">Customer Information:</h4>
+                  <h4 className="text-base font-bold text-gray-900 mb-6">{isRefundRequest ? 'Refund Requester Information:' : 'Customer Information:'}</h4>
 
                   <div className="flex flex-col items-center mb-6">
                     <div className="h-24 w-24 rounded-full bg-blue-100 flex items-center justify-center mb-3">
-                      <span className="text-3xl font-bold text-blue-600">{getInitials(customer?.name || 'Unknown')}</span>
+                      <span className="text-3xl font-bold text-blue-600">{getInitials(displayCustomer?.name || 'Unknown')}</span>
                     </div>
-                    <p className="text-base font-medium text-gray-900">Username</p>
+                    <p className="text-base font-medium text-gray-900 text-center">{displayCustomer?.username || displayCustomer?.name || 'Unknown'}</p>
                   </div>
 
                   <div className="space-y-4 text-sm">
                     <div>
                       <p className="text-gray-600 mb-1">First Name:</p>
-                      <p className="text-gray-900">{customer?.name?.split(' ')[0] || 'N/A'}</p>
+                      <p className="text-gray-900">{displayCustomer?.name?.split(' ')[0] || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Last Name:</p>
-                      <p className="text-gray-900">{customer?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                      <p className="text-gray-900">{displayCustomer?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">KYD:</p>
-                      <p className="text-gray-900 font-mono">{transaction._id.slice(-8).toUpperCase()}</p>
+                      <p className="text-gray-900 font-mono">{displayCustomer?._id || transaction._id.slice(-8).toUpperCase()}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Email:</p>
-                      <p className="text-gray-900 break-all">{customer?.email || 'N/A'}</p>
+                      <p className="text-gray-900 break-all">{displayCustomer?.email || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Contact Number:</p>
-                      <p className="text-gray-900">{customer?.phone || 'N/A'}</p>
+                      <p className="text-gray-900">{displayCustomer?.phone || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Address:</p>
-                      <p className="text-gray-900">{customer?.location || 'N/A'}</p>
+                      <p className="text-gray-900">{displayCustomer?.location || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -505,35 +633,35 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
                   <div className="flex flex-col items-center mb-6">
                     <div className="h-24 w-24 rounded-full bg-green-100 flex items-center justify-center mb-3">
-                      <span className="text-3xl font-bold text-green-600">{getInitials(provider?.name || 'Unknown')}</span>
+                      <span className="text-3xl font-bold text-green-600">{getInitials(displayProvider?.name || 'Unknown')}</span>
                     </div>
-                    <p className="text-base font-medium text-gray-900">Username</p>
+                    <p className="text-base font-medium text-gray-900 text-center">{displayProvider?.username || displayProvider?.name || 'Unknown'}</p>
                   </div>
 
                   <div className="space-y-4 text-sm">
                     <div>
                       <p className="text-gray-600 mb-1">First Name:</p>
-                      <p className="text-gray-900">{provider?.name?.split(' ')[0] || 'N/A'}</p>
+                      <p className="text-gray-900">{displayProvider?.name?.split(' ')[0] || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Last Name:</p>
-                      <p className="text-gray-900">{provider?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                      <p className="text-gray-900">{displayProvider?.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">KYD:</p>
-                      <p className="text-gray-900 font-mono">{transaction._id.slice(-8).toUpperCase()}</p>
+                      <p className="text-gray-900 font-mono">{(displayProvider as any)?._id || transaction._id.slice(-8).toUpperCase()}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Email:</p>
-                      <p className="text-gray-900 break-all">{provider?.email || 'N/A'}</p>
+                      <p className="text-gray-900 break-all">{(displayProvider as any)?.email || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Contact Number:</p>
-                      <p className="text-gray-900">{provider?.phone || 'N/A'}</p>
+                      <p className="text-gray-900">{(displayProvider as any)?.phone || 'N/A'}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 mb-1">Address:</p>
-                      <p className="text-gray-900">{provider?.location || 'N/A'}</p>
+                      <p className="text-gray-900">{(displayProvider as any)?.location || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -564,7 +692,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   </div>
                   <div className="flex">
                     <p className="font-semibold text-gray-700 w-32">Created By:</p>
-                    <p className="text-gray-600 flex-1">{customer?.name || 'N/A'}</p>
+                    <p className="text-gray-600 flex-1">{displayCustomer?.name || 'N/A'}</p>
                   </div>
                   <div className="flex">
                     <p className="font-semibold text-gray-700 w-32">Created At:</p>
@@ -602,13 +730,42 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
           </div>
 
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
-            <button
-              onClick={onClose}
-              className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              Close
-            </button>
+          <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
+            {isRefundRequest ? (
+              <>
+                <button
+                  onClick={onClose}
+                  className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => declineMutation.mutate()}
+                    disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Decline
+                  </button>
+                  <button
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    Approve & Refund
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Close
+              </button>
+            )}
           </div>
         </div>
       </div>

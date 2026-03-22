@@ -7,15 +7,132 @@ import type {
   ReportsSummary
 } from '../types/flagged.types';
 
+// New types for the unified reports collection
+export interface Report {
+  _id: string;
+  reportType: 'job' | 'user' | 'message' | 'conversation' | 'review' | 'payment' | 'other';
+  reportedUserId?: {
+    _id: string;
+    name: string;
+    email: string;
+    userType: string;
+  };
+  relatedId: string;
+  reportedBy: {
+    _id: string;
+    name: string;
+    email: string;
+    userType: string;
+  };
+  reason: string;
+  comment: string;
+  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  reviewedBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  reviewedAt?: string;
+  adminNotes: string;
+  actionTaken: string;
+  reportMetadata: {
+    reporterIP?: string;
+    reporterUserAgent?: string;
+    reportSource: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportsResponse {
+  success: boolean;
+  data: {
+    reports: Report[];
+    stats: {
+      total: number;
+      pending: number;
+      reviewed: number;
+      resolved: number;
+      dismissed: number;
+    };
+    pagination?: {
+      current: number;
+      total: number;
+      totalReports: number;
+      hasNext: boolean;
+      hasPrev: boolean;
+    };
+  };
+}
+
 /**
  * Flagged Service
  * Handles all API calls related to reported posts/flagged content
  */
 class FlaggedService {
-  private baseUrl = '/api/admin/reported-posts';
+  // ReportedPost legacy collection (backend is under /api/reports/reported-posts)
+  private baseUrl = '/api/reports/reported-posts';
+  private reportsUrl = '/api/reports';
+
+  // Legacy reported-posts collection (ReportedPost)
+  async getAllReportedPosts(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    reason?: string;
+  }): Promise<ReportedPostsResponse & { success?: boolean }> {
+    const response = await apiClient.get<ReportedPostsResponse & { success?: boolean }>(`${this.baseUrl}/admin/all`, { params });
+    // Normalize shape to match existing expectations
+    return {
+      success: (response.data as any).success ?? true,
+      reportedPosts: (response.data as any).reports || (response.data as any).reportedPosts || [],
+      stats: (response.data as any).stats,
+      pagination: (response.data as any).pagination,
+    } as any;
+  }
 
   /**
-   * Fetch all reported posts with optional filtering and pagination
+   * Fetch all reports from the new unified reports collection
+   */
+  async getAllReports(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    reason?: string;
+  }): Promise<ReportsResponse> {
+    const response = await apiClient.get<ReportsResponse>(`${this.reportsUrl}/admin/all`, { params });
+    return response.data;
+  }
+
+  /**
+   * Get report statistics
+   */
+  async getReportStats(): Promise<{ success: boolean; data: any }> {
+    const response = await apiClient.get(`${this.reportsUrl}/admin/stats`);
+    return response.data;
+  }
+
+  /**
+   * Update report status
+   */
+  async updateReportStatus(
+    reportId: string,
+    data: {
+      status: string;
+      adminNotes?: string;
+      actionTaken?: string;
+    }
+  ): Promise<{ success: boolean; data: Report }> {
+    const response = await apiClient.put(`${this.reportsUrl}/${reportId}/status`, data);
+    return response.data;
+  }
+
+  /**
+   * Fetch all reported posts with optional filtering and pagination (legacy)
    */
   async getReportedPosts(params?: {
     status?: string;
@@ -24,7 +141,7 @@ class FlaggedService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }): Promise<ReportedPostsResponse> {
-    const response = await apiClient.get<ReportedPostsResponse>(this.baseUrl, { params });
+    const response = await apiClient.get<ReportedPostsResponse>(`${this.baseUrl}/admin/all`, { params });
     return response.data;
   }
 

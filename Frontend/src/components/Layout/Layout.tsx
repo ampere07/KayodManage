@@ -52,7 +52,8 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'All Users', href: '/users' },
     { name: 'Customers', href: '/users/customers' },
     { name: 'Service Providers', href: '/users/providers' },
-    { name: 'Flagged & Suspended', href: '/users/flagged' }
+    { name: 'Flagged & Suspended', href: '/users/flagged' },
+    { name: 'Deleted Users', href: '/users/deleted' }
   ];
 
   const jobItems = [
@@ -640,6 +641,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         case 'Customers':
                         case 'Service Providers':
                         case 'Flagged & Suspended':
+                        case 'Deleted Users':
                           return 'Manage customer and service provider accounts';
                         case 'Jobs':
                         case 'Archived Jobs':
@@ -669,7 +671,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             <div className="py-2 sm:py-3 md:py-4">
               <div className="max-w-full mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
                 {/* Desktop Title (Hidden on Mobile since it's in the header) */}
-                {title !== 'All Users' && title !== 'Customers' && title !== 'Service Providers' && title !== 'Flagged & Suspended' && title !== 'Jobs' && title !== 'Archived Jobs' && title !== 'Dashboard' && title !== 'System Configuration' && title !== 'Fee Records' && title !== 'Top-up Transactions' && title !== 'Cashout Transactions' && title !== 'Refund Transactions' && (
+                {title !== 'All Users' && title !== 'Customers' && title !== 'Service Providers' && title !== 'Flagged & Suspended' && title !== 'Deleted Users' && title !== 'Jobs' && title !== 'Archived Jobs' && title !== 'Dashboard' && title !== 'System Configuration' && title !== 'Fee Records' && title !== 'Top-up Transactions' && title !== 'Cashout Transactions' && title !== 'Refund Transactions' && (
                   <div className="hidden md:block mb-8">
                     <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
                   </div>

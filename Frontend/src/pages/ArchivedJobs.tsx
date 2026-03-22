@@ -24,13 +24,13 @@ import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
 import UserTypeBadge from '../components/UI/UserTypeBadge';
 import { JobDetailsModal } from '../components/Modals';
 
-import type { Job, JobsPagination } from '../types';
+import type { Job, JobsPagination, JobCategory } from '../types';
+import { settingsService } from '../services';
 
 import {
   getInitials,
   getJobStatusColor,
   getJobStatusIcon,
-  JOB_CATEGORIES,
   formatPHPCurrency
 } from '../utils';
 
@@ -40,7 +40,7 @@ import { useSocket as useSocketContext } from '../context/SocketContext';
 const ArchivedJobs: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [professionFilter, setProfessionFilter] = useState('all');
   const [archiveTypeFilter, setArchiveTypeFilter] = useState<'all' | 'hidden' | 'removed'>('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
@@ -51,16 +51,31 @@ const ArchivedJobs: React.FC = () => {
     total: 0,
     pages: 0
   });
+  
+  const [professionsList, setProfessionsList] = useState<string[]>([]);
+
+  useEffect(() => {
+    settingsService.getJobCategories().then(res => {
+      const fetchedCategories = res.categories || [];
+      const allProfessions = fetchedCategories
+        .flatMap((cat: any) => cat.professions || [])
+        .map((prof: any) => prof.name)
+        .sort();
+      setProfessionsList(allProfessions);
+    }).catch(err => {
+      console.error('Failed to fetch dynamic categories:', err);
+    });
+  }, []);
 
   const queryParams = useMemo(() => ({
     page: pagination.page,
     limit: pagination.limit,
     ...(searchTerm && { search: searchTerm }),
     ...(statusFilter !== 'all' && { status: statusFilter }),
-    ...(categoryFilter !== 'all' && { category: categoryFilter }),
+    ...(professionFilter !== 'all' && { profession: professionFilter }),
     archived: true,
     ...(archiveTypeFilter !== 'all' && { archiveType: archiveTypeFilter })
-  }), [pagination.page, pagination.limit, searchTerm, statusFilter, categoryFilter, archiveTypeFilter]);
+  }), [pagination.page, pagination.limit, searchTerm, statusFilter, professionFilter, archiveTypeFilter]);
 
   const queryClient = useQueryClient();
   const { socket } = useSocketContext();
@@ -103,7 +118,7 @@ const ArchivedJobs: React.FC = () => {
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter, categoryFilter, archiveTypeFilter]);
+  }, [searchTerm, statusFilter, professionFilter, archiveTypeFilter]);
 
   const openJobModal = (job: Job) => {
     setSelectedJob(job);
@@ -215,8 +230,8 @@ const ArchivedJobs: React.FC = () => {
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="relative">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
@@ -227,16 +242,16 @@ const ArchivedJobs: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 md:flex gap-2 md:gap-3">
+          <div className="grid grid-cols-2 md:flex gap-2 md:gap-3 flex-shrink-0">
             <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
+              value={professionFilter}
+              onChange={(e) => setProfessionFilter(e.target.value)}
               className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
             >
-              <option value="all">All Categories</option>
-              {JOB_CATEGORIES.map(category => (
-                <option key={category} value={category} className="capitalize">
-                  {category}
+              <option value="all">All Professions</option>
+              {professionsList.map(prof => (
+                <option key={prof} value={prof} className="capitalize">
+                  {prof}
                 </option>
               ))}
             </select>

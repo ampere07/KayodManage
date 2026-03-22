@@ -90,6 +90,9 @@ export interface TransactionsQueryParams {
   dateTo?: string;
   type?: string;
   includeFees?: string;
+  jobId?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface TransactionsResponse {
