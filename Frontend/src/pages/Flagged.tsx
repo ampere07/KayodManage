@@ -19,8 +19,9 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
-import { useReports, useUpdateReport } from '../hooks';
-import { transactionsService } from '../services';
+import { useReports, useUpdateReport, useUserMutations } from '../hooks';
+import { transactionsService, usersService } from '../services';
+import toast from 'react-hot-toast';
 import type { ReportFilterStatus } from '../types/alerts.types';
 import type { Report } from '../services/flaggedService';
 import type { Transaction } from '../types';
@@ -29,6 +30,7 @@ import type { ReportedPost } from '../types/flagged.types';
 const Flagged: React.FC = () => {
   const { data: reportsData, isLoading } = useReports();
   const updateReportMutation = useUpdateReport();
+  const mutations = useUserMutations();
   
   const allReports = reportsData?.reports || [];
   
@@ -140,8 +142,32 @@ const Flagged: React.FC = () => {
     }
   };
 
-  const handleReview = async (_postId: string, action: 'approve' | 'dismiss' | 'delete') => {
+  const handleReview = async (_postId: string, action: 'approve' | 'dismiss' | 'delete' | 'ban') => {
     if (!selectedReport) return;
+
+    if (action === 'ban') {
+      const reportedUserId = typeof selectedReport.reportedUserId === 'string'
+        ? selectedReport.reportedUserId
+        : selectedReport.reportedUserId?._id;
+
+      if (!reportedUserId) {
+        alert('Cannot ban: no reported user found');
+        return;
+      }
+
+      setActionLoading(true);
+      try {
+        await usersService.banUser(reportedUserId, `Banned due to report: ${selectedReport.reason}`);
+        await handleUpdateReport(selectedReport._id, 'resolved', 'user_suspended');
+        alert('User has been banned and report resolved');
+      } catch (err: any) {
+        console.error('Error banning user:', err);
+        alert(err?.response?.data?.message || err?.message || 'Failed to ban user');
+      } finally {
+        setActionLoading(false);
+      }
+      return;
+    }
 
     const statusMap = {
       approve: 'resolved',
@@ -730,6 +756,39 @@ const Flagged: React.FC = () => {
         reportedPost={selectedReport ? convertReportToReportedPost(selectedReport) : null}
         onReview={handleReview}
         isLoading={actionLoading}
+        reportType={selectedReport?.reportType}
+        reportedUserInfo={selectedReport?.reportedUserId && typeof selectedReport.reportedUserId === 'object' ? {
+          _id: selectedReport.reportedUserId._id,
+          name: selectedReport.reportedUserId.name,
+          email: selectedReport.reportedUserId.email,
+          userType: selectedReport.reportedUserId.userType
+        } : null}
+        onUserAction={async (userId, actionType, duration, reason) => {
+          try {
+            switch (actionType) {
+              case 'restrict':
+                await mutations.restrictUser.mutateAsync({ userId, duration, reason });
+                toast.success('User restricted successfully');
+                break;
+              case 'suspend':
+                await mutations.suspendUser.mutateAsync({ userId, reason: reason || 'Suspended via report', duration: duration || 7 });
+                toast.success('User suspended successfully');
+                break;
+              case 'ban':
+                await mutations.banUser.mutateAsync({ userId, reason: reason || 'Banned via report', duration });
+                toast.success('User banned successfully');
+                break;
+              case 'delete':
+                await mutations.softDeleteUser.mutateAsync({ userId, reason: reason || 'Deleted via report' });
+                toast.success('User deleted successfully');
+                break;
+            }
+            setIsModalOpen(false);
+            setSelectedReport(null);
+          } catch (err: any) {
+            toast.error(err?.response?.data?.message || `Failed to ${actionType} user`);
+          }
+        }}
       />
 
       <TransactionDetailsModal

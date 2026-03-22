@@ -99,7 +99,7 @@ const SideModal: React.FC<SideModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1">
           {children}
         </div>
       </div>
