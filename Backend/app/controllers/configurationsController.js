@@ -1,6 +1,21 @@
 const JobCategory = require('../models/JobCategory');
+const Job = require('../models/Job');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+
+const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
+const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
+
+const generateIconFilename = (professionName) => {
+  return professionName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    + '.webp';
+};
 
 // Get socket.io instance
 let io;
@@ -265,6 +280,10 @@ exports.updateProfession = async (req, res) => {
       });
     }
 
+    // Capture old values before updating
+    const oldName = profession.name;
+    const oldIcon = profession.icon;
+
     if (name !== undefined) {
       if (!name || !name.trim()) {
         return res.status(400).json({
@@ -303,6 +322,81 @@ exports.updateProfession = async (req, res) => {
     profession.updatedAt = new Date();
 
     await category.save();
+
+    // Cascade profession name and icon changes to existing Job and Draft documents
+    const nameChanged = name && name.trim() !== oldName;
+    const iconChanged = icon && icon !== oldIcon;
+
+    if (nameChanged || iconChanged) {
+      const update = {};
+
+      if (nameChanged) {
+        update.professionName = name.trim();
+      }
+      if (iconChanged) {
+        update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
+      }
+
+      // Handle icon files on disk
+      if (iconChanged) {
+        // Derive old filename from DB icon field, or fall back to generating from old profession name
+        const oldFileName = oldIcon
+          ? (oldIcon.startsWith('custom:') ? oldIcon.replace('custom:', '') : oldIcon)
+          : generateIconFilename(oldName);
+        const newFileName = icon.startsWith('custom:') ? icon.replace('custom:', '') : icon;
+
+        if (oldFileName !== newFileName) {
+          // COPY in kayod client (preserves static imports, adds new filename for URL serving)
+          try {
+            const oldPath = path.join(KAYOD_PROFESSIONS_DIR, oldFileName);
+            const newPath = path.join(KAYOD_PROFESSIONS_DIR, newFileName);
+            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+              fs.copyFileSync(oldPath, newPath);
+              console.log(`[Configurations] Icon file copied: "${oldFileName}" → "${newFileName}" in kayod client`);
+            }
+          } catch (fileErr) {
+            console.warn(`[Configurations] Could not copy icon file in kayod client: ${fileErr.message}`);
+          }
+
+          // RENAME in KayodManage (no static imports, safe to rename)
+          try {
+            const oldPath = path.join(MANAGE_PROFESSIONS_DIR, oldFileName);
+            const newPath = path.join(MANAGE_PROFESSIONS_DIR, newFileName);
+            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+              fs.renameSync(oldPath, newPath);
+              console.log(`[Configurations] Icon file renamed: "${oldFileName}" → "${newFileName}" in KayodManage`);
+            }
+          } catch (fileErr) {
+            console.warn(`[Configurations] Could not rename icon file in KayodManage: ${fileErr.message}`);
+          }
+        }
+      }
+
+      // Update Jobs with old profession name
+      const jobQuery = { professionName: oldName };
+      try {
+        const jobResult = await Job.updateMany(jobQuery, { $set: update });
+        console.log(`[Configurations] Updated ${jobResult.modifiedCount} jobs.`);
+      } catch (jobErr) {
+        console.warn(`[Configurations] Could not update jobs: ${jobErr.message}`);
+      }
+
+      // Update Drafts with old profession name (no Draft model, use raw collection)
+      try {
+        const draftsCollection = mongoose.connection.collection('drafts');
+        const draftResult = await draftsCollection.updateMany(
+          { professionName: oldName },
+          { $set: update }
+        );
+        console.log(`[Configurations] Updated ${draftResult.modifiedCount} drafts.`);
+      } catch (draftErr) {
+        console.warn(`[Configurations] Could not update drafts: ${draftErr.message}`);
+      }
+
+      console.log(
+        `[Configurations] Profession renamed: "${oldName}" → "${name ? name.trim() : oldName}". `
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -463,7 +557,7 @@ exports.uploadProfessionIcon = async (req, res) => {
     }
 
     const fileExtension = path.extname(originalname);
-    const sanitizedName = professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const sanitizedName = professionName.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
     let fileName = `${sanitizedName}${fileExtension}`;
 
     const kayodPath = path.join(
