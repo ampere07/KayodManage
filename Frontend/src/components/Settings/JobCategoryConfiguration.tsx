@@ -6,7 +6,7 @@ import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import QuickAccessManager from './QuickAccessManager';
 import toast from 'react-hot-toast';
-import { getIconByName, getDefaultIconForCategory, getProfessionIconByName } from '../../constants/categoryIcons';
+import { getIconByName, getDefaultIconForCategory, getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
 
 const JobCategoryConfiguration: React.FC = () => {
   const [categories, setCategories] = useState<JobCategory[]>([]);
@@ -184,10 +184,10 @@ const JobCategoryConfiguration: React.FC = () => {
                       ) : (
                         <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-4">
                           {category.professions.map((profession) => {
-                            // If profession has no icon, use the default icon
+                            // If profession has an icon field, resolve it; otherwise auto-generate from profession name
                             const professionIcon = profession.icon 
                               ? getProfessionIconByName(profession.icon, category.icon)
-                              : { imagePath: '/src/assets/icons/Default_Icon.webp', color: '#0F766E' };
+                              : getProfessionIconFromName(profession.name);
                             return (
                               <div
                                 key={profession._id}

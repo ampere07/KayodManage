@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Trash2, ImageIcon, Search } from 'lucide-react';
 import { settingsService } from '../../services';
-import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getAllIcons } from '../../constants/categoryIcons';
+import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getProfessionIconFromName, generateProfessionIconFilename, getAllIcons } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
 
@@ -10,8 +10,9 @@ const generateIconFilename = (professionName: string): string => {
   return professionName
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s]/g, '') // Remove special characters except spaces
     .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/[^a-z0-9-]/g, '') // Remove special characters except hyphens
+    .replace(/-+/g, '-') // Collapse multiple hyphens into one
     + '.webp';
 };
 
@@ -373,22 +374,22 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
   const getProfessionIconData = (profession: Profession) => {
     const iconName = getProfessionIconName(profession);
+    const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
 
-    // If profession has no icon, use the default icon
+    // If profession has no icon field, auto-generate from profession name
     if (!iconName) {
-      const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
+      const iconData = getProfessionIconFromName(profession.name);
       return {
-        color: '#0F766E', // Use consistent color for all profession icons
-        imagePath: `/src/assets/icons/Default_Icon.webp?t=${timestamp}`
+        ...iconData,
+        color: '#0F766E',
+        imagePath: `${iconData.imagePath}?t=${timestamp}`
       };
     }
 
     const iconData = getProfessionIconByName(iconName, categoryIcon);
-    // Use the most recent timestamp for this profession
-    const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
     return {
       ...iconData,
-      color: '#0F766E', // Use consistent color for all profession icons
+      color: '#0F766E',
       imagePath: `${iconData.imagePath}?t=${timestamp}`
     };
   };
@@ -426,17 +427,10 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             if (nameChanged) {
               updateData.name = prof.name;
               
-              // Automatically update icon filename when profession name changes
-              // Only if the current icon follows the naming pattern or if there's no custom icon
-              const shouldUpdateIcon = !currentIcon || 
-                currentIcon.includes(original.name.toLowerCase().replace(/\s+/g, '-'));
-              
-              if (shouldUpdateIcon) {
-                const newIconFilename = generateIconFilename(prof.name);
-                updateData.icon = newIconFilename;
-                // Update the local profession icon as well
-                prof.icon = newIconFilename;
-              }
+              // Always update icon filename when profession name changes
+              const newIconFilename = `custom:${generateIconFilename(prof.name)}`;
+              updateData.icon = newIconFilename;
+              prof.icon = newIconFilename;
             }
             
             if (iconChanged && !nameChanged) {

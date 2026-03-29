@@ -105,6 +105,16 @@ export const getDefaultIconForCategory = (categoryName: string): string => {
   return DEFAULT_CATEGORY_ICONS[categoryName] || 'professional-services';
 };
 
+export const generateProfessionIconFilename = (professionName: string): string => {
+  return professionName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    + '.webp';
+};
+
 export const getProfessionIconByName = (iconName: string, categoryIcon?: string): CategoryIcon => {
   if (!iconName) {
     return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
@@ -119,10 +129,30 @@ export const getProfessionIconByName = (iconName: string, categoryIcon?: string)
       label: fileName.replace(/\.\w+$/, '').replace(/^prof-/, '').replace(/-\d+$/, '').replace(/-/g, ' '),
     };
   }
+
+  // Handle plain filenames (e.g. "architectural.webp")
+  if (iconName.match(/\.(webp|png|jpg|jpeg|svg)$/i)) {
+    return {
+      name: iconName,
+      imagePath: `/assets/icons/professions/${iconName}`,
+      color: '#0F766E',
+      label: iconName.replace(/\.\w+$/, '').replace(/-/g, ' '),
+    };
+  }
   
   if (CATEGORY_ICONS[iconName]) {
     return CATEGORY_ICONS[iconName];
   }
   
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
+};
+
+export const getProfessionIconFromName = (professionName: string): CategoryIcon => {
+  const fileName = generateProfessionIconFilename(professionName);
+  return {
+    name: fileName,
+    imagePath: `/assets/icons/professions/${fileName}`,
+    color: '#0F766E',
+    label: professionName,
+  };
 };
