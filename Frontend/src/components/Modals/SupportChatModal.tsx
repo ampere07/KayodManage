@@ -9,6 +9,11 @@ import {
   ArrowLeft,
   Send,
   Eye,
+  Briefcase,
+  Tag,
+  MapPin,
+  Calendar,
+  Info,
 } from "lucide-react";
 import { getStatusBadge } from "../../utils";
 import UserTypeBadge from "../UI/UserTypeBadge";
@@ -71,6 +76,177 @@ interface SupportChatModalProps {
   handleAcceptTicket: (chatSupportId: string) => void;
   chatSupports: ChatSupport[];
 }
+
+const DETAIL_ICONS: { [key: string]: any } = {
+  'Job': Briefcase,
+  'Job ID': Tag,
+  'Reference': Tag,
+  'Location': MapPin,
+  'Needed On': Calendar,
+  'Date': Calendar,
+  'Ticket ID': Tag,
+  'Subject': MessageSquare,
+  'Category': Info,
+  'Resolved': CheckCircle,
+  'Resolved By': Eye,
+  'Total Messages': MessageSquare,
+};
+
+function parseMessageContent(text: string) {
+  if (!text) return { body: '', jobDetails: null, systemSummary: null };
+
+  // Detect system summary (reopened ticket)
+  if (text.startsWith('✓ PREVIOUS TICKET RESOLVED')) {
+    const lines = text.split('\n').filter(l => l.trim());
+    const entries = [];
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0 && !line.startsWith('✓') && !line.startsWith('─')) {
+        const label = line.substring(0, colonIdx).trim();
+        const value = line.substring(colonIdx + 1).trim();
+        if (label && value) entries.push({ label, value });
+      }
+    }
+    return { body: '', jobDetails: null, systemSummary: entries };
+  }
+
+  // Detect "Job Details:" block
+  const jobIdx = text.indexOf('Job Details:');
+  if (jobIdx === -1) return { body: text, jobDetails: null, systemSummary: null };
+
+  const body = text.substring(0, jobIdx).trim();
+  const detailsBlock = text.substring(jobIdx + 'Job Details:'.length).trim();
+  const entries = [];
+
+  for (const line of detailsBlock.split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0) {
+      const label = line.substring(0, colonIdx).trim();
+      const value = line.substring(colonIdx + 1).trim();
+      if (label && value) entries.push({ label, value });
+    }
+  }
+
+  return { body, jobDetails: entries.length ? entries : null, systemSummary: null };
+}
+
+const JobDetailsCard: React.FC<{ entries: Array<{label: string, value: string}>, isUser: boolean }> = ({ entries, isUser }) => (
+  <div style={{ marginTop: 16 }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        paddingBottom: 12,
+        borderBottom: `1px solid ${isUser ? 'rgba(245,158,11,0.2)' : 'rgba(0,0,0,0.1)'}`,
+      }}
+    >
+      <Briefcase size={14} color={isUser ? '#B45309' : '#6B7280'} />
+      <span
+        style={{
+          marginLeft: 8,
+          fontSize: 11,
+          fontWeight: '700',
+          color: isUser ? '#92400E' : '#6B7280',
+          letterSpacing: 0.5,
+        }}
+      >
+        JOB DETAILS
+      </span>
+    </div>
+    {entries.map((entry, idx) => {
+      const IconComponent = DETAIL_ICONS[entry.label] || Info;
+      return (
+        <div
+          key={`${entry.label}-${idx}`}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            paddingTop: 10,
+            paddingBottom: 10,
+            borderBottom: idx < entries.length - 1 ? `1px solid ${isUser ? 'rgba(245,158,11,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none',
+          }}
+        >
+          <IconComponent
+            size={15}
+            color={isUser ? '#D97706' : '#9CA3AF'}
+            style={{ marginTop: 1, marginRight: 10, flexShrink: 0 }}
+          />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 11, color: isUser ? '#B45309' : '#9CA3AF', fontWeight: '600', marginBottom: 2, display: 'block' }}>
+              {entry.label}
+            </span>
+            <span style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', userSelect: 'text' }}>
+              {entry.value}
+            </span>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const SystemSummaryCard: React.FC<{ entries: Array<{label: string, value: string}> }> = ({ entries }) => (
+  <div
+    style={{
+      marginHorizontal: 16,
+      marginVertical: 8,
+      borderRadius: 16,
+      overflow: 'hidden',
+      border: '1px solid #D1FAE5',
+      backgroundColor: '#F0FDF4',
+    }}
+  >
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        backgroundColor: '#DCFCE7',
+        borderBottom: '1px solid #D1FAE5',
+      }}
+    >
+      <CheckCircle size={16} color="#16A34A" />
+      <span
+        style={{
+          marginLeft: 8,
+          fontSize: 13,
+          fontWeight: '700',
+          color: '#15803D',
+          letterSpacing: 0.3,
+        }}
+      >
+        PREVIOUS TICKET RESOLVED
+      </span>
+    </div>
+    <div style={{ paddingVertical: 4 }}>
+      {entries.map((entry, idx) => {
+        const IconComponent = DETAIL_ICONS[entry.label] || Info;
+        return (
+          <div
+            key={`${entry.label}-${idx}`}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+            }}
+          >
+            <IconComponent
+              size={14}
+              color="#6B7280"
+              style={{ marginTop: 2, marginRight: 10, flexShrink: 0 }}
+            />
+            <span style={{ fontSize: 13, color: '#374151', flex: 1 }}>
+              <span style={{ fontWeight: '600', color: '#6B7280' }}>{entry.label}: </span>
+              {entry.value}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
 
 const getInitials = (name: string): string => {
   const nameParts = name
@@ -638,9 +814,27 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                               : "bg-white text-gray-900 shadow-sm"
                           }`}
                         >
-                          <p className="text-sm leading-relaxed">
-                            {msg.message}
-                          </p>
+                          {(() => {
+                            const parsed = parseMessageContent(msg.message);
+                            const isUser = !isAdmin;
+                            return (
+                              <>
+                                {parsed.body && (
+                                  <p className="text-sm leading-relaxed">
+                                    {parsed.body}
+                                  </p>
+                                )}
+                                {parsed.jobDetails && (
+                                  <JobDetailsCard entries={parsed.jobDetails} isUser={isUser} />
+                                )}
+                                {!parsed.body && !parsed.jobDetails && (
+                                  <p className="text-sm leading-relaxed">
+                                    {msg.message}
+                                  </p>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                         {showTimestamp && (
                           <p
