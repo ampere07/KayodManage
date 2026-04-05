@@ -252,6 +252,9 @@ class UserService {
         case 'verified':
           query.isVerified = true;
           break;
+        case 'unverified':
+          query.isVerified = false;
+          break;
         case 'restricted':
           query.accountStatus = { $in: ['restricted', 'suspended', 'banned'] };
           break;
@@ -268,6 +271,15 @@ class UserService {
           query.accountStatus = 'active';
           break;
       }
+    }
+
+    if (filters.profession) {
+      query.$or = [
+        { categories: { $in: [filters.profession] } },
+        { jobCategories: filters.profession },
+        { jobCategories: { $in: [filters.profession] } },
+        { category: filters.profession }
+      ];
     }
 
     if (isVerified !== undefined) {

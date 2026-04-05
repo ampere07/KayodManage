@@ -1,7 +1,7 @@
 import { Verification } from './verifications.types';
 
 export type UserType = 'client' | 'provider' | 'admin' | 'superadmin';
-export type AccountStatus = 'active' | 'restricted' | 'suspended' | 'banned';
+export type AccountStatus = 'active' | 'restricted' | 'suspended' | 'banned' | 'deleted';
 export type RestrictionType = 'restricted' | 'suspended' | 'banned';
 
 export interface RestrictionDetails {
@@ -36,6 +36,15 @@ export interface UserFee {
   createdAt: Date;
 }
 
+export interface JobVerification {
+  category: string;
+  status: 'pending' | 'approved' | 'rejected' | 'under_review';
+  isVerified: boolean;
+  documents?: any[];
+  reviewedAt?: string | Date;
+  reviewedBy?: string | any;
+}
+
 export interface User {
   _id: string;
   name: string;
@@ -43,6 +52,9 @@ export interface User {
   phone: string;
   location: string;
   categories: string[];
+  jobCategories?: string | string[];
+  category?: string;
+  jobVerificationStatus?: JobVerification[];
   userType?: UserType;
   profileImage?: string;
   profileImagePublicId?: string;

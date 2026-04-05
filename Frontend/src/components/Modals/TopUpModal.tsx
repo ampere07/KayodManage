@@ -8,9 +8,10 @@ interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
+  onStatusUpdate?: (transactionId: string, status: string, type?: string) => Promise<void>;
 }
 
-const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction }) => {
+const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, onStatusUpdate }) => {
   if (!isOpen || !transaction) return null;
 
   const formatCurrency = (amount: number) => {

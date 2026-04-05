@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Eye,
   Calendar,
-  User,
   Search,
   Image as ImageIcon,
   CheckCircle,
@@ -16,19 +15,23 @@ import {
   Users,
   CreditCard,
   Star,
-  MoreHorizontal
+  RefreshCw,
+  ChevronRight,
 } from 'lucide-react';
 import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
 import { useReports, useUpdateReport, useUserMutations } from '../hooks';
 import { transactionsService, usersService } from '../services';
 import toast from 'react-hot-toast';
+import { formatDistanceToNow } from 'date-fns';
+import StatsCard from '../components/Dashboard/StatsCard';
+
+// Type imports
 import type { ReportFilterStatus } from '../types/alerts.types';
 import type { Report } from '../services/flaggedService';
 import type { Transaction } from '../types';
-import type { ReportedPost } from '../types/flagged.types';
 
 const Flagged: React.FC = () => {
-  const { data: reportsData, isLoading } = useReports();
+  const { data: reportsData, isLoading, refetch } = useReports();
   const updateReportMutation = useUpdateReport();
   const mutations = useUserMutations();
   
@@ -40,8 +43,6 @@ const Flagged: React.FC = () => {
       const reason = (report.reason || '').toLowerCase();
       const comment = (report.comment || '').toLowerCase();
       
-      // Strict exclusion of anything related to refunds or payments
-      // as these are handled in the Transactions -> Refund section
       const isRefundRelated = 
         type.includes('refund') || 
         type.includes('payment') ||
@@ -55,7 +56,6 @@ const Flagged: React.FC = () => {
   }, [allReports]);
 
   const stats = useMemo(() => {
-    // Recalculate stats based ONLY on the filtered reports
     return {
       total: reports.length,
       pending: reports.filter((r: Report) => r.status === 'pending').length,
@@ -70,7 +70,7 @@ const Flagged: React.FC = () => {
   const [filter, setFilter] = useState<ReportFilterStatus>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -122,21 +122,11 @@ const Flagged: React.FC = () => {
         adminNotes: 'Action taken by admin',
         actionTaken: action
       });
-
       setIsModalOpen(false);
       setSelectedReport(null);
-
-      const actionMessages = {
-        reviewed: 'Report marked as reviewed',
-        resolved: 'Report resolved',
-        dismissed: 'Report dismissed'
-      };
-
-      alert(actionMessages[status as keyof typeof actionMessages] || 'Report updated');
-
+      toast.success(status === 'resolved' ? 'Report resolved' : 'Report updated');
     } catch (err: any) {
-      console.error('Error updating report:', err);
-      alert(err?.response?.data?.message || err?.message || 'An error occurred while updating the report');
+      toast.error(err?.response?.data?.message || 'Failed to update report');
     } finally {
       setActionLoading(false);
     }
@@ -146,108 +136,87 @@ const Flagged: React.FC = () => {
     if (!selectedReport) return;
 
     if (action === 'ban') {
-      const reportedUserId = typeof selectedReport.reportedUserId === 'string'
-        ? selectedReport.reportedUserId
-        : selectedReport.reportedUserId?._id;
-
+      const reportedUserId = typeof selectedReport.reportedUserId === 'string' ? selectedReport.reportedUserId : selectedReport.reportedUserId?._id;
       if (!reportedUserId) {
-        alert('Cannot ban: no reported user found');
+        toast.error('No reported user found');
         return;
       }
-
       setActionLoading(true);
       try {
         await usersService.banUser(reportedUserId, `Banned due to report: ${selectedReport.reason}`);
         await handleUpdateReport(selectedReport._id, 'resolved', 'user_suspended');
-        alert('User has been banned and report resolved');
       } catch (err: any) {
-        console.error('Error banning user:', err);
-        alert(err?.response?.data?.message || err?.message || 'Failed to ban user');
+        toast.error('Failed to ban user');
       } finally {
         setActionLoading(false);
       }
       return;
     }
-
-    const statusMap = {
-      approve: 'resolved',
-      dismiss: 'dismissed',
-      delete: 'resolved'
-    };
-
-    const actionMap = {
-      approve: 'post_approved',
-      dismiss: 'report_dismissed',
-      delete: 'post_deleted'
-    };
-
-    await handleUpdateReport(selectedReport._id, statusMap[action], actionMap[action]);
+    const statusMap = { approve: 'resolved', dismiss: 'dismissed', delete: 'resolved' };
+    const actionMap = { approve: 'post_approved', dismiss: 'report_dismissed', delete: 'post_deleted' };
+    await handleUpdateReport(selectedReport._id, statusMap[action as keyof typeof statusMap], actionMap[action as keyof typeof actionMap]);
   };
 
   const handleViewReport = async (report: Report) => {
-    // Check if it's potentially a refund-related report (direct tag or job-related)
     const reportType = (report.reportType || '').toLowerCase();
     const reason = (report.reason || '').toLowerCase();
-    const comment = (report.comment || '').toLowerCase();
-
-    const isPotentialRefund = 
-      reportType === 'payment' || 
-      reportType === 'job' ||
-      reportType === 'refund_request' ||
-      reason.includes('refund') || 
-      comment.includes('refund');
+    const isPotentialRefund = reportType === 'payment' || reportType === 'refund_request' || reason.includes('refund');
 
     if (isPotentialRefund && report.relatedId) {
       setIsFetchingTransaction(true);
       try {
-        let transaction: Transaction | null = null;
-        
-        // 1. Try to fetch as a direct transaction ID first
-        try {
-          const directTransaction = await transactionsService.getTransactionById(report.relatedId);
-          if (directTransaction && (directTransaction.type === 'refund_request' || directTransaction.type === 'refund')) {
-            transaction = directTransaction;
-          }
-        } catch (e) {
-          // Ignore failure, try job search next
-        }
-
-        // 2. Fallback: Fetch transactions related to the relatedId (assuming it's a jobId)
+        let transaction = null;
+        try { transaction = await transactionsService.getTransactionById(report.relatedId); } catch (e) {}
         if (!transaction) {
-          const response = await transactionsService.getTransactions({ 
-            jobId: report.relatedId,
-            limit: 10 
-          });
-          
-          // Look for any refund-related transaction for this job
-          transaction = response.transactions.find(t => 
-            t.type === 'refund_request' || t.type === 'refund'
-          ) || null;
+          const res = await transactionsService.getTransactions({ jobId: report.relatedId, limit: 10 });
+          transaction = res.transactions.find(t => t.type === 'refund_request' || t.type === 'refund');
         }
-
         if (transaction) {
           setSelectedTransaction(transaction as any);
           setIsTransactionModalOpen(true);
           return;
         }
-      } catch (err) {
-        console.error('Error fetching transaction for report:', err);
-      } finally {
-        setIsFetchingTransaction(false);
-      }
+      } catch (err) {} finally { setIsFetchingTransaction(false); }
     }
-
-    // Default to regular report modal
     setSelectedReport(report);
     setIsModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedReport(null);
-    setTimeout(() => {
-      setHighlightedPostId(null);
-    }, 3000);
+  const statusCounts = useMemo(() => ({
+    all: stats.total,
+    pending: stats.pending,
+    reviewed: stats.reviewed,
+    resolved: stats.resolved,
+    dismissed: stats.dismissed
+  }), [stats]);
+
+  const filteredReports = useMemo(() => {
+    let filtered = reports;
+    if (filter !== 'all') filtered = filtered.filter((r: Report) => r.status === filter);
+    if (searchTerm.trim()) {
+      const s = searchTerm.toLowerCase();
+      filtered = filtered.filter((r: Report) =>
+        r.reportType.toLowerCase().includes(s) ||
+        r.reportedBy.name.toLowerCase().includes(s) ||
+        r.reason.toLowerCase().includes(s) ||
+        (r.reportedUserId?.name || '').toLowerCase().includes(s)
+      );
+    }
+    return filtered;
+  }, [reports, filter, searchTerm]);
+
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedReports = filteredReports.slice(startIndex, startIndex + itemsPerPage);
+
+  const getStatusBadge = (status: string) => {
+    const badges = {
+      pending: 'bg-yellow-50 text-yellow-700 border-yellow-100',
+      reviewed: 'bg-blue-50 text-blue-700 border-blue-100',
+      resolved: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      dismissed: 'bg-gray-50 text-gray-700 border-gray-100'
+    };
+    return badges[status as keyof typeof badges] || badges.pending;
   };
 
   const getReportTypeIcon = (reportType: string) => {
@@ -258,351 +227,189 @@ const Flagged: React.FC = () => {
       conversation: <MessageSquare className="h-4 w-4" />,
       review: <Star className="h-4 w-4" />,
       payment: <CreditCard className="h-4 w-4" />,
-      other: <MoreHorizontal className="h-4 w-4" />
     };
-    return icons[reportType as keyof typeof icons] || icons.other;
+    return icons[reportType as keyof typeof icons] || <Flag className="h-4 w-4" />;
   };
-
-  const getStatusBadge = (status: string) => {
-    const badges = {
-      pending: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-      reviewed: 'bg-blue-100 text-blue-800 border border-blue-200',
-      resolved: 'bg-green-100 text-green-800 border border-green-200',
-      dismissed: 'bg-gray-100 text-gray-800 border border-gray-200'
-    };
-
-    return badges[status as keyof typeof badges] || badges.pending;
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      return 'Invalid Date';
-    }
-  };
-
-  const formatReason = (reason: string) => {
-    return reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
-
-  // Convert Report to ReportedPost format for the existing modal
-  const convertReportToReportedPost = (report: Report): ReportedPost => {
-    return {
-      _id: report._id,
-      jobId: { 
-        _id: report.relatedId,
-        title: `${report.reportType ? (report.reportType.charAt(0).toUpperCase() + report.reportType.slice(1)) : 'Post'} Report`,
-        description: report.comment || 'No description',
-        category: report.reportType,
-        budget: 0,
-        budgetType: 'fixed',
-        paymentMethod: 'Not specified',
-        location: {
-          address: 'Not specified',
-          city: 'Not specified',
-          region: 'Not specified',
-          country: 'Not specified'
-        },
-        createdAt: report.createdAt,
-        isDeleted: false,
-        media: []
-      },
-      reportedBy: {
-        _id: report.reportedBy._id,
-        providerId: report.reportedBy._id,
-        providerName: report.reportedBy.name,
-        providerEmail: report.reportedBy.email
-      },
-      jobPosterId: typeof report.reportedUserId === 'string' 
-        ? report.reportedUserId 
-        : (report.reportedUserId?._id || ''),
-      reason: report.reason,
-      comment: report.comment,
-      status: report.status as 'pending' | 'resolved' | 'dismissed',
-      adminNotes: report.adminNotes,
-      createdAt: report.createdAt,
-      updatedAt: report.updatedAt
-    };
-  };
-
-  const filteredReports = useMemo(() => {
-    let filtered = reports;
-
-    if (filter !== 'all') {
-      filtered = filtered.filter((report: Report) => report.status === filter);
-    }
-
-    if (searchTerm.trim()) {
-      const search = searchTerm.toLowerCase();
-      filtered = filtered.filter((report: Report) =>
-        report.reportType.toLowerCase().includes(search) ||
-        report.reportedBy.name.toLowerCase().includes(search) ||
-        report.reason.toLowerCase().includes(search) ||
-        report.comment.toLowerCase().includes(search) ||
-        (report.reportedUserId?.name || '').toLowerCase().includes(search)
-      );
-    }
-
-    return filtered;
-  }, [reports, filter, searchTerm]);
-
-  const statusCounts = useMemo(() => ({
-    all: stats.total,
-    pending: stats.pending,
-    reviewed: stats.reviewed,
-    resolved: stats.resolved,
-    dismissed: stats.dismissed
-  }), [stats]);
-
-  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedReports = filteredReports.slice(startIndex, startIndex + itemsPerPage);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading reported posts...</span>
-      </div>
-    );
-  }
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50">
-      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="mb-4">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Flagged</h1>
-          <p className="text-xs md:text-sm text-gray-500 mt-1">
-            Review and manage reported posts from users across the platform
-          </p>
-        </div>
-
-        {/* Mobile: Compact Grid */}
-        <div className="grid grid-cols-2 gap-2 md:hidden mb-4">
-          <div
-            onClick={() => setFilter('all')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${filter === 'all' ? 'border-red-400 ring-2 ring-red-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <span className="text-sm font-medium text-gray-700">Total</span>
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+      {/* Header Section */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
+        <div className="px-6 py-5">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 bg-red-50 rounded-lg">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </span>
+                <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                  Flagged Content
+                </h1>
+              </div>
+              <p className="text-xs text-gray-500 font-medium">Review and resolve user complaints and reported content</p>
             </div>
-            <span className="text-sm font-bold text-red-700">{statusCounts.all}</span>
+            
+            <button 
+              onClick={() => refetch()}
+              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors text-xs"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>REFRESH</span>
+            </button>
           </div>
 
-          <div
-            onClick={() => setFilter('pending')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${filter === 'pending' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-yellow-600" />
-              <span className="text-sm font-medium text-gray-700">Pending</span>
+          {/* Stats Cards Grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="cursor-pointer" onClick={() => setFilter('all')}>
+              <StatsCard
+                title="Total Reports"
+                value={statusCounts.all.toLocaleString()}
+                icon={Flag}
+                color="blue"
+                variant="tinted"
+                isActive={filter === 'all'}
+                smallIcon={true}
+              />
             </div>
-            <span className="text-sm font-bold text-yellow-700">{statusCounts.pending}</span>
-          </div>
-
-          <div
-            onClick={() => setFilter('resolved')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${filter === 'resolved' ? 'border-green-400 ring-2 ring-green-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-gray-700">Resolved</span>
+            <div className="cursor-pointer" onClick={() => setFilter('pending')}>
+              <StatsCard
+                title="Pending"
+                value={statusCounts.pending.toLocaleString()}
+                icon={Clock}
+                color="orange"
+                variant="tinted"
+                isActive={filter === 'pending'}
+                smallIcon={true}
+              />
             </div>
-            <span className="text-sm font-bold text-green-700">{statusCounts.resolved}</span>
-          </div>
-
-          <div
-            onClick={() => setFilter('dismissed')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-gray-100 border-gray-200 ${filter === 'dismissed' ? 'border-gray-400 ring-2 ring-gray-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-gray-600" />
-              <span className="text-sm font-medium text-gray-700">Dismissed</span>
+            <div className="cursor-pointer" onClick={() => setFilter('resolved')}>
+              <StatsCard
+                title="Resolved"
+                value={statusCounts.resolved.toLocaleString()}
+                icon={CheckCircle}
+                color="green"
+                variant="tinted"
+                isActive={filter === 'resolved'}
+                smallIcon={true}
+              />
             </div>
-            <span className="text-sm font-bold text-gray-700">{statusCounts.dismissed}</span>
-          </div>
-        </div>
-
-        {/* Desktop: Full Grid */}
-        <div className="hidden md:grid grid-cols-4 gap-3 mb-4">
-          <div
-            onClick={() => setFilter('all')}
-            className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'all' ? 'border-red-500 ring-2 ring-red-400 shadow-lg' : 'border-red-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">All Reports</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.all}</p>
-          </div>
-
-          <div
-            onClick={() => setFilter('pending')}
-            className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'pending' ? 'border-yellow-500 ring-2 ring-yellow-400 shadow-lg' : 'border-yellow-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Pending</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.pending}</p>
-          </div>
-
-          <div
-            onClick={() => setFilter('resolved')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'resolved' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Resolved</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.resolved}</p>
-          </div>
-
-          <div
-            onClick={() => setFilter('dismissed')}
-            className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${filter === 'dismissed' ? 'border-gray-600 ring-2 ring-gray-500 shadow-lg' : 'border-gray-300'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Dismissed</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{statusCounts.dismissed}</p>
+            <div className="cursor-pointer" onClick={() => setFilter('dismissed')}>
+              <StatsCard
+                title="Dismissed"
+                value={statusCounts.dismissed.toLocaleString()}
+                icon={XCircle}
+                color="indigo"
+                variant="tinted"
+                isActive={filter === 'dismissed'}
+                smallIcon={true}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3">
+        {/* Filter Bar */}
+        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
             <input
               type="text"
-              placeholder="Search reports..."
+              placeholder="Search by keywords, reporter, or reported user..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm"
             />
+          </div>
+
+          <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
+            <span className="text-xs font-bold text-gray-400">Limit:</span>
+            <select 
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+              className="bg-transparent text-xs font-bold text-gray-600 focus:outline-none"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
           </div>
         </div>
       </div>
 
+      {/* Content Area */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading reported posts...</p>
-              </div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : paginatedReports.length === 0 ? (
-            <div className="bg-white p-12 text-center">
-              <div className="text-gray-400 mb-4">
-                <Flag className="h-12 w-12 mx-auto" />
+            <div className="bg-white p-20 text-center">
+              <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gray-50 mb-6">
+                <Flag className="h-10 w-10 text-gray-300" />
               </div>
-              <p className="text-gray-600 font-medium">No reports found</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {filter !== 'all'
-                  ? 'Try adjusting your filters or search term.'
-                  : 'No reports have been submitted yet.'}
-              </p>
+              <p className="text-gray-900 font-black text-xl mb-2">Clean slate!</p>
+              <p className="text-gray-500 text-sm max-w-xs mx-auto">No reports match your current filters. Everything looks good.</p>
             </div>
           ) : (
             <>
-              {/* Desktop Table View */}
-              <div className="hidden md:block bg-white">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Reported User
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Reported By
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Reason
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Actions
-                      </th>
+              {/* Desktop View */}
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+                <table className="min-w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
+                    <tr className="border-b border-gray-200">
+                      <th className="w-[12%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Type</th>
+                      <th className="w-[20%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported User</th>
+                      <th className="w-[18%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported By</th>
+                      <th className="w-[25%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reason & Comment</th>
+                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Status</th>
+                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedReports.map((report: Report) => (
+                  <tbody className="bg-white border-b border-gray-300">
+                    {paginatedReports.map((report) => (
                       <tr
                         key={report._id}
                         ref={highlightedPostId === report._id ? highlightedRowRef : null}
                         onClick={() => handleViewReport(report)}
-                        className={`transition-all duration-300 hover:bg-gray-50 cursor-pointer ${highlightedPostId === report._id ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
-                          }`}
+                        className={`group transition-all duration-150 cursor-pointer ${highlightedPostId === report._id ? 'bg-amber-50 ring-inset ring-2 ring-amber-400' : ''}`}
                       >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center">
-                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
-                              {getReportTypeIcon(report.reportType)}
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-gray-50 border border-gray-100 rounded-lg group-hover:bg-blue-50/50 group-hover:border-blue-100 transition-colors">
+                              {React.cloneElement(getReportTypeIcon(report.reportType) as React.ReactElement, { className: "h-4 w-4 text-gray-400 group-hover:text-blue-500" })}
                             </div>
-                            <div className="text-sm font-medium text-gray-900 capitalize">
-                              {report.reportType}
-                            </div>
+                            <span className="text-xs font-bold text-gray-900 group-hover:text-blue-700 transition-colors capitalize">{report.reportType}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">
-                            {report.reportedUserId?.name || 'N/A'}
+                        <td className="px-6 py-4 border-b border-gray-300">
+                           <div className="flex flex-col">
+                              <p className="text-xs font-bold text-gray-900">{report.reportedUserId?.name || 'N/A'}</p>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase truncate">{report.reportedUserId?.email || ''}</p>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 border-b border-gray-300">
+                           <div className="flex flex-col">
+                              <p className="text-xs font-bold text-gray-900">{report.reportedBy.name}</p>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase truncate">{report.reportedBy.email}</p>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 border-b border-gray-300">
+                           <div className="flex flex-col max-w-xs">
+                              <p className="text-xs font-black text-red-600 uppercase tracking-tight mb-0.5">{report.reason.replace(/_/g, ' ')}</p>
+                              <p className="text-[10px] text-gray-500 font-medium truncate">{report.comment || 'No additional details'}</p>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-center border-b border-gray-300">
+                           <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusBadge(report.status)}`}>
+                             {report.status}
+                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-center border-b border-gray-300">
+                          <div className="flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 font-black text-[10px] uppercase tracking-widest">
+                               <Eye className="h-4 w-4" /> REVIEW
+                            </span>
                           </div>
-                          {report.reportedUserId?.email && (
-                            <div className="text-xs text-gray-500">
-                              {report.reportedUserId.email}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 text-gray-400 mr-2" />
-                            <div className="text-sm text-gray-900">
-                              {report.reportedBy.name}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{formatReason(report.reason)}</div>
-                          {report.comment && (
-                            <div className="text-xs text-gray-500 mt-1 max-w-xs truncate">
-                              {report.comment}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            {formatDate(report.createdAt)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(report.status)}`}>
-                            {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <span className="text-blue-600 font-medium inline-flex items-center">
-                            <Eye className="h-4 w-4 mr-1" />
-                            Review
-                          </span>
                         </td>
                       </tr>
                     ))}
@@ -611,136 +418,80 @@ const Flagged: React.FC = () => {
               </div>
 
               {/* Mobile Card View */}
-              <div className="md:hidden px-4 py-4 space-y-3">
-                {paginatedReports.map((report: Report) => (
+              <div className="lg:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                {paginatedReports.map((report) => (
                   <div
                     key={report._id}
-                    ref={highlightedPostId === report._id ? highlightedRowRef : null}
                     onClick={() => handleViewReport(report)}
-                    className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-300 cursor-pointer active:scale-[0.98] ${highlightedPostId === report._id ? 'ring-2 ring-yellow-400 bg-yellow-50' : 'hover:shadow-md'
-                      }`}
+                    className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                   >
-                    {/* Card Header */}
-                    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
                       <div className="flex items-center gap-2">
-                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center">
-                          {getReportTypeIcon(report.reportType)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900 leading-tight capitalize">
-                            {report.reportType} Report
-                          </p>
-                          <p className="text-xs text-gray-500 truncate mt-0.5">
-                            ID: {report._id.slice(-6).toUpperCase()}
-                          </p>
-                        </div>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-gray-200 text-gray-700">{report.reportType}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusBadge(report.status)}`}>{report.status}</span>
                       </div>
-                    </div>
-
-                    {/* Card Body */}
-                    <div className="p-4">
-                      {/* Reported User */}
-                      {report.reportedUserId && (
-                        <div className="flex items-start gap-2 mb-4">
-                          <Users className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <div className="text-sm font-bold text-gray-900 leading-tight">
-                              {report.reportedUserId.name}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {report.reportedUserId.email}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Reporter */}
-                      <div className="flex items-start gap-2 mb-4">
-                        <User className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <div className="text-sm font-bold text-gray-900 leading-tight">
-                            Reported by: {report.reportedBy.name}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {report.reportedBy.email}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Reason */}
-                      <div className="flex items-start gap-2 mb-4">
-                        <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <div className="text-sm font-bold text-gray-900 leading-tight">
-                            {formatReason(report.reason)}
-                          </div>
-                          {report.comment && (
-                            <div className="text-xs text-gray-500 mt-1 max-w-xs">
-                              {report.comment}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status */}
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-gray-400" />
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${getStatusBadge(report.status)}`}>
-                            {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {formatDate(report.createdAt)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card Footer */}
-                    <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between mt-auto">
-                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
-                        <Calendar className="h-3.5 w-3.5" />
-                        <span>{formatDate(report.createdAt)}</span>
-                      </div>
-                      <span className="text-blue-600 font-medium inline-flex items-center text-xs">
-                        <Eye className="h-3.5 w-3.5 mr-1" />
-                        Review
+                      <span className="text-[10px] font-bold text-gray-400 capitalize">
+                        {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}
                       </span>
+                    </div>
+
+                    <div className="p-4">
+                       <h3 className="text-xs font-black text-red-600 uppercase tracking-widest mb-3">{report.reason.replace(/_/g, ' ')}</h3>
+                       
+                       <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported User</p>
+                             <p className="text-xs font-black text-gray-900 truncate">{report.reportedUserId?.name || 'N/A'}</p>
+                          </div>
+                          <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported By</p>
+                             <p className="text-xs font-black text-gray-900 truncate">{report.reportedBy.name}</p>
+                          </div>
+                       </div>
+
+                       <div className="p-3 bg-blue-50/30 rounded-xl border border-blue-100/50">
+                          <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-1">Admin Comment</p>
+                          <p className="text-xs text-gray-700 leading-relaxed italic">"{report.comment || 'No additional details provided by reporter.'}"</p>
+                       </div>
+                    </div>
+
+                    <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
+                       <div className="flex items-center gap-2 text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                         <Calendar className="h-3 w-3" />
+                         {new Date(report.createdAt).toLocaleDateString()}
+                       </div>
+                       <div className="text-blue-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-1">
+                          REVIEW REPORT <ChevronRight className="h-3 w-3" />
+                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
+              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
                   <div className="flex items-center justify-between w-full">
                     <div>
-                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
-                        Showing{' '}
-                        <span className="font-medium">{startIndex + 1}</span>{' '}
-                        to{' '}
-                        <span className="font-medium">
-                          {Math.min(startIndex + itemsPerPage, filteredReports.length)}
-                        </span>{' '}
-                        of{' '}
-                        <span className="font-medium">{filteredReports.length}</span> results
+                      <p className="text-xs text-gray-700">
+                        Page <span className="font-bold">{currentPage}</span> of <span className="font-bold">{totalPages}</span>
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                       <button 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         disabled={currentPage === 1}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                       >
+                         PREV
+                       </button>
+                       <button 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={currentPage === totalPages}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
+                        className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                       >
+                         NEXT
+                       </button>
                     </div>
                   </div>
                 </div>
@@ -752,8 +503,36 @@ const Flagged: React.FC = () => {
 
       <ReviewReportModal
         isOpen={isModalOpen && !!selectedReport}
-        onClose={handleCloseModal}
-        reportedPost={selectedReport ? convertReportToReportedPost(selectedReport) : null}
+        onClose={() => { setIsModalOpen(false); setSelectedReport(null); }}
+        reportedPost={selectedReport ? {
+          _id: selectedReport._id,
+          jobId: { 
+            _id: selectedReport.relatedId,
+            title: `${selectedReport.reportType ? (selectedReport.reportType.charAt(0).toUpperCase() + selectedReport.reportType.slice(1)) : 'Post'} Report`,
+            description: selectedReport.comment || 'No description',
+            category: selectedReport.reportType,
+            budget: 0,
+            budgetType: 'fixed',
+            paymentMethod: 'Not specified',
+            location: { address: 'N/A', city: 'N/A', region: 'N/A', country: 'N/A' },
+            createdAt: selectedReport.createdAt,
+            isDeleted: false,
+            media: []
+          },
+          reportedBy: {
+            _id: selectedReport.reportedBy._id,
+            providerId: selectedReport.reportedBy._id,
+            providerName: selectedReport.reportedBy.name,
+            providerEmail: selectedReport.reportedBy.email
+          },
+          jobPosterId: typeof selectedReport.reportedUserId === 'string' ? selectedReport.reportedUserId : (selectedReport.reportedUserId?._id || ''),
+          reason: selectedReport.reason,
+          comment: selectedReport.comment,
+          status: selectedReport.status as any,
+          adminNotes: selectedReport.adminNotes,
+          createdAt: selectedReport.createdAt,
+          updatedAt: selectedReport.updatedAt
+        } : null}
         onReview={handleReview}
         isLoading={actionLoading}
         reportType={selectedReport?.reportType}
@@ -766,23 +545,12 @@ const Flagged: React.FC = () => {
         onUserAction={async (userId, actionType, duration, reason) => {
           try {
             switch (actionType) {
-              case 'restrict':
-                await mutations.restrictUser.mutateAsync({ userId, duration, reason });
-                toast.success('User restricted successfully');
-                break;
-              case 'suspend':
-                await mutations.suspendUser.mutateAsync({ userId, reason: reason || 'Suspended via report', duration: duration || 7 });
-                toast.success('User suspended successfully');
-                break;
-              case 'ban':
-                await mutations.banUser.mutateAsync({ userId, reason: reason || 'Banned via report', duration });
-                toast.success('User banned successfully');
-                break;
-              case 'delete':
-                await mutations.softDeleteUser.mutateAsync({ userId, reason: reason || 'Deleted via report' });
-                toast.success('User deleted successfully');
-                break;
+              case 'restrict': await mutations.restrictUser.mutateAsync({ userId, duration: duration || 0, reason: reason || 'Restricted by admin' }); break;
+              case 'suspend': await mutations.suspendUser.mutateAsync({ userId, reason: reason || 'Suspended by admin', duration: duration || 7 }); break;
+              case 'ban': await mutations.banUser.mutateAsync({ userId, reason: reason || 'Banned by admin', duration: duration || 0 }); break;
+              case 'delete': await mutations.softDeleteUser.mutateAsync({ userId, reason: reason || 'Deleted by admin' }); break;
             }
+            toast.success(`User ${actionType}ed successfully`);
             setIsModalOpen(false);
             setSelectedReport(null);
           } catch (err: any) {
@@ -793,21 +561,9 @@ const Flagged: React.FC = () => {
 
       <TransactionDetailsModal
         isOpen={isTransactionModalOpen}
-        onClose={() => {
-          setIsTransactionModalOpen(false);
-          setSelectedTransaction(null);
-        }}
+        onClose={() => { setIsTransactionModalOpen(false); setSelectedTransaction(null); }}
         transaction={selectedTransaction}
       />
-
-      {isFetchingTransaction && (
-        <div className="fixed inset-0 bg-black/20 z-[200] flex items-center justify-center">
-          <div className="bg-white p-4 rounded-lg shadow-lg flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <span className="text-sm font-medium">Fetching details...</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

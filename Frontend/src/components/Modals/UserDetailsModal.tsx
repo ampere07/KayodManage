@@ -10,6 +10,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { usersService } from '../../services';
+import { getProfessionIconByName } from '../../constants/categoryIcons';
 import type {
   User,
   Verification,
@@ -436,18 +437,52 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </div>
                 </div>
 
-                {user.categories && user.categories.length > 0 && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Professional Categories</p>
-                    <div className="flex flex-wrap gap-2">
-                      {user.categories.map((cat, i) => (
-                        <span key={i} className="px-2 py-1 bg-gray-100 text-gray-700 text-[10px] font-bold rounded uppercase">
-                          {cat}
-                        </span>
-                      ))}
+                {user.userType === 'provider' && (() => {
+                  const getProfessions = (u: User): string[] => {
+                    const all: string[] = [];
+                    if (u.jobCategories) {
+                      if (Array.isArray(u.jobCategories)) {
+                        u.jobCategories.forEach(c => { if (c && !all.includes(c)) all.push(c); });
+                      } else if (typeof u.jobCategories === 'string' && u.jobCategories.trim().length > 0) {
+                        const cats = u.jobCategories.split(',').map(c => c.trim()).filter(Boolean);
+                        cats.forEach(c => { if (!all.includes(c)) all.push(c); });
+                      }
+                    }
+                    if (u.categories && u.categories.length > 0) {
+                      u.categories.forEach(c => { if (c && !all.includes(c)) all.push(c); });
+                    }
+                    if (u.jobVerificationStatus && u.jobVerificationStatus.length > 0) {
+                      u.jobVerificationStatus.forEach(v => {
+                        if (v.category && !all.includes(v.category)) all.push(v.category);
+                      });
+                    }
+                    if (u.category && !all.includes(u.category)) all.push(u.category);
+                    return all;
+                  };
+
+                  const professions = getProfessions(user);
+                  if (professions.length === 0) return null;
+
+                  return (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2 font-bold uppercase tracking-wider opacity-60">Professional Identity</p>
+                      <div className="flex flex-wrap gap-2">
+                        {professions.map((prof, idx) => {
+                          const iconData = getProfessionIconByName(prof);
+                          const label = (iconData?.label && iconData.label !== 'Professional Services')
+                            ? iconData.label
+                            : prof.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().toUpperCase();
+                          
+                          return (
+                            <span key={idx} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded border border-indigo-100 uppercase tracking-widest shadow-sm">
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </section>
 

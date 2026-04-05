@@ -37,7 +37,7 @@ export const getStatusBadge = (
 
   if (effectiveStatus === 'open') {
     return (
-      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200 shadow-sm shadow-blue-100/50">
         <Clock className="w-3 h-3 mr-1" />
         Open
       </span>
@@ -45,7 +45,7 @@ export const getStatusBadge = (
   }
   else if (effectiveStatus === 'pending') {
     return (
-      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-yellow-100 text-yellow-800 border border-yellow-200 shadow-sm shadow-yellow-100/50">
         <Clock className="w-3 h-3 mr-1" />
         Pending
       </span>
@@ -53,7 +53,7 @@ export const getStatusBadge = (
   }
   else if (effectiveStatus === 'resolved' || status === 'closed') {
     return (
-      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-green-100 text-green-800 border border-green-200 shadow-sm shadow-green-100/50">
         <CheckCircle className="w-3 h-3 mr-1" />
         Resolved
       </span>
@@ -61,9 +61,9 @@ export const getStatusBadge = (
   }
   // Fallback
   return (
-    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-800">
       <XCircle className="w-3 h-3 mr-1" />
-      {status}
+      {effectiveStatus.toUpperCase()}
     </span>
   );
 };
