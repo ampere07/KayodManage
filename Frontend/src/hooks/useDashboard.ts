@@ -26,12 +26,12 @@ export const useDashboardComparison = () => {
   });
 };
 
-export const useDashboardRevenueChart = (period: 'week' | 'month' | 'year') => {
+export const useDashboardRevenueChart = (period: 'week' | 'month' | 'year' | 'overall') => {
   return useQuery({
     queryKey: [DASHBOARD_QUERY_KEY, 'revenue-chart', period],
     queryFn: async () => {
       try {
-        const days = period === 'week' ? 7 : period === 'month' ? 30 : 365;
+        const days = period === 'week' ? 7 : period === 'month' ? 30 : period === 'year' ? 365 : 3600;
         const response = await apiClient.get(`/api/dashboard/revenue-chart?days=${days}`);
         return response.data;
       } catch (error: any) {

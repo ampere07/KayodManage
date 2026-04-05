@@ -106,7 +106,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   return (
     <SidebarContext.Provider value={{ setSidebarOpen, setIsHeaderHidden }}>
-      <div className="min-h-screen bg-gray-50">
+      <div className={`bg-gray-50 ${title === 'Dashboard' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
         {/* Mobile sidebar */}
         <div className={`fixed inset-0 flex z-50 md:hidden ${sidebarOpen ? '' : 'pointer-events-none'}`}>
           <div className={`fixed inset-0 bg-gray-600 bg-opacity-75 transition-opacity ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setSidebarOpen(false)} />
@@ -114,7 +114,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           <div className={`relative flex-1 flex flex-col max-w-[280px] w-full bg-white transform transition-transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
 
             <div className="flex-1 h-0 pt-5 pb-4 overflow-y-auto">
-              <div className="flex-shrink-0 flex items-center px-4">
+              <div   className="flex-shrink-0 flex items-center px-4">
                 <Shield className="h-8 w-8 text-blue-600" />
                 <span className="ml-2 text-xl font-bold text-gray-900">Admin Panel</span>
               </div>
@@ -619,7 +619,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
         {/* Main content */}
         {/* Main content */}
-        <div className="md:pl-72 flex flex-col flex-1">
+        <div className={`md:pl-72 flex flex-col flex-1 ${title === 'Dashboard' ? 'h-full overflow-hidden' : ''}`}>
           {/* Mobile Header */}
           {!location.pathname.startsWith('/settings/configuration') && !isHeaderHidden && (
             <header className="sticky top-0 z-30 md:hidden bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4">
@@ -632,11 +632,13 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   <Menu className="h-6 w-6" />
                 </button>
                 <div>
-                  <h1 className="text-lg font-semibold text-gray-900 leading-tight">{title}</h1>
+                  <h1 className="text-lg font-semibold text-gray-900 leading-tight">
+                    {title === 'Dashboard' ? 'Dashboard Overview' : title}
+                  </h1>
                   <p className="text-xs text-gray-500 line-clamp-1">
                     {(() => {
                       switch (title) {
-                        case 'Dashboard': return 'Overview of system performance and activities';
+                        case 'Dashboard': return 'Welcome back! Your service marketplace\'s performance view';
                         case 'All Users':
                         case 'Customers':
                         case 'Service Providers':
@@ -667,9 +669,9 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             </header>
           )}
 
-          <main className="flex-1">
-            <div className="py-2 sm:py-3 md:py-4">
-              <div className="max-w-full mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
+          <main className={`flex-1 ${title === 'Dashboard' ? 'overflow-hidden' : ''}`}>
+            <div className={title === 'Dashboard' ? 'h-full' : 'py-2 sm:py-3 md:py-4'}>
+              <div className={`max-w-full mx-auto ${title === 'Dashboard' ? 'h-full' : 'px-2 sm:px-4 md:px-6 lg:px-8'}`}>
                 {/* Desktop Title (Hidden on Mobile since it's in the header) */}
                 {title !== 'All Users' && title !== 'Customers' && title !== 'Service Providers' && title !== 'Flagged & Suspended' && title !== 'Deleted Users' && title !== 'Jobs' && title !== 'Archived Jobs' && title !== 'Dashboard' && title !== 'System Configuration' && title !== 'Fee Records' && title !== 'Top-up Transactions' && title !== 'Cashout Transactions' && title !== 'Refund Transactions' && (
                   <div className="hidden md:block mb-8">

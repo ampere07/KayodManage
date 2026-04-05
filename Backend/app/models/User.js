@@ -39,6 +39,8 @@ const UserSchema = new Schema({
     type: String,
     trim: true
   }],
+  jobCategories: Schema.Types.Mixed,
+  category: String,
   profileImage: {
     type: String,
     default: null

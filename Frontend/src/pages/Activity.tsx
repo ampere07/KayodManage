@@ -576,7 +576,7 @@ const Activity: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white border-b border-gray-300">
                     {paginatedActivities.map((activity: ActivityLog) => (
                       <tr
                         key={activity._id}
@@ -605,7 +605,7 @@ const Activity: React.FC = () => {
                             : ''
                           }`}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <div className="flex items-center">
                             <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
                               <span className="text-sm font-semibold text-gray-700">
@@ -625,17 +625,17 @@ const Activity: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
                             }`}>
                             {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
                             {ACTION_LABELS[activity.actionType] || activity.actionType}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 border-b border-gray-300">
                           <div className="text-sm text-gray-900 max-w-[300px]">{formatDescriptionWithDuration(activity)}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 border-b border-gray-300">
                           {(() => {
                             const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
                             const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
@@ -667,7 +667,7 @@ const Activity: React.FC = () => {
                             return null;
                           })()}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <div className="text-xs text-gray-500">
                             {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                           </div>

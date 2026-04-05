@@ -47,6 +47,12 @@ export interface Job {
     email: string;
   };
   budget: number;
+  agreedPrice?: number;
+  acceptedProvider?: {
+    providerId: string;
+    agreedPrice: number;
+    acceptedAt: string | Date;
+  };
   paymentStatus: 'pending' | 'paid' | 'refunded';
   escrowAmount: number;
   paidAmount: number;

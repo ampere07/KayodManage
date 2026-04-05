@@ -12,12 +12,14 @@ interface TransactionDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
+  onStatusUpdate?: (transactionId: string, status: string, type?: string) => Promise<void>;
 }
 
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   isOpen,
   onClose,
-  transaction
+  transaction,
+  onStatusUpdate
 }) => {
   if (!isOpen || !transaction) return null;
 

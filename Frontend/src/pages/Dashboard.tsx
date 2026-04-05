@@ -3,13 +3,10 @@ import {
   Users,
   Briefcase,
   DollarSign,
-  AlertCircle,
-  TrendingUp,
-  PieChart as PieChartIcon,
-  BarChart4 as BarChartIcon // Lucide has BarChart, BarChart2, BarChart3, BarChart4 with axes
+  AlertCircle
 } from 'lucide-react';
 import StatsCard from '../components/Dashboard/StatsCard';
-import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Sector } from 'recharts';
+import { AreaChart, Area, PieChart, Pie, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -21,67 +18,24 @@ import { alertsService } from '../services';
 
 function Header() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const currentDate = new Date();
-  const dateString = currentDate.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
-  const shortDate = currentDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  });
-  const timeString = currentDate.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  const greeting = currentDate.getHours() < 12
-    ? 'Good Morning'
-    : currentDate.getHours() < 18
-      ? 'Good Afternoon'
-      : 'Good Evening';
 
   return (
-    <div className="mb-2 md:mb-3">
-      <div className="flex items-start justify-between mb-0.5">
-        <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-1000">
-          {greeting}, {user?.name || 'Admin'}
-        </h1>
-        <div className="text-right md:hidden">
-          <p className="text-xs text-gray-900">{timeString}</p>
-          <p className="text-xs text-gray-600">{shortDate}</p>
-        </div>
+    <div className="hidden md:flex items-center justify-between mb-6 mt-2">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h1>
+        <p className="text-sm text-gray-500 mt-1">Welcome back! Your service marketplace's performance view</p>
       </div>
-      <p className="text-xs text-gray-900 mb-1.5 md:mb-2 hidden md:block">
-        <span className="hidden sm:inline">{dateString} · </span>{timeString}
-      </p>
 
-      <div className="flex gap-1.5 md:gap-2 flex-wrap">
-        <button
-          onClick={() => navigate('/verifications')}
-          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
-        >
-          <span className="hidden sm:inline">View Verifications</span>
-          <span className="sm:hidden">Verify</span>
-        </button>
-        <button
-          onClick={() => navigate('/jobs')}
-          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
-        >
-          <span className="hidden sm:inline">Review Flagged Jobs</span>
-          <span className="sm:hidden">Flagged</span>
-        </button>
-        <button
-          onClick={() => navigate('/support')}
-          className="px-2 sm:px-2.5 md:px-3 py-1 md:py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-xs font-medium whitespace-nowrap"
-        >
-          <span className="hidden sm:inline">Manage Customer Service</span>
-          <span className="sm:hidden">Support</span>
-        </button>
+      <div className="hidden sm:flex items-center gap-3 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer px-2.5 py-2 rounded-2xl shadow-sm">
+        <img
+          src={user?.profilePicture || "/src/assets/icons/Default_Icon.webp"}
+          alt="Admin Profile"
+          className="w-11 h-11 rounded-full object-cover border border-white shadow-sm bg-white"
+        />
+        <div className="hidden sm:flex flex-col pr-3">
+          <span className="text-[15px] font-bold text-gray-900 leading-tight">{user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}</span>
+          <span className="text-[13px] font-semibold text-gray-500 leading-tight mt-0.5">{user?.email || 'admin@company.com'}</span>
+        </div>
       </div>
     </div>
   );
@@ -93,198 +47,190 @@ function StatCards() {
   const { data: comparison } = useDashboardComparison();
 
   const stats = dashboardStats || {
+    totalRevenue: 0,
     totalUsers: 0,
     totalJobs: 0,
     activeJobs: 0,
-    totalRevenue: 0,
-    pendingFees: 0,
     pendingFeesCount: 0
   };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      currencyDisplay: 'symbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount).replace('PHP', '₱');
-  };
-
-  const formatPercentage = (percentage: number) => {
-    if (percentage === 0) return '0% vs Last Month';
-    const sign = percentage > 0 ? '+' : '';
-    return `${sign}${percentage}% vs Last Month`;
-  };
-
-  const getChangeType = (percentage: number) => {
-    if (percentage > 0) return 'positive' as const;
-    if (percentage < 0) return 'negative' as const;
-    return 'neutral' as const;
-  };
-
-  const statCards = [
-    {
-      icon: Users,
-      title: 'Total Users',
-      value: stats.totalUsers.toLocaleString(),
-      trend: comparison ? { value: comparison.users.percentage, isPositive: comparison.users.percentage >= 0 } : undefined,
-      color: 'blue' as const,
-      onClick: () => navigate('/users')
-    },
-    {
-      icon: Briefcase,
-      title: 'Total Jobs',
-      value: stats.totalJobs.toLocaleString(),
-      trend: comparison ? { value: comparison.jobs.percentage, isPositive: comparison.jobs.percentage >= 0 } : undefined,
-      color: 'green' as const,
-      onClick: () => navigate('/jobs')
-    },
-    {
-      icon: DollarSign,
-      title: 'Total Revenue',
-      value: formatCurrency(stats.totalRevenue),
-      trend: comparison ? { value: comparison.revenue.percentage, isPositive: comparison.revenue.percentage >= 0 } : undefined,
-      color: 'indigo' as const,
-      onClick: () => navigate('/transactions')
-    },
-    {
-      icon: AlertCircle,
-      title: 'Pending Fees',
-      value: stats.pendingFeesCount?.toLocaleString() || '0',
-      trend: undefined,
-      color: 'red' as const,
-      onClick: () => navigate('/transactions/fee-records?status=pending')
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2 mb-2 md:mb-3">
-      {statCards.map((stat) => (
-        <div
-          key={stat.title}
-          onClick={stat.onClick}
-          className="cursor-pointer"
-        >
-          <StatsCard
-            title={stat.title}
-            value={stat.value}
-            icon={stat.icon}
-            trend={stat.trend ? { value: stat.trend.value, isPositive: stat.trend.isPositive } : undefined}
-            color={stat.color}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface RevenueChartData {
-  name: string;
-  revenue: number;
-  transactions: number;
-}
-
-function RevenueChart() {
-  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
-  const { data: chartData = [], isLoading: loading } = useDashboardRevenueChart(period);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
       currency: 'PHP',
       currencyDisplay: 'symbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value).replace('PHP', '₱');
   };
 
-  return (
-    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-1.5 md:mb-2">
-        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Revenue Overview</h3>
+  const statCards = [
+    {
+      icon: DollarSign,
+      title: 'Total Revenue',
+      value: formatCurrency(stats.totalRevenue),
+      trend: comparison ? { value: comparison.revenue.percentage, isPositive: comparison.revenue.percentage >= 0 } : { value: 18.2, isPositive: true },
+      color: 'green' as const,
+      variant: 'solid' as const,
+      onClick: () => navigate('/transactions')
+    },
+    {
+      icon: Users,
+      title: 'Total Users',
+      value: stats.totalUsers.toLocaleString(),
+      trend: comparison ? { value: comparison.users.percentage, isPositive: comparison.users.percentage >= 0 } : { value: 12.5, isPositive: true },
+      color: 'blue' as const,
+      variant: 'default' as const,
+      onClick: () => navigate('/users')
+    },
+    {
+      icon: Briefcase,
+      title: 'Total Jobs',
+      value: stats.totalJobs.toLocaleString(),
+      trend: comparison ? { value: comparison.jobs.percentage, isPositive: comparison.jobs.percentage >= 0 } : { value: 2.3, isPositive: false },
+      color: 'purple' as const,
+      variant: 'default' as const,
+      onClick: () => navigate('/jobs')
+    },
+    {
+      icon: AlertCircle,
+      title: 'Pending Fees',
+      value: stats.pendingFeesCount?.toLocaleString() || '0',
+      trend: { value: 24.6, isPositive: true },
+      color: 'red' as const,
+      variant: 'default' as const,
+      onClick: () => navigate('/transactions/fee-records?status=pending')
+    },
+  ];
 
-        <div className="flex gap-1 md:gap-1.5">
-          <button
-            onClick={() => setPeriod('week')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'week'
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-              }`}
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      {statCards.map((stat) => (
+        <div
+          key={stat.title}
+          onClick={stat.onClick}
+          className="cursor-pointer"
+        >
+          <StatsCard {...stat} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RevenueChart() {
+  const [period, setPeriod] = useState<'week' | 'month' | 'year' | 'overall'>('week');
+  const { data: rawChartData = [], isLoading: loading } = useDashboardRevenueChart(period);
+  const { dashboardStats } = useSocket();
+
+  const chartData = useMemo(() => {
+    return rawChartData.map((d: any) => ({
+      ...d,
+      name: d.date || d._id,
+      revenue: d.totalAmount || d.revenue || 0
+    }));
+  }, [rawChartData]);
+
+  const displayedTotalRevenue = useMemo(() => {
+    if (period === 'overall') return dashboardStats?.totalRevenue || 0;
+    return chartData.reduce((sum: number, item: any) => sum + (item.revenue || 0), 0);
+  }, [chartData, period, dashboardStats?.totalRevenue]);
+
+  return (
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
+      <div className="flex items-start sm:items-start justify-between mb-2 sm:mb-4">
+        <div>
+          <h3 className="text-[17px] sm:text-lg font-semibold text-gray-900 sm:mb-2">Revenue Overview</h3>
+          <div className="hidden sm:flex items-center gap-3">
+            <h2 className="text-3xl font-bold text-gray-900">₱{displayedTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+            <span className="text-xs font-semibold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">↓ 100%</span>
+          </div>
+        </div>
+
+        {/* Mobile Tab Selector */}
+        <div className="flex sm:hidden items-center gap-1 mt-0.5">
+          {['week', 'month', 'year'].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p as any)}
+              className={`text-[12px] font-medium px-2.5 py-1 rounded-md transition-colors ${period === p ? 'bg-slate-900 text-white' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Desktop Select */}
+        <div className="hidden sm:block">
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as any)}
+            className="bg-gray-50 border-none text-gray-600 text-sm rounded-full px-4 py-1.5 focus:ring-0 cursor-pointer appearance-none pr-8 relative outline-none"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1.2em 1.2em' }}
           >
-            Week
-          </button>
-          <button
-            onClick={() => setPeriod('month')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'month'
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-              }`}
-          >
-            Month
-          </button>
-          <button
-            onClick={() => setPeriod('year')}
-            className={`px-1.5 sm:px-2 md:px-2.5 py-0.5 md:py-1 text-xs rounded transition-colors ${period === 'year'
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-              }`}
-          >
-            Year
-          </button>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+            <option value="year">Yearly</option>
+            <option value="overall">All Time</option>
+          </select>
         </div>
       </div>
 
-      <div className="w-full h-[180px] sm:flex-1 sm:h-auto sm:min-h-[240px] sm:max-h-[280px]">
+      <div className="flex-1 w-full min-h-0 mt-2">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-xs text-gray-500">Loading...</div>
+            <div className="text-sm text-gray-500">Loading...</div>
           </div>
-        ) : chartData.length > 0 ? (
+        ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 9, fill: '#6b7280' }}
                 axisLine={false}
                 tickLine={false}
+                tick={{ fontSize: 11, fill: '#9ca3af', fontWeight: 500 }}
+                dy={10}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#6b7280' }}
                 axisLine={false}
                 tickLine={false}
-                tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+                tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                tick={{ fontSize: 11, fill: '#9ca3af', fontWeight: 500 }}
+                dx={-10}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
+                  backgroundColor: '#10b981',
+                  border: 'none',
                   borderRadius: '8px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  fontSize: '11px'
+                  color: 'white',
+                  fontWeight: 600,
+                  padding: '8px 12px',
+                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)'
                 }}
-                formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+                itemStyle={{ color: 'white' }}
+                cursor={{ stroke: '#10b981', strokeWidth: 1, strokeDasharray: '4 4' }}
+                formatter={(value: number) => [`₱${value.toLocaleString()}`, 'Revenue']}
+                labelStyle={{ display: 'none' }}
               />
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                fill="url(#colorValue)"
+                stroke="#10b981"
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#colorRevenue)"
+                activeDot={{ r: 6, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
               />
             </AreaChart>
           </ResponsiveContainer>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-xs text-gray-500">No data available</div>
-          </div>
         )}
       </div>
     </div>
@@ -293,7 +239,7 @@ function RevenueChart() {
 
 function ActiveAlerts() {
   const navigate = useNavigate();
-  const { alerts, socket } = useSocket();
+  const { alerts } = useSocket();
   const { user } = useAuth();
   const [dismissingAlerts, setDismissingAlerts] = useState<Set<string>>(new Set());
   const [localAlerts, setLocalAlerts] = useState(alerts || []);
@@ -303,13 +249,8 @@ function ActiveAlerts() {
   const dismissedAlertsKey = `dismissedAlerts_${adminId}`;
 
   useEffect(() => {
-    console.log('👤 Full user object:', user);
-    console.log('🎯 Admin ID resolved:', adminId);
-    console.log('🔑 LocalStorage key:', dismissedAlertsKey);
     const dismissedAlerts = JSON.parse(localStorage.getItem(dismissedAlertsKey) || '[]');
-    console.log('🚫 Dismissed alerts from localStorage:', dismissedAlerts);
     const filteredAlerts = (alerts || []).filter(alert => !dismissedAlerts.includes(alert._id));
-    console.log('✅ Filtered alerts:', filteredAlerts.length, 'of', alerts?.length);
     setLocalAlerts(filteredAlerts);
   }, [alerts, dismissedAlertsKey, adminId, user]);
 
@@ -345,42 +286,24 @@ function ActiveAlerts() {
 
   const handleDismiss = async (alertId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
-    console.log('🗑️ Dismissing alert:', alertId, 'for admin:', adminId);
-    console.log('🔑 Using localStorage key:', dismissedAlertsKey);
-
     setDismissingAlerts(prev => new Set(prev).add(alertId));
 
     try {
-      // Check if this is a generated alert (starts with prefix)
       const isGeneratedAlert = alertId.startsWith('report_') ||
         alertId.startsWith('verification_') ||
         alertId.startsWith('support_');
 
-      console.log('🏷️ Is generated alert:', isGeneratedAlert);
-
       if (isGeneratedAlert) {
-        // For generated alerts, just remove from local state
-        // Store dismissed alert IDs in localStorage to persist across sessions
         const dismissedAlerts = JSON.parse(localStorage.getItem(dismissedAlertsKey) || '[]');
         dismissedAlerts.push(alertId);
         localStorage.setItem(dismissedAlertsKey, JSON.stringify(dismissedAlerts));
-        console.log('💾 Saved to localStorage:', dismissedAlerts);
-
         setLocalAlerts(prev => prev.filter(alert => alert._id !== alertId));
       } else {
-        // For real Alert documents, call the API
-        console.log('🌐 Calling API to dismiss alert');
         await alertsService.dismissAlert(alertId);
         setLocalAlerts(prev => prev.filter(alert => alert._id !== alertId));
       }
     } catch (error) {
       console.error('Error dismissing alert:', error);
-      setDismissingAlerts(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(alertId);
-        return newSet;
-      });
     } finally {
       setDismissingAlerts(prev => {
         const newSet = new Set(prev);
@@ -418,46 +341,46 @@ function ActiveAlerts() {
   const displayAlerts = localAlerts || [];
 
   return (
-    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-1.5 md:mb-2">
-        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Active Alerts</h3>
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <h3 className="text-lg font-semibold text-gray-900">Active Alerts</h3>
         <button
           onClick={handleResetAlerts}
           disabled={isResetting}
-          className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-gray-50 text-gray-600 text-sm rounded-full px-4 py-1.5 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           title="Reset all alerts for testing"
         >
           {isResetting ? 'Resetting...' : 'Reset'}
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-1.5 md:space-y-2 max-h-[240px] sm:max-h-[280px]">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 no-scrollbar min-h-0">
         {displayAlerts.length > 0 ? (
           displayAlerts.map((alert) => (
             <div
               key={alert._id}
-              className={`border border-gray-200 rounded-lg p-2 md:p-2.5 ${getAlertStyle(alert.type)}`}
+              className={`rounded-xl p-3 sm:p-4 ${getAlertStyle(alert.type)}`}
             >
-              <div className="mb-1 md:mb-1.5">
-                <h4 className="text-xs font-semibold text-gray-900 mb-0.5">
+              <div className="mb-2">
+                <h4 className="text-[13px] sm:text-sm font-semibold text-gray-900 mb-0.5">
                   {alert.title || 'New Post Reported'}
                 </h4>
-                <p className="text-xs text-gray-600 line-clamp-2">
-                  {alert.message || `Job "${alert.jobTitle || 'Test'}" reported for inappropriate content`}
+                <p className="text-xs sm:text-sm text-gray-600 line-clamp-1">
+                  {alert.message || 'Reported for inappropriate content'}
                 </p>
               </div>
 
-              <div className="flex gap-1 md:gap-1.5">
+              <div className="flex gap-2">
                 <button
                   onClick={() => handleReview(alert)}
-                  className="px-2 md:px-2.5 py-0.5 md:py-1 bg-gray-900 text-white text-xs rounded hover:bg-gray-800 transition-colors"
+                  className="px-3 py-1 bg-gray-900 text-white text-[11px] font-medium rounded-full hover:bg-gray-800 transition-colors"
                 >
                   Review
                 </button>
                 <button
                   onClick={(e) => handleDismiss(alert._id, e)}
                   disabled={dismissingAlerts.has(alert._id)}
-                  className="px-2 md:px-2.5 py-0.5 md:py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 bg-white border border-gray-200 text-gray-700 text-[11px] font-medium rounded-full hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {dismissingAlerts.has(alert._id) ? 'Dismissing...' : 'Dismiss'}
                 </button>
@@ -465,11 +388,11 @@ function ActiveAlerts() {
             </div>
           ))
         ) : (
-          <div className="text-center py-6 md:py-8">
-            <div className="inline-flex items-center justify-center w-8 md:w-10 h-8 md:h-10 rounded-full bg-gray-100 mb-1.5 md:mb-2">
-              <AlertCircle className="h-4 md:h-5 w-4 md:w-5 text-gray-400" />
+          <div className="flex flex-col items-center justify-center h-full py-4 text-center">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-50 mb-2">
+              <AlertCircle className="h-5 w-5 text-gray-400" />
             </div>
-            <p className="text-xs text-gray-600">No active alerts</p>
+            <p className="text-sm text-gray-500 font-medium">No active alerts</p>
           </div>
         )}
       </div>
@@ -501,86 +424,52 @@ function ActivityBreakdown() {
     { label: 'Online Users', value: stats.onlineUsers || 0, highlight: true },
   ];
 
-  const verificationRate = stats.providers > 0
-    ? Math.round((stats.verifiedProviders / stats.providers) * 100)
-    : 0;
-
-  const userBreakdown = [
-    { label: 'Total Customers', value: stats.customers?.toLocaleString() || '0' },
-    { label: 'Total Providers', value: stats.providers?.toLocaleString() || '0' },
-    {
-      label: 'Verified Providers',
-      value: `${stats.verifiedProviders || 0} (${verificationRate}%)`
-    },
-    { label: 'Pending Verifications', value: stats.pendingVerifications?.toLocaleString() || '0' },
-    { label: 'Average Rating', value: `${stats.averageRating || '0.0'} ★` },
-  ];
-
   return (
-    <div className="flex flex-col gap-1.5 sm:gap-2">
-      <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
-        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">Today's Activity</h3>
+    <div className="flex flex-col h-full">
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex-1 overflow-hidden flex flex-col">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex-shrink-0">Today's Activity</h3>
 
-        <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
-          {todayActivity.map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
-            >
-              <span className="text-xs text-gray-600">{item.label}</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-gray-900">
-                  {item.value.toLocaleString()}
-                </span>
-                {item.highlight && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                )}
+        <div className="flex-1 pr-2 min-h-0">
+          <div className="space-y-4 pt-1">
+            {todayActivity.map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0"
+              >
+                <span className="text-[13px] sm:text-sm font-medium text-gray-500">{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] sm:text-sm font-bold text-gray-900">
+                    {item.value.toLocaleString()}
+                  </span>
+                  {item.highlight && (
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200">
-        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 mb-1.5 md:mb-2.5">User Breakdown</h3>
-
-        <div className="space-y-1.5 sm:space-y-2 md:space-y-2.5">
-          {userBreakdown.map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center justify-between pb-1.5 sm:pb-2 md:pb-2.5 border-b border-gray-100 last:border-0"
-            >
-              <span className="text-xs text-gray-600">{item.label}</span>
-              <span className="text-xs font-semibold text-gray-900">
-                {item.value}
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-const resolveIconData = (dataItem: any, categories: any[]) => {
-  if (!dataItem) return getProfessionIconByName('');
-  
-  let iconStr = dataItem.icon || '';
-  let categoryIconStr = '';
-  const cleanName = dataItem.name || '';
-  const rawName = dataItem.rawName || '';
+const resolveIconData = (dataItem: any, categories: JobCategory[]) => {
+  if (!dataItem) return null;
+  const cleanName = dataItem.name.toLowerCase();
 
-  if (!iconStr && categories?.length) {
-    for (const cat of categories) {
-      if (cat.name.toLowerCase() === cleanName.toLowerCase() || cat.name.toLowerCase() === rawName.toLowerCase()) {
-        iconStr = cat.icon;
-        categoryIconStr = cat.icon;
-        break;
-      }
-      const prof = cat.professions?.find((p: any) => p.name.toLowerCase() === cleanName.toLowerCase() || p.name.toLowerCase() === rawName.toLowerCase());
+  let categoryIconStr = '';
+  let iconStr = '';
+
+  const cat = categories.find(c => c.name.toLowerCase() === cleanName);
+  if (cat) {
+    categoryIconStr = cat.icon || '';
+  } else {
+    for (const c of categories) {
+      const prof = c.professions?.find(p => p.name.toLowerCase() === cleanName);
       if (prof) {
-        iconStr = prof.icon;
-        categoryIconStr = cat.icon;
+        iconStr = prof.icon || '';
+        categoryIconStr = c.icon || '';
         break;
       }
     }
@@ -592,46 +481,17 @@ const resolveIconData = (dataItem: any, categories: any[]) => {
       'painting': 'custom:painter.webp',
       'beauty': 'custom:beauty--personal-care.webp',
       'cleaning': 'custom:house-cleaning.webp',
-      'carpentry': 'custom:carpentry--cabinetry.webp',
+      'carpentry': 'custom:carpentry-cabinetry.webp',
       'ac refrigeration': 'custom:ac--refrigerator.webp',
       'gardening': 'custom:gardening--landscaping.webp',
       'moving': 'custom:lipat-bahay-mover.webp',
       'computer repair': 'custom:computer-technician.webp',
       'auto mechanic': 'custom:auto-mechanic.webp'
     };
-    iconStr = legacyMap[cleanName.toLowerCase()] || '';
+    iconStr = legacyMap[cleanName] || '';
   }
 
   return getProfessionIconByName(iconStr, categoryIconStr);
-};
-
-const CustomXAxisTick = ({ x, y, payload, data, categories }: any) => {
-  const dataItem = data.find((d: any) => d.name === payload.value);
-  const iconData = resolveIconData(dataItem, categories);
-  const words = payload.value.split(' ');
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      {iconData?.imagePath ? (
-        <image href={iconData.imagePath} x={-20} y={0} height="40px" width="40px" />
-      ) : (
-        <image href="/src/assets/icons/Default_Icon.webp" x={-20} y={0} height="40px" width="40px" />
-      )}
-      <text
-        x={0}
-        y={52}
-        textAnchor="middle"
-        fill="#6b7280"
-        fontSize={9}
-      >
-        {words.map((word: string, index: number) => (
-          <tspan x={0} dy={index === 0 ? 0 : 10} key={index}>
-            {word}
-          </tspan>
-        ))}
-      </text>
-    </g>
-  );
 };
 
 const CustomTooltip = ({ active, payload, categories }: any) => {
@@ -648,7 +508,7 @@ const CustomTooltip = ({ active, payload, categories }: any) => {
         )}
         <div className="text-center">
           <p className="font-semibold text-gray-900 text-sm">{dataItem.name}</p>
-          <p className="text-blue-600 font-bold">₱{dataItem.count.toLocaleString()}</p>
+          <p className="text-emerald-600 font-bold">₱{dataItem.count.toLocaleString()}</p>
           <p className="text-xs text-gray-500 font-medium">{dataItem.jobCount} {dataItem.jobCount === 1 ? 'job' : 'jobs'}</p>
         </div>
       </div>
@@ -657,13 +517,41 @@ const CustomTooltip = ({ active, payload, categories }: any) => {
   return null;
 };
 
-const POPULAR_JOBS_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f43f5e', '#84cc16', '#a855f7', '#14b8a6'];
+const CustomBarXAxisTick = (props: any) => {
+  const { x, y, payload, categories } = props;
+  const iconData = resolveIconData({ name: payload.value }, categories);
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {iconData?.imagePath && (
+        <image x={-18} y={4} width={36} height={36} href={iconData.imagePath} />
+      )}
+      <foreignObject x={-35} y={45} width={70} height={40}>
+        <div style={{ 
+          textAlign: 'center', 
+          fontSize: '10px', 
+          color: '#64748b', 
+          fontWeight: 500, 
+          lineHeight: '1.2',
+          whiteSpace: 'normal',
+          wordWrap: 'break-word',
+          display: 'flex',
+          justifyContent: 'center'
+        }}>
+          {payload.value}
+        </div>
+      </foreignObject>
+    </g>
+  );
+};
+
+const POPULAR_JOBS_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#d946ef', '#f43f5e'];
 
 function PopularJobsChart() {
   const [period, setPeriod] = useState<'overall' | 'week' | 'month' | '6months' | 'year'>('overall');
+  const [viewType, setViewType] = useState<'pie' | 'bar'>('pie');
   const { data: rawChartData = [], isLoading: loading } = useDashboardPopularJobs(period);
   const [categories, setCategories] = useState<JobCategory[]>([]);
-  const [chartType, setChartType] = useState<'bar' | 'pie'>('pie');
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
   useEffect(() => {
@@ -689,159 +577,164 @@ function PopularJobsChart() {
     });
   }, [rawChartData]);
 
+  const totalJobs = useMemo(() => {
+    return chartData.reduce((acc: number, curr: any) => acc + (curr.count || 0), 0);
+  }, [chartData]);
+
   return (
-    <div className="bg-white p-2 sm:p-2.5 md:p-3 rounded-lg border border-gray-200 h-full flex flex-col relative">
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col relative">
       <style>{`
         .popular-pie-slice {
           transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s !important;
-          transform-origin: ${isMobile ? '50% 50%' : '72% 50%'};
+          transform-origin: 50% 50%;
           cursor: pointer;
         }
         .popular-pie-slice:hover {
-          transform: scale(1.08);
+          transform: scale(1.05);
           opacity: 0.9;
           z-index: 10;
         }
       `}</style>
 
-      <div className="p-4 sm:p-5 md:p-6 border-b border-gray-100 flex-shrink-0 flex flex-wrap justify-between items-center gap-3">
-        <h2 className="text-base sm:text-lg font-bold text-gray-900 whitespace-nowrap">Popular Jobs</h2>
-        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-          <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
-            {(['overall', 'week', 'month', 'year'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-                  period === p 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
+      <div className="flex items-center justify-between mb-3 sm:mb-4 flex-shrink-0 gap-1.5 sm:gap-3">
+        <h3 className="text-[14px] sm:text-lg font-semibold text-gray-900 truncate pr-1">Popular Jobs By Category</h3>
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <div className="flex items-center bg-gray-50 rounded-full p-0.5 sm:p-1 border border-gray-100">
             <button
-              onClick={() => setChartType('bar')}
-              title="Display as Bar Chart"
-              className={`p-1.5 rounded-md transition-colors ${
-                chartType === 'bar' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              onClick={() => setViewType('pie')}
+              className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded-full transition-colors ${viewType === 'pie' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              <BarChartIcon className="w-4 h-4" />
+              Pie
             </button>
             <button
-              onClick={() => setChartType('pie')}
-              title="Display as Pie Chart"
-              className={`p-1.5 rounded-md transition-colors ${
-                chartType === 'pie' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              onClick={() => setViewType('bar')}
+              className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded-full transition-colors ${viewType === 'bar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              <PieChartIcon className="w-4 h-4" />
+              Bar
             </button>
           </div>
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as any)}
+            className="bg-gray-50 border border-gray-100 text-gray-600 text-[10px] sm:text-sm rounded-full px-2 sm:px-4 py-1 sm:py-1.5 focus:ring-0 cursor-pointer appearance-none pr-5 sm:pr-8 relative outline-none"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.3rem center', backgroundSize: '1em 1em' }}
+          >
+            <option value="overall">All Time</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+            <option value="year">Yearly</option>
+          </select>
         </div>
       </div>
-      
-      <div className="flex-1 w-full relative min-h-[300px] h-[400px]">
+
+      <div className="flex-1 w-full relative min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-xs text-gray-500">Loading...</div>
+            <div className="text-sm text-gray-500">Loading...</div>
           </div>
         ) : chartData.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center py-10 opacity-70">
+          <div className="w-full h-full flex flex-col items-center justify-center opacity-70">
             <p className="text-sm font-medium text-gray-500">No popular jobs found for this timeframe.</p>
           </div>
-        ) : chartType === 'bar' ? (
-          <div className="w-full h-full overflow-x-auto no-scrollbar">
-            <div className="min-w-[650px] h-full pb-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0" />
-                  <XAxis
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    interval={0}
-                    height={100}
-                    tick={(props) => <CustomXAxisTick {...props} data={chartData} categories={categories} />}
-                  />
-                  <YAxis
-                    type="number"
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
-                    tick={{ fontSize: 10, fill: '#6b7280' }}
-                  />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                    content={<CustomTooltip categories={categories} />}
-                  />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
-                    {chartData.map((_entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         ) : (
-          <div className="w-full h-full flex flex-col md:block justify-start md:justify-center items-center py-2 md:py-4 relative">
-            <ul className={`grid grid-cols-2 gap-x-2 md:gap-x-6 gap-y-2 sm:gap-y-4 m-0 p-0 pointer-events-auto z-10 ${
-              isMobile 
-                ? 'w-full px-2 mt-4 order-2' 
-                : 'absolute top-1/2 -translate-y-1/2 left-0 max-h-[90%] overflow-y-auto no-scrollbar py-2 px-2 w-[55%]'
-            }`}>
-              {chartData.map((_: any, i: number) => {
-                const half = Math.ceil(chartData.length / 2);
-                const actualIndex = i % 2 === 0 ? Math.floor(i / 2) : half + Math.floor(i / 2);
-                const entry = chartData[actualIndex];
-                if (!entry) return <div key={`legend-empty-${i}`} />;
-                const iconData = resolveIconData(entry, categories);
-                return (
-                  <li key={`legend-item-${actualIndex}`} className="flex items-center gap-1.5 sm:gap-3 text-[11px] sm:text-sm md:text-base text-gray-700" title={entry.name}>
-                    <span className="font-bold text-gray-400 w-3 sm:w-4 text-right flex-shrink-0">{actualIndex + 1}.</span>
-                    <div className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: POPULAR_JOBS_COLORS[actualIndex % POPULAR_JOBS_COLORS.length] }} />
-                    {iconData?.imagePath ? (
-                      <img src={iconData.imagePath} alt={entry.name} className="w-6 sm:w-10 h-6 sm:h-10 object-contain drop-shadow-sm filter contrast-125 brightness-105 flex-shrink-0" />
-                    ) : (
-                      <img src="/src/assets/icons/Default_Icon.webp" alt="default" className="w-6 sm:w-10 h-6 sm:h-10 object-contain opacity-50 sepia-[.2] flex-shrink-0" />
-                    )}
-                    <span className="truncate max-w-[75px] sm:max-w-[120px] md:max-w-[140px] font-medium leading-tight" title={entry.name}>
-                      {entry.name}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className={`${isMobile ? 'w-full h-[220px] order-1' : 'w-full h-full'}`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx={isMobile ? "50%" : "72%"}
-                    cy="50%"
-                    innerRadius={0}
-                    outerRadius={isMobile ? 100 : 140}
-                    paddingAngle={0}
-                    dataKey="count"
-                    nameKey="name"
-                  >
-                    {chartData.map((_entry: any, index: number) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} 
-                        className="popular-pie-slice"
-                        style={{ outline: 'none' }}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip categories={categories} />} />
-                </PieChart>
-              </ResponsiveContainer>
+          <div className="w-full h-full flex flex-row items-start justify-between relative px-1 sm:px-4 py-2">
+            {viewType === 'pie' && (
+              <div className="w-[55%] sm:w-1/2 h-full overflow-y-auto max-h-[300px] md:max-h-[400px] dashboard-scroll flex items-start justify-start pr-1 sm:pr-4 py-2">
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-2 sm:gap-y-4 m-0 p-0 w-full mt-1">
+                  {chartData.map((entry: any, index: number) => {
+                    const iconData = resolveIconData(entry, categories);
+                    return (
+                      <li key={`legend-item-${index}`} className="flex items-center justify-between text-sm text-gray-600 w-full" title={entry.name}>
+                        <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-hidden">
+                          <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ backgroundColor: POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length] }} />
+                          {iconData?.imagePath ? (
+                            <img src={iconData.imagePath} alt={entry.name} className="w-7 h-7 sm:w-9 sm:h-9 object-contain drop-shadow-sm flex-shrink-0" />
+                          ) : (
+                            <div className="w-7 h-7 sm:w-9 sm:h-9 opacity-0 flex-shrink-0" />
+                          )}
+                          <span className="text-[11px] sm:text-[13px] font-semibold text-gray-400 min-w-[12px] sm:min-w-[14px]">{index + 1}.</span>
+                          <span className="truncate font-medium text-gray-600 text-[11px] sm:text-[13px]" title={entry.name}>
+                            {entry.name}
+                          </span>
+                        </div>
+                        <span className="font-bold text-gray-900 text-[11px] sm:text-[13px] ml-1 sm:ml-2">₱{entry.count.toLocaleString()}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div className={`h-full ${viewType === 'pie' ? 'w-1/2 min-h-[160px] sm:min-h-[220px]' : 'w-full pt-4'} relative flex-shrink-0`}>
+              {viewType === 'pie' ? (
+                <>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                    <span className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">₱{totalJobs.toLocaleString()}</span>
+                    <span className="text-[11px] sm:text-xs font-semibold text-emerald-600 mt-0.5">+12% ↑</span>
+                  </div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={isMobile ? 55 : 70}
+                        outerRadius={isMobile ? 75 : 100}
+                        paddingAngle={3}
+                        dataKey="count"
+                        nameKey="name"
+                        cornerRadius={5}
+                        stroke="none"
+                      >
+                        {chartData.map((_entry: any, index: number) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]}
+                            className="popular-pie-slice"
+                            style={{ outline: 'none' }}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip categories={categories} />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </>
+              ) : (
+                <div className="w-[calc(100%+12px)] sm:w-full h-full -ml-3 sm:ml-0 overflow-x-auto overflow-y-hidden dashboard-scroll">
+                  <div className="min-w-[700px] sm:min-w-0 h-full w-full pr-2 sm:pr-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                        <XAxis
+                          dataKey="name"
+                          axisLine={false}
+                          tickLine={false}
+                          interval={0}
+                          tick={<CustomBarXAxisTick categories={categories} />}
+                          height={90}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(val) => '₱' + (val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val)}
+                          tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                          dx={-4}
+                        />
+                        <Tooltip content={<CustomTooltip categories={categories} />} cursor={{ fill: '#f3f4f6', opacity: 0.4 }} />
+                        <Bar
+                          dataKey="count"
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={40}
+                        >
+                          {chartData.map((_entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={POPULAR_JOBS_COLORS[index % POPULAR_JOBS_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -852,25 +745,29 @@ function PopularJobsChart() {
 
 export default function Dashboard() {
   return (
-    <div className="h-full flex flex-col overflow-hidden px-1 sm:px-0">
+    <div className="h-full flex flex-col px-4 md:px-8 py-2 md:py-5 bg-[#f8fafc] overflow-y-auto md:overflow-hidden">
       <Header />
       <StatCards />
 
-      <div className="flex flex-col lg:flex-row gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 md:mb-3">
-        <div className="w-full lg:w-[55%]">
-          <RevenueChart />
+      <div className="flex flex-col lg:flex-row gap-4 mb-4">
+        {/* Left Column */}
+        <div className="flex flex-col gap-4 w-full lg:w-[65%]">
+          <div className="h-[260px] lg:h-[370px]">
+            <RevenueChart />
+          </div>
+          <div className="h-[370px]">
+            <PopularJobsChart />
+          </div>
         </div>
-        <div className="w-full lg:w-[45%]">
-          <ActiveAlerts />
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 sm:gap-2">
-        <div className="lg:col-span-1">
-          <ActivityBreakdown />
-        </div>
-        <div className="lg:col-span-2">
-          <PopularJobsChart />
+        {/* Right Column */}
+        <div className="flex flex-col gap-4 w-full lg:w-[35%]">
+          <div className="h-[405px] lg:h-[450px]">
+            <ActiveAlerts />
+          </div>
+          <div className="h-[290px]">
+            <ActivityBreakdown />
+          </div>
         </div>
       </div>
     </div>
