@@ -35,7 +35,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     };
   }, [isOpen, setIsHeaderHidden]);
 
-  if (!isOpen || !transaction) return null;
+  if (!transaction) return null;
 
   const formatCurrency = (amount: number) => {
     return formatPHPCurrency(amount, {

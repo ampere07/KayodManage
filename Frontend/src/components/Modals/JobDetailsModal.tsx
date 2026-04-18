@@ -333,7 +333,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                     <span className="text-[9px] font-black uppercase tracking-widest">Profession</span>
                   </div>
                   <p className="text-sm font-bold text-gray-900 capitalize">
-                    {(job.category || '').replace(/([A-Z])/g, ' $1').trim()}
+                    {(() => {
+                      const val = ((job as any).professionName || (job as any).categoryName || job.category || '').trim();
+                      if (/^[a-fA-F0-9]{24}$/.test(val)) return 'General Service';
+                      return val.replace(/([A-Z])/g, ' $1').trim();
+                    })()}
                   </p>
                 </div>
 

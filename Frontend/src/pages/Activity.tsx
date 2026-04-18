@@ -516,6 +516,20 @@ const Activity: React.FC = () => {
               </select>
             </div>
 
+            {/* Mobile-only Limit */}
+            <div className="flex md:hidden items-center gap-1.5">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select 
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
             <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 

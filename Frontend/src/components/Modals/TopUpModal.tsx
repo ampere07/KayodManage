@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X as XIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Transaction } from '../../types';
@@ -12,7 +13,7 @@ interface TopUpModalProps {
 }
 
 const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, onStatusUpdate }) => {
-  if (!isOpen || !transaction) return null;
+  if (!transaction) return null;
 
   const formatCurrency = (amount: number) => {
     return formatPHPCurrency(amount, {
@@ -23,12 +24,12 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, o
 
   const customer = getUser(transaction);
 
-  return (
+  return createPortal(
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity" onClick={onClose} />
 
       <div
-        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-[101] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
       >
         <div className="h-full flex flex-col">
@@ -162,7 +163,8 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, o
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 
