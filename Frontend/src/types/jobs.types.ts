@@ -16,7 +16,11 @@ export interface Job {
   _id: string;
   title: string;
   description: string;
-  category: string;
+  category?: string;
+  categoryId?: string;
+  categoryName?: string;
+  profession?: string;
+  professionName?: string;
   icon?: string;
   media: string[];
   location?: any;

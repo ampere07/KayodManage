@@ -332,12 +332,12 @@ const Jobs: React.FC = () => {
             </div>
 
             {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5 px-2">
+            <div className="flex md:hidden items-center gap-1.5">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
@@ -449,7 +449,7 @@ const Jobs: React.FC = () => {
                   </thead>
                   <tbody className="bg-white border-b border-gray-300">
                     {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.category, job.icon);
+                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
                       return (
                         <tr
                           key={job._id}
@@ -461,7 +461,7 @@ const Jobs: React.FC = () => {
                               <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
                                 <img
                                   src={`${iconData.imagePath}?t=${iconTimestamp}`}
-                                  alt={job.category}
+                                  alt={job.professionName || job.categoryName || job.category || 'Category'}
                                   className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
                                   onError={(e) => {
                                     (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
@@ -478,7 +478,12 @@ const Jobs: React.FC = () => {
                                     <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700">Urgent</span>
                                   )}
                                 </div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{iconData.label || job.category}</p>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                  {(() => {
+                                    const lbl = iconData.label || job.professionName || job.categoryName || job.category || '';
+                                    return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                                  })()}
+                                </p>
                               </div>
                             </div>
                           </td>
@@ -535,7 +540,7 @@ const Jobs: React.FC = () => {
                 {mobileViewType === 'card' ? (
                   <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.category, job.icon);
+                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
                       return (
                         <div
                           key={job._id}
@@ -568,7 +573,7 @@ const Jobs: React.FC = () => {
                                 <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
                                   <img 
                                     src={`${iconData.imagePath}?t=${iconTimestamp}`}
-                                    alt={job.category}
+                                    alt={job.professionName || job.categoryName || job.category || 'Category'}
                                     className="h-10 w-10 object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
@@ -583,7 +588,10 @@ const Jobs: React.FC = () => {
                                 </h3>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                    {iconData.label || job.category || 'General Service'}
+                                    {(() => {
+                                      const lbl = iconData.label || job.professionName || job.categoryName || job.category || '';
+                                      return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                                    })()}
                                   </span>
                                   <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                                     <Users className="h-3 w-3" />
@@ -646,7 +654,7 @@ const Jobs: React.FC = () => {
                       </thead>
                       <tbody>
                         {jobs.map((job) => {
-                          const iconData = resolveIconForJob(job.category, job.icon);
+                          const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
                           return (
                             <tr 
                               key={job._id} 

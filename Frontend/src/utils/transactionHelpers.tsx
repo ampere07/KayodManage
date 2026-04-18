@@ -8,7 +8,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import type { Transaction } from '../types';
-import { getProfessionIconFromName } from '../constants/categoryIcons';
+import { getProfessionIconFromName, getProfessionIconByName } from '../constants/categoryIcons';
 
 /**
  * Transaction utility helper functions
@@ -18,7 +18,7 @@ import { getProfessionIconFromName } from '../constants/categoryIcons';
  * Get type color classes based on transaction type
  */
 export const getTypeColor = (type: string, transactionType: string): string => {
-  if (transactionType === 'platform_fee') {
+  if (transactionType === 'platform_fee' || transactionType === 'fee_record') {
     return 'bg-yellow-100 text-yellow-800';
   }
 
@@ -84,22 +84,28 @@ export const getTransactionStatusIcon = (status: string): JSX.Element | null => 
  */
 export const getTransactionIcon = (transaction: any): JSX.Element => {
   const { type, transactionType, jobId, job } = transaction;
+  const isFeeRecord = transactionType === 'fee_record' || transactionType === 'platform_fee' || type === 'platform_fee' || type === 'fee_payment';
   const jobInfo = jobId || job;
 
-  if (transactionType === 'platform_fee' || type === 'platform_fee') {
-    // If we have job information, try to get the profession icon
-    if (jobInfo?.category || jobInfo?.title) {
-      const iconData = getProfessionIconFromName(jobInfo.category || jobInfo.title);
-      
-      if (iconData?.imagePath) {
+  if (isFeeRecord) {
+    let iconData;
+    const professionName = jobInfo?.professionName || jobInfo?.categoryName || jobInfo?.category || jobInfo?.title;
+    
+    if (jobInfo?.icon) {
+      iconData = getProfessionIconByName(jobInfo.icon);
+    } else if (professionName) {
+      iconData = getProfessionIconFromName(professionName);
+    }
+    
+    if (iconData?.imagePath) {
         return (
-          <div className="w-8 h-8 flex items-center justify-center">
+          <div className="relative flex items-center justify-center h-full w-full p-2">
+            <div className="absolute inset-0 bg-orange-50/80 rounded-lg group-hover:bg-white transition-colors"></div>
             <img 
               src={iconData.imagePath} 
               alt={jobInfo.category || jobInfo.title} 
-              className="w-full h-full object-contain"
+              className="relative z-10 w-full h-full object-contain drop-shadow-sm"
               onError={(e) => {
-                // Fallback to DollarSign if image fails
                 const target = e.target as HTMLImageElement;
                 target.style.display = 'none';
               }}
@@ -107,7 +113,6 @@ export const getTransactionIcon = (transaction: any): JSX.Element => {
           </div>
         );
       }
-    }
     return <DollarSign className="h-5 w-5 text-yellow-600" />;
   }
 
