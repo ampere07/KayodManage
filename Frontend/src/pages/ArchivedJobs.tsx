@@ -8,9 +8,12 @@ import {
   XCircle,
   MapPin,
   Calendar,
-  RefreshCw,
   ChevronRight,
   ShieldAlert,
+  Clock,
+  Users,
+  LayoutGrid,
+  Table2,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -54,18 +57,19 @@ const ArchivedJobs: React.FC = () => {
     total: 0,
     pages: 0
   });
-  
+
   const [categories, setCategories] = useState<JobCategory[]>([]);
   const [professionsList, setProfessionsList] = useState<string[]>([]);
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
+  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
   // Resolver logic adapted from Dashboard.tsx for icons parity
   const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
     if (!jobCategory) return { imagePath: '/assets/icons/categories/professional-services.png', label: 'General Service' };
-    
+
     // If a direct icon path or URL is provided, use it
     if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
-      return { 
+      return {
         imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${jobIcon}`,
         label: jobCategory
       };
@@ -225,11 +229,11 @@ const ArchivedJobs: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-6 py-5">
-          <div className="flex items-center justify-between mb-6">
+          <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-gray-100 rounded-lg">
@@ -243,21 +247,15 @@ const ArchivedJobs: React.FC = () => {
                 View and manage job listings that have been hidden or removed
               </p>
             </div>
-            
-            <button 
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
-              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors text-xs"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>REFRESH DATA</span>
-            </button>
+
+
           </div>
 
           {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="cursor-pointer" onClick={() => setArchiveTypeFilter('all')}>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('all')}>
               <StatsCard
-                title="Total Archived"
+                title="Total"
                 value={(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}
                 icon={Archive}
                 color="blue"
@@ -266,9 +264,9 @@ const ArchivedJobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="cursor-pointer" onClick={() => setArchiveTypeFilter('hidden')}>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('hidden')}>
               <StatsCard
-                title="Hidden Jobs"
+                title="Hidden"
                 value={archivedCounts.hidden.toLocaleString()}
                 icon={Archive}
                 color="orange"
@@ -277,9 +275,9 @@ const ArchivedJobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="cursor-pointer" onClick={() => setArchiveTypeFilter('removed')}>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('removed')}>
               <StatsCard
-                title="Deleted Jobs"
+                title="Deleted"
                 value={archivedCounts.removed.toLocaleString()}
                 icon={XCircle}
                 color="red"
@@ -292,53 +290,77 @@ const ArchivedJobs: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <input
-              type="text"
-              placeholder="Search by job title or description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm"
-            />
-          </div>
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+          {/* Row 1 on Mobile / Search on Desktop */}
+          <div className="flex items-center gap-2 md:contents">
+            <div className="relative flex-1 md:order-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search archived jobs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+              />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={professionFilter}
-              onChange={(e) => setProfessionFilter(e.target.value)}
-              className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-bold text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="all">All Professions</option>
-              {professionsList.map(prof => (
-                <option key={prof} value={prof} className="capitalize">{prof}</option>
-              ))}
-            </select>
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-bold text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="all">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-
-            <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
-              <span className="text-xs font-bold text-gray-400">Limit:</span>
+            {/* Mobile-only Limit */}
+            <div className="flex md:hidden items-center gap-1.5 px-2">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-transparent text-xs font-bold text-gray-600 focus:outline-none"
+                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
               </select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
+            <div className="flex-1 md:flex-initial flex items-center gap-2 md:pb-0 overflow-hidden">
+              <select
+                value={professionFilter}
+                onChange={(e) => setProfessionFilter(e.target.value)}
+                className="flex-1 md:flex-initial bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] md:max-w-[160px] truncate"
+              >
+                <option value="all">Professions</option>
+                {professionsList.map(prof => (
+                  <option key={prof} value={prof} className="capitalize">{prof}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Pagination Limit for Desktop */}
+            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select 
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            {/* View Type Toggle - Mobile only */}
+            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
+               <button
+                 onClick={() => setMobileViewType('card')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <LayoutGrid className="h-3.5 w-3.5" />
+               </button>
+               <button
+                 onClick={() => setMobileViewType('table')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <Table2 className="h-3.5 w-3.5" />
+               </button>
             </div>
           </div>
         </div>
@@ -365,7 +387,7 @@ const ArchivedJobs: React.FC = () => {
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+              <div className="hidden md:block bg-white flex-1 relative">
                 <table className="min-w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">
@@ -398,7 +420,7 @@ const ArchivedJobs: React.FC = () => {
                           <td className="px-6 py-2 border-b border-gray-300">
                             <div className="flex items-center gap-4">
                               <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
-                                <img 
+                                <img
                                   src={`${iconData.imagePath}?t=${iconTimestamp}`}
                                   alt={job.category}
                                   className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
@@ -419,7 +441,7 @@ const ArchivedJobs: React.FC = () => {
                           <td className="px-6 py-4 border-b border-gray-300">
                             <div className="flex items-center gap-3">
                               <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
-                                 <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
+                                <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
                               </div>
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
@@ -427,132 +449,203 @@ const ArchivedJobs: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                        <td className="px-6 py-4 text-center border-b border-gray-300">
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)}`}>
-                            {getJobStatusIcon(job.status)}
-                            {job.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="flex flex-col items-center">
-                            {job.archiveType === 'hidden' ? (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100">
-                                <Archive className="h-2.5 w-2.5" />
-                                Hidden
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-red-600 border border-red-100">
-                                <ShieldAlert className="h-2.5 w-2.5" />
-                                Deleted
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="flex flex-col">
-                            <p className="text-xs font-bold text-gray-900">
-                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
-                            </p>
-                            <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
-                              <Calendar className="h-3 w-3" />
-                              {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString() : 'N/A'}
+                          <td className="px-6 py-4 text-center border-b border-gray-300">
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)}`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex flex-col items-center">
+                              {job.archiveType === 'hidden' ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100">
+                                  <Archive className="h-2.5 w-2.5" />
+                                  Hidden
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-red-600 border border-red-100">
+                                  <ShieldAlert className="h-2.5 w-2.5" />
+                                  Deleted
+                                </span>
+                              )}
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
+                          </td>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex flex-col">
+                              <p className="text-xs font-bold text-gray-900">
+                                {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
+                              </p>
+                              <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
+                                <Calendar className="h-3 w-3" />
+                                {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString() : 'N/A'}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
                 </table>
               </div>
 
-              {/* Mobile Card View */}
-              <div className="lg:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                {jobs.map((job) => {
-                  const iconData = resolveIconForJob(job.category, job.icon);
-                  return (
-                    <div
-                      key={job._id}
-                      onClick={() => openJobModal(job)}
-                      className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                    >
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                           {job.archiveType === 'hidden' ? (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">HIDDEN</span>
-                           ) : (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700">DELETED</span>
-                           )}
-                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getJobStatusColor(job.status)}`}>
-                             {job.status.replace('_', ' ')}
-                           </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest font-mono">
-                          {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
-                        </span>
-                      </div>
-
-                      <div className="p-4">
-                         <div className="flex items-start gap-4 mb-4">
-                          <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                             <img 
-                               src={`${iconData.imagePath}?t=${iconTimestamp}`}
-                               alt={job.category}
-                               className="h-8 w-8 object-contain"
-                               onError={(e) => {
-                                 (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                 (e.target as HTMLImageElement).onerror = null;
-                               }}
-                             />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
-                              {job.title}
-                            </h3>
+              {/* Mobile Toggleable View */}
+              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
+                {mobileViewType === 'card' ? (
+                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                    {jobs.map((job) => {
+                      const iconData = resolveIconForJob(job.category, job.icon);
+                      return (
+                        <div
+                          key={job._id}
+                          onClick={() => openJobModal(job)}
+                          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                        >
+                          {/* Card Header: Status & Time */}
+                          <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100">
                             <div className="flex items-center gap-2">
-                               <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                 {iconData.label || job.category || 'General Service'}
-                               </span>
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm bg-white`}>
+                                {getJobStatusIcon(job.status)}
+                                {job.status.replace('_', ' ')}
+                              </span>
+                              {job.archiveType === 'hidden' ? (
+                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-sm ring-2 ring-orange-100">
+                                  HIDDEN
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-500 text-white shadow-sm ring-2 ring-red-100">
+                                  DELETED
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
+                              <Clock className="h-3 w-3" />
+                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
                             </div>
                           </div>
-                         </div>
 
-                       <div className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-xl border border-gray-100 mb-4">
-                          <div className="h-8 w-8 rounded-full bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 shadow-sm">
-                             <span className="text-[10px] font-black text-blue-600">{getInitials(job.user?.name || 'U')}</span>
-                          </div>
-                          <div className="min-w-0">
-                             <p className="text-xs font-black text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                             <p className="text-[10px] text-gray-500 truncate">{job.user?.email || 'No email'}</p>
-                          </div>
-                       </div>
+                          {/* Card Content */}
+                          <div className="p-4">
+                            <div className="flex items-start gap-4 mb-4">
+                              <div className="relative flex-shrink-0">
+                                <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
+                                  <img 
+                                    src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                    alt={job.category}
+                                    className="h-10 w-10 object-contain"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                      (e.target as HTMLImageElement).onerror = null;
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
+                                  {job.title}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                    {iconData.label || job.category || 'General Service'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
 
-                       <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-70">Job Budget</span>
-                            <span className="text-sm font-black text-gray-900">{formatCurrency(job.budget || 0)}</span>
+                            {/* Customer Info Snippet */}
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <div className="h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-500 shadow-sm">
+                                {getInitials(job.user?.name || 'U')}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
+                                <p className="text-[10px] text-gray-400 truncate tracking-tight">{job.user?.email || 'No email'}</p>
+                              </div>
+                            </div>
+
+                            {/* Price & Location */}
+                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-dashed border-gray-200">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Archived Price</span>
+                                <div className="flex items-baseline gap-1 mt-0.5">
+                                  <span className="text-lg font-black text-gray-900 leading-none">
+                                    {formatCurrency(job.budget || job.agreedPrice || 0)}
+                                  </span>
+                                  <span className="text-[9px] text-gray-400 font-bold uppercase">{job.paymentMethod || 'Wallet'}</span>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end text-right">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Location</span>
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 mt-1 max-w-full truncate">
+                                  <MapPin className="h-3 w-3 text-red-500" />
+                                  <span className="truncate">{job.locationDisplay || 'Remote'}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-70">Payment</span>
-                            <span className="text-xs font-bold text-gray-900 uppercase tracking-widest">{job.paymentMethod}</span>
+
+                          {/* View Details Prompt */}
+                          <div className="px-4 py-2.5 bg-gray-50/30 border-t border-gray-100 flex items-center justify-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                            View Archived Details
+                            <ChevronRight className="h-3 w-3" />
                           </div>
-                       </div>
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100/50">
-                          <div className="flex items-center gap-1.5 text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none">
-                            <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                            {job.locationDisplay || 'Remote / Not specified'}
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-gray-300" />
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-x-hidden">
+                    <table className="w-full table-fixed border-separate border-spacing-0">
+                      <thead className="bg-gray-50/80 sticky top-0 z-20">
+                        <tr>
+                          <th className="w-[55%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Archived Job</th>
+                          <th className="w-[20%] px-2 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Type</th>
+                          <th className="w-[25%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {jobs.map((job) => {
+                          const iconData = resolveIconForJob(job.category, job.icon);
+                          return (
+                            <tr 
+                              key={job._id} 
+                              onClick={() => openJobModal(job)}
+                              className="border-b border-gray-100 active:bg-gray-50 transition-colors"
+                            >
+                              <td className="px-3 py-3 overflow-hidden">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img 
+                                    src={`${iconData.imagePath}?t=${iconTimestamp}`} 
+                                    className="h-7 w-7 object-contain flex-shrink-0" 
+                                    alt="" 
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{job.title}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold truncate uppercase">{job.user?.name}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-center">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tight border ${job.archiveType === 'removed' ? 'border-red-200 text-red-600' : 'border-gray-200 text-gray-600'}`}>
+                                  {job.archiveType === 'removed' ? 'Del' : 'Hid'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <p className="text-[10px] font-black text-gray-900 leading-tight">
+                                  {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }) : 'N/A'}
+                                </p>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Pagination */}
               {pagination.pages > 1 && (
-                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
+                <div className="flex-shrink-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 p-4 font-inter">
                   <div className="flex items-center justify-between w-full">
                     <div>
                       <p className="text-xs md:text-sm text-gray-700">
@@ -572,14 +665,14 @@ const ArchivedJobs: React.FC = () => {
                       <button
                         onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                         disabled={pagination.page === 1}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                       >
                         Previous
                       </button>
                       <button
                         onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
                         disabled={pagination.page === pagination.pages}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                       >
                         Next
                       </button>

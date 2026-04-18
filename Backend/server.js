@@ -159,8 +159,9 @@ const gracefulShutdown = async () => {
 
 process.on('SIGTERM', gracefulShutdown);
 
-// Export io instance for use in other modules
-module.exports.getIO = () => io;
-process.on('SIGINT', gracefulShutdown);
+module.exports = { 
+  io,
+  getIO: () => io 
+};
 
-module.exports = { io };
+process.on('SIGINT', gracefulShutdown);

@@ -9,9 +9,9 @@ import {
 import toast from 'react-hot-toast';
 import verificationsService from '../../services/verificationsService';
 import ClickableImage from '../UI/ClickableImage';
-import UserTypeBadge from '../UI/UserTypeBadge';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import type { Verification, UserInfo } from '../../types';
+import { SidebarContext } from '../Layout/Layout';
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
@@ -90,6 +90,19 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   const [attemptCache, setAttemptCache] = useState<Record<number, { images: any; submittedAt: string | null }>>({});
   const [attemptTimestamps, setAttemptTimestamps] = useState<{ attempt: number; submittedAt: string | Date | null }[] | null>(null);
   const [currentAttemptSubmittedAt, setCurrentAttemptSubmittedAt] = useState<string | Date | null>(null);
+  const { setIsHeaderHidden } = React.useContext(SidebarContext);
+
+  useEffect(() => {
+    if (setIsHeaderHidden) {
+      setIsHeaderHidden(isOpen);
+    }
+    return () => {
+      if (setIsHeaderHidden) {
+        setIsHeaderHidden(false);
+      }
+    };
+  }, [isOpen, setIsHeaderHidden]);
+
   const prevVerificationId = useRef<string | null>(null);
 
   // Dragging refs

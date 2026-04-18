@@ -11,7 +11,12 @@ import {
   Calendar,
   AlertTriangle,
   RefreshCw,
-  Wallet as WalletIcon
+  Wallet as WalletIcon,
+  LayoutGrid,
+  Table2,
+  ChevronRight,
+  MapPin,
+  Briefcase
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -63,6 +68,7 @@ const Transactions: React.FC = () => {
     total: 0,
     pages: 0
   });
+  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
   // Handle query parameters when URL changes
   useEffect(() => {
@@ -148,7 +154,11 @@ const Transactions: React.FC = () => {
 
   const updateTransactionStatus = async (transactionId: string, status: string) => {
     try {
-      await mutations.updateTransactionStatus.mutateAsync({ transactionId, status });
+      await mutations.updateTransactionStatus.mutateAsync({ 
+        transactionId, 
+        status, 
+        type: transactionType 
+      });
     } catch (error) {
       console.error('Failed to update transaction status:', error);
     }
@@ -221,14 +231,7 @@ const Transactions: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4 text-xs">
-            <button
-              onClick={() => refetch()}
-              disabled={loading}
-              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>REFRESH DATA</span>
-            </button>
+
           </div>
         </div>
 
@@ -325,36 +328,54 @@ const Transactions: React.FC = () => {
            )}
         </div>
 
-        {/* Filters */}
-        <div className="space-y-3">
-          <div className="flex flex-col md:flex-row gap-3">
-            <div className="flex-1 flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
-                <input
-                  type="text"
-                  placeholder="Search transactions..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-                />
-              </div>
-
-              <DateRangePicker
-                startDate={dateFrom}
-                endDate={dateTo}
-                onStartDateChange={setDateFrom}
-                onEndDateChange={setDateTo}
-                onClear={clearDateRange}
+        {/* Filter Bar */}
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+          {/* Row 1 on Mobile / Search on Desktop */}
+          <div className="flex items-center gap-2 md:contents">
+            <div className="relative flex-1 md:order-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search transactions..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
               />
             </div>
 
-            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+            {/* Mobile-only Limit */}
+            <div className="flex md:hidden items-center gap-1.5 px-2">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Limit</span>
+              <select 
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2 on Mobile / Desktop Right-side group */}
+          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
+            <div className="flex-1 md:flex-initial flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 md:pb-0">
+              <div className="shrink-0">
+                <DateRangePicker
+                  startDate={dateFrom}
+                  endDate={dateTo}
+                  onStartDateChange={setDateFrom}
+                  onEndDateChange={setDateTo}
+                  onClear={clearDateRange}
+                />
+              </div>
+
               {category !== 'platform_fee' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="flex-1 md:flex-none px-3 md:px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-bold uppercase tracking-wider"
+                  className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 md:min-w-[120px]"
                 >
                   <option value="all">ALL STATUS</option>
                   <option value="pending">PENDING</option>
@@ -367,13 +388,43 @@ const Transactions: React.FC = () => {
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="flex-1 md:flex-none hidden md:block px-3 md:px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-bold uppercase tracking-wider"
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 md:min-w-[120px]"
               >
                 <option value="all">ALL METHODS</option>
                 <option value="wallet">WALLET</option>
                 <option value="cash">CASH</option>
                 <option value="xendit">XENDIT</option>
               </select>
+            </div>
+
+            {/* Pagination Limit for Desktop */}
+            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select 
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            {/* View Type Toggle - Mobile only */}
+            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
+               <button
+                 onClick={() => setMobileViewType('card')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <LayoutGrid className="h-3.5 w-3.5" />
+               </button>
+               <button
+                 onClick={() => setMobileViewType('table')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <Table2 className="h-3.5 w-3.5" />
+               </button>
             </div>
           </div>
         </div>
@@ -439,8 +490,8 @@ const Transactions: React.FC = () => {
                         >
                           <td className="px-6 py-4 border-b border-gray-300">
                             <div className="flex items-start gap-4">
-                              <div className="p-2 rounded-xl bg-gray-50 group-hover:bg-white transition-colors border border-gray-100 items-center justify-center flex">
-                                {getTransactionIcon(transaction.type, transaction.transactionType)}
+                              <div className="w-11 h-11 rounded-xl bg-gray-50 group-hover:bg-white transition-colors border border-gray-100 items-center justify-center flex flex-shrink-0">
+                                {getTransactionIcon(transaction)}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 mb-1">
@@ -531,7 +582,9 @@ const Transactions: React.FC = () => {
               </div>
 
               {/* Mobile View */}
-              <div className="md:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-gray-50/30">
+                {mobileViewType === 'card' ? (
+                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {transactions.map((transaction) => {
                   const user = getUser(transaction);
                   return (
@@ -557,8 +610,8 @@ const Transactions: React.FC = () => {
                       
                       <div className="p-4">
                         <div className="flex items-start gap-3">
-                          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                            {getTransactionIcon(transaction.type, transaction.transactionType)}
+                          <div className="w-11 h-11 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0">
+                            {getTransactionIcon(transaction)}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-black text-gray-900 leading-tight mb-1">
@@ -594,9 +647,60 @@ const Transactions: React.FC = () => {
                   );
                 })}
               </div>
-            </>
-          )}
-        </div>
+            ) : (
+                <div className="flex-1 overflow-x-hidden">
+                  <table className="w-full table-fixed border-separate border-spacing-0">
+                    <thead className="bg-gray-50/80 sticky top-0 z-20">
+                      <tr>
+                        <th className="w-[60%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Transact</th>
+                        <th className="w-[15%] px-1 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Stat</th>
+                        <th className="w-[25%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Amt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((transaction) => (
+                        <tr 
+                          key={transaction._id} 
+                          onClick={() => openTransactionModal(transaction)}
+                          className="border-b border-gray-100 active:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-3 py-4 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="h-7 w-7 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100 shadow-sm">
+                                {React.cloneElement(getTransactionIcon(transaction) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-black text-gray-900 truncate leading-tight">
+                                  {transaction._id.slice(-8).toUpperCase()}
+                                </p>
+                                <p className="text-[10px] text-gray-400 font-bold truncate uppercase tracking-tighter">
+                                  {transaction.type?.replace('_', ' ')}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-1 py-4 text-center">
+                            <div className={`w-1.5 h-1.5 rounded-full mx-auto ${
+                              transaction.status === 'completed' ? 'bg-green-500' : 
+                              transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} />
+                          </td>
+                          <td className="px-3 py-4 text-right">
+                             <p className="text-[11px] font-black text-gray-900 leading-none mb-1">
+                               {formatPHPCurrency(transaction.amount)}
+                             </p>
+                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{transaction.paymentMethod}</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
         {/* Pagination Toolbar */}
         {pagination.pages > 1 && (

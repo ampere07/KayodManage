@@ -640,14 +640,19 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                       switch (title) {
                         case 'Dashboard': return 'Welcome back! Your service marketplace\'s performance view';
                         case 'All Users':
+                          return 'Monitor and manage all user accounts across the platform';
                         case 'Customers':
+                          return 'Manage customer accounts and their service requests';
                         case 'Service Providers':
+                          return 'Manage service providers and their verification status';
                         case 'Flagged & Suspended':
+                          return 'Review and manage restricted, suspended, and banned user accounts';
                         case 'Deleted Users':
-                          return 'Manage customer and service provider accounts';
-                        case 'Jobs':
+                          return 'View and manage soft deleted user accounts';
+                        case 'Jobs Management':
+                          return 'Monitor and manage all service requests across the platform';
                         case 'Archived Jobs':
-                          return 'View and manage service job requests';
+                          return 'View and manage job listings that have been hidden or removed';
                         case 'Fee Records':
                         case 'Top-up Transactions':
                         case 'Cashout Transactions':

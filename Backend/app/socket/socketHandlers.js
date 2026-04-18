@@ -18,6 +18,9 @@ const MOBILE_BACKEND_URL = process.env.MOBILE_BACKEND_URL || 'http://localhost:8
 
 const setupSocketHandlers = (io) => {
   adminNamespace = io.of('/admin');
+  
+  // Store main io instance for use in change stream
+  global.io = io;
 
   setupChatSupportChangeStream();
 
@@ -112,11 +115,10 @@ const setupSocketHandlers = (io) => {
           };
 
           // Send confirmation back to the admin who sent it
-          // NOTE: Commented out to prevent duplicate messages. The MongoDB change stream
-          // will automatically broadcast this message to all connected clients.
-          // socket.emit('support:new_message', messageData);
+          // NOTE: Direct emit enabled as fallback when change streams are unavailable
+          socket.emit('support:new_message', messageData);
           // Also broadcast to anyone in the support room
-          // adminNamespace.to(`support:${data.chatSupportId}`).emit('support:new_message', messageData);
+          adminNamespace.to(`support:${data.chatSupportId}`).emit('support:new_message', messageData);
         } catch (error) {
           console.error('❌ Error sending admin message:', error.message);
           socket.emit('support:message_error', {
@@ -702,8 +704,8 @@ const setupChatSupportChangeStream = () => {
                 });
               }
 
-              if (mainIo) {
-                mainIo.to(`support:${chatSupportId}`).emit('support:chat_updated', {
+              if (global.io) {
+                global.io.to(`support:${chatSupportId}`).emit('support:chat_updated', {
                   chatSupportId,
                   updates,
                   timestamp: new Date()
@@ -718,12 +720,22 @@ const setupChatSupportChangeStream = () => {
     });
 
     changeStream.on('error', (error) => {
-      console.error('Chat support change stream error:', error);
+      if (error.codeName === 'Location40573') {
+        console.warn('⚠️  MongoDB change streams require replica set. Falling back to direct socket emits.');
+        console.log('💡 To enable change streams, configure MongoDB as a replica set: https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/');
+      } else {
+        console.error('Chat support change stream error:', error);
+      }
     });
 
     chatSupportChangeStream = changeStream;
   } catch (error) {
-    console.error('Failed to setup chat support change stream:', error);
+    if (error.codeName === 'Location40573') {
+      console.warn('⚠️  MongoDB change streams require replica set. Chat will work without real-time updates.');
+      console.log('💡 To enable change streams, configure MongoDB as a replica set: https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/');
+    } else {
+      console.error('Failed to setup chat support change stream:', error);
+    }
   }
 };
 
