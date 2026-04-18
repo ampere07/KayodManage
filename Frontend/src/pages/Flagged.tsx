@@ -15,7 +15,6 @@ import {
   Users,
   CreditCard,
   Star,
-  RefreshCw,
   ChevronRight,
 } from 'lucide-react';
 import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
@@ -249,13 +248,7 @@ const Flagged: React.FC = () => {
               <p className="text-xs text-gray-500 font-medium">Review and resolve user complaints and reported content</p>
             </div>
             
-            <button 
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors text-xs"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>REFRESH</span>
-            </button>
+
           </div>
 
           {/* Stats Cards Grid */}
@@ -320,12 +313,12 @@ const Flagged: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
-            <span className="text-xs font-bold text-gray-400">Limit:</span>
+          <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
             <select 
               value={itemsPerPage}
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
-              className="bg-transparent text-xs font-bold text-gray-600 focus:outline-none"
+              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
@@ -353,7 +346,7 @@ const Flagged: React.FC = () => {
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+              <div className="hidden lg:block bg-white flex-1 relative">
                 <table className="min-w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">

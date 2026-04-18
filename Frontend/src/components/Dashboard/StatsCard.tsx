@@ -4,6 +4,7 @@ import { LucideIcon, ArrowUpRight, ArrowUp, ArrowDown } from 'lucide-react';
 interface StatsCardProps {
   title: string;
   value: string;
+  subtitle?: string;
   icon: LucideIcon;
   trend?: {
     value: number;
@@ -14,6 +15,8 @@ interface StatsCardProps {
   onClick?: () => void;
   isActive?: boolean;
   smallIcon?: boolean;
+  horizontalMobile?: boolean;
+  compact?: boolean;
 }
 
 const MiniChart = ({ isPositive, isSolid }: { isPositive: boolean; isSolid: boolean }) => {
@@ -43,7 +46,7 @@ const MiniChart = ({ isPositive, isSolid }: { isPositive: boolean; isSolid: bool
   );
 };
 
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color, variant = 'default', onClick, isActive, smallIcon }) => {
+const StatsCard: React.FC<StatsCardProps> = ({ title, value, subtitle, icon: Icon, trend, color, variant = 'default', onClick, isActive, smallIcon, horizontalMobile, compact = false }) => {
   const isSolid = variant === 'solid';
   const isTinted = variant === 'tinted';
 
@@ -112,25 +115,50 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, 
   return (
     <div 
       onClick={onClick}
-      className={`rounded-2xl flex flex-col ${trend ? 'justify-center sm:justify-between' : 'justify-center'} overflow-hidden ${trend ? 'p-3 sm:p-5 h-[96px] sm:h-[160px]' : 'p-3 sm:p-4 h-[88px] sm:h-[102px]'} ${containerClasses} ${onClick ? 'cursor-pointer' : ''}`}
+      className={`rounded-2xl flex flex-col ${trend ? 'justify-center sm:justify-between' : 'justify-center'} overflow-hidden ${horizontalMobile ? (compact ? 'p-2 sm:p-3 h-[72px] sm:h-[102px]' : (trend ? 'p-3 sm:p-5 h-[96px] sm:h-[102px]' : 'p-3 sm:p-5 h-[88px] sm:h-[102px]')) : (trend ? 'p-3 sm:p-5 h-[96px] sm:h-[160px]' : 'p-3 sm:p-4 h-[88px] sm:h-[102px]')} ${containerClasses} ${onClick ? 'cursor-pointer' : ''}`}
     >
       {/* Mobile Layout - Widget Style */}
-      <div className="flex sm:hidden flex-col h-full w-full relative">
-        <div className="flex justify-between items-start w-full absolute top-0 left-0 right-0">
-          <div className={`w-[30px] h-[30px] rounded-[10px] flex items-center justify-center flex-shrink-0 ${iconCircleClasses}`}>
-            <Icon className="w-[18px] h-[18px]" />
-          </div>
-          {trend && (
-            <span className={`text-[11px] font-bold whitespace-nowrap mt-1 ${trendColorClass}`}>
-              {trend.isPositive ? '+' : ''}{trend.value}{!isSolid && trend.value !== 0 ? '%' : ''}
-            </span>
-          )}
-        </div>
-        
-        <div className="flex flex-col items-start justify-center flex-1 w-full min-w-0 mt-5 pt-2">
-          <span className="text-[20px] font-black tracking-tight truncate max-w-full leading-none" title={value}>{value}</span>
-          <span className={`text-[10px] font-semibold opacity-85 uppercase tracking-wide truncate max-w-full mt-1.5 ${titleClasses}`}>{title}</span>
-        </div>
+      <div className={`flex sm:hidden ${horizontalMobile ? 'flex-row items-center gap-4 p-1' : 'flex-col relative'} h-full w-full`}>
+        {horizontalMobile ? (
+          <>
+            <div className={`${compact ? 'w-[36px] h-[36px] rounded-lg' : 'w-[44px] h-[44px] rounded-xl'} flex items-center justify-center flex-shrink-0 ${iconCircleClasses}`}>
+              <Icon className={compact ? "w-5 h-5" : "w-6 h-6"} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-0">
+              <div className="flex items-center justify-between w-full">
+                <span className={`${compact ? 'text-[18px]' : 'text-[22px]'} font-black tracking-tight truncate leading-none`} title={value}>{value}</span>
+                {trend && (
+                  <span className={`text-[11px] font-bold whitespace-nowrap ${trendColorClass}`}>
+                    {trend.isPositive ? '+' : ''}{trend.value}{!isSolid && trend.value !== 0 ? '%' : ''}
+                  </span>
+                )}
+              </div>
+              <span className={`text-[10px] font-black uppercase tracking-[0.1em] mt-1.5 opacity-80 ${titleClasses}`}>
+                {title === 'Revenue' ? 'Total Revenue' : title}
+              </span>
+              {subtitle && <span className="text-[10px] font-bold text-white/70 mt-0.5 truncate">{subtitle}</span>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex justify-between items-start w-full absolute top-0 left-0 right-0">
+              <div className={`w-[30px] h-[30px] rounded-[10px] flex items-center justify-center flex-shrink-0 ${iconCircleClasses}`}>
+                <Icon className="w-[18px] h-[18px]" />
+              </div>
+              {trend && (
+                <span className={`text-[11px] font-bold whitespace-nowrap mt-1 ${trendColorClass}`}>
+                  {trend.isPositive ? '+' : ''}{trend.value}{!isSolid && trend.value !== 0 ? '%' : ''}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex flex-col items-start justify-center flex-1 w-full min-w-0 mt-5 pt-2">
+              <span className="text-[20px] font-black tracking-tight truncate max-w-full leading-none" title={value}>{value}</span>
+              {subtitle && <span className="text-[12px] font-bold text-gray-500 mt-0.5 truncate max-w-full">{subtitle}</span>}
+              <span className={`text-[10px] font-semibold opacity-85 uppercase tracking-wide truncate max-w-full mt-1 ${titleClasses}`}>{title}</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Desktop Layout - Orginal Full Size */}
@@ -153,9 +181,16 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, 
 
       <div className={`hidden sm:flex justify-between items-end ${trend ? 'mt-auto pt-2' : 'mt-2 pt-1'} gap-2 relative w-full`}>
         <div className="flex flex-col gap-1.5 min-w-0 z-10 w-auto">
-          <span className="text-3xl font-bold tracking-tight truncate max-w-full" title={value}>
-            {value}
-          </span>
+          <div className="flex flex-col">
+            <span className="text-3xl font-bold tracking-tight truncate max-w-full" title={value}>
+              {value}
+            </span>
+            {subtitle && (
+              <span className="text-sm font-bold text-gray-500 mt-1 truncate max-w-full">
+                {subtitle}
+              </span>
+            )}
+          </div>
           {trend && (
             <div className={`flex items-center gap-1 text-xs font-semibold ${trendColorClass}`}>
               {trend.isPositive ? <ArrowUp className="w-3 h-3 flex-shrink-0" /> : <ArrowDown className="w-3 h-3 flex-shrink-0" />}

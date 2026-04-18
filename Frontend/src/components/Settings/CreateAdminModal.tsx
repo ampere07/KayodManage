@@ -146,9 +146,9 @@ const CreateAdminModal: React.FC<CreateAdminModalProps> = ({ isOpen, onClose, on
           dashboard: true,
           users: true,
           jobs: true,
-          transactions: false,
+          transactions: true,
           verifications: true,
-          support: false,
+          support: true,
           activity: true,
           flagged: true,
           settings: false
@@ -566,7 +566,7 @@ const CreateAdminModal: React.FC<CreateAdminModalProps> = ({ isOpen, onClose, on
                         </div>
                         <span className="text-sm font-semibold text-gray-900">Admin</span>
                       </div>
-                      <p className="text-xs text-gray-600">Dashboard, Users, Jobs, Verifications, Activity, Flagged</p>
+                      <p className="text-xs text-gray-600">All access except system settings</p>
                     </button>
 
                     <button

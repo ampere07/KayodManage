@@ -7,6 +7,7 @@ import { getInitials, formatPHPCurrency, getUser, getToUser } from '../../utils'
 import { transactionsService } from '../../services';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { SidebarContext } from '../Layout/Layout';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
@@ -21,6 +22,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   transaction,
   onStatusUpdate
 }) => {
+  const { setIsHeaderHidden } = React.useContext(SidebarContext);
+
+  React.useEffect(() => {
+    if (setIsHeaderHidden) {
+      setIsHeaderHidden(isOpen);
+    }
+    return () => {
+      if (setIsHeaderHidden) {
+        setIsHeaderHidden(false);
+      }
+    };
+  }, [isOpen, setIsHeaderHidden]);
+
   if (!isOpen || !transaction) return null;
 
   const formatCurrency = (amount: number) => {

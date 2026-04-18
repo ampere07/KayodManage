@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   CheckCircle,
   XCircle,
@@ -9,6 +8,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import type { Transaction } from '../types';
+import { getProfessionIconFromName } from '../constants/categoryIcons';
 
 /**
  * Transaction utility helper functions
@@ -82,9 +82,33 @@ export const getTransactionStatusIcon = (status: string): JSX.Element | null => 
 /**
  * Get transaction icon based on type
  */
-export const getTransactionIcon = (type: string, transactionType: string): JSX.Element => {
-  if (transactionType === 'platform_fee') {
-    return <DollarSign className="h-4 w-4" />;
+export const getTransactionIcon = (transaction: any): JSX.Element => {
+  const { type, transactionType, jobId, job } = transaction;
+  const jobInfo = jobId || job;
+
+  if (transactionType === 'platform_fee' || type === 'platform_fee') {
+    // If we have job information, try to get the profession icon
+    if (jobInfo?.category || jobInfo?.title) {
+      const iconData = getProfessionIconFromName(jobInfo.category || jobInfo.title);
+      
+      if (iconData?.imagePath) {
+        return (
+          <div className="w-8 h-8 flex items-center justify-center">
+            <img 
+              src={iconData.imagePath} 
+              alt={jobInfo.category || jobInfo.title} 
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                // Fallback to DollarSign if image fails
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
+            />
+          </div>
+        );
+      }
+    }
+    return <DollarSign className="h-5 w-5 text-yellow-600" />;
   }
 
   switch (type) {
@@ -96,7 +120,6 @@ export const getTransactionIcon = (type: string, transactionType: string): JSX.E
     case 'xendit_topup':
       return <ArrowDownLeft className="h-4 w-4" />;
     case 'fee_payment':
-    case 'platform_fee':
       return <DollarSign className="h-4 w-4" />;
     case 'refund':
       return <ArrowDownLeft className="h-4 w-4" />;

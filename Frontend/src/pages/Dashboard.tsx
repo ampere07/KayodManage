@@ -11,6 +11,8 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardComparison, useDashboardRevenueChart, useDashboardPopularJobs } from '../hooks/useDashboard';
+import { useTransactionCounts } from '../hooks/useTransactions';
+import { useJobCounts } from '../hooks/useJobs';
 import { getProfessionIconByName } from '../constants/categoryIcons';
 import { settingsService } from '../services';
 import { JobCategory } from '../types/configuration.types';
@@ -27,13 +29,11 @@ function Header() {
       </div>
 
       <div className="hidden sm:flex items-center gap-3 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer px-2.5 py-2 rounded-2xl shadow-sm">
-        <img
-          src={user?.profilePicture || "/src/assets/icons/Default_Icon.webp"}
-          alt="Admin Profile"
-          className="w-11 h-11 rounded-full object-cover border border-white shadow-sm bg-white"
-        />
+        <div className="w-11 h-11 rounded-full bg-blue-600 flex items-center justify-center border border-white shadow-sm text-white font-bold text-lg">
+          {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
+        </div>
         <div className="hidden sm:flex flex-col pr-3">
-          <span className="text-[15px] font-bold text-gray-900 leading-tight">{user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}</span>
+          <span className="text-[15px] font-bold text-gray-900 leading-tight">{user?.name || 'Admin User'}</span>
           <span className="text-[13px] font-semibold text-gray-500 leading-tight mt-0.5">{user?.email || 'admin@company.com'}</span>
         </div>
       </div>
@@ -45,6 +45,8 @@ function StatCards() {
   const navigate = useNavigate();
   const { dashboardStats } = useSocket();
   const { data: comparison } = useDashboardComparison();
+  const { data: feeCounts } = useTransactionCounts('platform_fee');
+  const { data: jobCounts } = useJobCounts();
 
   const stats = dashboardStats || {
     totalRevenue: 0,
@@ -53,6 +55,8 @@ function StatCards() {
     activeJobs: 0,
     pendingFeesCount: 0
   };
+
+  const totalRevenueValue = jobCounts?.totalValue || 0;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -68,7 +72,7 @@ function StatCards() {
     {
       icon: DollarSign,
       title: 'Total Revenue',
-      value: formatCurrency(stats.totalRevenue),
+      value: formatCurrency(totalRevenueValue),
       trend: comparison ? { value: comparison.revenue.percentage, isPositive: comparison.revenue.percentage >= 0 } : { value: 18.2, isPositive: true },
       color: 'green' as const,
       variant: 'solid' as const,
@@ -95,7 +99,7 @@ function StatCards() {
     {
       icon: AlertCircle,
       title: 'Pending Fees',
-      value: stats.pendingFeesCount?.toLocaleString() || '0',
+      value: feeCounts?.pending?.toLocaleString() || '0',
       trend: { value: 24.6, isPositive: true },
       color: 'red' as const,
       variant: 'default' as const,
@@ -105,13 +109,13 @@ function StatCards() {
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
-      {statCards.map((stat) => (
+      {statCards.map((stat, index) => (
         <div
           key={stat.title}
           onClick={stat.onClick}
           className="cursor-pointer"
         >
-          <StatsCard {...stat} />
+          <StatsCard {...stat} horizontalMobile={false} />
         </div>
       ))}
     </div>
@@ -127,14 +131,17 @@ function RevenueChart() {
     return rawChartData.map((d: any) => ({
       ...d,
       name: d.date || d._id,
-      revenue: d.totalAmount || d.revenue || 0
+      revenue: d.revenue || d.totalAmount || 0
     }));
   }, [rawChartData]);
 
+  const { data: jobCounts } = useJobCounts();
+
   const displayedTotalRevenue = useMemo(() => {
-    if (period === 'overall') return dashboardStats?.totalRevenue || 0;
+    // Standardize All Time revenue to 270k-based jobCounts
+    if (period === 'overall') return jobCounts?.totalValue || 0;
     return chartData.reduce((sum: number, item: any) => sum + (item.revenue || 0), 0);
-  }, [chartData, period, dashboardStats?.totalRevenue]);
+  }, [chartData, period, jobCounts?.totalValue]);
 
   return (
     <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
@@ -637,10 +644,10 @@ function PopularJobsChart() {
             <p className="text-sm font-medium text-gray-500">No popular jobs found for this timeframe.</p>
           </div>
         ) : (
-          <div className="w-full h-full flex flex-row items-start justify-between relative px-1 sm:px-4 py-2">
+          <div className="w-full h-full flex flex-row items-center justify-between relative px-0 sm:px-4 py-2">
             {viewType === 'pie' && (
-              <div className="w-[55%] sm:w-1/2 h-full overflow-y-auto max-h-[300px] md:max-h-[400px] dashboard-scroll flex items-start justify-start pr-1 sm:pr-4 py-2">
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-2 sm:gap-y-4 m-0 p-0 w-full mt-1">
+              <div className="w-[58%] md:w-[65%] h-full overflow-y-auto max-h-[300px] md:max-h-[400px] dashboard-scroll flex items-center justify-start pr-1 sm:pr-4 py-2">
+                <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-2 sm:gap-y-4 m-0 p-0 w-full mt-1">
                   {chartData.map((entry: any, index: number) => {
                     const iconData = resolveIconData(entry, categories);
                     return (
@@ -665,12 +672,12 @@ function PopularJobsChart() {
               </div>
             )}
 
-            <div className={`h-full ${viewType === 'pie' ? 'w-1/2 min-h-[160px] sm:min-h-[220px]' : 'w-full pt-4'} relative flex-shrink-0`}>
+            <div className={`h-full ${viewType === 'pie' ? 'w-[42%] md:w-[35%] min-h-[160px] sm:min-h-[220px]' : 'w-full pt-4'} relative flex-shrink-0`}>
               {viewType === 'pie' ? (
                 <>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
-                    <span className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">₱{totalJobs.toLocaleString()}</span>
-                    <span className="text-[11px] sm:text-xs font-semibold text-emerald-600 mt-0.5">+12% ↑</span>
+                    <span className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">₱{totalJobs.toLocaleString()}</span>
+                    <span className="text-[10px] sm:text-xs font-semibold text-emerald-600">Total</span>
                   </div>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -678,8 +685,8 @@ function PopularJobsChart() {
                         data={chartData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={isMobile ? 55 : 70}
-                        outerRadius={isMobile ? 75 : 100}
+                        innerRadius={isMobile ? 42 : 65}
+                        outerRadius={isMobile ? 58 : 90}
                         paddingAngle={3}
                         dataKey="count"
                         nameKey="name"

@@ -16,9 +16,10 @@ import type {
   Verification,
   PenaltyData
 } from '../../types';
-import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import UserTypeBadge from '../UI/UserTypeBadge';
+import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import toast from 'react-hot-toast';
+import { SidebarContext } from '../Layout/Layout';
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
@@ -57,6 +58,18 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   const [restrictionTimer, setRestrictionTimer] = useState<string | null>(null);
   const [_restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
   const [_loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
+  const { setIsHeaderHidden } = React.useContext(SidebarContext);
+
+  useEffect(() => {
+    if (setIsHeaderHidden) {
+      setIsHeaderHidden(isOpen);
+    }
+    return () => {
+      if (setIsHeaderHidden) {
+        setIsHeaderHidden(false);
+      }
+    };
+  }, [isOpen, setIsHeaderHidden]);
 
   // Calculate remaining restriction time
   useEffect(() => {

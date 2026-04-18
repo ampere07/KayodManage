@@ -641,9 +641,9 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
                               dashboard: true,
                               users: true,
                               jobs: true,
-                              transactions: false,
+                              transactions: true,
                               verifications: true,
-                              support: false,
+                              support: true,
                               activity: true,
                               flagged: true,
                               settings: false
@@ -653,9 +653,9 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
                         className={`p-4 rounded-lg border-2 text-left transition-all ${formData.permissions.dashboard === true &&
                           formData.permissions.users === true &&
                           formData.permissions.jobs === true &&
-                          formData.permissions.transactions === false &&
+                          formData.permissions.transactions === true &&
                           formData.permissions.verifications === true &&
-                          formData.permissions.support === false &&
+                          formData.permissions.support === true &&
                           formData.permissions.activity === true &&
                           formData.permissions.flagged === true &&
                           formData.permissions.settings === false
@@ -671,7 +671,7 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
                           </div>
                           <span className="text-sm font-semibold text-gray-900">Admin</span>
                         </div>
-                        <p className="text-xs text-gray-600">Dashboard, Users, Jobs, Verifications, Activity, Flagged</p>
+                        <p className="text-xs text-gray-600">All access except system settings</p>
                       </button>
 
                       <button

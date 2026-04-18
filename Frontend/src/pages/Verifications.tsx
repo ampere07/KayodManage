@@ -292,13 +292,7 @@ const Verifications: React.FC = () => {
               </p>
             </div>
             
-            <button 
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors text-xs"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>REFRESH DATA</span>
-            </button>
+
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -394,16 +388,16 @@ const Verifications: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
-            <Filter className="h-4 w-4 text-gray-400" />
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
             <select 
               value={pagination.limit}
               onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-              className="bg-transparent text-xs font-bold text-gray-600 focus:outline-none"
+              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
             >
-              <option value={10}>10 per page</option>
-              <option value={20}>20 per page</option>
-              <option value={50}>50 per page</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
             </select>
           </div>
         </div>

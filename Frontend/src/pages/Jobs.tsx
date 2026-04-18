@@ -10,8 +10,11 @@ import {
   Users,
   Briefcase,
   FolderOpen,
-  DollarSign,
+  Plus,
   RefreshCw,
+  LayoutGrid,
+  Table2,
+  DollarSign,
   ChevronRight,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -62,14 +65,16 @@ const Jobs: React.FC = () => {
   const [categories, setCategories] = useState<JobCategory[]>([]);
   const [professionsList, setProfessionsList] = useState<string[]>([]);
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
+  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Resolver logic adapted from Dashboard.tsx for icons parity
   const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
     if (!jobCategory) return { imagePath: '/assets/icons/categories/professional-services.png', label: 'General Service' };
-    
+
     // If a direct icon path or URL is provided, use it
     if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
-      return { 
+      return {
         imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${jobIcon}`,
         label: jobCategory
       };
@@ -229,11 +234,11 @@ const Jobs: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-6 py-5">
-          <div className="flex items-center justify-between mb-6">
+          <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
@@ -247,21 +252,15 @@ const Jobs: React.FC = () => {
                 Monitor and manage all service requests across the platform
               </p>
             </div>
-            
-            <button 
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
-              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 font-bold bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition-colors text-xs"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>REFRESH DATA</span>
-            </button>
+
+
           </div>
 
           {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="cursor-pointer" onClick={() => setStatusFilter('all')}>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('all')}>
               <StatsCard
-                title="Total Jobs"
+                title="Total"
                 value={jobCounts.total.toLocaleString()}
                 icon={Briefcase}
                 color="blue"
@@ -270,9 +269,9 @@ const Jobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('open')}>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('open')}>
               <StatsCard
-                title="Open Jobs"
+                title="Open"
                 value={jobCounts.open.toLocaleString()}
                 icon={FolderOpen}
                 color="green"
@@ -281,7 +280,7 @@ const Jobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('in_progress')}>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('in_progress')}>
               <StatsCard
                 title="Assigned"
                 value={jobCounts.assigned.toLocaleString()}
@@ -292,9 +291,9 @@ const Jobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('completed')}>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('completed')}>
               <StatsCard
-                title="Completed"
+                title="Done"
                 value={jobCounts.completed.toLocaleString()}
                 icon={CheckCircle}
                 color="purple"
@@ -303,66 +302,104 @@ const Jobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="col-span-2 lg:col-span-1">
+            <div className="col-span-2 md:col-span-1 lg:col-span-1">
               <StatsCard
-                title="Total Revenue"
+                title="Revenue"
                 value={formatCurrency(jobCounts.totalValue)}
                 icon={DollarSign}
                 color="green"
                 variant="solid"
                 smallIcon={true}
+                horizontalMobile={true}
               />
             </div>
           </div>
         </div>
 
         {/* Filter Bar */}
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <input
-              type="text"
-              placeholder="Search by job title or description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm"
-            />
-          </div>
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+          {/* Row 1 on Mobile / Search on Desktop */}
+          <div className="flex items-center gap-2 md:contents">
+            <div className="relative flex-1 md:order-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search jobs, categories, or IDs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+              />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={professionFilter}
-              onChange={(e) => setProfessionFilter(e.target.value)}
-              className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-bold text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="all">All Professions</option>
-              {professionsList.map(prof => (
-                <option key={prof} value={prof} className="capitalize">{prof}</option>
-              ))}
-            </select>
-
-            <select
-              value={paymentMethodFilter}
-              onChange={(e) => setPaymentMethodFilter(e.target.value)}
-              className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-bold text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="all">Payment Method</option>
-              <option value="wallet">Wallet</option>
-              <option value="cash">Cash</option>
-              <option value="xendit">Xendit</option>
-            </select>
-
-            <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
-              <span className="text-xs font-bold text-gray-400">Limit:</span>
+            {/* Mobile-only Limit */}
+            <div className="flex md:hidden items-center gap-1.5 px-2">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-transparent text-xs font-bold text-gray-600 focus:outline-none"
+                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
               </select>
+            </div>
+          </div>
+
+          {/* Row 2 on Mobile / Desktop Right-side group */}
+          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 md:pb-0">
+              <select
+                value={professionFilter}
+                onChange={(e) => setProfessionFilter(e.target.value)}
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] max-w-[160px] truncate"
+              >
+                <option value="all">Professions</option>
+                {professionsList.map(prof => (
+                  <option key={prof} value={prof} className="capitalize">{prof}</option>
+                ))}
+              </select>
+
+              <select
+                value={paymentMethodFilter}
+                onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[110px]"
+              >
+                <option value="all">Payment</option>
+                <option value="wallet">Wallet</option>
+                <option value="cash">Cash</option>
+                <option value="xendit">Xendit</option>
+              </select>
+            </div>
+
+            {/* Pagination Limit for Desktop */}
+            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select 
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            {/* View Type Toggle - Mobile Only */}
+            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
+               <button
+                 onClick={() => setMobileViewType('card')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <LayoutGrid className="h-3.5 w-3.5" />
+               </button>
+               <button
+                 onClick={() => setMobileViewType('table')}
+                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+               >
+                 <Table2 className="h-3.5 w-3.5" />
+               </button>
             </div>
           </div>
         </div>
@@ -389,7 +426,7 @@ const Jobs: React.FC = () => {
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+              <div className="hidden md:block bg-white flex-1 relative">
                 <table className="min-w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">
@@ -422,7 +459,7 @@ const Jobs: React.FC = () => {
                           <td className="px-6 py-2 border-b border-gray-300">
                             <div className="flex items-center gap-4">
                               <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
-                                <img 
+                                <img
                                   src={`${iconData.imagePath}?t=${iconTimestamp}`}
                                   alt={job.category}
                                   className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
@@ -445,137 +482,207 @@ const Jobs: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
-                               <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
+                                <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
+                                <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.email || 'No email provided'}</p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                              <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.email || 'No email provided'}</p>
+                          </td>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex justify-center">
+                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm`}>
+                                {getJobStatusIcon(job.status)}
+                                {job.status.replace('_', ' ')}
+                              </span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="flex justify-center">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm`}>
-                              {getJobStatusIcon(job.status)}
-                              {job.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center border-b border-gray-300">
-                          <div className="flex flex-col items-center">
-                            <p className="text-sm font-black text-gray-900">
-                              {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
-                            </p>
-                            <div className="flex items-center gap-1 text-[9px] font-black text-gray-400 uppercase mt-0.5">
-                              <Wallet className="h-2.5 w-2.5" />
-                              {job.paymentMethod}
+                          </td>
+                          <td className="px-6 py-4 text-center border-b border-gray-300">
+                            <div className="flex flex-col items-center">
+                              <p className="text-sm font-black text-gray-900">
+                                {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
+                              </p>
+                              <div className="flex items-center gap-1 text-[9px] font-black text-gray-400 uppercase mt-0.5">
+                                <Wallet className="h-2.5 w-2.5" />
+                                {job.paymentMethod}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="flex flex-col">
-                            <p className="text-xs font-bold text-gray-900">
-                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                            </p>
-                            <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(job.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex flex-col">
+                              <p className="text-xs font-bold text-gray-900">
+                                {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                              </p>
+                              <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(job.createdAt).toLocaleDateString()}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
                 </table>
               </div>
 
-              <div className="lg:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                {jobs.map((job) => {
-                  const iconData = resolveIconForJob(job.category, job.icon);
-                  return (
-                    <div
-                      key={job._id}
-                      onClick={() => openJobModal(job)}
-                      className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                    >
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-[0.1em] border ${getJobStatusColor(job.status)}`}>
-                            {getJobStatusIcon(job.status)}
-                            {job.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest font-mono">
-                          {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
+              {/* Mobile Toggleable View */}
+              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
+                {mobileViewType === 'card' ? (
+                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                    {jobs.map((job) => {
+                      const iconData = resolveIconForJob(job.category, job.icon);
+                      return (
+                        <div
+                          key={job._id}
+                          onClick={() => openJobModal(job)}
+                          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                        >
+                          {/* Card Header: Status & Time */}
+                          <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm bg-white`}>
+                                {getJobStatusIcon(job.status)}
+                                {job.status.replace('_', ' ')}
+                              </span>
+                              {job.isUrgent && (
+                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-500 text-white shadow-sm ring-2 ring-red-100">
+                                  Urgent
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
+                              <Clock className="h-3 w-3" />
+                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                            </div>
+                          </div>
 
-                      <div className="p-4">
-                         <div className="flex items-start gap-4 mb-4">
-                          <div className="relative flex-shrink-0">
-                                <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                          {/* Card Content */}
+                          <div className="p-4">
+                            <div className="flex items-start gap-4 mb-4">
+                              <div className="relative flex-shrink-0">
+                                <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
                                   <img 
                                     src={`${iconData.imagePath}?t=${iconTimestamp}`}
                                     alt={job.category}
-                                    className="h-8 w-8 object-contain"
+                                    className="h-10 w-10 object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
                                       (e.target as HTMLImageElement).onerror = null;
                                     }}
                                   />
                                 </div>
-                            {job.isUrgent && (
-                              <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 border-2 border-white rounded-full flex items-center justify-center shadow-lg animate-bounce">
-                                 <span className="text-[10px]">🔥</span>
                               </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
-                              {job.title}
-                            </h3>
-                            <div className="flex items-center gap-2">
-                               <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                 {iconData.label || job.category || 'General Service'}
-                               </span>
-                               <div className="flex items-center gap-1 text-[9px] font-black text-blue-600 uppercase tracking-widest">
-                                 <Users className="h-2.5 w-2.5" />
-                                 {job.applicationCount || 0} APPLICANTS
-                               </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
+                                  {job.title}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                    {iconData.label || job.category || 'General Service'}
+                                  </span>
+                                  <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    <Users className="h-3 w-3" />
+                                    {job.applicationCount || 0}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Customer Info Snippet */}
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <div className="h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-500 shadow-sm">
+                                {getInitials(job.user?.name || 'U')}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
+                                <p className="text-[10px] text-gray-400 truncate tracking-tight">{job.user?.email || 'No email provided'}</p>
+                              </div>
+                            </div>
+
+                            {/* Price & Location */}
+                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-dashed border-gray-200">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Offering Price</span>
+                                <div className="flex items-baseline gap-1 mt-0.5">
+                                  <span className="text-lg font-black text-gray-900 leading-none">
+                                    {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
+                                  </span>
+                                  <span className="text-[9px] text-gray-400 font-bold uppercase">{job.paymentMethod}</span>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end text-right">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Location</span>
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 mt-1 max-w-full truncate">
+                                  <MapPin className="h-3 w-3 text-red-500" />
+                                  <span className="truncate">{job.locationDisplay || 'Remote'}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                         </div>
 
-                       <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-4 italic">
-                        "{job.description}"
-                       </p>
-
-                       <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-70">Price Offering</span>
-                            <span className="text-sm font-black text-gray-900">{formatCurrency(job.budget)}</span>
+                          {/* View Details Prompt */}
+                          <div className="px-4 py-2.5 bg-gray-50/30 border-t border-gray-100 flex items-center justify-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                            View Detailed Breakdown
+                            <ChevronRight className="h-3 w-3" />
                           </div>
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-70">Requested By</span>
-                            <span className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{job.user?.name || 'Anonymous'}</span>
-                          </div>
-                       </div>
-                    </div>
-
-                    <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
-                       <div className="flex items-center gap-2 text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                         <MapPin className="h-3 w-3" />
-                         {job.locationDisplay || 'Remote / Not specified'}
-                       </div>
-                       <ChevronRight className="h-4 w-4 text-gray-300" />
-                      </div>
-                    </div>
-                  );
-                })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-x-hidden">
+                    <table className="w-full table-fixed border-separate border-spacing-0">
+                      <thead className="bg-gray-50/80 sticky top-0 z-20">
+                        <tr>
+                          <th className="w-[60%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Job</th>
+                          <th className="w-[20%] px-2 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Stat</th>
+                          <th className="w-[20%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {jobs.map((job) => {
+                          const iconData = resolveIconForJob(job.category, job.icon);
+                          return (
+                            <tr 
+                              key={job._id} 
+                              onClick={() => openJobModal(job)}
+                              className="border-b border-gray-100 active:bg-gray-50 transition-colors"
+                            >
+                              <td className="px-3 py-3 overflow-hidden">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img 
+                                    src={`${iconData.imagePath}?t=${iconTimestamp}`} 
+                                    className="h-7 w-7 object-contain flex-shrink-0" 
+                                    alt="" 
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{job.title}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold truncate uppercase">{job.user?.name}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-center">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)}`}>
+                                  {job.status.split('_')[0]}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <p className="text-[11px] font-black text-gray-900">
+                                  {formatCurrency(job.budget || 0)}
+                                </p>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
             </>
@@ -603,14 +710,14 @@ const Jobs: React.FC = () => {
                 <button
                   onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                   disabled={pagination.page === 1}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
                   disabled={pagination.page === pagination.pages}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                 >
                   Next
                 </button>
