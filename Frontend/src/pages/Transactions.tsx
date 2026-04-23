@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Search,
-  Eye,
   CheckCircle,
   XCircle,
   Clock,
@@ -14,9 +13,7 @@ import {
   Wallet as WalletIcon,
   LayoutGrid,
   Table2,
-  ChevronRight,
-  MapPin,
-  Briefcase
+  ChevronRight
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -212,8 +209,8 @@ const Transactions: React.FC = () => {
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-gray-50 -mx-2 sm:-mx-4 md:-mx-8 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        {/* Page Title & Refresh */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
+        {/* Page Title & Refresh - Desktop only (mobile layout already shows title) */}
+        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getCategoryTitle(category)}</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-1">
@@ -582,122 +579,132 @@ const Transactions: React.FC = () => {
               </div>
 
               {/* Mobile View */}
-              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-gray-50/30">
+              <div className="md:hidden flex-1 overflow-y-auto">
                 {mobileViewType === 'card' ? (
-                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                {transactions.map((transaction) => {
-                  const user = getUser(transaction);
-                  return (
-                    <div 
-                      key={transaction._id}
-                      onClick={() => openTransactionModal(transaction)}
-                      className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                    >
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${
-                            transaction.status === 'completed' ? 'bg-green-500' : 
-                            transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                          }`} />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                            {transaction.status}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100">
-                          {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                      
-                      <div className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-11 h-11 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0">
-                            {getTransactionIcon(transaction)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-black text-gray-900 leading-tight mb-1">
-                              {transaction.description}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter ${getTypeColor(transaction.type, transaction.transactionType)}`}>
-                                {transaction.type?.replace('_', ' ')}
-                              </span>
-                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">ID: {transaction._id.slice(-6)}</span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-lg font-black text-gray-900 tracking-tight">{formatCurrency(transaction.amount)}</p>
-                            <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest">{transaction.paymentMethod}</p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between pt-3 border-t border-dashed border-gray-100">
-                          <div className="flex items-center gap-2">
-                            <div className="h-7 w-7 rounded-full bg-blue-600 flex items-center justify-center border-2 border-white shadow-sm">
-                              <span className="text-[9px] font-black text-white">{getInitials(user?.name || 'U')}</span>
-                            </div>
-                            <span className="text-[11px] font-black text-gray-700 tracking-tight">{user?.name}</span>
-                          </div>
-                          <div className="text-blue-600 font-black text-[10px] flex items-center gap-1.5 tracking-tighter bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100">
-                            VIEW DETAILS
-                            <Eye className="h-3.5 w-3.5" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-                <div className="flex-1 overflow-x-hidden">
-                  <table className="w-full table-fixed border-separate border-spacing-0">
-                    <thead className="bg-gray-50/80 sticky top-0 z-20">
-                      <tr>
-                        <th className="w-[60%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Transact</th>
-                        <th className="w-[15%] px-1 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Stat</th>
-                        <th className="w-[25%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 uppercase">Amt</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map((transaction) => (
-                        <tr 
-                          key={transaction._id} 
+                  <div className="px-4 py-4 space-y-4">
+                    {transactions.map((transaction) => {
+                      const user = getUser(transaction);
+                      return (
+                        <div
+                          key={transaction._id}
                           onClick={() => openTransactionModal(transaction)}
-                          className="border-b border-gray-100 active:bg-gray-50 transition-colors"
+                          className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                         >
-                          <td className="px-3 py-4 overflow-hidden">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="h-7 w-7 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100 shadow-sm">
-                                {React.cloneElement(getTransactionIcon(transaction) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
+                          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                              {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${getTransactionStatusColor(transaction.status)}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  transaction.status === 'completed' ? 'bg-green-500' :
+                                  transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+                                }`} />
+                                {transaction.status}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="flex items-center gap-4 mb-4">
+                              <div className="relative flex-shrink-0">
+                                <div className="h-12 w-12 rounded-xl bg-gray-50 flex items-center justify-center border border-gray-100">
+                                  {getTransactionIcon(transaction)}
+                                </div>
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-black text-gray-900 truncate leading-tight">
-                                  {transaction._id.slice(-8).toUpperCase()}
-                                </p>
-                                <p className="text-[10px] text-gray-400 font-bold truncate uppercase tracking-tighter">
-                                  {transaction.type?.replace('_', ' ')}
-                                </p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h3 className="text-base font-black text-gray-900 leading-tight truncate">{transaction.description}</h3>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <p className="text-xs text-gray-500 truncate">ID: {transaction._id.slice(-8).toUpperCase()}</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getTypeColor(transaction.type, transaction.transactionType)}`}>
+                                      {transaction.type?.replace('_', ' ')}
+                                    </span>
+                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
+                                      {transaction.paymentMethod}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </td>
-                          <td className="px-1 py-4 text-center">
-                            <div className={`w-1.5 h-1.5 rounded-full mx-auto ${
-                              transaction.status === 'completed' ? 'bg-green-500' : 
-                              transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                            }`} />
-                          </td>
-                          <td className="px-3 py-4 text-right">
-                             <p className="text-[11px] font-black text-gray-900 leading-none mb-1">
-                               {formatPHPCurrency(transaction.amount)}
-                             </p>
-                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{transaction.paymentMethod}</p>
-                          </td>
+
+                            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Amount</span>
+                                <span className="text-sm font-black text-gray-900">{formatCurrency(transaction.amount)}</span>
+                                {user && (
+                                  <div className="flex items-center gap-1.5 mt-1.5">
+                                    <div className="h-5 w-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
+                                      <span className="text-[7px] font-black text-blue-600">{getInitials(user.name || 'U')}</span>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-gray-500 truncate">{user.name}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end text-right">
+                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Action</span>
+                                <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                  Details <ChevronRight className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bg-white">
+                    <table className="w-full table-fixed border-separate border-spacing-0">
+                      <thead className="bg-gray-50/80 sticky top-0 z-20">
+                        <tr>
+                          <th className="w-[50%] px-3 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Transaction</th>
+                          <th className="w-[25%] px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Status</th>
+                          <th className="w-[25%] px-3 py-3 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Amount</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {transactions.map((transaction) => (
+                          <tr
+                            key={transaction._id}
+                            onClick={() => openTransactionModal(transaction)}
+                            className="active:bg-gray-50 transition-colors"
+                          >
+                            <td className="px-3 py-3 overflow-hidden">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100 flex-shrink-0">
+                                  {React.cloneElement(getTransactionIcon(transaction) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] font-black text-gray-900 truncate leading-tight">
+                                    {transaction._id.slice(-8).toUpperCase()}
+                                  </p>
+                                  <p className="text-[9px] text-gray-400 font-bold truncate uppercase">
+                                    {transaction.type?.replace('_', ' ')}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-2 py-3 text-center">
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight border ${getTransactionStatusColor(transaction.status)}`}>
+                                {transaction.status?.slice(0, 4).toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <p className="text-[11px] font-black text-gray-900 leading-none mb-1">
+                                {formatPHPCurrency(transaction.amount)}
+                              </p>
+                              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{transaction.paymentMethod}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
           </>
         )}
       </div>

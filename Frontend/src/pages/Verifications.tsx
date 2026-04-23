@@ -277,7 +277,7 @@ const Verifications: React.FC = () => {
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-6 py-5">
-          <div className="flex items-center justify-between mb-6">
+          <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
