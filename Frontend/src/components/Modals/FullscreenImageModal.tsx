@@ -7,6 +7,7 @@ interface FullscreenImageModalProps {
   alt: string;
   title?: string;
   onClose: () => void;
+  className?: string;
 }
 
 const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
@@ -14,7 +15,8 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
   imageUrl,
   alt,
   title,
-  onClose
+  onClose,
+  className = ''
 }) => {
   const [zoom, setZoom] = React.useState(1);
   const [rotation, setRotation] = React.useState(0);
@@ -97,7 +99,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-95 flex items-center justify-center">
+    <div className={`fixed inset-0 z-50 bg-black bg-opacity-95 flex items-center justify-center ${className}`}>
       {/* Controls Bar */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 rounded-lg p-2 flex items-center space-x-2 z-10">
         <button
@@ -170,7 +172,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <div className="relative" style={{ maxWidth: '85vw', maxHeight: '85vh' }}>
+        <div className="relative" style={{ maxWidth: 'calc(85vw - 550px)', maxHeight: '85vh' }}>
           <img
             src={imageUrl}
             alt={alt}
@@ -178,7 +180,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${zoom}) rotate(${rotation}deg)`,
               cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
-              maxWidth: '85vw',
+              maxWidth: 'calc(85vw - 550px)',
               maxHeight: '85vh'
             }}
             draggable={false}
@@ -190,7 +192,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({
       </div>
 
       {/* Instructions */}
-      <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg text-xs z-10">
+      <div className="absolute bottom-4 right-4 md:right-[560px] bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg text-xs z-10">
         <p>Click image to drag • Scroll to zoom • ESC to close</p>
       </div>
     </div>

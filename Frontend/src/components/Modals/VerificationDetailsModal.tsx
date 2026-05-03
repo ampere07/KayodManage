@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import verificationsService from '../../services/verificationsService';
 import ClickableImage from '../UI/ClickableImage';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
+import UserTypeBadge from '../UI/UserTypeBadge';
 import type { Verification, UserInfo } from '../../types';
 import { SidebarContext } from '../Layout/Layout';
 
@@ -782,6 +783,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
                                     title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -799,6 +801,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
                                     title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -816,6 +819,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="face"
                                     title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 ) : (
                                   <div className="w-full h-48 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -841,6 +845,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                   className="w-full h-48 object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="face"
                                   title={`Face Verification - Attempt ${selectedAttempt} - ${user.name}`}
+                                  modalClassName="md:left-[400px]"
                                 />
                               </div>
                               <div>
@@ -874,6 +879,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
                                     title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 ) : (
                                   <div className="w-full h-48 md:h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -891,6 +897,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                     imageType="id"
                                     title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 ) : (
                                   <div className="w-full h-48 md:h-64 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
@@ -910,6 +917,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                   className="w-full h-72 md:h-[22rem] object-cover rounded-lg shadow-md bg-gray-100"
                                   imageType="id"
                                   title={`Valid ID - Attempt ${selectedAttempt} - ${user.name}`}
+                                  modalClassName="md:left-[400px]"
                                 />
                               </div>
                               <div>
@@ -945,6 +953,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                                     className="max-h-full max-w-full object-contain"
                                     imageType="credential"
                                     title={`${formatCredentialName(credential.originalName || `Credential ${index + 1}`)} - Attempt ${selectedAttempt} - ${user.name}`}
+                                    modalClassName="md:left-[400px]"
                                   />
                                 </div>
                               </div>
