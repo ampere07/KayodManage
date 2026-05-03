@@ -475,6 +475,14 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
               settingsService.updateProfession(prof._id, updateData)
             );
           }
+        } else {
+          // This is a newly added profession in this editing session
+          // It was created in DB, but its icon might have been set after creation
+          if (prof.icon) {
+            updates.push(
+              settingsService.updateProfession(prof._id, { icon: prof.icon })
+            );
+          }
         }
       });
 

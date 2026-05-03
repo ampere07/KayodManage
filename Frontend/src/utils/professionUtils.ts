@@ -21,9 +21,11 @@ export const resolveIconForProfession = (
   
   // If a direct icon path or URL is provided, use it
   if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
-    return { 
+    // Strip custom: prefix if present
+    const iconFileName = jobIcon.startsWith('custom:') ? jobIcon.replace('custom:', '') : jobIcon;
+    return {
       name: jobIcon,
-      imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${jobIcon}`,
+      imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${iconFileName}`,
       color: '#0F766E',
       label: professionName
     };
@@ -57,7 +59,10 @@ export const resolveIconForProfession = (
     'housekeeping': 'custom:house-cleaning.webp',
     'handyman': 'custom:general-handyman.webp',
     'maintenance': 'custom:general-handyman.webp',
-    'welding': 'custom:welding.webp'
+    'welding': 'custom:welding.webp',
+    'architecture': 'custom:architecture-drafting.webp',
+    'architectural': 'custom:architecture-drafting.webp',
+    'architecturedrafting': 'custom:architecture-drafting.webp'
   };
 
   if (legacyMap[normalizedSearch]) {
