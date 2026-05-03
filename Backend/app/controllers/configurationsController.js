@@ -444,6 +444,139 @@ exports.deleteProfession = async (req, res) => {
   }
 };
 
+// Transfer profession to another category
+exports.transferProfession = async (req, res) => {
+  try {
+    const { professionId } = req.params;
+    const { targetCategoryId } = req.body;
+
+    if (!targetCategoryId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target category ID is required',
+      });
+    }
+
+    // Find the source category containing the profession
+    const sourceCategory = await JobCategory.findOne({
+      'professions._id': professionId,
+    });
+
+    if (!sourceCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profession not found',
+      });
+    }
+
+    // Prevent transferring to the same category
+    if (sourceCategory._id.toString() === targetCategoryId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Profession is already in this category',
+      });
+    }
+
+    // Find the target category
+    const targetCategory = await JobCategory.findById(targetCategoryId);
+
+    if (!targetCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target category not found',
+      });
+    }
+
+    // Get the profession data
+    const profession = sourceCategory.professions.id(professionId);
+
+    if (!profession) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profession not found in source category',
+      });
+    }
+
+    // Check if a profession with the same name already exists in the target category
+    const existingProfession = targetCategory.professions.find(
+      p => p.name.toLowerCase() === profession.name.toLowerCase()
+    );
+
+    if (existingProfession) {
+      return res.status(400).json({
+        success: false,
+        message: `A profession named "${profession.name}" already exists in "${targetCategory.name}"`,
+      });
+    }
+
+    // Copy profession data to the target category (new _id will be generated)
+    const professionData = {
+      name: profession.name,
+      icon: profession.icon,
+      isQuickAccess: profession.isQuickAccess,
+      quickAccessOrder: profession.quickAccessOrder,
+      createdAt: profession.createdAt,
+      updatedAt: new Date(),
+    };
+
+    targetCategory.professions.push(professionData);
+    await targetCategory.save();
+
+    // Get the newly created profession in the target category
+    const newProfession = targetCategory.professions[targetCategory.professions.length - 1];
+
+    // Remove from source category
+    sourceCategory.professions.pull(professionId);
+    await sourceCategory.save();
+
+    // Update any existing jobs that reference this profession's categoryId
+    try {
+      const jobResult = await Job.updateMany(
+        { professionName: profession.name, 'jobCategory': sourceCategory._id },
+        { $set: { 'jobCategory': targetCategory._id } }
+      );
+      if (jobResult.modifiedCount > 0) {
+        console.log(`[Configurations] Transferred ${jobResult.modifiedCount} jobs to new category.`);
+      }
+    } catch (jobErr) {
+      console.warn(`[Configurations] Could not update jobs during transfer: ${jobErr.message}`);
+    }
+
+    // Update drafts
+    try {
+      const draftsCollection = mongoose.connection.collection('drafts');
+      const draftResult = await draftsCollection.updateMany(
+        { professionName: profession.name, 'jobCategory': sourceCategory._id },
+        { $set: { 'jobCategory': targetCategory._id } }
+      );
+      if (draftResult.modifiedCount > 0) {
+        console.log(`[Configurations] Transferred ${draftResult.modifiedCount} drafts to new category.`);
+      }
+    } catch (draftErr) {
+      console.warn(`[Configurations] Could not update drafts during transfer: ${draftErr.message}`);
+    }
+
+    console.log(
+      `[Configurations] Profession "${profession.name}" transferred from "${sourceCategory.name}" to "${targetCategory.name}".`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Profession "${profession.name}" transferred to "${targetCategory.name}" successfully`,
+      profession: newProfession,
+      sourceCategoryId: sourceCategory._id,
+      targetCategoryId: targetCategory._id,
+    });
+  } catch (error) {
+    console.error('Error transferring profession:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to transfer profession',
+      error: error.message,
+    });
+  }
+};
+
 exports.uploadCategoryIcon = async (req, res) => {
   try {
     if (!req.file) {

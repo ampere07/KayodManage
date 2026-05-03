@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { X, Plus, Trash2, ImageIcon, Search } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { X, Plus, Trash2, ImageIcon, Search, ArrowRightLeft, Upload } from 'lucide-react';
 import { settingsService } from '../../services';
 import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getProfessionIconFromName, generateProfessionIconFilename, getAllIcons } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
+import TransferProfessionModal from './TransferProfessionModal';
 
 // Helper function to generate consistent icon filename from profession name
 const generateIconFilename = (professionName: string): string => {
@@ -63,6 +64,9 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const professionFileInputRef = React.useRef<HTMLInputElement>(null);
   const [currentProfessionForUpload, setCurrentProfessionForUpload] = useState<string | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferProfession, setTransferProfession] = useState<Profession | null>(null);
+  const [isDraggingIcon, setIsDraggingIcon] = useState(false);
   const { socket } = useSocket();
 
   // Filter professions based on search query
@@ -300,10 +304,8 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     }
   };
 
-  const handleProfessionFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !currentProfessionForUpload) return;
-
+  // Shared function to process an image file for profession icon upload
+  const processUploadFile = useCallback(async (file: File, professionId: string) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload an image file');
       return;
@@ -314,25 +316,25 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       return;
     }
 
-    const profession = professions.find(p => p._id === currentProfessionForUpload);
+    const profession = professions.find(p => p._id === professionId);
     if (!profession) return;
 
     try {
-      setUploadingProfessionIcon(currentProfessionForUpload);
+      setUploadingProfessionIcon(professionId);
       const response = await settingsService.uploadProfessionIcon(
         file,
         profession.name,
         profession.icon
       );
       
-      if (editingProfession && editingProfession._id === currentProfessionForUpload) {
+      if (editingProfession && editingProfession._id === professionId) {
         setEditingProfessionIcon(response.iconName);
         setEditingProfession(prev => prev ? { ...prev, icon: response.iconName } : null);
       }
       
       setProfessions(prev =>
         prev.map(prof =>
-          prof._id === currentProfessionForUpload
+          prof._id === professionId
             ? { ...prof, icon: response.iconName }
             : prof
         )
@@ -340,10 +342,9 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       
       setProfessionIconTimestamps(prev => ({
         ...prev,
-        [currentProfessionForUpload]: Date.now()
+        [professionId]: Date.now()
       }));
       
-      // Also update the main icon timestamp to force refresh
       setIconTimestamp(Date.now());
       
       toast.success('Profession icon uploaded successfully');
@@ -356,6 +357,12 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         professionFileInputRef.current.value = '';
       }
     }
+  }, [professions, editingProfession]);
+
+  const handleProfessionFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !currentProfessionForUpload) return;
+    await processUploadFile(file, currentProfessionForUpload);
   };
 
   const triggerProfessionIconUpload = () => {
@@ -364,6 +371,33 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       professionFileInputRef.current?.click();
     }
   };
+
+  // Drag and drop handlers for profession icon
+  const handleIconDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(true);
+  }, []);
+
+  const handleIconDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(false);
+  }, []);
+
+  const handleIconDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(false);
+
+    if (!editingProfession) return;
+
+    const files = e.dataTransfer.files;
+    if (files.length === 0) return;
+
+    const file = files[0];
+    await processUploadFile(file, editingProfession._id);
+  }, [editingProfession, processUploadFile]);
 
   const getProfessionIconName = (profession: Profession) => {
     if (editingProfession && editingProfession._id === profession._id && editingProfessionIcon !== undefined) {
@@ -744,45 +778,73 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Icon
                 </label>
-                <div className="flex items-center gap-3 mb-3">
-                  <div 
-                    className="flex-shrink-0 p-3 rounded-lg border-2 border-gray-300" 
-                    style={{ 
-                      backgroundColor: `${getProfessionIconData(editingProfession).color}15` 
-                    }}
-                  >
-                    <img 
-                      src={getProfessionIconData(editingProfession).imagePath}
-                      alt="Icon"
-                      className="w-7 h-7" 
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
+                <div
+                  onDragOver={handleIconDragOver}
+                  onDragLeave={handleIconDragLeave}
+                  onDrop={handleIconDrop}
+                  onClick={triggerProfessionIconUpload}
+                  className={`relative rounded-lg border-2 border-dashed p-4 transition-all cursor-pointer ${
+                    isDraggingIcon
+                      ? 'border-blue-500 bg-blue-50 scale-[1.02]'
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+                  } ${uploadingProfessionIcon === editingProfession._id ? 'opacity-60 pointer-events-none' : ''}`}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <div 
+                      className="p-3 rounded-lg border-2 border-gray-200 bg-white" 
+                      style={{ 
+                        backgroundColor: `${getProfessionIconData(editingProfession).color}15` 
                       }}
-                    />
-                  </div>
-                  <button
-                    onClick={triggerProfessionIconUpload}
-                    disabled={uploadingProfessionIcon === editingProfession._id}
-                    className="flex-1 px-4 py-2.5 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
+                    >
+                      <img 
+                        key={getProfessionIconData(editingProfession).imagePath}
+                        src={getProfessionIconData(editingProfession).imagePath}
+                        alt="Icon"
+                        className="w-10 h-10 object-contain" 
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = `/src/assets/icons/Default_Icon.webp?t=${Date.now()}`;
+                        }}
+                      />
+                    </div>
                     {uploadingProfessionIcon === editingProfession._id ? (
-                      <>
+                      <div className="flex items-center gap-2 text-blue-600">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                        <span>Uploading...</span>
-                      </>
+                        <span className="text-sm">Uploading...</span>
+                      </div>
+                    ) : isDraggingIcon ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-blue-500" />
+                        <span className="text-sm font-medium text-blue-600">Drop image here</span>
+                      </div>
                     ) : (
-                      <>
-                        <ImageIcon className="w-4 h-4" />
-                        <span>Upload Custom Image</span>
-                      </>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-2 text-blue-600">
+                          <ImageIcon className="w-4 h-4" />
+                          <span className="text-sm font-medium">Click or drag & drop</span>
+                        </div>
+                        <span className="text-xs text-gray-400">PNG, JPG, WebP up to 5MB</span>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  if (editingProfession) {
+                    setTransferProfession(editingProfession);
+                    setShowTransferModal(true);
+                  }
+                }}
+                className="px-3 py-2.5 border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
+                title="Transfer to another category"
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                <span className="text-sm hidden sm:inline">Transfer</span>
+              </button>
               <button
                 onClick={handleCancelProfessionEdit}
                 className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -798,6 +860,25 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             </div>
           </div>
         </>
+      )}
+      {/* Transfer Profession Modal */}
+      {transferProfession && (
+        <TransferProfessionModal
+          isOpen={showTransferModal}
+          onClose={() => {
+            setShowTransferModal(false);
+            setTransferProfession(null);
+          }}
+          onSuccess={() => {
+            // Close the profession editor and refresh
+            handleCancelProfessionEdit();
+            onSuccess();
+            onClose();
+          }}
+          profession={transferProfession}
+          currentCategoryId={category._id}
+          currentCategoryName={category.name}
+        />
       )}
     </>
   );

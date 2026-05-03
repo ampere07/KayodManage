@@ -75,6 +75,13 @@ export const settingsService = {
     return response.data;
   },
 
+  transferProfession: async (professionId: string, targetCategoryId: string) => {
+    const response = await apiClient.patch(`/api/admin/configurations/professions/${professionId}/transfer`, {
+      targetCategoryId,
+    });
+    return response.data;
+  },
+
   uploadCategoryIcon: async (file: File, categoryName: string, oldIcon?: string) => {
     const formData = new FormData();
     formData.append('icon', file);
