@@ -9,15 +9,17 @@ interface ClickableImageProps {
   imageType?: 'face' | 'id' | 'credential';
   title?: string;
   showFullscreenHint?: boolean;
+  modalClassName?: string;
 }
 
-const ClickableImage: React.FC<ClickableImageProps> = ({ 
-  src, 
-  alt, 
-  className = '', 
+const ClickableImage: React.FC<ClickableImageProps> = ({
+  src,
+  alt,
+  className = '',
   imageType = 'credential',
   title,
-  showFullscreenHint = true
+  showFullscreenHint = true,
+  modalClassName = ''
 }) => {
   const [imgSrc, setImgSrc] = useState(src);
   const [hasError, setHasError] = useState(false);
@@ -69,6 +71,7 @@ const ClickableImage: React.FC<ClickableImageProps> = ({
         alt={alt}
         title={title}
         onClose={closeFullscreen}
+        className={modalClassName}
       />
     </>
   );

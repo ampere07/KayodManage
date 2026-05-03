@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import {
   X,
   ChevronDown,
-  ChevronUp,
   Eye,
   EyeOff,
   Trash2,
@@ -14,16 +13,15 @@ import {
   Briefcase,
   DollarSign,
   Users,
-  Phone,
   Mail,
   CreditCard,
-  Hash,
-  ExternalLink
+  Hash
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import UserTypeBadge from '../UI/UserTypeBadge';
+import ClickableImage from '../UI/ClickableImage';
 import { jobsService } from '../../services';
 import type { Job, Application } from '../../types/jobs.types';
 import { SidebarContext } from '../Layout/Layout';
@@ -50,7 +48,6 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const [showApplicants, setShowApplicants] = useState(false);
   const [applicants, setApplicants] = useState<Application[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const { setIsHeaderHidden } = React.useContext(SidebarContext);
 
   useEffect(() => {
@@ -261,7 +258,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-0.5">
                   <h4 className="text-base font-black text-gray-900 truncate">{job.user?.name || 'Unknown User'}</h4>
-                  {job.user?.isVerified && <VerificationStatusBadge isVerified={true} size="sm" hideLabel />}
+                  {job.user?.isVerified && <VerificationStatusBadge isVerified={true} size="sm" />}
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <div className="flex items-center gap-1.5 text-gray-500">
@@ -390,19 +387,15 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   <div className="pt-4 grid grid-cols-2 gap-3">
                     {job.media && job.media.length > 0 ? (
                       job.media.map((url, index) => (
-                        <div
-                          key={index}
-                          className="aspect-video bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity group relative border border-gray-100"
-                          onClick={() => setSelectedImageIndex(index)}
-                        >
-                          <img
+                        <div key={index} className="aspect-video bg-gray-100 rounded-lg overflow-hidden border border-gray-100">
+                          <ClickableImage
                             src={url}
                             alt={`Job media ${index + 1}`}
                             className="w-full h-full object-cover"
+                            imageType="credential"
+                            title={`Job media ${index + 1}`}
+                            modalClassName="md:right-[550px]"
                           />
-                          <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-all flex items-center justify-center">
-                            <ExternalLink className="text-white opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5" />
-                          </div>
                         </div>
                       ))
                     ) : (
@@ -570,69 +563,6 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Image Lightbox Modal */}
-      {job && job.media && job.media.length > 0 && selectedImageIndex !== null && (
-        <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-90 z-[60] transition-opacity"
-            onClick={() => setSelectedImageIndex(null)}
-          />
-
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <button
-              onClick={() => setSelectedImageIndex(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors p-2 bg-black bg-opacity-50 rounded-full"
-              aria-label="Close image viewer"
-            >
-              <X className="w-6 h-6" />
-            </button>
-
-            {job.media.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === 0 ? job.media.length - 1 : prev! - 1
-                    );
-                  }}
-                  className="absolute left-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Previous image"
-                >
-                  <ChevronDown className="w-6 h-6 rotate-90" />
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === job.media.length - 1 ? 0 : prev! + 1
-                    );
-                  }}
-                  className="absolute right-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Next image"
-                >
-                  <ChevronDown className="w-6 h-6 -rotate-90" />
-                </button>
-              </>
-            )}
-
-            <div className="max-w-7xl max-h-full w-full h-full flex items-center justify-center">
-              <img
-                src={job.media[selectedImageIndex]}
-                alt={`Job media ${selectedImageIndex + 1}`}
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">
-              {selectedImageIndex + 1} / {job.media.length}
-            </div>
-          </div>
-        </>
-      )}
     </>,
     document.body
   );
