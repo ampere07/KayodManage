@@ -8,6 +8,7 @@ const {
   createProfession,
   updateProfession,
   deleteProfession,
+  transferProfession,
   uploadCategoryIcon,
   uploadProfessionIcon,
   updateQuickAccessProfessions,
@@ -60,6 +61,7 @@ router.delete('/job-categories/:categoryId', requireAdmin, deleteJobCategory);
 
 // Professions
 router.post('/professions', requireAdmin, createProfession);
+router.patch('/professions/:professionId/transfer', requireAdmin, transferProfession);
 router.patch('/professions/:professionId', requireAdmin, updateProfession);
 router.delete('/professions/:professionId', requireAdmin, deleteProfession);
 
