@@ -210,7 +210,7 @@ const JobCategoryConfiguration: React.FC = () => {
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
                                       // Fallback to the default icon if the profession icon fails to load
-                                      target.src = `/src/assets/icons/Default_Icon.webp?t=${iconTimestamp}`;
+                                      target.src = `/assets/icons/Default_Icon.webp?t=${iconTimestamp}`;
                                     }}
                                   />
                                 </div>

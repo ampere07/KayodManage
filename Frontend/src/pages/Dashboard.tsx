@@ -493,7 +493,10 @@ const resolveIconData = (dataItem: any, categories: JobCategory[]) => {
       'gardening': 'custom:gardening--landscaping.webp',
       'moving': 'custom:lipat-bahay-mover.webp',
       'computer repair': 'custom:computer-technician.webp',
-      'auto mechanic': 'custom:auto-mechanic.webp'
+      'auto mechanic': 'custom:auto-mechanic.webp',
+      'architecture': 'custom:architecture-drafting.webp',
+      'architectural': 'custom:architecture-drafting.webp',
+      'architecturedrafting': 'custom:architecture-drafting.webp'
     };
     iconStr = legacyMap[cleanName] || '';
   }

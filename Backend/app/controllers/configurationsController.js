@@ -780,6 +780,54 @@ exports.uploadProfessionIcon = async (req, res) => {
       }
     }
 
+    // Automatically update kayod/client/src/utils/professionIcons.js so Expo can statically bundle the new icon
+    try {
+      const kayodProfessionIconsFile = path.join(__dirname, '../../../..', 'kayod/client/src/utils/professionIcons.js');
+      if (fs.existsSync(kayodProfessionIconsFile)) {
+        let content = fs.readFileSync(kayodProfessionIconsFile, 'utf8');
+        
+        // Add if not already present
+        if (!content.includes(`"${fileName}"`)) {
+          // Create camelCase variable name from filename
+          const varName = fileName
+            .replace('.webp', '')
+            .replace('.png', '')
+            .replace('.jpg', '')
+            .replace(/[-_\\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '')
+            .replace(/^[^a-zA-Z_$]/, '_'); // Ensure valid identifier
+
+          // Add import statement just before the Default icon import
+          const importStatement = `import ${varName} from "../assets/icons/professions/${fileName}";\n`;
+          const defaultIconIndex = content.indexOf('// Default icon for professions');
+          if (defaultIconIndex !== -1) {
+            content = content.slice(0, defaultIconIndex) + importStatement + content.slice(defaultIconIndex);
+          } else {
+            content = importStatement + content;
+          }
+
+          // Add to PROFESSION_ICONS object
+          const profIconsIndex = content.indexOf('export const PROFESSION_ICONS = {');
+          if (profIconsIndex !== -1) {
+            const insertIdx = profIconsIndex + 'export const PROFESSION_ICONS = {'.length;
+            content = content.slice(0, insertIdx) + `\n  "${fileName}": ${varName},` + content.slice(insertIdx);
+          }
+
+          // Add to PROFESSION_NAME_TO_ICON object
+          const nameToIconIndex = content.indexOf('export const PROFESSION_NAME_TO_ICON = {');
+          if (nameToIconIndex !== -1) {
+            const insertIdx = nameToIconIndex + 'export const PROFESSION_NAME_TO_ICON = {'.length;
+            const safeProfName = professionName.toLowerCase().trim();
+            content = content.slice(0, insertIdx) + `\n  "${safeProfName}": ${varName},` + content.slice(insertIdx);
+          }
+
+          fs.writeFileSync(kayodProfessionIconsFile, content);
+          console.log(`[Configurations] Automatically updated kayod professionIcons.js with ${fileName}`);
+        }
+      }
+    } catch (updateErr) {
+      console.warn('[Configurations] Failed to automatically update kayod professionIcons.js:', updateErr.message);
+    }
+
     res.status(200).json({
       success: true,
       iconName: `custom:${fileName}`,
