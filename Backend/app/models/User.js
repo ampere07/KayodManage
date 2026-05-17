@@ -25,6 +25,10 @@ const UserSchema = new Schema({
     required: true,
     trim: true
   },
+  phoneNumber: {
+    type: String,
+    trim: true
+  },
   userType: {
     type: String,
     enum: ['client', 'provider', 'admin', 'superadmin', 'finance', 'customer support', 'support'],

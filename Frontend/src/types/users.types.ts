@@ -50,6 +50,7 @@ export interface User {
   name: string;
   email: string;
   phone: string;
+  phoneNumber?: string;
   location: string;
   categories: string[];
   jobCategories?: string | string[];

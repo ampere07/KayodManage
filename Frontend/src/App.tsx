@@ -25,9 +25,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
+      refetchOnMount: false, // Don't refetch when component mounts if data exists
+      refetchOnReconnect: false, // Don't refetch on network reconnect
       retry: 1,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 30 * 60 * 1000, // 30 minutes - data stays fresh longer
+      gcTime: 60 * 60 * 1000, // 1 hour - keep in cache longer
     },
   },
 });

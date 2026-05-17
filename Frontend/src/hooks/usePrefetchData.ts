@@ -6,9 +6,11 @@ import {
   transactionsService, 
   verificationsService, 
   supportService, 
-  flaggedService 
+  flaggedService,
+  settingsService
 } from '../services';
 import apiClient from '../utils/apiClient';
+import { iconCacheService } from '../services/iconCacheService';
 
 export const usePrefetchData = () => {
   const queryClient = useQueryClient();
@@ -211,6 +213,19 @@ export const usePrefetchData = () => {
             },
           }),
 
+          // Admins (Settings Management)
+          queryClient.prefetchQuery({
+            queryKey: ['admins'],
+            queryFn: async () => {
+              try {
+                const response = await settingsService.getAllAdmins();
+                return response.admins || [];
+              } catch {
+                return [];
+              }
+            },
+          }),
+
           // Flagged Users Stats
           queryClient.prefetchQuery({
             queryKey: ['flagged-stats'],
@@ -236,7 +251,24 @@ export const usePrefetchData = () => {
 
         setPrefetched(true);
         console.log('[Prefetch] ✅ All data prefetched successfully!');
-        console.log('[Prefetch] ✨ Navigation to Verifications, Support, Activity, and Flagged will be instant!');
+        console.log('[Prefetch] ✨ Navigation to all pages will be instant!');
+
+        // Prefetch job categories and preload profession icons
+        console.log('[Prefetch] Fetching job categories and caching icons...');
+        queryClient.prefetchQuery({
+          queryKey: ['job-categories'],
+          queryFn: () => settingsService.getJobCategories(),
+        }).then(() => {
+          const cachedData = queryClient.getQueryData<any>(['job-categories']);
+          const categories = cachedData?.categories || [];
+          return iconCacheService.preloadProfessionIcons(categories);
+        }).then(() => {
+          const stats = iconCacheService.getCacheStats();
+          console.log(`[Prefetch] ✅ Cached ${stats.size} profession icons`);
+        }).catch(error => {
+          console.error('[Prefetch] Failed to cache profession icons:', error);
+        });
+
       } catch (error: any) {
         if (error?.isNetworkError || error?.code === 'ECONNABORTED') {
           console.log('[Prefetch] Skipped due to network error');
@@ -247,5 +279,14 @@ export const usePrefetchData = () => {
     };
 
     prefetchAllData();
+
+    // Clear expired cache periodically (every hour)
+    const cacheCleanupInterval = setInterval(() => {
+      iconCacheService.clearExpiredCache();
+    }, 60 * 60 * 1000);
+
+    return () => {
+      clearInterval(cacheCleanupInterval);
+    };
   }, [queryClient, prefetched]);
 };

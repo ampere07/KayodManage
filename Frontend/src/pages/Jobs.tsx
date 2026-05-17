@@ -28,8 +28,6 @@ import StatsCard from '../components/Dashboard/StatsCard';
 // Tpye imports
 import type { Job, JobsPagination, JobCategory } from '../types';
 
-// Services
-import { settingsService } from '../services';
 
 // Utility imports
 import {
@@ -40,7 +38,7 @@ import {
 } from '../utils';
 
 // Hooks
-import { useJobs, useJobCounts } from '../hooks/useJobs';
+import { useJobs, useJobCounts, useJobCategories } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
 
 /**
@@ -62,8 +60,7 @@ const Jobs: React.FC = () => {
     total: 0,
     pages: 0
   });
-  const [categories, setCategories] = useState<JobCategory[]>([]);
-  const [professionsList, setProfessionsList] = useState<string[]>([]);
+  const { categories, professionsList } = useJobCategories();
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
   const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -71,6 +68,26 @@ const Jobs: React.FC = () => {
   // Resolver logic adapted from Dashboard.tsx for icons parity
   const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
     if (!jobCategory) return { imagePath: '/assets/icons/categories/professional-services.png', label: 'General Service' };
+
+    // First, try to find the profession in categories data to get the correct icon
+    const normalizedSearch = jobCategory.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    for (const c of categories) {
+      const prof = c.professions?.find(p => {
+        const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
+      });
+      if (prof && prof.icon) {
+        // Use the profession icon from categories data (has correct ImageKit path)
+        return getProfessionIconByName(prof.icon, c.icon);
+      }
+    }
+
+    // If ik: prefix (ImageKit), pass directly to getProfessionIconByName
+    if (jobIcon && jobIcon.startsWith('ik:')) {
+      const resolved = getProfessionIconByName(jobIcon);
+      return resolved;
+    }
 
     // If a direct icon path or URL is provided, use it
     if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
@@ -82,8 +99,6 @@ const Jobs: React.FC = () => {
       };
     }
 
-    const cleanName = jobCategory.trim().toLowerCase();
-    const normalizedSearch = cleanName.replace(/[^a-z0-9]/g, '');
     let categoryIconStr = '';
     let iconStr = '';
 
@@ -141,20 +156,6 @@ const Jobs: React.FC = () => {
     const resolved = getProfessionIconByName(iconStr, categoryIconStr);
     return resolved;
   }, [categories]);
-  useEffect(() => {
-    settingsService.getJobCategories().then(res => {
-      const fetchedCategories: JobCategory[] = res.categories || [];
-      setCategories(fetchedCategories);
-      setIconTimestamp(Date.now());
-      const allProfessions = fetchedCategories
-        .flatMap((cat: JobCategory) => cat.professions || [])
-        .map((prof: any) => prof.name)
-        .sort();
-      setProfessionsList(allProfessions);
-    }).catch(err => {
-      console.error('Failed to fetch dynamic categories:', err);
-    });
-  }, []);
 
   const queryParams = useMemo(() => ({
     page: pagination.page,
@@ -360,7 +361,7 @@ const Jobs: React.FC = () => {
                 className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] max-w-[160px] truncate"
               >
                 <option value="all">Professions</option>
-                {professionsList.map(prof => (
+                {[...new Set(professionsList)].map(prof => (
                   <option key={prof} value={prof} className="capitalize">{prof}</option>
                 ))}
               </select>
@@ -431,8 +432,8 @@ const Jobs: React.FC = () => {
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden md:block bg-white flex-1 relative">
-                <table className="min-w-full table-fixed border-separate border-spacing-0">
+              <div className="hidden md:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">
                       <th className="w-[35%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
@@ -455,17 +456,21 @@ const Jobs: React.FC = () => {
                   <tbody className="bg-white border-b border-gray-300">
                     {jobs.map((job) => {
                       const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
+                      // Add cache-busting using profession's updatedAt timestamp
+                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
+                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
+                        : iconData.imagePath;
                       return (
                         <tr
                           key={job._id}
                           onClick={() => openJobModal(job)}
-                          className="group transition-all duration-150 cursor-pointer"
+                          className="group transition-all duration-150 cursor-pointer h-20"
                         >
-                          <td className="px-6 py-2 border-b border-gray-300">
-                            <div className="flex items-center gap-4">
+                          <td className="w-[35%] px-6 py-2 border-b border-gray-300 h-20 align-middle overflow-hidden max-w-full">
+                            <div className="flex items-center gap-4 w-full h-full">
                               <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
                                 <img
-                                  src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                  src={iconPath}
                                   alt={job.professionName || job.categoryName || job.category || 'Category'}
                                   className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
                                   onError={(e) => {
@@ -474,8 +479,14 @@ const Jobs: React.FC = () => {
                                   }}
                                 />
                               </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
+                              <div className="min-w-0 flex-1 overflow-hidden">
+                                <p className="text-[10px] text-gray-400 font-bold tracking-wider mb-1 truncate whitespace-nowrap">
+                                  {(() => {
+                                    const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
+                                    return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                                  })()}
+                                </p>
+                                <div className="flex items-center gap-2 mb-1">
                                   <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
                                     {job.title}
                                   </p>
@@ -483,27 +494,24 @@ const Jobs: React.FC = () => {
                                     <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700">Urgent</span>
                                   )}
                                 </div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                  {(() => {
-                                    const lbl = iconData.label || job.professionName || job.categoryName || job.category || '';
-                                    return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                                  })()}
+                                <p className="text-[11px] text-gray-600 font-medium truncate whitespace-nowrap" title={job.description}>
+                                  {job.description || 'No description'}
                                 </p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
+                          <td className="w-[20%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                             <div className="flex items-center gap-3">
                               <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
                                 <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
                               </div>
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                                <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.email || 'No email provided'}</p>
+                                <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.phoneNumber || job.user?.phone || 'No phone number'}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
+                          <td className="w-[18%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                             <div className="flex justify-center">
                               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm`}>
                                 {getJobStatusIcon(job.status)}
@@ -511,7 +519,7 @@ const Jobs: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center border-b border-gray-300">
+                          <td className="w-[12%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
                             <div className="flex flex-col items-center">
                               <p className="text-sm font-black text-gray-900">
                                 {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
@@ -522,7 +530,7 @@ const Jobs: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
+                          <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                             <div className="flex flex-col">
                               <p className="text-xs font-bold text-gray-900">
                                 {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
@@ -546,6 +554,10 @@ const Jobs: React.FC = () => {
                   <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {jobs.map((job) => {
                       const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
+                      // Add cache-busting using profession's updatedAt timestamp
+                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
+                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
+                        : iconData.imagePath;
                       return (
                         <div
                           key={job._id}
@@ -576,8 +588,8 @@ const Jobs: React.FC = () => {
                             <div className="flex items-start gap-4 mb-4">
                               <div className="relative flex-shrink-0">
                                 <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
-                                  <img 
-                                    src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                  <img
+                                    src={iconPath}
                                     alt={job.professionName || job.categoryName || job.category || 'Category'}
                                     className="h-10 w-10 object-contain"
                                     onError={(e) => {
@@ -588,13 +600,10 @@ const Jobs: React.FC = () => {
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
-                                  {job.title}
-                                </h3>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <span className="text-[10px] font-black text-blue-600 tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
                                     {(() => {
-                                      const lbl = iconData.label || job.professionName || job.categoryName || job.category || '';
+                                      const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
                                       return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
                                     })()}
                                   </span>
@@ -603,6 +612,12 @@ const Jobs: React.FC = () => {
                                     {job.applicationCount || 0}
                                   </div>
                                 </div>
+                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
+                                  {job.title}
+                                </h3>
+                                <p className="text-[11px] text-gray-600 font-medium line-clamp-2" title={job.description}>
+                                  {job.description || 'No description'}
+                                </p>
                               </div>
                             </div>
 
@@ -660,22 +675,31 @@ const Jobs: React.FC = () => {
                       <tbody>
                         {jobs.map((job) => {
                           const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
+                          // Add cache-busting using profession's updatedAt timestamp
+                          const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
+                            ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
+                            : iconData.imagePath;
                           return (
-                            <tr 
-                              key={job._id} 
+                            <tr
+                              key={job._id}
                               onClick={() => openJobModal(job)}
                               className="border-b border-gray-100 active:bg-gray-50 transition-colors"
                             >
                               <td className="px-3 py-3 overflow-hidden">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <img 
-                                    src={`${iconData.imagePath}?t=${iconTimestamp}`} 
-                                    className="h-7 w-7 object-contain flex-shrink-0" 
-                                    alt="" 
+                                  <img
+                                    src={iconPath}
+                                    className="h-7 w-7 object-contain flex-shrink-0"
+                                    alt=""
                                   />
                                   <div className="min-w-0 flex-1">
+                                    <p className="text-[9px] text-gray-400 font-bold truncate">
+                                      {(() => {
+                                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
+                                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                                      })()}
+                                    </p>
                                     <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{job.title}</p>
-                                    <p className="text-[9px] text-gray-400 font-bold truncate uppercase">{job.user?.name}</p>
                                   </div>
                                 </div>
                               </td>

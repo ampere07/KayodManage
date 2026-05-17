@@ -9,6 +9,37 @@ import {
 } from 'lucide-react';
 import type { Transaction } from '../types';
 import { getProfessionIconFromName, getProfessionIconByName } from '../constants/categoryIcons';
+import type { JobCategory } from '../types';
+
+/**
+ * Transaction utility helper functions
+ */
+
+/**
+ * Resolve profession icon from categories data (same pattern as Jobs.tsx and Users.tsx)
+ */
+const resolveProfessionIconFromCategories = (
+  professionName: string,
+  categories: JobCategory[]
+) => {
+  if (!professionName || !categories || categories.length === 0) {
+    return null;
+  }
+
+  const normalizedSearch = professionName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  for (const c of categories) {
+    const prof = c.professions?.find(p => {
+      const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
+    });
+    if (prof && prof.icon) {
+      return getProfessionIconByName(prof.icon, c.icon);
+    }
+  }
+
+  return null;
+};
 
 /**
  * Transaction utility helper functions
@@ -82,7 +113,7 @@ export const getTransactionStatusIcon = (status: string): JSX.Element | null => 
 /**
  * Get transaction icon based on type
  */
-export const getTransactionIcon = (transaction: any): JSX.Element => {
+export const getTransactionIcon = (transaction: any, categories?: JobCategory[]): JSX.Element => {
   const { type, transactionType, jobId, job } = transaction;
   const isFeeRecord = transactionType === 'fee_record' || transactionType === 'platform_fee' || type === 'platform_fee' || type === 'fee_payment';
   const jobInfo = jobId || job;
@@ -90,29 +121,46 @@ export const getTransactionIcon = (transaction: any): JSX.Element => {
   if (isFeeRecord) {
     let iconData;
     const professionName = jobInfo?.professionName || jobInfo?.categoryName || jobInfo?.category || jobInfo?.title;
-    
-    if (jobInfo?.icon) {
-      iconData = getProfessionIconByName(jobInfo.icon);
-    } else if (professionName) {
-      iconData = getProfessionIconFromName(professionName);
-    }
-    
-    if (iconData?.imagePath) {
-        return (
-          <div className="relative flex items-center justify-center h-full w-full p-2">
-            <div className="absolute inset-0 bg-orange-50/80 rounded-lg group-hover:bg-white transition-colors"></div>
-            <img 
-              src={iconData.imagePath} 
-              alt={jobInfo.category || jobInfo.title} 
-              className="relative z-10 w-full h-full object-contain drop-shadow-sm"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }}
-            />
-          </div>
-        );
+
+    // First, try to find the profession in categories data (same pattern as Jobs.tsx and Users.tsx)
+    if (professionName && categories && categories.length > 0) {
+      const categoryIconData = resolveProfessionIconFromCategories(professionName, categories);
+      if (categoryIconData?.imagePath) {
+        iconData = categoryIconData;
       }
+    }
+
+    // Fallback to job icon field
+    if (!iconData && jobInfo?.icon) {
+      iconData = getProfessionIconByName(jobInfo.icon);
+    }
+
+    // Fallback to profession name
+    if (!iconData && professionName) {
+      iconData = getProfessionIconFromName(professionName, jobInfo?.categoryIcon);
+    }
+
+    if (iconData?.imagePath) {
+      // Add cache-busting for ImageKit icons
+      const iconPath = iconData.imagePath.startsWith('https://ik.imagekit.io')
+        ? `${iconData.imagePath}?t=${Date.now()}`
+        : iconData.imagePath;
+
+      return (
+        <div className="relative flex items-center justify-center h-full w-full p-2">
+          <div className="absolute inset-0 bg-orange-50/80 rounded-lg group-hover:bg-white transition-colors"></div>
+          <img
+            src={iconPath}
+            alt={jobInfo.category || jobInfo.title}
+            className="relative z-10 w-full h-full object-contain drop-shadow-sm"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
+          />
+        </div>
+      );
+    }
     return <DollarSign className="h-5 w-5 text-yellow-600" />;
   }
 

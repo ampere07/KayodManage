@@ -1,41 +1,77 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ChevronRight, ChevronDown, Plus, Star } from 'lucide-react';
-import { settingsService } from '../../services';
+import { useQueryClient } from '@tanstack/react-query';
 import { JobCategory } from '../../types/configuration.types';
 import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import QuickAccessManager from './QuickAccessManager';
-import toast from 'react-hot-toast';
 import { getIconByName, getDefaultIconForCategory, getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
+import { useJobCategories } from '../../hooks/useJobs';
+import { useSocket } from '../../context/SocketContext';
+
+const EXPANDED_CATEGORIES_KEY = 'settings-expanded-categories';
 
 const JobCategoryConfiguration: React.FC = () => {
-  const [categories, setCategories] = useState<JobCategory[]>([]);
+  const queryClient = useQueryClient();
+  const { categories, isLoading } = useJobCategories();
+  const { socket } = useSocket();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [editingCategory, setEditingCategory] = useState<JobCategory | null>(null);
   const [editingProfession, setEditingProfession] = useState<any | null>(null);
   const [showQuickAccessManager, setShowQuickAccessManager] = useState(false);
-  const [iconTimestamp, setIconTimestamp] = useState(Date.now());
 
+  // Load expanded categories from localStorage on mount
   useEffect(() => {
-    loadCategories();
+    try {
+      const saved = localStorage.getItem(EXPANDED_CATEGORIES_KEY);
+      if (saved) {
+        setExpandedCategories(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error('Failed to load expanded categories from localStorage:', error);
+    }
   }, []);
 
-  const loadCategories = async () => {
-    try {
-      setLoading(true);
-      const response = await settingsService.getJobCategories();
-      setCategories(response.categories || []);
-      setIconTimestamp(Date.now());
-    } catch (error) {
-      console.error('Failed to load categories:', error);
-      toast.error('Failed to load categories');
-    } finally {
-      setLoading(false);
+  // Expand all categories by default when categories are loaded
+  useEffect(() => {
+    if (categories.length > 0) {
+      const allCategoryIds: Set<string> = new Set(categories.map((cat: JobCategory) => cat._id as string));
+      setExpandedCategories(allCategoryIds);
     }
+  }, [categories]);
+
+  // Save expanded categories to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(EXPANDED_CATEGORIES_KEY, JSON.stringify(Array.from(expandedCategories)));
+    } catch (error) {
+      console.error('Failed to save expanded categories to localStorage:', error);
+    }
+  }, [expandedCategories]);
+
+  // Listen for real-time profession icon updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleConfigurationUpdate = (data: any) => {
+      if (data.type === 'profession' && (data.action === 'icon-updated' || data.action === 'updated' || data.action === 'deleted')) {
+        // Invalidate job-categories cache to refresh the UI
+        queryClient.invalidateQueries({ queryKey: ['job-categories'] });
+      }
+    };
+
+    socket.on('configuration:updated', handleConfigurationUpdate);
+
+    return () => {
+      socket.off('configuration:updated', handleConfigurationUpdate);
+    };
+  }, [socket, queryClient]);
+
+  const loadCategories = () => {
+    queryClient.invalidateQueries({ queryKey: ['job-categories'] });
   };
 
   const toggleCategory = (categoryId: string) => {
@@ -121,7 +157,7 @@ const JobCategoryConfiguration: React.FC = () => {
 
       {/* Categories List */}
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
@@ -185,9 +221,13 @@ const JobCategoryConfiguration: React.FC = () => {
                         <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-4">
                           {category.professions.map((profession) => {
                             // If profession has an icon field, resolve it; otherwise auto-generate from profession name
-                            const professionIcon = profession.icon 
+                            const professionIcon = profession.icon
                               ? getProfessionIconByName(profession.icon, category.icon)
-                              : getProfessionIconFromName(profession.name);
+                              : getProfessionIconFromName(profession.name, category.icon);
+                            // Add cache-busting parameter using profession's updatedAt timestamp
+                            const iconPath = profession.icon?.startsWith('ik:')
+                              ? `${professionIcon.imagePath}?v=${new Date(profession.updatedAt).getTime()}`
+                              : professionIcon.imagePath;
                             return (
                               <div
                                 key={profession._id}
@@ -204,13 +244,13 @@ const JobCategoryConfiguration: React.FC = () => {
                                 >
                                   <div className="absolute inset-0 m-auto w-12 h-12 rounded-xl bg-orange-100/80 group-hover:bg-blue-100/80 transition-colors"></div>
                                   <img
-                                    src={`${professionIcon.imagePath}?t=${iconTimestamp}`}
+                                    src={iconPath}
                                     alt={profession.name}
                                     className="relative z-10 w-16 h-16 object-contain drop-shadow-sm transition-opacity opacity-100"
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
                                       // Fallback to the default icon if the profession icon fails to load
-                                      target.src = `/assets/icons/Default_Icon.webp?t=${iconTimestamp}`;
+                                      target.src = `/assets/icons/Default_Icon.webp`;
                                     }}
                                   />
                                 </div>

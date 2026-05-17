@@ -11,3 +11,4 @@ export { transactionsService, default as TransactionsService } from './transacti
 export { usersService, default as UsersService } from './usersService';
 export { verificationsService, default as VerificationsService } from './verificationsService';
 export { settingsService } from './settingsService';
+export { iconCacheService } from './iconCacheService';

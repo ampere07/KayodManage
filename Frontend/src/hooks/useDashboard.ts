@@ -21,7 +21,6 @@ export const useDashboardComparison = () => {
         throw error;
       }
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -41,7 +40,6 @@ export const useDashboardRevenueChart = (period: 'week' | 'month' | 'year' | 'ov
         throw error;
       }
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -60,7 +58,6 @@ export const useDashboardPopularJobs = (period: 'overall' | 'week' | 'month' | '
         throw error;
       }
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };

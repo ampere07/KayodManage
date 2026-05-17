@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import {
@@ -13,7 +13,7 @@ import {
   Briefcase,
   DollarSign,
   Users,
-  Mail,
+  Phone,
   CreditCard,
   Hash
 } from 'lucide-react';
@@ -25,6 +25,31 @@ import ClickableImage from '../UI/ClickableImage';
 import { jobsService } from '../../services';
 import type { Job, Application } from '../../types/jobs.types';
 import { SidebarContext } from '../Layout/Layout';
+
+// ImageKit configuration
+const IMAGEKIT_URL_ENDPOINT = 'https://ik.imagekit.io/9vpn8u272';
+
+/**
+ * Convert media URL to ImageKit URL if it has ik: prefix
+ * This ensures job attachments are fetched from ImageKit's imageUpload folder
+ */
+const getImageKitMediaUrl = (url: string): string => {
+  if (!url) return '';
+  
+  // If already a full ImageKit URL, return as-is
+  if (url.startsWith(IMAGEKIT_URL_ENDPOINT)) {
+    return url;
+  }
+  
+  // If has ik: prefix, convert to full ImageKit URL
+  if (url.startsWith('ik:')) {
+    const path = url.replace('ik:', '');
+    return `${IMAGEKIT_URL_ENDPOINT}${path}`;
+  }
+  
+  // Return original URL (Cloudinary or other)
+  return url;
+};
 
 interface JobDetailsModalProps {
   isOpen: boolean;
@@ -262,8 +287,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <div className="flex items-center gap-1.5 text-gray-500">
-                    <Mail className="h-3 w-3" />
-                    <span className="text-[11px] font-medium truncate">{job.user?.email || 'No email'}</span>
+                    <Phone className="h-3 w-3" />
+                    <span className="text-[11px] font-medium truncate">{job.user?.phoneNumber || job.user?.phone || 'No phone number'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-gray-400">
                     <Hash className="h-3 w-3" />
@@ -273,6 +298,30 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               </div>
               <div className="flex-shrink-0">
                 <UserTypeBadge userType={job.user?.userType || 'client'} />
+              </div>
+            </div>
+
+            {/* Job Title and Description */}
+            <div className="px-6 py-4 border-y border-gray-100">
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center gap-1.5 text-gray-900 mb-1">
+                    <Briefcase className="h-3 w-3" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Job Title</span>
+                  </div>
+                  <p className="text-base font-medium text-gray-600 leading-tight">
+                    {job.title}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 text-gray-900 mb-1">
+                    <Hash className="h-3 w-3" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Job Details</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 leading-relaxed">
+                    {job.description || 'No description provided'}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -302,7 +351,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             <div className="px-6 py-8">
               <div className="flex items-center gap-2 mb-6">
                 <div className="h-px flex-1 bg-gray-100" />
-                <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 flex items-center gap-2">
+                <h5 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-2 flex items-center gap-2">
                   <Briefcase className="h-3 w-3" />
                   Service Details
                 </h5>
@@ -311,11 +360,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
               <div className="grid grid-cols-2 gap-y-8 gap-x-6">
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-400">
+                  <div className="flex items-center gap-1.5 text-gray-900">
                     <Calendar className="h-3 w-3" />
                     <span className="text-[9px] font-black uppercase tracking-widest">Posted On</span>
                   </div>
-                  <p className="text-sm font-bold text-gray-900">
+                  <p className="text-sm font-medium text-gray-600">
                     {new Date(job.createdAt).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'long',
@@ -325,11 +374,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-400">
+                  <div className="flex items-center gap-1.5 text-gray-900">
                     <Briefcase className="h-3 w-3" />
                     <span className="text-[9px] font-black uppercase tracking-widest">Profession</span>
                   </div>
-                  <p className="text-sm font-bold text-gray-900 capitalize">
+                  <p className="text-sm font-medium text-gray-600 capitalize">
                     {(() => {
                       const val = ((job as any).professionName || (job as any).categoryName || job.category || '').trim();
                       if (/^[a-fA-F0-9]{24}$/.test(val)) return 'General Service';
@@ -339,33 +388,40 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-400">
+                  <div className="flex items-center gap-1.5 text-gray-900">
                     <CreditCard className="h-3 w-3" />
                     <span className="text-[9px] font-black uppercase tracking-widest">Payment</span>
                   </div>
-                  <p className="text-sm font-bold text-gray-900 capitalize">
+                  <p className="text-sm font-medium text-gray-600 capitalize">
                     {job.paymentMethod}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    <MapPin className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Region</span>
-                  </div>
-                  <p className="text-sm font-bold text-gray-900 truncate">
-                    {job.user?.barangay || 'N/A'} • {job.user?.city || 'N/A'}
                   </p>
                 </div>
               </div>
 
               <div className="mt-8 pt-8 border-t border-gray-50">
-                <div className="flex items-center gap-1.5 text-gray-400 mb-3">
+                <div className="flex items-center gap-1.5 text-gray-900 mb-3">
                   <MapPin className="h-3 w-3" />
-                  <span className="text-[9px] font-black uppercase tracking-widest">Pick-up / Service Location</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Job Location</span>
                 </div>
-                <p className="text-sm font-bold text-gray-700 leading-relaxed bg-gray-50/50 p-4 rounded-xl border border-gray-100/50">
-                  {job.locationDisplay || 'Location not specified'}
+                <p className="text-sm font-medium text-gray-600 leading-relaxed bg-gray-50/50 p-4 rounded-xl border border-gray-100/50">
+                  {(() => {
+                    const loc = job.location;
+                    if (!loc) return 'Location not specified';
+                    
+                    if (typeof loc === 'string') return loc;
+                    
+                    if (typeof loc === 'object') {
+                      const parts = [
+                        loc.address,
+                        loc.city,
+                        loc.country
+                      ].filter(Boolean);
+                      
+                      return parts.length > 0 ? parts.join(', ') : 'Location not specified';
+                    }
+                    
+                    return 'Location not specified';
+                  })()}
                 </p>
               </div>
             </div>
@@ -374,7 +430,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <div className="overflow-hidden">
                 <button
                   onClick={() => setShowMediaAttachments(!showMediaAttachments)}
-                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-400 hover:text-blue-500 uppercase tracking-[0.2em] transition-colors`}
+                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-900 hover:text-blue-500 uppercase tracking-[0.2em] transition-colors`}
                 >
                   <div className="flex items-center gap-2">
                     <Eye className="h-3 w-3" />
@@ -389,7 +445,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                       job.media.map((url, index) => (
                         <div key={index} className="aspect-video bg-gray-100 rounded-lg overflow-hidden border border-gray-100">
                           <ClickableImage
-                            src={url}
+                            src={getImageKitMediaUrl(url)}
                             alt={`Job media ${index + 1}`}
                             className="w-full h-full object-cover"
                             imageType="credential"
@@ -412,7 +468,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <div className="overflow-hidden">
                 <button
                   onClick={() => setShowApplicants(!showApplicants)}
-                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-400 hover:text-emerald-500 uppercase tracking-[0.2em] transition-colors`}
+                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-900 hover:text-emerald-500 uppercase tracking-[0.2em] transition-colors`}
                 >
                   <div className="flex items-center gap-2">
                     <Users className="h-3 w-3" />

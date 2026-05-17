@@ -19,7 +19,6 @@ export const useTransactions = (params: UseTransactionsParams) => {
   return useQuery({
     queryKey: [TRANSACTIONS_QUERY_KEY, params],
     queryFn: () => transactionsService.getTransactions(params),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -52,7 +51,6 @@ export const useTransactionCounts = (type?: string) => {
         cancelledAmount: cancelledData.stats?.totalAmount || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };

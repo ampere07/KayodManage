@@ -12,10 +12,8 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardComparison, useDashboardRevenueChart, useDashboardPopularJobs } from '../hooks/useDashboard';
 import { useTransactionCounts } from '../hooks/useTransactions';
-import { useJobCounts } from '../hooks/useJobs';
+import { useJobCounts, useJobCategories } from '../hooks/useJobs';
 import { getProfessionIconByName } from '../constants/categoryIcons';
-import { settingsService } from '../services';
-import { JobCategory } from '../types/configuration.types';
 import { alertsService } from '../services';
 
 function Header() {
@@ -561,19 +559,13 @@ function PopularJobsChart() {
   const [period, setPeriod] = useState<'overall' | 'week' | 'month' | '6months' | 'year'>('overall');
   const [viewType, setViewType] = useState<'pie' | 'bar'>('pie');
   const { data: rawChartData = [], isLoading: loading } = useDashboardPopularJobs(period);
-  const [categories, setCategories] = useState<JobCategory[]>([]);
+  const { categories } = useJobCategories();
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    settingsService.getJobCategories().then(res => {
-      setCategories(res.categories || []);
-    }).catch(console.error);
   }, []);
 
   const chartData = useMemo(() => {

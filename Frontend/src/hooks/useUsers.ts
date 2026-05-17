@@ -19,7 +19,6 @@ export const useUsers = (params: UseUsersParams) => {
   return useQuery({
     queryKey: [USERS_QUERY_KEY, params],
     queryFn: () => usersService.getUsers(params),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -52,7 +51,6 @@ export const useUserCounts = (params?: any) => {
         unverified: unverifiedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -73,7 +71,6 @@ export const useStatusCounts = (baseParams: any) => {
         unverified: unverifiedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -113,7 +110,6 @@ export const useFlaggedUserCounts = () => {
         banned: flaggedBannedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000
   });
 };
 
@@ -133,7 +129,6 @@ export const useDeletedUserCounts = () => {
         providers: providersData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000
   });
 };
 

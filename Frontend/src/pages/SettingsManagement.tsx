@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   UserPlus, 
   ShieldAlert, 
@@ -18,6 +18,7 @@ import {
   UserCog
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsService } from '../services';
 import CreateAdminModal from '../components/Settings/CreateAdminModal';
 import EditAdminModal from '../components/Settings/EditAdminModal';
@@ -51,31 +52,23 @@ interface Admin {
 
 const SettingsManagement: React.FC = () => {
   const { user } = useAuth();
-  const [admins, setAdmins] = useState<Admin[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { data: admins = [], isLoading: loading, error: queryError } = useQuery({
+    queryKey: ['admins'],
+    queryFn: async () => {
+      const response = await settingsService.getAllAdmins();
+      return response.admins || [];
+    },
+  });
+  const error = queryError ? (queryError as any)?.message || 'Failed to fetch admins' : null;
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
   const [filter, setFilter] = useState<'all' | 'superadmin' | 'admin' | 'finance' | 'support'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchAdmins();
-  }, []);
-
-  const fetchAdmins = async () => {
-    try {
-      setLoading(true);
-      const response = await settingsService.getAllAdmins();
-      setAdmins(response.admins || []);
-      setError(null);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to fetch admins');
-      console.error('Error fetching admins:', err);
-    } finally {
-      setLoading(false);
-    }
+  const fetchAdmins = () => {
+    queryClient.invalidateQueries({ queryKey: ['admins'] });
   };
 
   const getAccessLevel = (role: string): { label: string; color: string } => {
@@ -448,28 +441,38 @@ const SettingsManagement: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-10 border-b-2 border-gray-200">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-widest">Identity</th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-widest">Authority</th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-widest">Status</th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-widest">Permissions</th>
-                      <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-widest">Last Activity</th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-widest w-10"></th>
+              <div className="hidden md:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
+                    <tr className="border-b border-gray-200">
+                      <th className="w-[30%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Identity
+                      </th>
+                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Authority
+                      </th>
+                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Status
+                      </th>
+                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Permissions
+                      </th>
+                      <th className="w-[20%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Last Activity
+                      </th>
+                      <th className="w-[5%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200"></th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white">
+                  <tbody className="bg-white border-b border-gray-300">
                     {filteredAdmins.map((admin) => (
                       <tr
                         key={admin._id}
                         onClick={() => handleEdit(admin)}
-                        className="hover:bg-gray-50/80 transition-all cursor-pointer group border-b border-gray-100"
+                        className="group h-20 transition-all duration-150 cursor-pointer"
                       >
-                        <td className="px-6 py-2.5 whitespace-nowrap">
+                        <td className="w-[30%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex items-center gap-3">
-                            <div className="relative">
+                            <div className="relative flex-shrink-0">
                               {admin.profileImage ? (
                                 <img
                                   src={admin.profileImage}
@@ -486,7 +489,7 @@ const SettingsManagement: React.FC = () => {
                               <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${admin.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
                             </div>
                             <div className="min-w-0">
-                              <div className="text-sm font-black text-gray-900 truncate leading-tight">{admin.fullName}</div>
+                              <div className="text-sm font-black text-gray-600 truncate leading-tight">{admin.fullName}</div>
                               <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
                                 <span>{admin.email}</span>
                                 <span className="text-gray-300">•</span>
@@ -495,29 +498,29 @@ const SettingsManagement: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle text-center">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm ${getAccessLevel(admin.role).color}`}>
                             {getAccessLevel(admin.role).label}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle text-center">
                           <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all shadow-sm ${getAccountStatus(admin.accountStatus).color}`}>
                             {getAccountStatus(admin.accountStatus).icon}
                             {getAccountStatus(admin.accountStatus).label}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle text-center">
                           <div className="flex items-center justify-center">
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm ${getPermissionTemplate(admin.permissions).color}`}>
                               {getPermissionTemplate(admin.permissions).name}
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-xs font-black text-gray-700">{formatLastLogin(admin.lastLogin)}</div>
+                        <td className="w-[20%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                          <div className="text-xs font-black text-gray-600">{formatLastLogin(admin.lastLogin)}</div>
                           <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5 italic">Session Activity</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className="w-[5%] px-6 py-2 border-b border-gray-300 h-20 align-middle text-center">
                           <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                              <div className="p-1.5 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
                                 <Edit2 className="h-4 w-4" />
@@ -565,7 +568,7 @@ const SettingsManagement: React.FC = () => {
                           <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-3 border-white shadow-sm ${admin.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-black text-gray-900 leading-tight mb-0.5">{admin.fullName}</h3>
+                          <h3 className="text-sm font-black text-gray-600 leading-tight mb-0.5">{admin.fullName}</h3>
                           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate mb-2">{admin.email}</p>
                           <div className="flex flex-wrap gap-2">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shadow-sm ${getAccountStatus(admin.accountStatus).color}`}>
@@ -581,7 +584,7 @@ const SettingsManagement: React.FC = () => {
                       <div className="pt-3 border-t border-dashed border-gray-100 flex items-center justify-between">
                          <div className="flex flex-col">
                             <span className="text-[8px] text-gray-400 font-black uppercase tracking-widest">Last Online</span>
-                            <span className="text-xs font-bold text-gray-900">{formatLastLogin(admin.lastLogin)}</span>
+                            <span className="text-xs font-bold text-gray-600">{formatLastLogin(admin.lastLogin)}</span>
                          </div>
                          <div className="flex flex-col items-end">
                             <span className="text-[8px] text-gray-400 font-black uppercase tracking-widest">Unique ID</span>
