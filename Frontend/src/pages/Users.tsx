@@ -636,26 +636,26 @@ const Users: React.FC = () => {
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden lg:block bg-white flex-1 relative">
-                <table className="min-w-full table-fixed border-separate border-spacing-0">
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">
                       <th className="w-[28%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         User Profile
                       </th>
-                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[12%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Account Type
                       </th>
-                      <th className="w-[18%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[25%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Profession
                       </th>
-                      <th className="w-[14%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[14%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Wallet Balance
                       </th>
-                      <th className="w-[14%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[15%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Joined Date
                       </th>
                     </tr>
@@ -665,9 +665,9 @@ const Users: React.FC = () => {
                       <tr
                         key={user._id}
                         onClick={() => openDetailsModal(user)}
-                        className="group h-[105px] transition-all duration-150 cursor-pointer"
+                        className="group h-20 transition-all duration-150 cursor-pointer"
                       >
-                        <td className="px-6 py-2.5 whitespace-nowrap border-b border-gray-300">
+                        <td className="w-[28%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex items-center gap-3">
                             <div className="relative flex-shrink-0">
                               {user.profileImage ? (
@@ -691,11 +691,11 @@ const Users: React.FC = () => {
                               <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
                                 {user.name}
                               </p>
-                              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{user.email || user.phone || 'No contact info'}</p>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{user.phoneNumber || user.phone || user.email || 'No contact info'}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-2.5 border-b border-gray-300">
+                        <td className="w-[12%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex justify-center">
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${user.userType === 'provider'
                               ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
@@ -706,8 +706,8 @@ const Users: React.FC = () => {
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-2.5 border-b border-gray-300">
-                          <div className="flex flex-wrap justify-center gap-x-12 gap-y-6 mx-auto py-0.5">
+                        <td className="w-[25%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                          <div className="flex flex-wrap justify-center gap-x-8 gap-y-4 mx-auto py-0.5">
                             {user.userType === 'provider' && (
                               (() => {
                                 const professions = getProviderProfessions(user);
@@ -716,24 +716,28 @@ const Users: React.FC = () => {
 
                                 return professions.map((prof, idx) => {
                                   const iconData = resolveIconForProfession(prof, categories);
+                                  // Add cache-busting for ImageKit icons
+                                  const iconPath = iconData.imagePath.startsWith('https://ik.imagekit.io')
+                                    ? `${iconData.imagePath}?t=${Date.now()}`
+                                    : iconData.imagePath;
                                   const label = prof.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().toUpperCase();
 
                                   return (
-                                    <div 
-                                      key={idx} 
+                                    <div
+                                      key={idx}
                                       className="flex flex-col items-center gap-1.5 group/prof"
                                     >
-                                      <div className="w-14 h-14 rounded-xl bg-indigo-50/40 flex items-center justify-center p-2 border border-indigo-100/60 shadow-sm group-hover/prof:bg-indigo-50/90 group-hover/prof:scale-105 transition-all duration-300">
-                                        <img 
-                                          src={iconData.imagePath} 
-                                          className="w-full h-full object-contain filter contrast-[1.1]" 
+                                      <div className="w-12 h-12 rounded-xl bg-indigo-50/40 flex items-center justify-center p-2 border border-indigo-100/60 shadow-sm group-hover/prof:bg-indigo-50/90 group-hover/prof:scale-105 transition-all duration-300">
+                                        <img
+                                          src={iconPath}
+                                          className="w-full h-full object-contain filter contrast-[1.1]"
                                           alt={label}
                                           onError={(e) => {
                                             (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/3203/3203952.png'; // Fallback icon
                                           }}
                                         />
                                       </div>
-                                      <span className="text-[9.5px] font-bold text-gray-900 uppercase tracking-tight text-center leading-tight max-w-[100px]">
+                                      <span className="text-[9px] font-bold text-gray-900 uppercase tracking-tight text-center leading-tight max-w-[80px]">
                                         {label}
                                       </span>
                                     </div>
@@ -743,7 +747,7 @@ const Users: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-2.5 border-b border-gray-300">
+                        <td className="w-[10%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex flex-col items-center gap-1.5">
                             {getStatusLabel(user) ? (
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
@@ -757,12 +761,12 @@ const Users: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-2.5 text-center border-b border-gray-300">
+                        <td className="w-[10%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
                           <p className="text-sm font-black text-gray-900">
                             {formatCurrency(user.wallet?.balance || 0)}
                           </p>
                         </td>
-                        <td className="px-6 py-2.5 border-b border-gray-300">
+                        <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex flex-col">
                             <p className="text-xs font-bold text-gray-900">
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}

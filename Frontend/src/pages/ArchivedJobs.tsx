@@ -24,8 +24,6 @@ import StatsCard from '../components/Dashboard/StatsCard';
 // Tpye imports
 import type { Job, JobsPagination, JobCategory } from '../types';
 
-// Services
-import { settingsService } from '../services';
 
 // Utility imports
 import {
@@ -36,7 +34,7 @@ import {
 } from '../utils';
 
 // Hooks
-import { useArchivedJobs, useArchivedJobCounts } from '../hooks/useJobs';
+import { useArchivedJobs, useArchivedJobCounts, useJobCategories } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
 
 /**
@@ -58,8 +56,7 @@ const ArchivedJobs: React.FC = () => {
     pages: 0
   });
 
-  const [categories, setCategories] = useState<JobCategory[]>([]);
-  const [professionsList, setProfessionsList] = useState<string[]>([]);
+  const { categories, professionsList } = useJobCategories();
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
   const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
@@ -136,20 +133,6 @@ const ArchivedJobs: React.FC = () => {
     const resolved = getProfessionIconByName(iconStr, categoryIconStr);
     return resolved;
   }, [categories]);
-  useEffect(() => {
-    settingsService.getJobCategories().then(res => {
-      const fetchedCategories: JobCategory[] = res.categories || [];
-      setCategories(fetchedCategories);
-      setIconTimestamp(Date.now());
-      const allProfessions = fetchedCategories
-        .flatMap((cat: JobCategory) => cat.professions || [])
-        .map((prof: any) => prof.name)
-        .sort();
-      setProfessionsList(allProfessions);
-    }).catch(err => {
-      console.error('Failed to fetch dynamic categories:', err);
-    });
-  }, []);
 
   const queryParams = useMemo(() => ({
     page: pagination.page,

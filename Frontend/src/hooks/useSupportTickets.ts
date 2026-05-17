@@ -33,7 +33,6 @@ export const useSupportTickets = () => {
       const data = await supportService.getChatSupports();
       return data.chatSupports || [];
     },
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 

@@ -4,6 +4,7 @@ import { settingsService } from '../../services';
 import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getProfessionIconFromName, generateProfessionIconFilename, getAllIcons } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
+import { useQueryClient } from '@tanstack/react-query';
 import TransferProfessionModal from './TransferProfessionModal';
 
 // Helper function to generate consistent icon filename from profession name
@@ -68,6 +69,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const [transferProfession, setTransferProfession] = useState<Profession | null>(null);
   const [isDraggingIcon, setIsDraggingIcon] = useState(false);
   const { socket } = useSocket();
+  const queryClient = useQueryClient();
 
   // Filter professions based on search query
   const filteredProfessions = professions.filter(profession =>
@@ -97,22 +99,22 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     if (!socket) return;
 
     const handleConfigurationUpdate = (data: any) => {
-      if (data.type === 'profession' && data.action === 'icon-updated') {
+      if (data.type === 'profession' && data.action === 'icon-updated' && data.professionId) {
         // Update the timestamp to force icon refresh
         setIconTimestamp(Date.now());
-        
+
         // Update the profession icon timestamps for cache busting
         setProfessionIconTimestamps(prev => ({
           ...prev,
           [data.professionId]: Date.now()
         }));
-        
+
         // If this profession is currently being edited, update its icon
         if (editingProfession && editingProfession._id === data.professionId) {
           setEditingProfessionIcon(data.iconName);
           setEditingProfession(prev => prev ? { ...prev, icon: data.iconName } : null);
         }
-        
+
         // Update the profession in the list
         setProfessions(prev =>
           prev.map(prof =>
@@ -324,7 +326,8 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       const response = await settingsService.uploadProfessionIcon(
         file,
         profession.name,
-        profession.icon
+        profession.icon,
+        professionId
       );
       
       if (editingProfession && editingProfession._id === professionId) {
@@ -346,7 +349,10 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       }));
       
       setIconTimestamp(Date.now());
-      
+
+      // Invalidate job-categories cache to refresh parent component
+      queryClient.invalidateQueries({ queryKey: ['job-categories'] });
+
       toast.success('Profession icon uploaded successfully');
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to upload profession icon');
@@ -412,7 +418,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
     // If profession has no icon field, auto-generate from profession name
     if (!iconName) {
-      const iconData = getProfessionIconFromName(profession.name);
+      const iconData = getProfessionIconFromName(profession.name, category.icon);
       return {
         ...iconData,
         color: '#0F766E',

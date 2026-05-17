@@ -3,6 +3,7 @@ const Job = require('../models/Job');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+const imageKitService = require('../services/imageKitService');
 
 const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
 const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
@@ -334,11 +335,15 @@ exports.updateProfession = async (req, res) => {
         update.professionName = name.trim();
       }
       if (iconChanged) {
-        update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
+        if (icon.startsWith('ik:')) {
+          update.icon = icon;
+        } else {
+          update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
+        }
       }
 
-      // Handle icon files on disk
-      if (iconChanged) {
+      // Handle icon files on disk (only for legacy custom icons)
+      if (iconChanged && !icon.startsWith('ik:') && !oldIcon?.startsWith('ik:')) {
         // Derive old filename from DB icon field, or fall back to generating from old profession name
         const oldFileName = oldIcon
           ? (oldIcon.startsWith('custom:') ? oldIcon.replace('custom:', '') : oldIcon)
@@ -398,6 +403,21 @@ exports.updateProfession = async (req, res) => {
       );
     }
 
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'profession',
+          action: 'updated',
+          professionId,
+          profession,
+        });
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
+
     res.status(200).json({
       success: true,
       profession,
@@ -429,6 +449,20 @@ exports.deleteProfession = async (req, res) => {
 
     category.professions.pull(professionId);
     await category.save();
+
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'profession',
+          action: 'deleted',
+          professionId,
+        });
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -672,6 +706,8 @@ exports.uploadCategoryIcon = async (req, res) => {
 
 exports.uploadProfessionIcon = async (req, res) => {
   try {
+    console.log(`[Configurations] Starting profession icon upload for ${req.body.professionName}`);
+    
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -680,7 +716,7 @@ exports.uploadProfessionIcon = async (req, res) => {
     }
 
     const { buffer, originalname } = req.file;
-    const { professionName, oldIcon } = req.body;
+    const { professionName, oldIcon, professionId } = req.body;
 
     if (!professionName) {
       return res.status(400).json({
@@ -689,150 +725,84 @@ exports.uploadProfessionIcon = async (req, res) => {
       });
     }
 
-    const fileExtension = path.extname(originalname);
+    const fileExtension = path.extname(originalname).toLowerCase();
     const sanitizedName = professionName.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
-    let fileName = `${sanitizedName}${fileExtension}`;
+    // Ensure we use .webp extension for consistency
+    const fileName = `${sanitizedName}.webp`;
 
-    const kayodPath = path.join(
-      __dirname,
-      '../../../..',
-      'kayod/client/src/assets/icons/professions',
-      fileName
-    );
-
-    const kayodManagePath = path.join(
-      __dirname,
-      '../../..',
-      'Frontend/public/assets/icons/professions',
-      fileName
-    );
-
-    const kayodDir = path.dirname(kayodPath);
-    const kayodManageDir = path.dirname(kayodManagePath);
-
-    if (!fs.existsSync(kayodDir)) {
-      fs.mkdirSync(kayodDir, { recursive: true });
-    }
-    if (!fs.existsSync(kayodManageDir)) {
-      fs.mkdirSync(kayodManageDir, { recursive: true });
-    }
-
-    if (oldIcon && oldIcon.startsWith('custom:')) {
-      const oldFileName = oldIcon.replace('custom:', '');
-      const oldKayodPath = path.join(kayodDir, oldFileName);
-      const oldKayodManagePath = path.join(kayodManageDir, oldFileName);
-
-      try {
-        if (fs.existsSync(oldKayodPath)) {
-          fs.unlinkSync(oldKayodPath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
-      }
-
-      try {
-        if (fs.existsSync(oldKayodManagePath)) {
-          fs.unlinkSync(oldKayodManagePath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
-      }
-    }
-
-    // Write files with fallback to timestamped filename
-    let writeSuccess = false;
-    let finalFileName = fileName;
-
-    try {
-      // Try to write with original filename first
-      fs.writeFileSync(kayodPath, buffer);
-      fs.writeFileSync(kayodManagePath, buffer);
-      writeSuccess = true;
-    } catch (err) {
-      console.warn('Failed to write with original filename, trying with timestamp:', err.message);
-      
-      // If write fails, try with timestamp
-      const timestamp = Date.now();
-      finalFileName = `${sanitizedName}-${timestamp}${fileExtension}`;
-      
-      const kayodPathTimestamped = path.join(
-        __dirname,
-        '../../../..',
-        'kayod/client/src/assets/icons/professions',
-        finalFileName
-      );
-      
-      const kayodManagePathTimestamped = path.join(
-        __dirname,
-        '../../..',
-        'Frontend/public/assets/icons/professions',
-        finalFileName
-      );
+    // Delete old icon from ImageKit first
+    if (oldIcon && oldIcon.startsWith('ik:')) {
+      const oldPath = oldIcon.replace('ik:', '');
+      const fileName = oldPath.split('/').pop(); // Extract filename from path
       
       try {
-        fs.writeFileSync(kayodPathTimestamped, buffer);
-        fs.writeFileSync(kayodManagePathTimestamped, buffer);
-        writeSuccess = true;
-        fileName = finalFileName;
-      } catch (timestampErr) {
-        console.error('Failed to write even with timestamp:', timestampErr);
-        throw new Error(`Failed to save icon: ${timestampErr.message}`);
-      }
-    }
+        console.log(`[Configurations] Deleting old ImageKit icon: ${fileName}`);
+        // Search for the specific file by name
+        const searchResult = await imageKitService.listFiles({
+          name: fileName,
+          path: 'professionIconsUpload'
+        });
 
-    // Automatically update kayod/client/src/utils/professionIcons.js so Expo can statically bundle the new icon
-    try {
-      const kayodProfessionIconsFile = path.join(__dirname, '../../../..', 'kayod/client/src/utils/professionIcons.js');
-      if (fs.existsSync(kayodProfessionIconsFile)) {
-        let content = fs.readFileSync(kayodProfessionIconsFile, 'utf8');
-        
-        // Add if not already present
-        if (!content.includes(`"${fileName}"`)) {
-          // Create camelCase variable name from filename
-          const varName = fileName
-            .replace('.webp', '')
-            .replace('.png', '')
-            .replace('.jpg', '')
-            .replace(/[-_\\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '')
-            .replace(/^[^a-zA-Z_$]/, '_'); // Ensure valid identifier
-
-          // Add import statement just before the Default icon import
-          const importStatement = `import ${varName} from "../assets/icons/professions/${fileName}";\n`;
-          const defaultIconIndex = content.indexOf('// Default icon for professions');
-          if (defaultIconIndex !== -1) {
-            content = content.slice(0, defaultIconIndex) + importStatement + content.slice(defaultIconIndex);
+        if (searchResult && searchResult.length > 0) {
+          // Find exact match by filename
+          const exactFile = searchResult.find(file => file.name === fileName);
+          
+          if (exactFile) {
+            const deleted = await imageKitService.deleteFile(exactFile.fileId);
+            if (deleted) {
+              console.log(`[Configurations] Deleted old ImageKit icon: ${fileName} (fileId: ${exactFile.fileId})`);
+            }
           } else {
-            content = importStatement + content;
+            console.log(`[Configurations] No exact match found for: ${fileName}`);
           }
-
-          // Add to PROFESSION_ICONS object
-          const profIconsIndex = content.indexOf('export const PROFESSION_ICONS = {');
-          if (profIconsIndex !== -1) {
-            const insertIdx = profIconsIndex + 'export const PROFESSION_ICONS = {'.length;
-            content = content.slice(0, insertIdx) + `\n  "${fileName}": ${varName},` + content.slice(insertIdx);
-          }
-
-          // Add to PROFESSION_NAME_TO_ICON object
-          const nameToIconIndex = content.indexOf('export const PROFESSION_NAME_TO_ICON = {');
-          if (nameToIconIndex !== -1) {
-            const insertIdx = nameToIconIndex + 'export const PROFESSION_NAME_TO_ICON = {'.length;
-            const safeProfName = professionName.toLowerCase().trim();
-            content = content.slice(0, insertIdx) + `\n  "${safeProfName}": ${varName},` + content.slice(insertIdx);
-          }
-
-          fs.writeFileSync(kayodProfessionIconsFile, content);
-          console.log(`[Configurations] Automatically updated kayod professionIcons.js with ${fileName}`);
+        } else {
+          console.log(`[Configurations] No old ImageKit icon found: ${fileName}`);
         }
+      } catch (deleteErr) {
+        console.warn(`[Configurations] Failed to delete old ImageKit icon ${fileName}: ${deleteErr.message}`);
       }
-    } catch (updateErr) {
-      console.warn('[Configurations] Failed to automatically update kayod professionIcons.js:', updateErr.message);
     }
 
+    // Upload to ImageKit
+    console.log(`[Configurations] Uploading profession icon to ImageKit: ${fileName}`);
+    const ikResult = await imageKitService.uploadFile(
+      buffer,
+      fileName,
+      'professionIconsUpload',
+      ['profession-icon', sanitizedName]
+    );
+
+    console.log(`[Configurations] ImageKit upload successful: ${ikResult.filePath}`);
+    const ikPath = `ik:${ikResult.filePath}`;
+
+    // Update the profession in the database with the new icon
+    if (professionId) {
+      const category = await JobCategory.findOne({
+        'professions._id': professionId,
+      });
+
+      if (!category) {
+        throw new Error('Profession not found');
+      }
+
+      const profession = category.professions.id(professionId);
+      if (!profession) {
+        throw new Error('Profession not found');
+      }
+
+      profession.icon = ikPath;
+      profession.updatedAt = new Date();
+      await category.save();
+      console.log(`[Configurations] Updated profession icon in database: ${professionName} -> ${ikPath}`);
+    }
+
+    console.log(`[Configurations] Profession icon upload complete: ${professionName}`);
     res.status(200).json({
       success: true,
-      iconName: `custom:${fileName}`,
-      fullPath: `/assets/icons/professions/${fileName}`,
-      message: 'Profession icon uploaded successfully',
+      iconName: ikPath,
+      fullPath: ikResult.url,
+      message: 'Profession icon uploaded to ImageKit successfully',
+      professionId, // Return professionId for frontend reference
     });
 
     // Emit socket event for real-time update
@@ -842,12 +812,11 @@ exports.uploadProfessionIcon = async (req, res) => {
         adminNamespace.emit('configuration:updated', {
           type: 'profession',
           action: 'icon-updated',
-          professionId: profession._id,
+          professionId,
           professionName,
-          iconName: `custom:${fileName}`,
+          iconName: ikPath,
           timestamp: new Date()
         });
-        console.log('Socket emitted: configuration:updated - profession icon updated');
       } catch (socketErr) {
         console.error('Error emitting socket event:', socketErr);
       }

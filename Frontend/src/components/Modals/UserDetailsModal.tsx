@@ -364,12 +364,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               <h3 className="text-sm font-bold text-gray-900 mb-4">Contact Information</h3>
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs text-gray-500 mb-1">Email Address</p>
-                  <p className="text-sm font-medium text-gray-900">{user.email}</p>
-                </div>
-                <div>
                   <p className="text-xs text-gray-500 mb-1">Contact Number</p>
-                  <p className="text-sm font-medium text-gray-900">{user.phone || 'N/A'}</p>
+                  <p className="text-sm font-medium text-gray-900">{user.phoneNumber || user.phone || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Current Location</p>

@@ -1,3 +1,5 @@
+import { iconCacheService } from '../services/iconCacheService';
+
 export interface CategoryIcon {
   name: string;
   imagePath: string;
@@ -74,7 +76,19 @@ export const CATEGORY_ICONS: Record<string, CategoryIcon> = {
   }
 };
 
+export const IMAGEKIT_URL_ENDPOINT = 'https://ik.imagekit.io/9vpn8u272';
+
 export const getIconByName = (iconName: string): CategoryIcon => {
+  if (iconName.startsWith('ik:')) {
+    const filePath = iconName.replace('ik:', '');
+    return {
+      name: iconName,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}${filePath}`,
+      color: '#0F766E',
+      label: filePath.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/-/g, ' ') || 'Icon',
+    };
+  }
+  
   if (iconName.startsWith('custom:')) {
     const fileName = iconName.replace('custom:', '');
     return {
@@ -119,40 +133,27 @@ export const getProfessionIconByName = (iconName: string, categoryIcon?: string)
   if (!iconName) {
     return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
   }
-  
-  if (iconName.startsWith('custom:')) {
-    const fileName = iconName.replace('custom:', '');
+
+  if (iconName.startsWith('ik:')) {
+    const filePath = iconName.replace('ik:', '');
+
+    // Use ImageKit URL directly for ik: prefixed icons
+    const imagePath = `${IMAGEKIT_URL_ENDPOINT}${filePath}`;
+
     return {
       name: iconName,
-      imagePath: `/assets/icons/professions/${fileName}`,
+      imagePath: imagePath,
       color: '#0F766E',
-      label: fileName.replace(/\.\w+$/, '').replace(/^prof-/, '').replace(/-\d+$/, '').replace(/-/g, ' '),
+      label: filePath.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/-/g, ' ') || 'Profession Icon',
     };
   }
 
-  // Handle plain filenames (e.g. "architectural.webp")
-  if (iconName.match(/\.(webp|png|jpg|jpeg|svg)$/i)) {
-    return {
-      name: iconName,
-      imagePath: `/assets/icons/professions/${iconName}`,
-      color: '#0F766E',
-      label: iconName.replace(/\.\w+$/, '').replace(/-/g, ' '),
-    };
-  }
-  
-  if (CATEGORY_ICONS[iconName]) {
-    return CATEGORY_ICONS[iconName];
-  }
-  
+  // For custom: prefixed icons or plain filenames, fall back to default category icon
+  // Only ImageKit icons (ik:) are supported for profession icons
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };
 
-export const getProfessionIconFromName = (professionName: string): CategoryIcon => {
-  const fileName = generateProfessionIconFilename(professionName);
-  return {
-    name: fileName,
-    imagePath: `/assets/icons/professions/${fileName}`,
-    color: '#0F766E',
-    label: professionName,
-  };
+export const getProfessionIconFromName = (professionName: string, categoryIcon?: string): CategoryIcon => {
+  // Fall back to default category icon - only ImageKit icons are supported
+  return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };

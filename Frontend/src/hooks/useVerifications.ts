@@ -11,7 +11,6 @@ export const useVerifications = () => {
       const response = await verificationsService.getAllVerifications();
       return response.data || [];
     },
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };

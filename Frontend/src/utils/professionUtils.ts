@@ -34,7 +34,21 @@ export const resolveIconForProfession = (
   const cleanName = professionName.trim().toLowerCase();
   const normalizedSearch = cleanName.replace(/[^a-z0-9]/g, '');
 
-  // 1. Prioritize Legacy/Fuzzy mapping fallback for known platform variants
+  // 1. First, try to find the profession in categories data to get the correct icon
+  if (categories && categories.length > 0) {
+    for (const c of categories) {
+      const prof = c.professions?.find(p => {
+        const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
+      });
+      if (prof && prof.icon) {
+        // Use the profession icon from categories data (has correct ImageKit path)
+        return getProfessionIconByName(prof.icon, c.icon);
+      }
+    }
+  }
+
+  // 2. Prioritize Legacy/Fuzzy mapping fallback for known platform variants
   // This ensures that well-known trades always get their dedicated icons even if dynamic config is tricky
   const legacyMap: Record<string, string> = {
     'catering': 'custom:catering.webp',

@@ -40,6 +40,7 @@ import {
 
 // Hooks
 import { useTransactions, useTransactionCounts, useTransactionMutations } from '../hooks/useTransactions';
+import { useJobCategories } from '../hooks/useJobs';
 
 /**
  * Transactions Management Page
@@ -47,6 +48,7 @@ import { useTransactions, useTransactionCounts, useTransactionMutations } from '
  */
 const Transactions: React.FC = () => {
   const location = useLocation();
+  const { categories } = useJobCategories();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(() => {
@@ -488,7 +490,7 @@ const Transactions: React.FC = () => {
                           <td className="px-6 py-4 border-b border-gray-300">
                             <div className="flex items-start gap-4">
                               <div className="w-11 h-11 rounded-xl bg-gray-50 group-hover:bg-white transition-colors border border-gray-100 items-center justify-center flex flex-shrink-0">
-                                {getTransactionIcon(transaction)}
+                                {getTransactionIcon(transaction, categories)}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 mb-1">
@@ -605,50 +607,44 @@ const Transactions: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="p-4">
-                            <div className="flex items-center gap-4 mb-4">
-                              <div className="relative flex-shrink-0">
-                                <div className="h-12 w-12 rounded-xl bg-gray-50 flex items-center justify-center border border-gray-100">
-                                  {getTransactionIcon(transaction)}
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <h3 className="text-base font-black text-gray-900 leading-tight truncate">{transaction.description}</h3>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <p className="text-xs text-gray-500 truncate">ID: {transaction._id.slice(-8).toUpperCase()}</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getTypeColor(transaction.type, transaction.transactionType)}`}>
-                                      {transaction.type?.replace('_', ' ')}
-                                    </span>
-                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-                                      {transaction.paymentMethod}
-                                    </span>
-                                  </div>
+                          <div className="flex items-center gap-4 p-4">
+                            <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
+                              {getTransactionIcon(transaction, categories)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-base font-black text-gray-900 leading-tight truncate">{transaction.description}</h3>
+                              <div className="flex flex-col gap-1 mt-2">
+                                <p className="text-xs text-gray-500 truncate">ID: {transaction._id.slice(-8).toUpperCase()}</p>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getTypeColor(transaction.type, transaction.transactionType)}`}>
+                                    {transaction.type?.replace('_', ' ')}
+                                  </span>
+                                  <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
+                                    {transaction.paymentMethod}
+                                  </span>
                                 </div>
                               </div>
                             </div>
+                          </div>
 
-                            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100">
-                              <div className="flex flex-col">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Amount</span>
-                                <span className="text-sm font-black text-gray-900">{formatCurrency(transaction.amount)}</span>
-                                {user && (
-                                  <div className="flex items-center gap-1.5 mt-1.5">
-                                    <div className="h-5 w-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
-                                      <span className="text-[7px] font-black text-blue-600">{getInitials(user.name || 'U')}</span>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-gray-500 truncate">{user.name}</span>
+                          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100 px-4">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Amount</span>
+                              <span className="text-sm font-black text-gray-900">{formatCurrency(transaction.amount)}</span>
+                              {user && (
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <div className="h-5 w-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
+                                    <span className="text-[7px] font-black text-blue-600">{getInitials(user.name || 'U')}</span>
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end text-right">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Action</span>
-                                <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                                  Details <ChevronRight className="h-3 w-3" />
-                                </button>
-                              </div>
+                                  <span className="text-[10px] font-bold text-gray-500 truncate">{user.name}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end text-right">
+                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Action</span>
+                              <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                Details <ChevronRight className="h-3 w-3" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -675,7 +671,7 @@ const Transactions: React.FC = () => {
                             <td className="px-3 py-3 overflow-hidden">
                               <div className="flex items-center gap-2 min-w-0">
                                 <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100 flex-shrink-0">
-                                  {React.cloneElement(getTransactionIcon(transaction) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
+                                  {React.cloneElement(getTransactionIcon(transaction, categories) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[11px] font-black text-gray-900 truncate leading-tight">

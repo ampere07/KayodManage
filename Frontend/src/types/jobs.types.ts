@@ -38,6 +38,7 @@ export interface Job {
     lastName?: string;
     email: string;
     phone?: string;
+    phoneNumber?: string;
     location?: string;
     barangay?: string;
     city?: string;

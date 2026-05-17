@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const CredentialVerification = require('../models/CredentialVerification');
 const User = require('../models/User');
 const cloudinary = require('cloudinary').v2;
+const imageKitService = require('./imageKitService');
 
 // Configure Cloudinary once (expects env vars)
 if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -25,6 +26,48 @@ const getUserFolder = (user) => {
     first = sanitizeName(parts[0]);
   }
   return last ? `${first}_${last}` : first;
+};
+
+const mapImageKitAssetsToDocuments = (resources = []) => {
+  const faceVerification = [];
+  const validId = [];
+  const credentials = [];
+
+  resources.forEach((res) => {
+    const doc = {
+      cloudinaryUrl: res.url, // Keep property name for compatibility or use generic name
+      url: res.url,
+      publicId: res.fileId,
+      path: res.filePath,
+      uploadedAt: res.createdAt
+    };
+
+    const basename = res.name || '';
+
+    if (basename.startsWith('face_')) {
+      faceVerification.push(doc);
+      return;
+    }
+
+    if (basename.startsWith('frontID_')) {
+      validId[0] = { ...doc, type: 'front' };
+      return;
+    }
+
+    if (basename.startsWith('backID_')) {
+      validId[1] = { ...doc, type: 'back' };
+      return;
+    }
+
+    // Anything else treat as credential
+    credentials.push(doc);
+  });
+
+  return {
+    faceVerification,
+    validId,
+    credentials
+  };
 };
 
 const mapCloudinaryAssetsToDocuments = (resources = []) => {
@@ -396,10 +439,39 @@ class VerificationService {
     // Use the requested attempt number if provided; otherwise fall back to the index-derived attempt
     const attemptSuffix = attemptNum || (attemptTimestamps[attemptIndex]?.attempt ?? attemptIndex + 1);
 
-    // Try Cloudinary if credentials exist
-    if (cloudinary.config()?.cloud_name) {
-      const user = await User.findById(userId).lean();
-      if (user) {
+    // Try ImageKit first
+    const user = await User.findById(userId).lean();
+    if (user) {
+      const folder = getUserFolder(user);
+      const prefix = `verificationUpload/${folder}/Attempt${attemptSuffix}`;
+
+      try {
+        console.log('[VerificationImages] Fetching from ImageKit', {
+          userId,
+          userName: user.name,
+          attempt: attemptSuffix,
+          prefix
+        });
+        
+        const resources = await imageKitService.listFiles(prefix);
+
+        if (resources && resources.length > 0) {
+          console.log('[VerificationImages] ImageKit resources found', resources.length);
+          return {
+            userId,
+            attemptNumber: attemptSuffix,
+            attemptSubmittedAt,
+            attemptTimestamps,
+            images: mapImageKitAssetsToDocuments(resources)
+          };
+        }
+        console.log('[VerificationImages] No ImageKit resources found, trying Cloudinary...');
+      } catch (err) {
+        console.error('ImageKit fetch failed, trying Cloudinary:', err.message);
+      }
+
+      // Try Cloudinary if credentials exist
+      if (cloudinary.config()?.cloud_name) {
         const folder = getUserFolder(user);
         const prefix = `verificationUpload/${folder}/Attempt${attemptSuffix}`;
 

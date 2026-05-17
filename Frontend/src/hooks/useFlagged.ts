@@ -23,7 +23,6 @@ export const useReports = (params?: {
         pagination: response.data?.pagination,
       };
     },
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData: any) => previousData,
   });
 };
@@ -35,7 +34,6 @@ export const useReportStats = () => {
       const response = await flaggedService.getReportStats();
       return response.data;
     },
-    staleTime: 2 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
   });
 };
@@ -76,7 +74,6 @@ export const useFlaggedPosts = () => {
       const response = await flaggedService.getReportedPosts();
       return response.reportedPosts || [];
     },
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -97,7 +94,6 @@ export const useFlaggedUsersStats = () => {
         providers: flaggedProvidersData.pagination?.total || 0
       };
     },
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
