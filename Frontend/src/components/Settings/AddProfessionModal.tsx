@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import SideModal from '../SideModal';
 import { settingsService } from '../../services';
+import { generateProfessionIconFilename } from '../../constants/categoryIcons';
 
 interface AddProfessionModalProps {
   isOpen: boolean;
@@ -140,7 +141,7 @@ const AddProfessionModal: React.FC<AddProfessionModalProps> = ({
               )}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              PNG or JPG, max 5MB. Icon will be saved as: {professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'profession-name'}.png
+              PNG or JPG, max 5MB. Uploaded to ImageKit as: {professionName.trim() ? generateProfessionIconFilename(professionName) : 'profession-name.webp'}
             </p>
           </div>
         </div>

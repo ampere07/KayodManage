@@ -133,8 +133,13 @@ const chatSupportSchema = new mongoose.Schema({
     },
     message: {
       type: String,
-      required: true,
+      required: false,  // image-only messages have message: '' — must not fail required check
+      default: '',
       trim: true
+    },
+    imageUrl: {
+      type: String,
+      default: null
     },
     timestamp: {
       type: Date,

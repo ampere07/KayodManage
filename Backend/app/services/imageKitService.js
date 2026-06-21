@@ -86,6 +86,26 @@ const imageKitService = {
 			return false;
 		}
 	},
+
+	/**
+	 * Rename a file in place (keeps it in the same folder, same image content)
+	 * @param {string} filePath - full current path, e.g. /professionIconsUpload/plumber.webp
+	 * @param {string} newFileName - new filename only (no path), e.g. pipe-fitter.webp
+	 * @param {boolean} purgeCache - purge the CDN cache for the old URL
+	 */
+	renameFile: async (filePath, newFileName, purgeCache = true) => {
+		try {
+			const result = await imagekit.renameFile({
+				filePath,
+				newFileName,
+				purgeCache,
+			});
+			return result;
+		} catch (error) {
+			console.error("[ImageKit Backend] renameFile failed:", error);
+			throw error;
+		}
+	},
 };
 
 module.exports = imageKitService;

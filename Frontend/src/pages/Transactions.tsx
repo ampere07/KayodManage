@@ -13,7 +13,8 @@ import {
   Wallet as WalletIcon,
   LayoutGrid,
   Table2,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -208,9 +209,9 @@ const Transactions: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-gray-50 -mx-2 sm:-mx-4 md:-mx-8 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 overflow-hidden">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
+      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200 z-30 shadow-sm relative">
         {/* Page Title & Refresh - Desktop only (mobile layout already shows title) */}
         <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
@@ -328,10 +329,10 @@ const Transactions: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
           {/* Row 1 on Mobile / Search on Desktop */}
-          <div className="flex items-center gap-2 md:contents">
-            <div className="relative flex-1 md:order-1">
+          <div className="flex items-center gap-2 lg:contents">
+            <div className="relative flex-1 lg:order-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
                 type="text"
@@ -343,7 +344,7 @@ const Transactions: React.FC = () => {
             </div>
 
             {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5">
+            <div className="flex lg:hidden items-center gap-1.5">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
@@ -358,9 +359,9 @@ const Transactions: React.FC = () => {
           </div>
 
           {/* Row 2 on Mobile / Desktop Right-side group */}
-          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
-            <div className="flex-1 md:flex-initial flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 md:pb-0">
-              <div className="shrink-0">
+          <div className="flex items-center gap-2 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
+            <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1">
                 <DateRangePicker
                   startDate={dateFrom}
                   endDate={dateTo}
@@ -374,7 +375,7 @@ const Transactions: React.FC = () => {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 md:min-w-[120px]"
+                  className="bg-white px-2.5 py-2 border border-gray-200 rounded-xl shadow-sm text-[10px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shrink-0"
                 >
                   <option value="all">ALL STATUS</option>
                   <option value="pending">PENDING</option>
@@ -387,7 +388,7 @@ const Transactions: React.FC = () => {
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 md:min-w-[120px]"
+                className="bg-white px-2.5 py-2 border border-gray-200 rounded-xl shadow-sm text-[10px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shrink-0"
               >
                 <option value="all">ALL METHODS</option>
                 <option value="wallet">WALLET</option>
@@ -397,7 +398,7 @@ const Transactions: React.FC = () => {
             </div>
 
             {/* Pagination Limit for Desktop */}
-            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+            <div className="hidden lg:flex items-center gap-2 lg:order-3 shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
@@ -411,20 +412,23 @@ const Transactions: React.FC = () => {
             </div>
 
             {/* View Type Toggle - Mobile only */}
-            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
-               <button
-                 onClick={() => setMobileViewType('card')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <LayoutGrid className="h-3.5 w-3.5" />
-               </button>
-               <button
-                 onClick={() => setMobileViewType('table')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <Table2 className="h-3.5 w-3.5" />
-               </button>
+            <div className="lg:hidden flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm shrink-0">
+              <button
+                onClick={() => setMobileViewType('card')}
+                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Card View"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setMobileViewType('table')}
+                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Table View"
+              >
+                <Table2 className="h-4 w-4" />
+              </button>
             </div>
+
           </div>
         </div>
       </div>
@@ -450,7 +454,7 @@ const Transactions: React.FC = () => {
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden md:block bg-white shadow-sm border-b border-gray-200">
+              <div className="hidden lg:block bg-white shadow-sm border-b border-gray-200">
                 <table className="min-w-full w-full table-fixed">
                   <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                     <tr>
@@ -581,7 +585,7 @@ const Transactions: React.FC = () => {
               </div>
 
               {/* Mobile View */}
-              <div className="md:hidden flex-1 overflow-y-auto">
+              <div className="lg:hidden flex-1 overflow-y-auto">
                 {mobileViewType === 'card' ? (
                   <div className="px-4 py-4 space-y-4">
                     {transactions.map((transaction) => {
@@ -670,8 +674,8 @@ const Transactions: React.FC = () => {
                           >
                             <td className="px-3 py-3 overflow-hidden">
                               <div className="flex items-center gap-2 min-w-0">
-                                <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100 flex-shrink-0">
-                                  {React.cloneElement(getTransactionIcon(transaction, categories) as React.ReactElement, { className: 'h-3.5 w-3.5' })}
+                                <div className="h-8 w-8 rounded-lg bg-gray-50 relative overflow-hidden flex items-center justify-center border border-gray-100 flex-shrink-0">
+                                  {getTransactionIcon(transaction, categories)}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[11px] font-black text-gray-900 truncate leading-tight">

@@ -26,11 +26,31 @@ router.get('/chat/:chatSupportId', getChatSupport);
 router.post('/chat/:chatSupportId/messages', addChatSupportMessage);
 
 // Notification endpoints (no auth required for inter-service communication)
-router.post('/notify-new-ticket', (req, res) => {
+router.post('/notify-new-ticket', async (req, res) => {
   console.log('New support ticket notification received:', req.body);
-  const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_ticket');
-  res.json({ success: true });
+  const { emitSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
+  const ChatSupport = require('../models/ChatSupport');
+
+  try {
+    // If a ChatSupport was created alongside the ticket, emit it to the admin panel
+    const { chatSupportId } = req.body;
+    if (chatSupportId) {
+      const chatSupport = await ChatSupport.findById(chatSupportId).lean();
+      if (chatSupport) {
+        // Emit support:new_chat — this triggers fetchTickets() in useSupportSocket
+        emitNewChatSupport(chatSupport);
+        console.log('✅ Emitted support:new_chat for chatSupportId:', chatSupportId);
+      }
+    }
+
+    // Also emit the legacy ticket_updated event for backwards compat
+    emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_ticket');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error handling notify-new-ticket:', err);
+    // Still return 200 so the mobile side doesn't retry indefinitely
+    res.json({ success: false, message: err.message });
+  }
 });
 
 // Upsert metadata/snapshot and emit new message

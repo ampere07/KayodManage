@@ -97,7 +97,7 @@ export const settingsService = {
     return response.data;
   },
 
-  uploadProfessionIcon: async (file: File, professionName: string, oldIcon?: string, professionId?: string) => {
+  uploadProfessionIcon: async (file: File, professionName: string, oldIcon?: string, professionId?: string, signal?: AbortSignal) => {
     const formData = new FormData();
     formData.append('icon', file);
     formData.append('professionName', professionName);
@@ -111,6 +111,7 @@ export const settingsService = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      signal,
     });
     return response.data;
   },
