@@ -19,18 +19,48 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectingStart, setSelectingStart] = useState(true);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      const insideWrapper = wrapperRef.current?.contains(target);
+      const insideDropdown = dropdownRef.current?.contains(target);
+      if (!insideWrapper && !insideDropdown) {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
   }, []);
+
+  // Calculate viewport-safe position for the dropdown
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const btnRect = buttonRef.current.getBoundingClientRect();
+      const dropdownWidth = 320;
+      const viewportWidth = window.innerWidth;
+      const padding = 8;
+
+      const top = btnRect.bottom + 8;
+      // Prefer right-aligned to button; shift left if overflows right edge
+      let left = btnRect.right - dropdownWidth;
+      if (left < padding) left = padding;
+      if (left + dropdownWidth > viewportWidth - padding) {
+        left = viewportWidth - dropdownWidth - padding;
+      }
+
+      setDropdownStyle({ position: 'fixed', top, left, width: dropdownWidth });
+    }
+  }, [isOpen]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -133,20 +163,21 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative" ref={wrapperRef}>
       <button
+        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-[10px] font-medium shadow-sm"
       >
-        <Calendar className="h-4 w-4 text-gray-400" />
-        <span className="text-gray-700">{formatDisplayDate()}</span>
+        <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+        <span className="text-gray-700 truncate flex-1 text-left">{formatDisplayDate()}</span>
         {(startDate || endDate) && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleClear();
             }}
-            className="ml-2 text-gray-400 hover:text-gray-600"
+            className="ml-1 text-gray-400 hover:text-gray-600 flex-shrink-0"
           >
             <XIcon className="h-3 w-3" />
           </button>
@@ -154,7 +185,11 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 w-80">
+        <div
+          ref={dropdownRef}
+          className="bg-white border border-gray-200 rounded-xl shadow-xl z-[9999] p-4"
+          style={dropdownStyle}
+        >
           <div className="flex gap-2 mb-4 pb-4 border-b border-gray-200">
             <button
               onClick={() => handleQuickSelect(7)}

@@ -121,6 +121,7 @@ export const getDefaultIconForCategory = (categoryName: string): string => {
 
 export const generateProfessionIconFilename = (professionName: string): string => {
   return professionName
+    .replace(/([a-z])([A-Z])/g, '$1-$2') // camelCase → kebab (parity with backend + Kayod client)
     .toLowerCase()
     .trim()
     .replace(/\s+/g, '-')
@@ -136,20 +137,24 @@ export const getProfessionIconByName = (iconName: string, categoryIcon?: string)
 
   if (iconName.startsWith('ik:')) {
     const filePath = iconName.replace('ik:', '');
-
-    // Use ImageKit URL directly for ik: prefixed icons
-    const imagePath = `${IMAGEKIT_URL_ENDPOINT}${filePath}`;
-
     return {
       name: iconName,
-      imagePath: imagePath,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}${filePath}`,
       color: '#0F766E',
       label: filePath.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/-/g, ' ') || 'Profession Icon',
     };
   }
 
-  // For custom: prefixed icons or plain filenames, fall back to default category icon
-  // Only ImageKit icons (ik:) are supported for profession icons
+  if (iconName.startsWith('custom:')) {
+    const fileName = iconName.replace('custom:', '');
+    return {
+      name: iconName,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}/professionIconsUpload/${fileName}`,
+      color: '#0F766E',
+      label: fileName.replace(/\.[^/.]+$/, '').replace(/-/g, ' '),
+    };
+  }
+
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };
 

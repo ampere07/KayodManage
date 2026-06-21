@@ -27,6 +27,7 @@ interface Message {
   senderId?: string;
   senderName?: string;
   message: string;
+  imageUrl?: string;
   timestamp: string;
 }
 
@@ -496,9 +497,11 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                 // Check if this is a system message
                 const isTicketSummary =
-                  msg.message.includes("PREVIOUS TICKET RESOLVED") ||
-                  msg.message.includes("Previous Ticket Summary");
-                const messageText = msg.message.toLowerCase();
+                  !!msg.message && (
+                    msg.message.includes("PREVIOUS TICKET RESOLVED") ||
+                    msg.message.includes("Previous Ticket Summary")
+                  );
+                const messageText = (msg.message || '').toLowerCase();
                 const isSystemMessage =
                   !isTicketSummary &&
                   isAdmin &&
@@ -602,63 +605,127 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                   return (
                     <React.Fragment key={msg._id || index}>
-                      <div className="flex items-center justify-center my-6">
-                        <div className="max-w-2xl w-full space-y-4">
+                      <div className="flex justify-center my-8 px-4">
+                        <div className="w-full max-w-xs">
+
                           {sections.map((section, sectionIndex) => {
                             const isResolved = section.title.includes("✓");
                             const isNewTicket = section.title.includes("⚡");
+                            const titleText = section.title.replace(
+                              /^[✓⚡📋]\s*/,
+                              "",
+                            );
 
                             return (
-                              <div
-                                key={sectionIndex}
-                                className={`rounded-lg border-2 p-5 ${
-                                  isResolved
-                                    ? "bg-green-50 border-green-300"
-                                    : isNewTicket
-                                      ? "bg-blue-50 border-blue-300"
-                                      : "bg-gray-50 border-gray-300"
-                                }`}
-                              >
-                                <div className="mb-4">
-                                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                                    {section.title.replace(/^[✓⚡📋]\s*/, "")}
-                                  </h3>
-                                </div>
-
-                                {Object.keys(section.details).length > 0 && (
-                                  <div className="space-y-2.5">
-                                    {Object.entries(section.details).map(
-                                      ([key, value], detailIndex) => (
-                                        <div
-                                          key={detailIndex}
-                                          className="flex justify-between items-start"
-                                        >
-                                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                                            {key}
-                                          </span>
-                                          <span className="text-sm font-semibold text-gray-900 text-right max-w-xs">
-                                            {value}
-                                          </span>
-                                        </div>
-                                      ),
-                                    )}
+                              <React.Fragment key={sectionIndex}>
+                                {/* Dashed connector between cards */}
+                                {sectionIndex > 0 && (
+                                  <div className="flex justify-center py-0.5">
+                                    <div className="w-px h-5 border-l-2 border-dashed border-gray-300" />
                                   </div>
                                 )}
-                              </div>
+
+                                <div
+                                  className={`rounded-2xl overflow-hidden ${
+                                    isResolved
+                                      ? "ring-1 ring-emerald-200"
+                                      : isNewTicket
+                                        ? "ring-1 ring-orange-200"
+                                        : "ring-1 ring-gray-200"
+                                  }`}
+                                >
+                                  {/* Coloured header bar */}
+                                  <div
+                                    className={`flex items-center justify-between px-4 py-2.5 ${
+                                      isResolved
+                                        ? "bg-emerald-500"
+                                        : isNewTicket
+                                          ? "bg-orange-400"
+                                          : "bg-gray-500"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {isResolved && (
+                                        <CheckCircle
+                                          className="w-3.5 h-3.5 text-white"
+                                          strokeWidth={2.5}
+                                        />
+                                      )}
+                                      {isNewTicket && (
+                                        <MessageSquare
+                                          className="w-3.5 h-3.5 text-white"
+                                          strokeWidth={2.5}
+                                        />
+                                      )}
+                                      <span className="text-white text-[11px] font-bold uppercase tracking-widest">
+                                        {titleText}
+                                      </span>
+                                    </div>
+                                    {isResolved && (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider bg-white/25 text-white rounded-full px-2 py-0.5">
+                                        Closed
+                                      </span>
+                                    )}
+                                    {isNewTicket && (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider bg-white/25 text-white rounded-full px-2 py-0.5">
+                                        Open
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Detail rows */}
+                                  {Object.keys(section.details).length > 0 && (
+                                    <div
+                                      className={`divide-y bg-white ${
+                                        isResolved
+                                          ? "divide-emerald-50"
+                                          : isNewTicket
+                                            ? "divide-orange-50"
+                                            : "divide-gray-50"
+                                      }`}
+                                    >
+                                      {Object.entries(section.details).map(
+                                        ([key, value], detailIndex) => (
+                                          <div
+                                            key={detailIndex}
+                                            className="flex items-start justify-between gap-4 px-4 py-2.5"
+                                          >
+                                            <span
+                                              className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap flex-shrink-0 ${
+                                                isResolved
+                                                  ? "text-emerald-600"
+                                                  : isNewTicket
+                                                    ? "text-orange-500"
+                                                    : "text-gray-500"
+                                              }`}
+                                            >
+                                              {key}
+                                            </span>
+                                            <span className="text-[12px] text-gray-800 font-medium text-right leading-snug">
+                                              {value}
+                                            </span>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </React.Fragment>
                             );
                           })}
 
-                          <div className="text-center">
-                            <p className="text-xs text-gray-500">
+                          {/* Timestamp pill */}
+                          <div className="flex justify-center mt-4">
+                            <span className="inline-flex items-center gap-1.5 text-[10px] text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+                              <Calendar className="w-2.5 h-2.5" />
                               {new Date(msg.timestamp).toLocaleDateString(
                                 "en-US",
                                 {
-                                  month: "long",
+                                  month: "short",
                                   day: "numeric",
                                   year: "numeric",
                                 },
-                              )}{" "}
-                              at{" "}
+                              )}{" · "}
                               {new Date(msg.timestamp).toLocaleTimeString(
                                 "en-US",
                                 {
@@ -667,8 +734,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                                   hour12: true,
                                 },
                               )}
-                            </p>
+                            </span>
                           </div>
+
                         </div>
                       </div>
                     </React.Fragment>
@@ -808,17 +876,33 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           ref={(el) => {
                             messageRefs.current[messageId] = el;
                           }}
-                          className={`inline-block px-4 py-2.5 rounded-2xl ${
+                          className={`inline-block rounded-2xl overflow-hidden ${
                             isAdmin
                               ? "bg-blue-600 text-white"
                               : "bg-white text-gray-900 shadow-sm"
-                          }`}
+                          } ${msg.imageUrl && !msg.message ? "" : "px-4 py-2.5"}`}
                         >
+                          {msg.imageUrl && (
+                            <a
+                              href={msg.imageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Click to open full image"
+                            >
+                              <img
+                                src={msg.imageUrl}
+                                alt="Attachment"
+                                className="block max-w-[240px] max-h-[240px] w-auto h-auto object-cover rounded-2xl cursor-pointer hover:opacity-90 transition-opacity"
+                                style={{ display: 'block' }}
+                              />
+                            </a>
+                          )}
                           {(() => {
+                            if (!msg.message) return null;
                             const parsed = parseMessageContent(msg.message);
                             const isUser = !isAdmin;
                             return (
-                              <>
+                              <div className={msg.imageUrl ? "px-4 pb-2.5 pt-1" : ""}>
                                 {parsed.body && (
                                   <p className="text-sm leading-relaxed">
                                     {parsed.body}
@@ -832,7 +916,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                                     {msg.message}
                                   </p>
                                 )}
-                              </>
+                              </div>
                             );
                           })()}
                         </div>

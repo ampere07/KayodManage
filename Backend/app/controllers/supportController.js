@@ -1,6 +1,7 @@
 const ChatSupport = require('../models/ChatSupport');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const axios = require('axios');
 const { emitSupportUpdate, emitChatSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
 const { logActivity } = require('../utils/activityLogger');
 
@@ -697,33 +698,49 @@ const acceptChatSupport = async (req, res) => {
       });
     }
 
-    // Accept the ticket
-    chatSupport.assignedTo = adminObjectId;
-    chatSupport.assignedToName = req.admin?.name || req.user?.username || 'Support Agent';
-    chatSupport.acceptedBy = adminObjectId;
-    chatSupport.acceptedByName = req.admin?.name || req.user?.username || 'Support Agent';
-    chatSupport.acceptedAt = new Date();
+    // Accept the ticket — use findByIdAndUpdate to avoid re-validating the
+    // entire messages subdocument array (which may contain image-only messages
+    // or summary messages that don't satisfy strict validators on a full save).
+    const adminName = req.admin?.name || req.user?.username || 'Support Agent';
+    const now = new Date();
 
-    await chatSupport.save();
+    const freshChatSupport = await ChatSupport.findByIdAndUpdate(
+      chatSupportId,
+      {
+        $set: {
+          assignedTo:     adminObjectId,
+          assignedToName: adminName,
+          acceptedBy:     adminObjectId,
+          acceptedByName: adminName,
+          acceptedAt:     now,
+        },
+      },
+      { new: true, runValidators: false }
+    )
+      .populate('userId', 'userType profileImage')
+      .lean();
+
+    if (!freshChatSupport) {
+      return res.status(404).json({ success: false, message: 'Chat support not found after update' });
+    }
 
     console.log(`✅ Ticket ${chatSupportId} accepted by admin ${adminObjectId.toString()} (${adminUsername})`);
-    console.log(`Ticket assignedTo: ${chatSupport.assignedTo.toString()}, acceptedBy: ${chatSupport.acceptedBy.toString()}`);
 
     // Log activity - ALWAYS log this action
     try {
       await logActivity(
         adminObjectId.toString(),
         'support_accepted',
-        `Accepted support ticket: ${chatSupport.subject}`,
+        `Accepted support ticket: ${freshChatSupport.subject}`,
         {
           targetType: 'support',
           targetId: chatSupportId,
           targetModel: 'ChatSupport',
           metadata: {
-            ticketId: chatSupport.ticketId,
-            userName: chatSupport.userName,
+            ticketId: freshChatSupport.ticketId,
+            userName: freshChatSupport.userName,
             adminUsername: adminUsername,
-            subject: chatSupport.subject
+            subject: freshChatSupport.subject
           },
           ipAddress: req.ip
         }
@@ -734,12 +751,8 @@ const acceptChatSupport = async (req, res) => {
       // Continue even if activity logging fails
     }
 
-    const freshChatSupport = await ChatSupport.findById(chatSupportId)
-      .populate('userId', 'userType profileImage')
-      .lean();
-
     console.log('Emitting socket update with status:', freshChatSupport.status);
-    emitChatSupportUpdate(freshChatSupport._id, {
+    emitChatSupportUpdate(freshChatSupport, {
       status: freshChatSupport.status,
       assignedTo: freshChatSupport.assignedTo,
       assignedToName: freshChatSupport.assignedToName,
@@ -788,25 +801,7 @@ const closeChatSupport = async (req, res) => {
       ? new mongoose.Types.ObjectId(adminId)
       : null;
 
-    chatSupport.status = 'closed';
-    chatSupport.closedAt = new Date();
-
-    if (!chatSupport.assignedTo && adminObjectId) {
-      chatSupport.assignedTo = adminObjectId;
-      chatSupport.assignedToName = req.admin?.name || req.user?.username || 'Support Agent';
-    }
-
-    if (!chatSupport.statusHistory) {
-      chatSupport.statusHistory = [];
-    }
-    chatSupport.statusHistory.push({
-      status: 'resolved',
-      performedBy: adminObjectId,
-      performedByName: req.admin?.name || req.user?.username || 'Support Agent',
-      timestamp: new Date(),
-      reason: reason || 'Ticket closed'
-    });
-
+    const adminName = req.admin?.name || req.user?.username || 'Support Agent';
     const adminMsgObjectId = mongoose.Types.ObjectId.isValid(adminId)
       ? new mongoose.Types.ObjectId(adminId)
       : new mongoose.Types.ObjectId('000000000000000000000000');
@@ -815,24 +810,51 @@ const closeChatSupport = async (req, res) => {
       ? `Ticket has been resolved: ${reason}`
       : 'Ticket has been resolved';
 
-    chatSupport.messages.push({
-      senderId: adminMsgObjectId,
-      senderName: req.admin?.name || req.user?.username || 'Support Agent',
-      senderType: 'Admin',
-      message: closeMessage,
-      timestamp: new Date()
-    });
+    const newStatusEntry = {
+      status:          'resolved',
+      performedBy:     adminObjectId,
+      performedByName: adminName,
+      timestamp:       new Date(),
+      reason:          reason || 'Ticket closed'
+    };
 
-    await chatSupport.save();
-    console.log(`✅ Ticket ${chatSupportId} closed - status: ${chatSupport.status}`);
+    const newCloseMsg = {
+      senderId:   adminMsgObjectId,
+      senderName: adminName,
+      senderType: 'Admin',
+      message:    closeMessage,
+      timestamp:  new Date()
+    };
+
+    // Use findByIdAndUpdate + $push / $set so we never re-validate the entire
+    // messages subdocument array (which may contain image-only messages).
+    const setFields = {
+      status:   'closed',
+      closedAt: new Date(),
+      lastMessage: { text: closeMessage, timestamp: newCloseMsg.timestamp }
+    };
+    if (!chatSupport.assignedTo && adminObjectId) {
+      setFields.assignedTo     = adminObjectId;
+      setFields.assignedToName = adminName;
+    }
+
+    await ChatSupport.findByIdAndUpdate(
+      chatSupportId,
+      {
+        $set:  setFields,
+        $push: {
+          statusHistory: newStatusEntry,
+          messages:      newCloseMsg,
+        },
+      },
+      { runValidators: false }
+    );
+
+    console.log(`✅ Ticket ${chatSupportId} closed`);
 
     if (adminObjectId) {
       try {
-        await User.findByIdAndUpdate(
-          adminObjectId,
-          { $inc: { ticketsResolved: 1 } },
-          { new: true }
-        );
+        await User.findByIdAndUpdate(adminObjectId, { $inc: { ticketsResolved: 1 } }, { new: true });
         console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
       } catch (updateError) {
         console.error('❌ Error updating admin ticketsResolved:', updateError);
@@ -841,11 +863,7 @@ const closeChatSupport = async (req, res) => {
 
     if (chatSupport.userId) {
       try {
-        await User.findByIdAndUpdate(
-          chatSupport.userId,
-          { $inc: { ticketsSubmittedResolved: 1 } },
-          { new: true }
-        );
+        await User.findByIdAndUpdate(chatSupport.userId, { $inc: { ticketsSubmittedResolved: 1 } }, { new: true });
         console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
       } catch (updateError) {
         console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
@@ -875,13 +893,45 @@ const closeChatSupport = async (req, res) => {
       .lean();
 
     console.log('Emitting socket update with status:', freshChatSupport.status);
-    emitChatSupportUpdate(freshChatSupport._id, {
+    emitChatSupportUpdate(freshChatSupport, {
       status: freshChatSupport.status,
       closedAt: freshChatSupport.closedAt,
       updatedAt: freshChatSupport.updatedAt,
       messages: freshChatSupport.messages,
       statusHistory: freshChatSupport.statusHistory
     });
+
+    // Notify the Kayod mobile server to push the close message to mobile clients
+    // The change stream on the Kayod server may or may not fire reliably, so we
+    // directly call its broadcast endpoint to guarantee delivery.
+    try {
+      const kayodUrl = process.env.KAYOD_BACKEND_URL || 'http://localhost:8080';
+      const kayodApiKey = process.env.KAYOD_API_KEY || 'kayod-admin-access-key-123';
+      const closeMsg = freshChatSupport.messages[freshChatSupport.messages.length - 1];
+      if (closeMsg) {
+        await axios.post(
+          `${kayodUrl}/api/support/broadcast-message`,
+          {
+            chatSupportId,
+            message: {
+              _id:        closeMsg._id.toString(),
+              senderId:   closeMsg.senderId.toString(),
+              senderName: closeMsg.senderName,
+              senderType: closeMsg.senderType,
+              message:    closeMsg.message,
+              timestamp:  closeMsg.timestamp instanceof Date
+                ? closeMsg.timestamp.toISOString()
+                : closeMsg.timestamp,
+            }
+          },
+          { headers: { 'x-api-key': kayodApiKey } }
+        );
+        console.log('✅ Notified Kayod server to broadcast close message to mobile');
+      }
+    } catch (notifyError) {
+      // Non-critical — mobile will still receive via change stream
+      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+    }
 
     res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
@@ -968,13 +1018,42 @@ const reopenChatSupport = async (req, res) => {
       .lean();
 
     console.log('Emitting socket update with status:', freshChatSupport.status);
-    emitChatSupportUpdate(freshChatSupport._id, {
+    emitChatSupportUpdate(freshChatSupport, {
       status: freshChatSupport.status,
       closedAt: freshChatSupport.closedAt,
       updatedAt: freshChatSupport.updatedAt,
       messages: freshChatSupport.messages,
       statusHistory: freshChatSupport.statusHistory
     });
+
+    // Notify Kayod mobile server to push the reopen message to mobile clients
+    try {
+      const kayodUrl = process.env.KAYOD_BACKEND_URL || 'http://localhost:8080';
+      const kayodApiKey = process.env.KAYOD_API_KEY || 'kayod-admin-access-key-123';
+      const reopenMsg = freshChatSupport.messages[freshChatSupport.messages.length - 1];
+      if (reopenMsg) {
+        await axios.post(
+          `${kayodUrl}/api/support/broadcast-message`,
+          {
+            chatSupportId,
+            message: {
+              _id:        reopenMsg._id.toString(),
+              senderId:   reopenMsg.senderId.toString(),
+              senderName: reopenMsg.senderName,
+              senderType: reopenMsg.senderType,
+              message:    reopenMsg.message,
+              timestamp:  reopenMsg.timestamp instanceof Date
+                ? reopenMsg.timestamp.toISOString()
+                : reopenMsg.timestamp,
+            }
+          },
+          { headers: { 'x-api-key': kayodApiKey } }
+        );
+        console.log('✅ Notified Kayod server to broadcast reopen message to mobile');
+      }
+    } catch (notifyError) {
+      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+    }
 
     res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
@@ -1033,6 +1112,32 @@ const addChatSupportMessage = async (req, res) => {
     await chatSupport.save();
 
     const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
+
+    // Notify Kayod mobile server to push admin message to mobile clients
+    try {
+      const kayodUrl = process.env.KAYOD_BACKEND_URL || 'http://localhost:8080';
+      const kayodApiKey = process.env.KAYOD_API_KEY || 'kayod-admin-access-key-123';
+      await axios.post(
+        `${kayodUrl}/api/support/broadcast-message`,
+        {
+          chatSupportId,
+          message: {
+            _id:        savedMessage._id.toString(),
+            senderId:   savedMessage.senderId.toString(),
+            senderName: savedMessage.senderName,
+            senderType: savedMessage.senderType,
+            message:    savedMessage.message,
+            timestamp:  savedMessage.timestamp instanceof Date
+              ? savedMessage.timestamp.toISOString()
+              : savedMessage.timestamp,
+          }
+        },
+        { headers: { 'x-api-key': kayodApiKey } }
+      );
+      console.log('✅ Notified Kayod server to broadcast admin message to mobile');
+    } catch (notifyError) {
+      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+    }
 
     res.json({ success: true, message: savedMessage, chatSupport });
   } catch (error) {

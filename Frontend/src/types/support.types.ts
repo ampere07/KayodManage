@@ -8,6 +8,7 @@ export interface Message {
   senderId?: string;
   senderName?: string;
   message: string;
+  imageUrl?: string | null;
   timestamp: string;
 }
 

@@ -110,6 +110,7 @@ const setupSocketHandlers = (io) => {
               senderName: savedMessage.senderName,
               senderType: savedMessage.senderType,
               message: savedMessage.message,
+              imageUrl: savedMessage.imageUrl || null,
               timestamp: savedMessage.timestamp.toISOString()
             }
           };
@@ -223,6 +224,7 @@ const setupMainNamespaceHandlers = (io) => {
             senderName: savedMessage.senderName,
             senderType: savedMessage.senderType,
             message: savedMessage.message,
+            imageUrl: savedMessage.imageUrl || null,
             timestamp: savedMessage.timestamp.toISOString()
           }
         };
@@ -651,28 +653,45 @@ const setupChatSupportChangeStream = () => {
               Object.keys(change.updateDescription?.updatedFields || {}).some(key => key.startsWith('messages.'));
 
             if (hasNewMessage && chatSupport.messages.length > 0) {
-              const lastMessage = chatSupport.messages[chatSupport.messages.length - 1];
+              // Determine which messages are newly added.
+              // When multiple messages are pushed in a single save() (e.g. ticket creation
+              // with 2 image attachments), MongoDB reports each as a separate updatedField
+              // key like "messages.N", "messages.N+1", etc. We must emit ALL of them —
+              // not just the last one — so the admin panel shows every new message.
+              const updatedFields = change.updateDescription?.updatedFields || {};
+              const individualKeys = Object.keys(updatedFields).filter(k => /^messages\.\d+$/.test(k));
 
-              const messageData = {
-                chatSupportId,
-                message: {
-                  _id: lastMessage._id.toString(),
-                  senderId: lastMessage.senderId.toString(),
-                  senderName: lastMessage.senderName,
-                  senderType: lastMessage.senderType,
-                  message: lastMessage.message,
-                  timestamp: lastMessage.timestamp.toISOString()
-                }
-              };
-
-
-              if (adminNamespace) {
-                adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
-                adminNamespace.to('admin').emit('support:new_message', messageData);
+              let msgsToEmit = [];
+              if (individualKeys.length > 0) {
+                // Specific indices were set — collect them in ascending order
+                const indices = individualKeys
+                  .map(k => parseInt(k.split('.')[1], 10))
+                  .sort((a, b) => a - b);
+                msgsToEmit = indices.map(i => chatSupport.messages[i]).filter(Boolean);
+              } else {
+                // Whole array replaced (e.g. insert) — just emit the last message
+                msgsToEmit = [chatSupport.messages[chatSupport.messages.length - 1]];
               }
 
-              // Note: Mobile clients receive notifications via their global socket connection
-              // No HTTP broadcast needed - the mobile app SocketContext handles this
+              if (adminNamespace) {
+                for (const msg of msgsToEmit) {
+                  const messageData = {
+                    chatSupportId,
+                    message: {
+                      _id: msg._id.toString(),
+                      senderId: msg.senderId.toString(),
+                      senderName: msg.senderName,
+                      senderType: msg.senderType,
+                      message: msg.message,
+                      imageUrl: msg.imageUrl || null,
+                      timestamp: msg.timestamp.toISOString()
+                    }
+                  };
+                  adminNamespace.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
+                  adminNamespace.to('admin').emit('support:new_message', messageData);
+                }
+              }
+              // Note: Mobile clients receive notifications via their own socket connection
             }
 
             if (change.updateDescription?.updatedFields?.status) {

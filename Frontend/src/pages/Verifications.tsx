@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Calendar,
   User,
+  LayoutGrid,
+  Table2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
@@ -119,6 +121,7 @@ const Verifications: React.FC = () => {
     page: 1,
     limit: 20,
   });
+  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -343,8 +346,8 @@ const Verifications: React.FC = () => {
           </div>
         </div>
 
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          <div className="flex items-center gap-2 w-full md:contents">
+        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row items-center gap-4">
+          <div className="flex items-center gap-2 w-full lg:contents">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
@@ -357,7 +360,7 @@ const Verifications: React.FC = () => {
             </div>
 
             {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5">
+            <div className="flex lg:hidden items-center gap-1.5">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select 
                 value={pagination.limit}
@@ -371,40 +374,60 @@ const Verifications: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <button
-              onClick={() => setUserTypeFilter('all')}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                userTypeFilter === 'all'
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              All Types
-            </button>
-            <button
-              onClick={() => setUserTypeFilter('client')}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                userTypeFilter === 'client'
-                  ? "bg-purple-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Customers
-            </button>
-            <button
-              onClick={() => setUserTypeFilter('provider')}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                userTypeFilter === 'provider'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Providers
-            </button>
+          <div className="flex items-center justify-between w-full lg:contents gap-2">
+            <div className="flex items-center gap-0.5 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
+              <button
+                onClick={() => setUserTypeFilter('all')}
+                className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
+                  userTypeFilter === 'all'
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setUserTypeFilter('client')}
+                className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
+                  userTypeFilter === 'client'
+                    ? "bg-purple-600 text-white shadow-md"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Customers
+              </button>
+              <button
+                onClick={() => setUserTypeFilter('provider')}
+                className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
+                  userTypeFilter === 'provider'
+                    ? "bg-indigo-600 text-white shadow-md"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Providers
+              </button>
+            </div>
+
+            {/* View Type Toggle - Mobile only */}
+            <div className="lg:hidden flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm shrink-0">
+              <button
+                onClick={() => setMobileViewType('card')}
+                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Card View"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setMobileViewType('table')}
+                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Table View"
+              >
+                <Table2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 shrink-0">
+          <div className="hidden lg:flex items-center gap-2 shrink-0">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
             <select 
               value={pagination.limit}
@@ -529,7 +552,9 @@ const Verifications: React.FC = () => {
               </div>
 
               {/* Mobile View */}
-              <div className="lg:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div className="lg:hidden flex-1 overflow-y-auto">
+              {mobileViewType === 'card' ? (
+                <div className="px-4 py-4 space-y-4">
                 {paginatedUsers.map(({ user, verifications }) => {
                   const latestVerification = verifications[0];
                   const totalDocuments = verifications.reduce((sum, v) => {
@@ -604,6 +629,54 @@ const Verifications: React.FC = () => {
                     </div>
                   );
                 })}
+                </div>
+              ) : (
+                <div className="bg-white">
+                  <table className="w-full table-fixed border-separate border-spacing-0">
+                    <thead className="bg-gray-50/80 sticky top-0 z-20">
+                      <tr>
+                        <th className="w-[50%] px-3 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">User</th>
+                        <th className="w-[25%] px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Status</th>
+                        <th className="w-[25%] px-3 py-3 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {paginatedUsers.map(({ user, verifications }) => {
+                        const latestVerification = verifications[0];
+                        return (
+                          <tr
+                            key={user._id}
+                            onClick={() => openModal(latestVerification)}
+                            className="active:bg-gray-50 transition-colors"
+                          >
+                            <td className="px-3 py-3 overflow-hidden">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="h-8 w-8 rounded-full relative overflow-hidden flex-shrink-0 border border-gray-100">
+                                  <UserAvatar user={user} size="sm" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{user.name}</p>
+                                  <div className="mt-0.5">
+                                    <UserTypeBadge userType={user.userType} />
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-2 py-3 text-center">
+                              <StatusBadge status={latestVerification.status} />
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <p className="text-[10px] font-bold text-gray-500 leading-tight">
+                                {formatDistanceToNow(new Date(latestVerification.submittedAt), { addSuffix: true })}
+                              </p>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               </div>
 
               {/* Pagination */}
