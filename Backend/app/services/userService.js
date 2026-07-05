@@ -241,10 +241,15 @@ class UserService {
     const query = {};
 
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+      const term = search.replace(/^KYD:\s*/i, '').trim();
+      const orClauses = [
+        { name: { $regex: term, $options: 'i' } },
+        { email: { $regex: term, $options: 'i' } }
       ];
+      if (mongoose.Types.ObjectId.isValid(term)) {
+        orClauses.push({ _id: new mongoose.Types.ObjectId(term) });
+      }
+      query.$or = orClauses;
     }
 
     if (status) {
@@ -274,12 +279,18 @@ class UserService {
     }
 
     if (filters.profession) {
-      query.$or = [
+      const professionOr = [
         { categories: { $in: [filters.profession] } },
         { jobCategories: filters.profession },
         { jobCategories: { $in: [filters.profession] } },
         { category: filters.profession }
       ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: professionOr }];
+        delete query.$or;
+      } else {
+        query.$or = professionOr;
+      }
     }
 
     if (isVerified !== undefined) {
@@ -301,10 +312,16 @@ class UserService {
     }
     // Only use restricted filter if accountStatus is not specified
     else if (restricted === 'true') {
-      query.$or = [
+      const restrictedOr = [
         { accountStatus: { $in: ['restricted', 'suspended', 'banned'] } },
         { isRestricted: true }
       ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: restrictedOr }];
+        delete query.$or;
+      } else {
+        query.$or = restrictedOr;
+      }
     }
 
     return query;

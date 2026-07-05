@@ -11,9 +11,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Wallet as WalletIcon,
-  LayoutGrid,
-  Table2,
-  ChevronRight,
   Eye
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -68,7 +65,6 @@ const Transactions: React.FC = () => {
     total: 0,
     pages: 0
   });
-  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
   // Handle query parameters when URL changes
   useEffect(() => {
@@ -130,7 +126,7 @@ const Transactions: React.FC = () => {
         ? 'refund_request'
         : category;
 
-  const { data: transactionsData, isLoading, refetch } = useTransactions(queryParams);
+  const { data: transactionsData, isLoading } = useTransactions(queryParams);
   const { data: statusCounts = { total: 0, pending: 0, completed: 0, failed: 0, cancelled: 0 } } = useTransactionCounts(transactionType);
   const mutations = useTransactionMutations();
 
@@ -235,8 +231,61 @@ const Transactions: React.FC = () => {
           </div>
         </div>
 
+        {/* Mobile Header */}
+        <div className="md:hidden mb-3">
+          {/* Summary strip */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total</p>
+              <p className="text-base font-black text-blue-600 leading-tight">{statusCounts.total.toLocaleString()}</p>
+            </div>
+            <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Completed</p>
+              <p className="text-base font-black text-emerald-600 leading-tight">{statusCounts.completed.toLocaleString()}</p>
+            </div>
+          </div>
+          {/* Counter pills — grid-cols-3 so > 3 wraps to 2 rows */}
+          {category === 'all' ? (
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { label: 'Fee Records', value: transactions.filter(t => t.type === 'platform_fee').length },
+                { label: 'Top-up',      value: transactions.filter(t => t.type === 'wallet_topup' || t.type === 'xendit_topup' || t.type === 'topup').length },
+                { label: 'Cashout',     value: transactions.filter(t => t.type === 'withdrawal').length },
+                { label: 'Refund',      value: transactions.filter(t => t.type === 'refund' || t.type === 'refund_request').length },
+              ]).map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border bg-gray-50 border-gray-200 text-gray-600">
+                  <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wide text-gray-400">{label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { label: 'All',       value: statusCounts.total,     filterVal: 'all',       activeBg: 'bg-blue-500',    activeBorder: 'border-blue-500'    },
+                { label: 'Pending',   value: statusCounts.pending,   filterVal: 'pending',   activeBg: 'bg-amber-500',   activeBorder: 'border-amber-500'   },
+                { label: 'Done',      value: statusCounts.completed, filterVal: 'completed', activeBg: 'bg-emerald-500', activeBorder: 'border-emerald-500' },
+                { label: 'Failed',    value: statusCounts.failed,    filterVal: 'failed',    activeBg: 'bg-red-500',     activeBorder: 'border-red-500'     },
+                { label: 'Cancelled', value: statusCounts.cancelled, filterVal: 'cancelled', activeBg: 'bg-indigo-500',  activeBorder: 'border-indigo-500'  },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; activeBorder: string }[]).map(({ label, value, filterVal, activeBg, activeBorder }) => {
+                const active = statusFilter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setStatusFilter(filterVal)}
+                    className={`flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${activeBorder} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Transaction Type Counters Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-5">
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-5">
            {category === 'all' ? (
              <>
                <StatsCard
@@ -330,36 +379,56 @@ const Transactions: React.FC = () => {
 
         {/* Filter Bar */}
         <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
-          {/* Row 1 on Mobile / Search on Desktop */}
+          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
           <div className="flex items-center gap-2 lg:contents">
             <div className="relative flex-1 lg:order-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4 lg:left-3.5" />
               <input
                 type="text"
                 placeholder="Search transactions..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+                className="w-full pl-8 pr-4 py-2 bg-white border border-gray-200 rounded-lg lg:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs lg:text-sm font-medium transition-all shadow-sm h-8 lg:h-10 lg:pl-10"
               />
             </div>
 
-            {/* Mobile-only Limit */}
-            <div className="flex lg:hidden items-center gap-1.5">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
+            {/* Page Limit - Mobile only */}
+            <select
+              value={pagination.limit}
+              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+
+          {/* Mobile filter dropdowns — hidden on desktop */}
+          <div className="flex gap-2 lg:hidden">
+            <select
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
+              className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 px-2 py-1.5"
+            >
+              <option value="all">ALL METHODS</option>
+              <option value="wallet">WALLET</option>
+              <option value="cash">CASH</option>
+              <option value="xendit">XENDIT</option>
+            </select>
+            <div className="flex-1">
+              <DateRangePicker
+                startDate={dateFrom}
+                endDate={dateTo}
+                onStartDateChange={setDateFrom}
+                onEndDateChange={setDateTo}
+                onClear={clearDateRange}
+              />
             </div>
           </div>
 
-          {/* Row 2 on Mobile / Desktop Right-side group */}
-          <div className="flex items-center gap-2 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
+          {/* Row 2 on Desktop: filters + page limit */}
+          <div className="hidden lg:flex items-center gap-2 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
             <div className="flex-1 flex items-center gap-2">
               <div className="flex-1">
                 <DateRangePicker
@@ -398,9 +467,9 @@ const Transactions: React.FC = () => {
             </div>
 
             {/* Pagination Limit for Desktop */}
-            <div className="hidden lg:flex items-center gap-2 lg:order-3 shrink-0">
+            <div className="flex items-center gap-2 lg:order-3 shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
+              <select
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
                 className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -410,25 +479,6 @@ const Transactions: React.FC = () => {
                 <option value={50}>50</option>
               </select>
             </div>
-
-            {/* View Type Toggle - Mobile only */}
-            <div className="lg:hidden flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm shrink-0">
-              <button
-                onClick={() => setMobileViewType('card')}
-                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Card View"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setMobileViewType('table')}
-                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Table View"
-              >
-                <Table2 className="h-4 w-4" />
-              </button>
-            </div>
-
           </div>
         </div>
       </div>
@@ -456,7 +506,7 @@ const Transactions: React.FC = () => {
               {/* Desktop Table View */}
               <div className="hidden lg:block bg-white shadow-sm border-b border-gray-200">
                 <table className="min-w-full w-full table-fixed">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-30">
                     <tr>
                       <th className="w-[30%] px-6 py-4 text-left text-[10px] font-bold text-gray-500 uppercase tracking-widest">
                         Transaction Info
@@ -504,9 +554,7 @@ const Transactions: React.FC = () => {
                                   {isOverdue(transaction) && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
                                 </div>
                                 <p className="text-sm font-semibold text-gray-900 line-clamp-1 transition-colors">
-                                  {transaction.type === 'platform_fee'
-                                    ? transaction.description.replace(/^Platform fee for job:\s*/i, '')
-                                    : transaction.description}
+                                  {transaction.description?.replace(/^ASAP\s*/i, '').replace(/priority fee for job:\s*/i, '').replace(/^Platform fee for job:\s*/i, '') || transaction.description}
                                 </p>
                                 <p className="text-[11px] text-gray-400 mt-1 font-medium">ID: {transaction._id.slice(-8).toUpperCase()}</p>
                               </div>
@@ -547,14 +595,17 @@ const Transactions: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex justify-center">
+                            <div className="flex flex-col items-center gap-1">
                               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold border uppercase tracking-wider ${getTransactionStatusColor(transaction.status)}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${
-                                  transaction.status === 'completed' ? 'bg-green-500' : 
+                                  transaction.status === 'completed' ? 'bg-green-500' :
                                   transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
                                 }`} />
                                 {transaction.status}
                               </span>
+                              {transaction.description?.toUpperCase().startsWith('ASAP') && (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-orange-500 text-white">ASAP</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4 border-b border-gray-300">
@@ -586,124 +637,62 @@ const Transactions: React.FC = () => {
 
               {/* Mobile View */}
               <div className="lg:hidden flex-1 overflow-y-auto">
-                {mobileViewType === 'card' ? (
-                  <div className="px-4 py-4 space-y-4">
-                    {transactions.map((transaction) => {
-                      const user = getUser(transaction);
-                      return (
-                        <div
-                          key={transaction._id}
-                          onClick={() => openTransactionModal(transaction)}
-                          className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                        >
-                          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                              {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${getTransactionStatusColor(transaction.status)}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${
-                                  transaction.status === 'completed' ? 'bg-green-500' :
-                                  transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} />
-                                {transaction.status}
+                <div className="px-3 py-3 space-y-2">
+                  {transactions.map((transaction) => {
+                    const user = getUser(transaction);
+                    return (
+                      <div
+                        key={transaction._id}
+                        onClick={() => openTransactionModal(transaction)}
+                        className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                      >
+                        {/* Main Row */}
+                        <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
+                          <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                            {getTransactionIcon(transaction, categories)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border truncate max-w-[130px] ${getTypeColor(transaction.type, transaction.transactionType)}`}>
+                                {transaction.type?.replace(/_/g, ' ')}
                               </span>
                             </div>
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">
+                              {transaction.description?.replace(/^ASAP\s*/i, '').replace(/priority fee for job:\s*/i, '') || transaction.description}
+                            </p>
                           </div>
-
-                          <div className="flex items-center gap-4 p-4">
-                            <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
-                              {getTransactionIcon(transaction, categories)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-base font-black text-gray-900 leading-tight truncate">{transaction.description}</h3>
-                              <div className="flex flex-col gap-1 mt-2">
-                                <p className="text-xs text-gray-500 truncate">ID: {transaction._id.slice(-8).toUpperCase()}</p>
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getTypeColor(transaction.type, transaction.transactionType)}`}>
-                                    {transaction.type?.replace('_', ' ')}
-                                  </span>
-                                  <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-                                    {transaction.paymentMethod}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100 px-4">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Amount</span>
-                              <span className="text-sm font-black text-gray-900">{formatCurrency(transaction.amount)}</span>
-                              {user && (
-                                <div className="flex items-center gap-1.5 mt-1.5">
-                                  <div className="h-5 w-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
-                                    <span className="text-[7px] font-black text-blue-600">{getInitials(user.name || 'U')}</span>
-                                  </div>
-                                  <span className="text-[10px] font-bold text-gray-500 truncate">{user.name}</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex flex-col items-end text-right">
-                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Action</span>
-                              <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                                Details <ChevronRight className="h-3 w-3" />
-                              </button>
-                            </div>
+                          {/* Status + ASAP badge stacked on right */}
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getTransactionStatusColor(transaction.status)}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                transaction.status === 'completed' ? 'bg-green-500' :
+                                transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+                              }`} />
+                              {transaction.status}
+                            </span>
+                            {transaction.description?.toUpperCase().startsWith('ASAP') && (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-orange-500 text-white">ASAP</span>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="bg-white">
-                    <table className="w-full table-fixed border-separate border-spacing-0">
-                      <thead className="bg-gray-50/80 sticky top-0 z-20">
-                        <tr>
-                          <th className="w-[50%] px-3 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Transaction</th>
-                          <th className="w-[25%] px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Status</th>
-                          <th className="w-[25%] px-3 py-3 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {transactions.map((transaction) => (
-                          <tr
-                            key={transaction._id}
-                            onClick={() => openTransactionModal(transaction)}
-                            className="active:bg-gray-50 transition-colors"
-                          >
-                            <td className="px-3 py-3 overflow-hidden">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="h-8 w-8 rounded-lg bg-gray-50 relative overflow-hidden flex items-center justify-center border border-gray-100 flex-shrink-0">
-                                  {getTransactionIcon(transaction, categories)}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[11px] font-black text-gray-900 truncate leading-tight">
-                                    {transaction._id.slice(-8).toUpperCase()}
-                                  </p>
-                                  <p className="text-[9px] text-gray-400 font-bold truncate uppercase">
-                                    {transaction.type?.replace('_', ' ')}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-2 py-3 text-center">
-                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight border ${getTransactionStatusColor(transaction.status)}`}>
-                                {transaction.status?.slice(0, 4).toUpperCase()}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 text-right">
-                              <p className="text-[11px] font-black text-gray-900 leading-none mb-1">
-                                {formatPHPCurrency(transaction.amount)}
-                              </p>
-                              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{transaction.paymentMethod}</p>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        {/* Footer strip */}
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
+                              {getInitials(user?.name || 'U')}
+                            </div>
+                            <p className="text-[10px] font-bold text-gray-500 truncate">{user?.name || 'Anonymous'}</p>
+                          </div>
+                          <p className="text-sm font-black text-gray-900 flex-shrink-0">{formatCurrency(transaction.amount)}</p>
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                            <Clock className="h-2.5 w-2.5" />
+                            {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
           </>
         )}
@@ -711,7 +700,7 @@ const Transactions: React.FC = () => {
 
         {/* Pagination Toolbar */}
         {pagination.pages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 h-[65px] flex items-center justify-between">
             <div className="hidden sm:block">
               <p className="text-sm text-gray-500 font-medium">
                 Showing <span className="font-bold text-gray-900">{((pagination.page - 1) * pagination.limit) + 1}</span> to <span className="font-bold text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-bold text-gray-900">{pagination.total}</span> results

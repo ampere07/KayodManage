@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  UserPlus, 
-  ShieldAlert, 
-  Edit2, 
-  Search, 
-  Briefcase, 
-  Shield, 
-  Users, 
-  CreditCard, 
+import {
+  UserPlus,
+  ShieldAlert,
+  Edit2,
+  Search,
+  Briefcase,
+  Shield,
+  Users,
+  CreditCard,
   MessageSquare,
   Lock,
   ShieldCheck,
   Activity,
   UserCheck,
   Filter as FilterIcon,
-  MoreVertical,
-  UserCog
+  UserCog,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -281,7 +281,7 @@ const SettingsManagement: React.FC = () => {
       />
 
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-6 py-5">
+        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
@@ -296,7 +296,6 @@ const SettingsManagement: React.FC = () => {
                 Manage system administrators, configure granular permissions and monitor account activity
               </p>
             </div>
-            
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="group flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all shadow-lg shadow-gray-900/10 active:scale-95 flex-shrink-0"
@@ -306,18 +305,51 @@ const SettingsManagement: React.FC = () => {
             </button>
           </div>
 
-          {/* Mobile-only New Admin button */}
-          <div className="flex md:hidden justify-end mb-4">
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="group flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all shadow-lg shadow-gray-900/10 active:scale-95 flex-shrink-0"
-            >
-              <UserPlus className="h-4 w-4 group-hover:rotate-12 transition-transform" />
-              <span className="text-xs font-black uppercase tracking-widest">New Admin</span>
-            </button>
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip + New Admin button */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Admins</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{admins.length.toLocaleString()}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Super Admin</p>
+                <p className="text-base font-black text-green-600 leading-tight">{superAdminCount.toLocaleString()}</p>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white rounded-xl active:scale-95 transition-all flex-shrink-0"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span className="text-[10px] font-black uppercase tracking-widest">New</span>
+              </button>
+            </div>
+            {/* Filter pills — 5 items → grid-cols-3 = 2 rows */}
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { label: 'All',     value: admins.length,    filterVal: 'all',        activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
+                { label: 'Super',   value: superAdminCount,  filterVal: 'superadmin', activeBg: 'bg-green-500',   border: 'border-green-500'   },
+                { label: 'Admin',   value: adminCount,       filterVal: 'admin',      activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
+                { label: 'Finance', value: financeCount,     filterVal: 'finance',    activeBg: 'bg-orange-500',  border: 'border-orange-500'  },
+                { label: 'Support', value: supportCount,     filterVal: 'support',    activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
+                const active = filter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setFilter(filterVal as typeof filter)}
+                    className={`flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="cursor-pointer" onClick={() => setFilter('all')}>
               <StatsCard
                 title="All Management"
@@ -376,46 +408,27 @@ const SettingsManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <div className="px-4 md:px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-3 md:gap-4">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
             <input
               type="text"
               placeholder="Search by name, email, UID, or role..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm shadow-indigo-100/10"
+              className="w-full pl-8 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 p-1 bg-white border border-gray-100 rounded-xl shadow-sm">
-             <button 
-                onClick={() => setFilter('all')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'all' ? 'bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-600'}`}
-             >
-               All
-             </button>
-             <button 
-                onClick={() => setFilter('superadmin')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'superadmin' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}
-             >
-               Super
-             </button>
-             <button 
-                onClick={() => setFilter('finance')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'finance' ? 'bg-yellow-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}
-             >
-               Finance
-             </button>
-             <button 
-                onClick={() => setFilter('support')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'support' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}
-             >
-               Support
-             </button>
+          <div className="hidden md:flex items-center gap-1.5 p-1 bg-white border border-gray-100 rounded-xl shadow-sm">
+            <button onClick={() => setFilter('all')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'all' ? 'bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-600'}`}>All</button>
+            <button onClick={() => setFilter('superadmin')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'superadmin' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}>Super</button>
+            <button onClick={() => setFilter('admin')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'admin' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}>Admin</button>
+            <button onClick={() => setFilter('finance')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'finance' ? 'bg-yellow-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}>Finance</button>
+            <button onClick={() => setFilter('support')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${filter === 'support' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}>Support</button>
           </div>
 
-          <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-100 rounded-xl shadow-sm">
+          <div className="hidden md:flex items-center gap-2 bg-white px-3 py-2 border border-gray-100 rounded-xl shadow-sm">
             <FilterIcon className="h-4 w-4 text-gray-400" />
             <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Displaying {filteredAdmins.length} Results</div>
           </div>
@@ -533,64 +546,52 @@ const SettingsManagement: React.FC = () => {
                 </table>
               </div>
 
-              <div className="md:hidden px-4 py-4 space-y-4">
+              <div className="md:hidden px-3 py-3 space-y-2">
                 {filteredAdmins.map((admin) => (
                   <div
                     key={admin._id}
                     onClick={() => handleEdit(admin)}
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                    className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                   >
-                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50/80 border-b border-gray-100">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm ${getAccessLevel(admin.role).color}`}>
-                        {getAccessLevel(admin.role).label}
-                      </span>
-                      <div className="p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm">
-                        <MoreVertical className="h-3 w-3 text-gray-400" />
+                    {/* Main Row */}
+                    <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
+                      <div className="relative flex-shrink-0">
+                        {admin.profileImage ? (
+                          <img src={admin.profileImage} alt={admin.fullName} className="h-12 w-12 rounded-full object-cover border border-gray-100" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100">
+                            <span className="text-sm font-black text-indigo-600">{getInitials(admin.fullName)}</span>
+                          </div>
+                        )}
+                        <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${admin.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getAccessLevel(admin.role).color}`}>
+                            {getAccessLevel(admin.role).label}
+                          </span>
+                        </div>
+                        <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{admin.fullName}</p>
+                      </div>
+                      {/* Status + permission stacked on right */}
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getAccountStatus(admin.accountStatus).color}`}>
+                          {getAccountStatus(admin.accountStatus).icon}
+                          {getAccountStatus(admin.accountStatus).label}
+                        </span>
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getPermissionTemplate(admin.permissions).color}`}>
+                          {getPermissionTemplate(admin.permissions).name}
+                        </span>
                       </div>
                     </div>
-                    
-                    <div className="p-4">
-                      <div className="flex items-start gap-3 mb-4">
-                         <div className="relative">
-                          {admin.profileImage ? (
-                            <img
-                              src={admin.profileImage}
-                              alt={admin.fullName}
-                              className="h-12 w-12 rounded-2xl object-cover border border-gray-100 shadow-sm"
-                            />
-                          ) : (
-                            <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm">
-                              <span className="text-lg font-black text-indigo-600">
-                                {getInitials(admin.fullName)}
-                              </span>
-                            </div>
-                          )}
-                          <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-3 border-white shadow-sm ${admin.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-black text-gray-600 leading-tight mb-0.5">{admin.fullName}</h3>
-                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate mb-2">{admin.email}</p>
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shadow-sm ${getAccountStatus(admin.accountStatus).color}`}>
-                              {getAccountStatus(admin.accountStatus).label}
-                            </span>
-                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shadow-sm ${getPermissionTemplate(admin.permissions).color}`}>
-                              {getPermissionTemplate(admin.permissions).name}
-                            </span>
-                          </div>
-                        </div>
+                    {/* Footer strip */}
+                    <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-500 truncate flex-1 min-w-0">{admin.email}</p>
+                      <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                        <Clock className="h-2.5 w-2.5" />
+                        {formatLastLogin(admin.lastLogin)}
                       </div>
-
-                      <div className="pt-3 border-t border-dashed border-gray-100 flex items-center justify-between">
-                         <div className="flex flex-col">
-                            <span className="text-[8px] text-gray-400 font-black uppercase tracking-widest">Last Online</span>
-                            <span className="text-xs font-bold text-gray-600">{formatLastLogin(admin.lastLogin)}</span>
-                         </div>
-                         <div className="flex flex-col items-end">
-                            <span className="text-[8px] text-gray-400 font-black uppercase tracking-widest">Unique ID</span>
-                            <span className="text-[10px] font-mono font-bold text-gray-500 uppercase">#{admin.uid.toUpperCase()}</span>
-                         </div>
-                      </div>
+                      <span className="text-[9px] font-mono font-bold text-gray-400 flex-shrink-0">#{admin.uid.slice(-6).toUpperCase()}</span>
                     </div>
                   </div>
                 ))}

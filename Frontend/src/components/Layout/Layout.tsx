@@ -8,7 +8,6 @@ import {
   Activity,
   AlertTriangle,
   Settings,
-  Menu,
   LogOut,
   Shield,
   MessageSquare,
@@ -592,7 +591,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               </nav>
             </div>
 
-            <div className="flex border-t border-gray-200 p-4">
+            <div className="flex items-center border-t border-gray-200 px-4 h-[65px]">
               <div className="flex items-center w-full">
                 <div className="flex-shrink-0">
                   <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
@@ -622,53 +621,48 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         <div className={`md:pl-72 flex flex-col flex-1 ${title === 'Dashboard' ? 'h-full overflow-hidden' : ''}`}>
           {/* Mobile Header */}
           {!location.pathname.startsWith('/settings/configuration') && !isHeaderHidden && (
-            <header className="sticky top-0 z-30 md:hidden bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="p-2 -ml-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors"
-                  onClick={() => setSidebarOpen(true)}
-                >
-                  <Menu className="h-6 w-6" />
-                </button>
-                <div>
-                  <h1 className="text-lg font-semibold text-gray-900 leading-tight">
-                    {title === 'Dashboard' ? 'Dashboard Overview' : title}
-                  </h1>
-                  <p className="text-xs text-gray-500 line-clamp-1">
-                    {(() => {
-                      switch (title) {
-                        case 'Dashboard': return 'Welcome back! Your service marketplace\'s performance view';
-                        case 'All Users':
-                          return 'Monitor and manage all user accounts across the platform';
-                        case 'Customers':
-                          return 'Manage customer accounts and their service requests';
-                        case 'Service Providers':
-                          return 'Manage service providers and their verification status';
-                        case 'Flagged & Suspended':
-                          return 'Review and manage restricted, suspended, and banned user accounts';
-                        case 'Deleted Users':
-                          return 'View and manage soft deleted user accounts';
-                        case 'Jobs Management':
-                          return 'Monitor and manage all service requests across the platform';
-                        case 'Archived Jobs':
-                          return 'View and manage job listings that have been hidden or removed';
-                        case 'Fee Records':
-                        case 'Top-up Transactions':
-                        case 'Cashout Transactions':
-                        case 'Refund Transactions':
-                          return 'Monitor financial records and payments';
-                        case 'User Verifications': return 'Review identity verification requests';
-                        case 'Activity Feed': return 'System-wide audit logs and user actions';
-                        case 'Flagged': return 'Review flagged content and users';
-                        case 'Support Center': return 'Manage support tickets and inquiries';
-                        case 'Admin Management': return 'Manage admin accounts and permissions';
-                        case 'System Configuration': return 'Manage system-wide settings and variables';
-                        default: return 'Manage platform resources';
-                      }
-                    })()}
-                  </p>
-                </div>
+            <header className="sticky top-0 z-30 md:hidden bg-white border-b border-gray-100 h-16 flex items-center px-4 gap-3 shadow-sm">
+              {/* Hamburger */}
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="w-10 h-10 flex flex-col items-center justify-center gap-[5px] active:scale-95 transition-all flex-shrink-0"
+              >
+                <span className="w-[18px] h-[2px] bg-gray-900 rounded-full" />
+                <span className="w-[12px] h-[2px] bg-gray-400 rounded-full self-start ml-[11px]" />
+                <span className="w-[18px] h-[2px] bg-gray-900 rounded-full" />
+              </button>
+
+              {/* Title */}
+              <div className="flex-1 min-w-0">
+                <h1 className="text-[15px] font-black text-gray-900 leading-tight truncate">
+                  {title === 'Dashboard' ? 'Dashboard Overview' : title}
+                </h1>
+                <p className="text-[10px] text-gray-400 font-medium truncate">
+                  {(() => {
+                    switch (title) {
+                      case 'Dashboard': return "Welcome back! Your service marketplace's performance view";
+                      case 'All Users': return 'Monitor and manage all user accounts across the platform';
+                      case 'Customers': return 'Manage customer accounts and their service requests';
+                      case 'Service Providers': return 'Manage service providers and their verification status';
+                      case 'Flagged & Suspended': return 'Review and manage restricted, suspended, and banned user accounts';
+                      case 'Deleted Users': return 'View and manage soft deleted user accounts';
+                      case 'Jobs Management': return 'Monitor and manage all service requests across the platform';
+                      case 'Archived Jobs': return 'View and manage job listings that have been hidden or removed';
+                      case 'Fee Records':
+                      case 'Top-up Transactions':
+                      case 'Cashout Transactions':
+                      case 'Refund Transactions': return 'Monitor financial records and payments';
+                      case 'User Verifications': return 'Review identity verification requests';
+                      case 'Activity Feed': return 'System-wide audit logs and user actions';
+                      case 'Flagged': return 'Review flagged content and users';
+                      case 'Support Center': return 'Manage support tickets and inquiries';
+                      case 'Admin Management': return 'Manage admin accounts and permissions';
+                      case 'System Configuration': return 'Manage system-wide settings and variables';
+                      default: return 'Manage platform resources';
+                    }
+                  })()}
+                </p>
               </div>
 
             </header>
