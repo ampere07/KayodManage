@@ -38,14 +38,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <LoadingSpinner />
-        <div className="ml-4">
-          <p className="text-gray-600">Checking authentication...</p>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Checking authentication..." />;
   }
 
   if (!isAuthenticated) {

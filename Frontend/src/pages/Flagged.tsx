@@ -234,7 +234,7 @@ const Flagged: React.FC = () => {
     <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-6 py-5">
+        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -251,8 +251,43 @@ const Flagged: React.FC = () => {
 
           </div>
 
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Reports</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{statusCounts.all.toLocaleString()}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Pending</p>
+                <p className="text-base font-black text-amber-600 leading-tight">{statusCounts.pending.toLocaleString()}</p>
+              </div>
+            </div>
+            {/* Filter pills */}
+            <div className="flex gap-2">
+              {([
+                { label: 'All',      value: statusCounts.all,       filterVal: 'all',       activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
+                { label: 'Pending',  value: statusCounts.pending,   filterVal: 'pending',   activeBg: 'bg-amber-500',   border: 'border-amber-500'   },
+                { label: 'Reviewed', value: statusCounts.reviewed,  filterVal: 'reviewed',  activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
+                { label: 'Resolved', value: statusCounts.resolved,  filterVal: 'resolved',  activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
+                const active = filter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setFilter(filterVal as ReportFilterStatus)}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="cursor-pointer" onClick={() => setFilter('all')}>
               <StatsCard
                 title="Total Reports"
@@ -301,34 +336,45 @@ const Flagged: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <div className="px-4 md:px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-3 md:gap-4">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
             <input
               type="text"
               placeholder="Search by keywords, reporter, or reported user..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm"
+              className="w-full pl-8 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
             />
-            {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5 mt-3">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
-                value={itemsPerPage}
-                onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
+          </div>
+
+          {/* Mobile filter dropdowns grid */}
+          <div className="grid grid-cols-2 gap-2 md:hidden w-full">
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as ReportFilterStatus)}
+              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="resolved">Resolved</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            >
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+            </select>
           </div>
 
           <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-            <select 
+            <select
               value={itemsPerPage}
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
               className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -424,45 +470,45 @@ const Flagged: React.FC = () => {
               </div>
 
               {/* Mobile Card View */}
-              <div className="lg:hidden flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div className="lg:hidden px-3 py-3 space-y-2">
                 {paginatedReports.map((report) => (
                   <div
                     key={report._id}
                     onClick={() => handleViewReport(report)}
-                    className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                    className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                   >
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
+                      <div className="flex items-center gap-1.5">
                         <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-gray-200 text-gray-700">{report.reportType}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusBadge(report.status)}`}>{report.status}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-gray-400 capitalize">
+                      <span className="text-[10px] font-bold text-gray-400 capitalize shrink-0">
                         {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}
                       </span>
                     </div>
 
-                    <div className="p-4">
-                       <h3 className="text-xs font-black text-red-600 uppercase tracking-widest mb-3">{report.reason.replace(/_/g, ' ')}</h3>
-                       
-                       <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported User</p>
+                    <div className="px-3 py-2.5">
+                       <h3 className="text-xs font-black text-red-600 uppercase tracking-widest mb-2">{report.reason.replace(/_/g, ' ')}</h3>
+
+                       <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="px-2.5 py-2 bg-gray-50 rounded-xl border border-gray-100">
+                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">Reported User</p>
                              <p className="text-xs font-black text-gray-900 truncate">{report.reportedUserId?.name || 'N/A'}</p>
                           </div>
-                          <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported By</p>
+                          <div className="px-2.5 py-2 bg-gray-50 rounded-xl border border-gray-100">
+                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">Reported By</p>
                              <p className="text-xs font-black text-gray-900 truncate">{report.reportedBy.name}</p>
                           </div>
                        </div>
 
-                       <div className="p-3 bg-blue-50/30 rounded-xl border border-blue-100/50">
-                          <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-1">Admin Comment</p>
+                       <div className="px-2.5 py-2 bg-blue-50/30 rounded-xl border border-blue-100/50">
+                          <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-0.5">Admin Comment</p>
                           <p className="text-xs text-gray-700 leading-relaxed italic">"{report.comment || 'No additional details provided by reporter.'}"</p>
                        </div>
                     </div>
 
-                    <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
-                       <div className="flex items-center gap-2 text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                    <div className="px-3 py-2.5 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
+                       <div className="flex items-center gap-1.5 text-[9px] font-black text-gray-400 uppercase tracking-widest">
                          <Calendar className="h-3 w-3" />
                          {new Date(report.createdAt).toLocaleDateString()}
                        </div>
@@ -474,37 +520,36 @@ const Flagged: React.FC = () => {
                 ))}
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
-                  <div className="flex items-center justify-between w-full">
-                    <div>
-                      <p className="text-xs text-gray-700">
-                        Page <span className="font-bold">{currentPage}</span> of <span className="font-bold">{totalPages}</span>
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                       <button 
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                        className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                       >
-                         PREV
-                       </button>
-                       <button 
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                        className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                       >
-                         NEXT
-                       </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* Pagination — outside scroll, always sticky at bottom */}
+        {totalPages > 1 && (
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
+            <div className="flex items-center justify-between w-full">
+              <p className="text-xs text-gray-700">
+                Page <span className="font-bold">{currentPage}</span> of <span className="font-bold">{totalPages}</span>
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  PREV
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  NEXT
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <ReviewReportModal

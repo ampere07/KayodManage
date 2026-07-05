@@ -6,14 +6,9 @@ import {
   Search,
   Archive,
   XCircle,
-  MapPin,
   Calendar,
-  ChevronRight,
   ShieldAlert,
   Clock,
-  Users,
-  LayoutGrid,
-  Table2,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -22,7 +17,7 @@ import { JobDetailsModal } from '../components/Modals';
 import StatsCard from '../components/Dashboard/StatsCard';
 
 // Tpye imports
-import type { Job, JobsPagination, JobCategory } from '../types';
+import type { Job, JobsPagination } from '../types';
 
 
 // Utility imports
@@ -44,7 +39,7 @@ import { useSocket as useSocketContext } from '../context/SocketContext';
 const ArchivedJobs: React.FC = () => {
   // State management
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [archiveTypeFilter, setArchiveTypeFilter] = useState<'all' | 'hidden' | 'removed'>('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -57,8 +52,7 @@ const ArchivedJobs: React.FC = () => {
   });
 
   const { categories, professionsList } = useJobCategories();
-  const [iconTimestamp, setIconTimestamp] = useState(Date.now());
-  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
+  const [iconTimestamp] = useState(Date.now());
 
   // Resolver logic adapted from Dashboard.tsx for icons parity
   const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
@@ -80,12 +74,12 @@ const ArchivedJobs: React.FC = () => {
     let iconStr = '';
 
     // 1. Try to find in fetched categories/professions (with normalization)
-    const cat = categories.find(c => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
+    const cat = categories.find((c: any) => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
     if (cat) {
       categoryIconStr = cat.icon || '';
     } else {
       for (const c of categories) {
-        const prof = c.professions?.find(p => {
+        const prof = c.professions?.find((p: any) => {
           const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
         });
@@ -220,7 +214,7 @@ const ArchivedJobs: React.FC = () => {
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-6 py-5">
+        <div className="px-4 pt-3 pb-3 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -239,8 +233,43 @@ const ArchivedJobs: React.FC = () => {
 
           </div>
 
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Archived</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Hidden</p>
+                <p className="text-base font-black text-orange-600 leading-tight">{archivedCounts.hidden.toLocaleString()}</p>
+              </div>
+            </div>
+            {/* Filter pills */}
+            <div className="flex gap-2">
+              {([
+                { label: 'All',     value: archivedCounts.hidden + archivedCounts.removed, filterVal: 'all',     activeBg: 'bg-blue-500',   border: 'border-blue-500'   },
+                { label: 'Hidden',  value: archivedCounts.hidden,                          filterVal: 'hidden',  activeBg: 'bg-orange-500', border: 'border-orange-500' },
+                { label: 'Deleted', value: archivedCounts.removed,                         filterVal: 'removed', activeBg: 'bg-red-500',    border: 'border-red-500'    },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
+                const active = archiveTypeFilter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setArchiveTypeFilter(filterVal as 'all' | 'hidden' | 'removed')}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+          <div className="hidden md:grid md:grid-cols-3 gap-3 md:gap-4">
             <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('all')}>
               <StatsCard
                 title="Total"
@@ -278,53 +307,65 @@ const ArchivedJobs: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
-          {/* Row 1 on Mobile / Search on Desktop */}
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
           <div className="flex items-center gap-2 md:contents">
             <div className="relative flex-1 md:order-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4 md:left-3.5" />
               <input
                 type="text"
                 placeholder="Search archived jobs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm h-8 md:h-10 md:pl-10"
               />
             </div>
 
-            {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
+            {/* Page Limit - Mobile only */}
+            <select
+              value={pagination.limit}
+              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              className="md:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
           </div>
 
-          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
-            <div className="flex-1 md:flex-initial flex items-center gap-2 md:pb-0 overflow-hidden">
+          {/* Row 2 on Mobile: Profession filter */}
+          <div className="grid grid-cols-1 gap-2 md:hidden">
+            <select
+              value={professionFilter}
+              onChange={(e) => setProfessionFilter(e.target.value)}
+              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 truncate"
+            >
+              <option value="all">Professions</option>
+              {professionsList.map(prof => (
+                <option key={String(prof)} value={String(prof)} className="capitalize">{String(prof)}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Desktop: filters + page limit */}
+          <div className="hidden md:flex items-center justify-end gap-6 shrink-0 md:order-2">
+            <div className="flex items-center gap-2">
               <select
                 value={professionFilter}
                 onChange={(e) => setProfessionFilter(e.target.value)}
-                className="flex-1 md:flex-initial bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] md:max-w-[160px] truncate"
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] md:max-w-[160px] truncate"
               >
                 <option value="all">Professions</option>
                 {professionsList.map(prof => (
-                  <option key={prof} value={prof} className="capitalize">{prof}</option>
+                  <option key={String(prof)} value={String(prof)} className="capitalize">{String(prof)}</option>
                 ))}
               </select>
             </div>
 
             {/* Pagination Limit for Desktop */}
-            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
+              <select
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
                 className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -333,22 +374,6 @@ const ArchivedJobs: React.FC = () => {
                 <option value={20}>20</option>
                 <option value={50}>50</option>
               </select>
-            </div>
-
-            {/* View Type Toggle - Mobile only */}
-            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
-               <button
-                 onClick={() => setMobileViewType('card')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <LayoutGrid className="h-3.5 w-3.5" />
-               </button>
-               <button
-                 onClick={() => setMobileViewType('table')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <Table2 className="h-3.5 w-3.5" />
-               </button>
             </div>
           </div>
         </div>
@@ -398,7 +423,7 @@ const ArchivedJobs: React.FC = () => {
                   </thead>
                   <tbody className="bg-white border-b border-gray-300">
                     {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.category, job.icon);
+                      const iconData = resolveIconForJob(job.category || '', job.icon);
                       return (
                         <tr
                           key={job._id}
@@ -476,201 +501,115 @@ const ArchivedJobs: React.FC = () => {
                 </table>
               </div>
 
-              {/* Mobile Toggleable View */}
+              {/* Mobile Card View */}
               <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
-                {mobileViewType === 'card' ? (
-                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
                     {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.category, job.icon);
+                      const iconData = resolveIconForJob(job.category || '', job.icon);
+                      const price = formatCurrency(job.budget || job.agreedPrice || 0);
                       return (
                         <div
                           key={job._id}
                           onClick={() => openJobModal(job)}
-                          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                          className="relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                         >
-                          {/* Card Header: Status & Time */}
-                          <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100">
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm bg-white`}>
-                                {getJobStatusIcon(job.status)}
-                                {job.status.replace('_', ' ')}
-                              </span>
-                              {job.archiveType === 'hidden' ? (
-                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-sm ring-2 ring-orange-100">
-                                  HIDDEN
-                                </span>
-                              ) : (
-                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-500 text-white shadow-sm ring-2 ring-red-100">
-                                  DELETED
-                                </span>
-                              )}
+                          {/* Top-right badges: status then archive type */}
+                          <div className="absolute top-2.5 right-3 flex flex-col items-end gap-1 z-10">
+                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
+                            </span>
+                            {job.archiveType === 'hidden' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-orange-500 text-white">HIDDEN</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-red-500 text-white">DELETED</span>
+                            )}
+                          </div>
+
+                          {/* Main Row */}
+                          <div className="flex items-center gap-3 px-3 pt-3 pb-2.5 pr-24">
+                            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                              <img
+                                src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                alt={job.category}
+                                className="h-9 w-9 object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                  (e.target as HTMLImageElement).onerror = null;
+                                }}
+                              />
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
-                              <Clock className="h-3 w-3" />
-                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[130px]">
+                                  {iconData.label || job.category || 'General Service'}
+                                </span>
+                              </div>
+                              <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
                             </div>
                           </div>
 
-                          {/* Card Content */}
-                          <div className="p-4">
-                            <div className="flex items-start gap-4 mb-4">
-                              <div className="relative flex-shrink-0">
-                                <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
-                                  <img 
-                                    src={`${iconData.imagePath}?t=${iconTimestamp}`}
-                                    alt={job.category}
-                                    className="h-10 w-10 object-contain"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                      (e.target as HTMLImageElement).onerror = null;
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
-                                  {job.title}
-                                </h3>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                    {iconData.label || job.category || 'General Service'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Customer Info Snippet */}
-                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                              <div className="h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-500 shadow-sm">
+                          {/* Footer strip */}
+                          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
                                 {getInitials(job.user?.name || 'U')}
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                                <p className="text-[10px] text-gray-400 truncate tracking-tight">{job.user?.email || 'No email'}</p>
-                              </div>
+                              <p className="text-[10px] font-bold text-gray-500 truncate">{job.user?.name || 'Anonymous'}</p>
                             </div>
-
-                            {/* Price & Location */}
-                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-dashed border-gray-200">
-                              <div className="flex flex-col">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Archived Price</span>
-                                <div className="flex items-baseline gap-1 mt-0.5">
-                                  <span className="text-lg font-black text-gray-900 leading-none">
-                                    {formatCurrency(job.budget || job.agreedPrice || 0)}
-                                  </span>
-                                  <span className="text-[9px] text-gray-400 font-bold uppercase">{job.paymentMethod || 'Wallet'}</span>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-end text-right">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Location</span>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 mt-1 max-w-full truncate">
-                                  <MapPin className="h-3 w-3 text-red-500" />
-                                  <span className="truncate">{job.locationDisplay || 'Remote'}</span>
-                                </div>
-                              </div>
+                            <p className="text-sm font-black text-gray-900 flex-shrink-0">{price}</p>
+                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                              <Clock className="h-2.5 w-2.5" />
+                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
                             </div>
-                          </div>
-
-                          {/* View Details Prompt */}
-                          <div className="px-4 py-2.5 bg-gray-50/30 border-t border-gray-100 flex items-center justify-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                            View Archived Details
-                            <ChevronRight className="h-3 w-3" />
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                ) : (
-                  <div className="flex-1 overflow-x-hidden">
-                    <table className="w-full table-fixed border-separate border-spacing-0">
-                      <thead className="bg-gray-50/80 sticky top-0 z-20">
-                        <tr>
-                          <th className="w-[55%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Archived Job</th>
-                          <th className="w-[20%] px-2 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Type</th>
-                          <th className="w-[25%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobs.map((job) => {
-                          const iconData = resolveIconForJob(job.category, job.icon);
-                          return (
-                            <tr 
-                              key={job._id} 
-                              onClick={() => openJobModal(job)}
-                              className="border-b border-gray-100 active:bg-gray-50 transition-colors"
-                            >
-                              <td className="px-3 py-3 overflow-hidden">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <img 
-                                    src={`${iconData.imagePath}?t=${iconTimestamp}`} 
-                                    className="h-7 w-7 object-contain flex-shrink-0" 
-                                    alt="" 
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{job.title}</p>
-                                    <p className="text-[9px] text-gray-400 font-bold truncate uppercase">{job.user?.name}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-2 py-3 text-center">
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tight border ${job.archiveType === 'removed' ? 'border-red-200 text-red-600' : 'border-gray-200 text-gray-600'}`}>
-                                  {job.archiveType === 'removed' ? 'Del' : 'Hid'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                <p className="text-[10px] font-black text-gray-900 leading-tight">
-                                  {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }) : 'N/A'}
-                                </p>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
 
-              {/* Pagination */}
-              {pagination.pages > 1 && (
-                <div className="flex-shrink-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 p-4 font-inter">
-                  <div className="flex items-center justify-between w-full">
-                    <div>
-                      <p className="text-xs md:text-sm text-gray-700">
-                        Showing{' '}
-                        <span className="font-medium">
-                          {((pagination.page - 1) * pagination.limit) + 1}
-                        </span>{' '}
-                        to{' '}
-                        <span className="font-medium">
-                          {Math.min(pagination.page * pagination.limit, pagination.total)}
-                        </span>{' '}
-                        of{' '}
-                        <span className="font-medium">{pagination.total}</span> results
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                        disabled={pagination.page === 1}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
-                        disabled={pagination.page === pagination.pages}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* Pagination — outside scroll area, always anchored at bottom */}
+        {!loading && jobs.length > 0 && pagination.pages > 1 && (
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 font-inter h-[65px] flex items-center">
+            <div className="flex items-center justify-between w-full">
+              <div>
+                <p className="text-xs md:text-sm text-gray-700">
+                  Showing{' '}
+                  <span className="font-medium">
+                    {((pagination.page - 1) * pagination.limit) + 1}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {Math.min(pagination.page * pagination.limit, pagination.total)}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                  disabled={pagination.page === 1}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
+                  disabled={pagination.page === pagination.pages}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Job Details Modal */}

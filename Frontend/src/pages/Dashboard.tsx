@@ -142,7 +142,7 @@ function RevenueChart() {
   }, [chartData, period, jobCounts?.totalValue]);
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
+    <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-sm h-full flex flex-col">
       <div className="flex items-start sm:items-start justify-between mb-2 sm:mb-4">
         <div>
           <h3 className="text-[17px] sm:text-lg font-semibold text-gray-900 sm:mb-2">Revenue Overview</h3>
@@ -346,7 +346,7 @@ function ActiveAlerts() {
   const displayAlerts = localAlerts || [];
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
+    <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-sm h-full flex flex-col">
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h3 className="text-lg font-semibold text-gray-900">Active Alerts</h3>
         <button
@@ -431,7 +431,7 @@ function ActivityBreakdown() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex-1 overflow-hidden flex flex-col">
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-sm flex-1 overflow-hidden flex flex-col">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex-shrink-0">Today's Activity</h3>
 
         <div className="flex-1 pr-2 min-h-0">
@@ -584,7 +584,7 @@ function PopularJobsChart() {
   }, [chartData]);
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col relative">
+    <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-sm h-full flex flex-col relative">
       <style>{`
         .popular-pie-slice {
           transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s !important;

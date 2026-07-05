@@ -4,18 +4,14 @@ import {
   Search,
   CheckCircle,
   Clock,
-  MapPin,
   Wallet,
   Calendar,
   Users,
   Briefcase,
   FolderOpen,
-  Plus,
-  RefreshCw,
   LayoutGrid,
   Table2,
   DollarSign,
-  ChevronRight,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -26,7 +22,7 @@ import { JobDetailsModal } from '../components/Modals';
 import StatsCard from '../components/Dashboard/StatsCard';
 
 // Tpye imports
-import type { Job, JobsPagination, JobCategory } from '../types';
+import type { Job, JobsPagination } from '../types';
 
 
 // Utility imports
@@ -61,9 +57,7 @@ const Jobs: React.FC = () => {
     pages: 0
   });
   const { categories, professionsList } = useJobCategories();
-  const [iconTimestamp, setIconTimestamp] = useState(Date.now());
   const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Resolver logic adapted from Dashboard.tsx for icons parity
   const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
@@ -73,12 +67,11 @@ const Jobs: React.FC = () => {
     const normalizedSearch = jobCategory.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     
     for (const c of categories) {
-      const prof = c.professions?.find(p => {
+      const prof = c.professions?.find((p: any) => {
         const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
         return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
       });
       if (prof && prof.icon) {
-        // Use the profession icon from categories data (has correct ImageKit path)
         return getProfessionIconByName(prof.icon, c.icon);
       }
     }
@@ -103,12 +96,12 @@ const Jobs: React.FC = () => {
     let iconStr = '';
 
     // 1. Try to find in fetched categories/professions (with normalization)
-    const cat = categories.find(c => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
+    const cat = categories.find((c: any) => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
     if (cat) {
       categoryIconStr = cat.icon || '';
     } else {
       for (const c of categories) {
-        const prof = c.professions?.find(p => {
+        const prof = c.professions?.find((p: any) => {
           const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
         });
@@ -243,7 +236,7 @@ const Jobs: React.FC = () => {
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-6 py-5">
+        <div className="px-4 pt-3 pb-3 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -262,8 +255,46 @@ const Jobs: React.FC = () => {
 
           </div>
 
-          {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Revenue</p>
+                <p className="text-base font-black text-emerald-600 leading-tight">{formatCurrency(jobCounts.totalValue)}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Jobs</p>
+                <p className="text-base font-black text-gray-900 leading-tight">{jobCounts.total.toLocaleString()}</p>
+              </div>
+            </div>
+
+            {/* Horizontal filter pills */}
+            <div className="flex gap-2">
+              {([
+                { label: 'All',      value: jobCounts.total,     filter: 'all',         Icon: Briefcase   as React.ElementType, activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
+                { label: 'Open',     value: jobCounts.open,      filter: 'open',        Icon: FolderOpen  as React.ElementType, activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
+                { label: 'Assigned', value: jobCounts.assigned,  filter: 'in_progress', Icon: Clock       as React.ElementType, activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
+                { label: 'Done',     value: jobCounts.completed, filter: 'completed',   Icon: CheckCircle as React.ElementType, activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
+              ] as { label: string; value: number; filter: string; Icon: React.ElementType; activeBg: string; border: string }[]).map(({ label, value, filter, Icon, activeBg, border }) => {
+                const active = statusFilter === filter;
+                return (
+                  <button
+                    key={filter}
+                    onClick={() => setStatusFilter(filter)}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <Icon className="h-3 w-3 flex-shrink-0" />
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Desktop Stats Grid */}
+          <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
             <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('all')}>
               <StatsCard
                 title="Total"
@@ -308,7 +339,7 @@ const Jobs: React.FC = () => {
                 smallIcon={true}
               />
             </div>
-            <div className="col-span-2 md:col-span-1 lg:col-span-1">
+            <div className="md:col-span-1">
               <StatsCard
                 title="Revenue"
                 value={formatCurrency(jobCounts.totalValue)}
@@ -323,49 +354,70 @@ const Jobs: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
-          {/* Row 1 on Mobile / Search on Desktop */}
+        <div className="px-4 py-2 md:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+
+          {/* Mobile Row 1: Search + View Toggle */}
           <div className="flex items-center gap-2 md:contents">
             <div className="relative flex-1 md:order-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5" />
               <input
                 type="text"
                 placeholder="Search jobs, categories, or IDs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+                className="w-full pl-8 pr-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm h-8 md:h-10 md:pl-10 md:pr-4 md:rounded-xl md:text-sm"
               />
             </div>
 
-            {/* Mobile-only Limit */}
-            <div className="flex md:hidden items-center gap-1.5">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
+            {/* Page Limit - Mobile only */}
+            <select
+              value={pagination.limit}
+              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              className="md:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
           </div>
 
-          {/* Row 2 on Mobile / Desktop Right-side group */}
-          <div className="flex items-center justify-between gap-3 md:flex-initial md:order-2 md:justify-end md:gap-6 shrink-0">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 md:pb-0">
+          {/* Mobile Row 2: Professions + Payment */}
+          <div className="grid grid-cols-2 gap-2 md:hidden">
+            <select
+              value={professionFilter}
+              onChange={(e) => setProfessionFilter(e.target.value)}
+              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 truncate h-8"
+            >
+              <option value="all">Professions</option>
+              {[...new Set(professionsList)].map((prof: any) => (
+                <option key={prof} value={prof} className="capitalize">{prof}</option>
+              ))}
+            </select>
+            <select
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
+              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8"
+            >
+              <option value="all">Payment</option>
+              <option value="wallet">Wallet</option>
+              <option value="cash">Cash</option>
+              <option value="xendit">Xendit</option>
+            </select>
+          </div>
+
+          {/* Desktop: Professions + Payment + Page Limit + View Toggle */}
+          <div className="hidden md:flex items-center justify-end gap-6 md:order-2">
+            <div className="flex items-center gap-2">
               <select
                 value={professionFilter}
                 onChange={(e) => setProfessionFilter(e.target.value)}
-                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] max-w-[160px] truncate"
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[140px] truncate"
               >
                 <option value="all">Professions</option>
-                {[...new Set(professionsList)].map(prof => (
+                {[...new Set(professionsList)].map((prof: any) => (
                   <option key={prof} value={prof} className="capitalize">{prof}</option>
                 ))}
               </select>
-
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value)}
@@ -377,11 +429,9 @@ const Jobs: React.FC = () => {
                 <option value="xendit">Xendit</option>
               </select>
             </div>
-
-            {/* Pagination Limit for Desktop */}
-            <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
+              <select
                 value={pagination.limit}
                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
                 className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -391,21 +441,19 @@ const Jobs: React.FC = () => {
                 <option value={50}>50</option>
               </select>
             </div>
-
-            {/* View Type Toggle - Mobile Only */}
-            <div className="flex md:hidden items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0 md:order-4">
-               <button
-                 onClick={() => setMobileViewType('card')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <LayoutGrid className="h-3.5 w-3.5" />
-               </button>
-               <button
-                 onClick={() => setMobileViewType('table')}
-                 className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-               >
-                 <Table2 className="h-3.5 w-3.5" />
-               </button>
+            <div className="flex items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0">
+              <button
+                onClick={() => setMobileViewType('card')}
+                className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setMobileViewType('table')}
+                className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -551,173 +599,142 @@ const Jobs: React.FC = () => {
               {/* Mobile Toggleable View */}
               <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
                 {mobileViewType === 'card' ? (
-                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
                     {jobs.map((job) => {
                       const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
-                      // Add cache-busting using profession's updatedAt timestamp
                       const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
                         ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
                         : iconData.imagePath;
+                      const price = formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0));
+                      const categoryLabel = (() => {
+                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
+                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                      })();
                       return (
                         <div
                           key={job._id}
                           onClick={() => openJobModal(job)}
-                          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                          className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                         >
-                          {/* Card Header: Status & Time */}
-                          <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100">
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm bg-white`}>
-                                {getJobStatusIcon(job.status)}
-                                {job.status.replace('_', ' ')}
-                              </span>
-                              {job.isUrgent && (
-                                <span className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-500 text-white shadow-sm ring-2 ring-red-100">
-                                  Urgent
+                          {/* Main Row */}
+                          <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
+                            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                              <img
+                                src={iconPath}
+                                alt=""
+                                className="h-9 w-9 object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                  (e.target as HTMLImageElement).onerror = null;
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[130px]">
+                                  {categoryLabel}
                                 </span>
-                              )}
+                                {job.isUrgent && (
+                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 flex-shrink-0">Urgent</span>
+                                )}
+                              </div>
+                              <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
-                              <Clock className="h-3 w-3" />
-                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                            </div>
+                            {/* Status badge */}
+                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white flex-shrink-0`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
+                            </span>
                           </div>
 
-                          {/* Card Content */}
-                          <div className="p-4">
-                            <div className="flex items-start gap-4 mb-4">
-                              <div className="relative flex-shrink-0">
-                                <div className="h-14 w-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center p-2 shadow-inner">
-                                  <img
-                                    src={iconPath}
-                                    alt={job.professionName || job.categoryName || job.category || 'Category'}
-                                    className="h-10 w-10 object-contain"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                      (e.target as HTMLImageElement).onerror = null;
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2 mb-1">
-                                  <span className="text-[10px] font-black text-blue-600 tracking-widest bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                    {(() => {
-                                      const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
-                                      return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                                    })()}
-                                  </span>
-                                  <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                    <Users className="h-3 w-3" />
-                                    {job.applicationCount || 0}
-                                  </div>
-                                </div>
-                                <h3 className="text-base font-black text-gray-900 leading-tight mb-1 truncate">
-                                  {job.title}
-                                </h3>
-                                <p className="text-[11px] text-gray-600 font-medium line-clamp-2" title={job.description}>
-                                  {job.description || 'No description'}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Customer Info Snippet */}
-                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                              <div className="h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-500 shadow-sm">
+                          {/* Footer strip */}
+                          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
                                 {getInitials(job.user?.name || 'U')}
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                                <p className="text-[10px] text-gray-400 truncate tracking-tight">{job.user?.email || 'No email provided'}</p>
-                              </div>
+                              <p className="text-[10px] font-bold text-gray-500 truncate">{job.user?.name || 'Anonymous'}</p>
                             </div>
-
-                            {/* Price & Location */}
-                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-dashed border-gray-200">
-                              <div className="flex flex-col">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Offering Price</span>
-                                <div className="flex items-baseline gap-1 mt-0.5">
-                                  <span className="text-lg font-black text-gray-900 leading-none">
-                                    {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
-                                  </span>
-                                  <span className="text-[9px] text-gray-400 font-bold uppercase">{job.paymentMethod}</span>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-end text-right">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Location</span>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 mt-1 max-w-full truncate">
-                                  <MapPin className="h-3 w-3 text-red-500" />
-                                  <span className="truncate">{job.locationDisplay || 'Remote'}</span>
-                                </div>
-                              </div>
+                            <p className="text-sm font-black text-gray-900 flex-shrink-0">{price}</p>
+                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                              <Clock className="h-2.5 w-2.5" />
+                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                             </div>
-                          </div>
-
-                          {/* View Details Prompt */}
-                          <div className="px-4 py-2.5 bg-gray-50/30 border-t border-gray-100 flex items-center justify-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                            View Detailed Breakdown
-                            <ChevronRight className="h-3 w-3" />
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-x-hidden">
-                    <table className="w-full table-fixed border-separate border-spacing-0">
-                      <thead className="bg-gray-50/80 sticky top-0 z-20">
-                        <tr>
-                          <th className="w-[60%] px-3 py-2.5 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Job</th>
-                          <th className="w-[20%] px-2 py-2.5 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Stat</th>
-                          <th className="w-[20%] px-3 py-2.5 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Price</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobs.map((job) => {
-                          const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
-                          // Add cache-busting using profession's updatedAt timestamp
-                          const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
-                            ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
-                            : iconData.imagePath;
-                          return (
-                            <tr
-                              key={job._id}
-                              onClick={() => openJobModal(job)}
-                              className="border-b border-gray-100 active:bg-gray-50 transition-colors"
-                            >
-                              <td className="px-3 py-3 overflow-hidden">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <img
-                                    src={iconPath}
-                                    className="h-7 w-7 object-contain flex-shrink-0"
-                                    alt=""
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-[9px] text-gray-400 font-bold truncate">
-                                      {(() => {
-                                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
-                                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                                      })()}
-                                    </p>
-                                    <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{job.title}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-2 py-3 text-center">
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)}`}>
-                                  {job.status.split('_')[0]}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                <p className="text-[11px] font-black text-gray-900">
-                                  {formatCurrency(job.budget || 0)}
-                                </p>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="flex-1 overflow-y-auto py-2 space-y-px bg-gray-100">
+                    {jobs.map((job) => {
+                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
+                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
+                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
+                        : iconData.imagePath;
+                      const price = formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0));
+                      const categoryLabel = (() => {
+                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
+                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
+                      })();
+                      return (
+                        <div
+                          key={job._id}
+                          onClick={() => openJobModal(job)}
+                          className="bg-white flex items-center gap-3 px-4 py-3 active:bg-gray-50 transition-colors"
+                        >
+                          {/* Icon */}
+                          <div className="h-10 w-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                            <img
+                              src={iconPath}
+                              alt=""
+                              className="h-7 w-7 object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                (e.target as HTMLImageElement).onerror = null;
+                              }}
+                            />
+                          </div>
+
+                          {/* Middle: category + title + customer */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[140px]">
+                                {categoryLabel}
+                              </span>
+                              {job.isUrgent && (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 flex-shrink-0">Urgent</span>
+                              )}
+                            </div>
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="h-4 w-4 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-[7px] font-black text-gray-500 flex-shrink-0">
+                                {getInitials(job.user?.name || 'U')}
+                              </div>
+                              <p className="text-[10px] text-gray-400 font-bold truncate">{job.user?.name || 'Anonymous'}</p>
+                              <span className="text-gray-300">·</span>
+                              <div className="flex items-center gap-0.5 text-[10px] font-bold text-gray-400 flex-shrink-0">
+                                <Users className="h-2.5 w-2.5" />
+                                {job.applicationCount || 0}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: status + price + time */}
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
+                            </span>
+                            <p className="text-sm font-black text-gray-900">{price}</p>
+                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400">
+                              <Clock className="h-2.5 w-2.5" />
+                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -727,7 +744,7 @@ const Jobs: React.FC = () => {
         </div>
 
         {!loading && jobs.length > 0 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 p-4 font-inter">
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 font-inter h-[65px] flex items-center">
             <div className="flex items-center justify-between w-full">
               <div>
                 <p className="text-xs md:text-sm text-gray-700">

@@ -313,7 +313,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   <div className="flex items-start gap-2">
                     <p className="text-gray-600 min-w-[110px]">Job Category:</p>
                     <p className="text-gray-900 font-medium capitalize">
-                      {transaction.job?.category || transaction.jobId?.category || 'N/A'}
+                      {(() => {
+                        const job = (transaction.job || transaction.jobId) as any;
+                        const raw = job?.professionName || job?.categoryName || job?.category || '';
+                        return /^[a-fA-F0-9]{24}$/.test(raw) ? 'General Service' : raw || 'N/A';
+                      })()}
                     </p>
                   </div>
 
@@ -697,7 +701,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   <div className="flex">
                     <p className="font-semibold text-gray-700 w-32">Job Category:</p>
                     <p className="text-gray-600 flex-1 capitalize">
-                      {transaction.job?.category || transaction.jobId?.category || 'N/A'}
+                      {(() => {
+                        const job = (transaction.job || transaction.jobId) as any;
+                        const raw = job?.professionName || job?.categoryName || job?.category || '';
+                        return /^[a-fA-F0-9]{24}$/.test(raw) ? 'General Service' : raw || 'N/A';
+                      })()}
                     </p>
                   </div>
                   <div className="flex">

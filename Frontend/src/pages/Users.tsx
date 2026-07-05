@@ -7,12 +7,9 @@ import {
   CheckCircle,
   XCircle,
   Users as UsersIcon,
-  ChevronRight,
   Shield,
   Clock,
-  Ban,
-  LayoutGrid,
-  Table2
+  Ban
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { UserDetailsModal } from '../components/Modals';
@@ -45,7 +42,6 @@ const Users: React.FC = () => {
     total: 0,
     pages: 0
   });
-  const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
 
   const getUserType = () => {
     const path = location.pathname;
@@ -132,10 +128,11 @@ const Users: React.FC = () => {
 
   useEffect(() => {
     if (jobCategoriesData?.success && jobCategoriesData.categories) {
-      const allProfessions = jobCategoriesData.categories
-        .flatMap((cat: any) => cat.professions || [])
-        .map((prof: any) => prof.name)
-        .sort();
+      const allProfessions = [...new Set(
+        jobCategoriesData.categories
+          .flatMap((cat: any) => cat.professions || [])
+          .map((prof: any) => prof.name)
+      )].sort() as string[];
       setProfessionsList(allProfessions);
     }
   }, [jobCategoriesData]);
@@ -290,7 +287,7 @@ const Users: React.FC = () => {
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-6 py-5">
+        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -307,8 +304,146 @@ const Users: React.FC = () => {
 
           </div>
 
+          {/* Mobile Header — pill filter grid */}
+          <div className="md:hidden">
+            <div className="grid grid-cols-3 gap-2">
+              {/* All Users — only on /users */}
+              {userType !== 'customers' && userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
+                const active = location.pathname === '/users' && statusFilter === 'all';
+                return (
+                  <button key="all-users" onClick={() => handleCounterClick('reset')}
+                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                    <span className="text-[11px] font-black">{globalUserCounts.total.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All Users</span>
+                  </button>
+                );
+              })()}
+              {/* Customers */}
+              {userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
+                const active = location.pathname === '/users/customers';
+                return (
+                  <button key="customers" onClick={() => handleCounterClick('customers')}
+                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                    <span className="text-[11px] font-black">{globalUserCounts.customers.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
+                  </button>
+                );
+              })()}
+              {/* Providers */}
+              {userType !== 'customers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
+                const active = location.pathname === '/users/providers';
+                return (
+                  <button key="providers" onClick={() => handleCounterClick('providers')}
+                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                    <span className="text-[11px] font-black">{globalUserCounts.providers.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
+                  </button>
+                );
+              })()}
+              {/* Flagged-page counters */}
+              {userType === 'flagged' && (
+                <>
+                  {(() => { const active = userSubTypeFilter === 'all' && statusFilter === 'all'; return (
+                    <button key="f-all" onClick={() => { setUserSubTypeFilter('all'); setStatusFilter('all'); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{flaggedUserCounts.total.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = userSubTypeFilter === 'client'; return (
+                    <button key="f-client" onClick={() => { setUserSubTypeFilter('client'); setStatusFilter('all'); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{flaggedUserCounts.customers.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = userSubTypeFilter === 'provider'; return (
+                    <button key="f-provider" onClick={() => { setUserSubTypeFilter('provider'); setStatusFilter('all'); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{flaggedUserCounts.providers.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
+                    </button>
+                  ); })()}
+                </>
+              )}
+              {/* Deleted-page counters */}
+              {userType === 'deleted' && (
+                <>
+                  {(() => { const active = userSubTypeFilter === 'all'; return (
+                    <button key="d-all" onClick={() => { setUserSubTypeFilter('all'); setPagination(prev => ({ ...prev, page: 1 })); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{deletedUserCounts.total.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = userSubTypeFilter === 'client'; return (
+                    <button key="d-client" onClick={() => { setUserSubTypeFilter('client'); setPagination(prev => ({ ...prev, page: 1 })); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{deletedUserCounts.customers.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = userSubTypeFilter === 'provider'; return (
+                    <button key="d-provider" onClick={() => { setUserSubTypeFilter('provider'); setPagination(prev => ({ ...prev, page: 1 })); }}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{deletedUserCounts.providers.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
+                    </button>
+                  ); })()}
+                </>
+              )}
+              {/* Verified / Unverified — customers or providers sub-pages */}
+              {(userType === 'customers' || userType === 'providers') && (
+                <>
+                  {(() => { const active = statusFilter === 'verified'; return (
+                    <button key="verified" onClick={() => handleCounterClick('verified')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{statusCounts.verified.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Verified</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = statusFilter === 'unverified'; return (
+                    <button key="unverified" onClick={() => handleCounterClick('unverified')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{statusCounts.unverified.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Unverified</span>
+                    </button>
+                  ); })()}
+                </>
+              )}
+              {/* Suspended / Restricted / Banned — all pages except deleted */}
+              {userType !== 'deleted' && (
+                <>
+                  {(() => { const active = statusFilter === 'suspended'; return (
+                    <button key="suspended" onClick={() => handleCounterClick('suspended')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{flaggedUserCounts.suspended.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Suspended</span>
+                    </button>
+                  ); })()}
+                  {(() => { const active = statusFilter === 'restricted'; return (
+                    <button key="restricted" onClick={() => handleCounterClick('restricted')}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                      <span className="text-[11px] font-black">{flaggedUserCounts.restricted.toLocaleString()}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Restricted</span>
+                    </button>
+                  ); })()}
+                  {(userType === 'customers' || userType === 'providers' || userType === 'all' || userType === 'flagged') && (() => {
+                    const active = statusFilter === 'banned'; return (
+                      <button key="banned" onClick={() => handleCounterClick('banned')}
+                        className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
+                        <span className="text-[11px] font-black">{flaggedUserCounts.banned.toLocaleString()}</span>
+                        <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Banned</span>
+                      </button>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Stats Cards Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-6 gap-4">
             {userType !== 'customers' && userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (
               <div className="cursor-pointer" onClick={() => handleCounterClick('reset')}>
                 <StatsCard
@@ -511,40 +646,87 @@ const Users: React.FC = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
-          {/* Row 1 on Mobile / Part 1 on Desktop: Search and Limit */}
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-6">
+          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
           <div className="flex items-center gap-2 lg:contents">
             <div className="relative flex-1 lg:order-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
                 placeholder="Search..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium transition-all shadow-sm h-10"
+                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all shadow-sm h-8 text-xs lg:pl-10 lg:h-10 lg:text-sm lg:rounded-xl"
               />
             </div>
 
-            {/* Mobile-only Limit */}
-            <div className="flex lg:hidden items-center gap-1.5">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select 
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
+            {/* Page Limit - Mobile only */}
+            <select
+              value={pagination.limit}
+              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
           </div>
 
-          <div className="flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
+          {/* Row 2 on Mobile: Filter dropdowns in a 2-col grid */}
+          <div className="grid grid-cols-2 gap-2 md:hidden">
+            {userType === 'providers' ? (
+              <select
+                value={professionFilter}
+                onChange={(e) => {
+                  setProfessionFilter(e.target.value);
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className="col-span-2 bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 truncate"
+              >
+                <option value="all">All Professions</option>
+                {professionsList.map(prof => (
+                  <option key={prof} value={prof} className="capitalize">{prof}</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as any);
+                    setPagination(prev => ({ ...prev, page: 1 }));
+                  }}
+                  className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5"
+                >
+                  <option value="all">All ({statusCounts.all})</option>
+                  <option value="verified">Verified ({statusCounts.verified})</option>
+                  <option value="unverified">Unverified ({statusCounts.unverified})</option>
+                </select>
+                {(userType === 'flagged' || userType === 'all') && (
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value as any);
+                      setPagination(prev => ({ ...prev, page: 1 }));
+                    }}
+                    className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="restricted">Restricted</option>
+                    <option value="banned">Banned</option>
+                  </select>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Desktop filter row */}
+          <div className="hidden lg:flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
             <div className={`flex-1 flex items-center gap-1 lg:flex-initial lg:justify-end ${userType === 'providers' ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar pb-0.5'}`}>
               {userType === 'providers' ? (
                 <div className="flex-1 lg:flex-initial flex items-center gap-1.5">
-                  <select 
+                  <select
                     value={professionFilter}
                     onChange={(e) => {
                       setProfessionFilter(e.target.value);
@@ -584,9 +766,9 @@ const Users: React.FC = () => {
             </div>
 
             {/* Pagination Limit for Desktop */}
-            <div className="hidden lg:flex items-center gap-2 order-3 shrink-0">
+            <div className="flex items-center gap-2 order-3 shrink-0">
                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-               <select 
+               <select
                  value={pagination.limit}
                  onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
                  className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -595,24 +777,6 @@ const Users: React.FC = () => {
                  <option value={20}>20</option>
                  <option value={50}>50</option>
                </select>
-            </div>
-
-            {/* View Type Toggle - Mobile only */}
-            <div className="lg:hidden flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm shrink-0">
-              <button
-                onClick={() => setMobileViewType('card')}
-                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Card View"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setMobileViewType('table')}
-                className={`p-1.5 rounded-lg transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Table View"
-              >
-                <Table2 className="h-4 w-4" />
-              </button>
             </div>
           </div>
         </div>
@@ -782,140 +946,70 @@ const Users: React.FC = () => {
 
               {/* Mobile View */}
               <div className="lg:hidden flex-1 overflow-y-auto">
-                {mobileViewType === 'card' ? (
-                  <div className="px-4 py-4 space-y-4">
-                    {users.map((user) => (
-                      <div
-                        key={user._id}
-                        onClick={() => openDetailsModal(user)}
-                        className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                      >
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100">
-                           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                             {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
-                           </span>
-                           <div className="flex items-center gap-1.5">
-                              {getStatusLabel(user) ? (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
-                                  {getStatusLabel(user)}
-                                </span>
-                              ) : (
-                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
-                                  {user.isVerified ? 'Verified' : 'Unverified'}
-                                </span>
-                              )}
-                           </div>
-                        </div>
-
-                        <div className="p-4">
-                           <div className="flex items-center gap-4 mb-4">
-                            <div className="relative flex-shrink-0">
-                              {user.profileImage ? (
-                                <img src={user.profileImage} className="h-12 w-12 rounded-full border border-gray-100 bg-white object-cover" alt="" />
-                              ) : (
-                                <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
-                                  <span className="text-sm font-black text-blue-600">{getInitials(user.name)}</span>
-                                </div>
-                              )}
-                              {user.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                <div className="px-3 py-3 space-y-2">
+                  {users.map((user) => (
+                    <div
+                      key={user._id}
+                      onClick={() => openDetailsModal(user)}
+                      className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                    >
+                      {/* Main Row */}
+                      <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
+                        <div className="relative flex-shrink-0">
+                          {user.profileImage ? (
+                            <img src={user.profileImage} className="h-12 w-12 rounded-full border border-gray-100 bg-white object-cover" alt="" />
+                          ) : (
+                            <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
+                              <span className="text-sm font-black text-blue-600">{getInitials(user.name)}</span>
                             </div>
-                             <div className="flex-1 min-w-0">
-                               <div className="flex items-center gap-2 mb-1">
-                                 <h3 className="text-base font-black text-gray-900 leading-tight truncate">{user.name}</h3>
-                               </div>
-                               <div className="flex flex-col gap-1">
-                                 <p className="text-xs text-gray-500 truncate">{user.email || user.phone}</p>
-                                 <div className="flex items-center gap-2">
-                                   <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${user.userType === 'provider' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-purple-50 text-purple-700 border-purple-100'}`}>
-                                     {user.userType}
-                                   </span>
-                                   {user.userType === 'provider' && getProviderProfessions(user).length > 0 && (
-                                     <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
-                                       {getProviderProfessions(user)[0]}
-                                     </span>
-                                   )}
-                                 </div>
-                               </div>
-                             </div>
-                           </div>
-
-                           <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed border-gray-100">
-                              <div className="flex flex-col">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Balance</span>
-                                <span className="text-sm font-black text-gray-900">{formatCurrency(user.wallet?.balance || 0)}</span>
-                              </div>
-                              <div className="flex flex-col items-end text-right">
-                                <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Action</span>
-                                <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                                  Profile <ChevronRight className="h-3 w-3" />
-                                </button>
-                              </div>
-                           </div>
+                          )}
+                          {user.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border truncate max-w-[130px] ${user.userType === 'provider' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-purple-50 text-purple-700 border-purple-100'}`}>
+                              {user.userType || 'Unknown'}
+                            </span>
+                          </div>
+                          <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{user.name}</p>
+                        </div>
+                        {/* Status + profession stacked on the right */}
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          {getStatusLabel(user) ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getStatusColor(user)}`}>
+                              {getStatusLabel(user)}
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                              {user.isVerified ? 'Verified' : 'Unverified'}
+                            </span>
+                          )}
+                          {user.userType === 'provider' && getProviderProfessions(user).length > 0 && (
+                            <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 max-w-[110px] truncate text-right">
+                              {getProviderProfessions(user)[0].replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bg-white">
-                    <table className="w-full table-fixed border-separate border-spacing-0">
-                      <thead className="bg-gray-50/80 sticky top-0 z-20">
-                        <tr>
-                          <th className="w-[50%] px-3 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">User</th>
-                          <th className="w-[25%] px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Type</th>
-                          <th className="w-[25%] px-3 py-3 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {users.map((user) => (
-                          <tr 
-                            key={user._id} 
-                            onClick={() => openDetailsModal(user)}
-                            className="active:bg-gray-50 transition-colors"
-                          >
-                            <td className="px-3 py-3 overflow-hidden">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {user.profileImage ? (
-                                  <img src={user.profileImage} className="h-8 w-8 rounded-full border border-gray-100 object-cover flex-shrink-0" alt="" />
-                                ) : (
-                                  <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 flex-shrink-0">
-                                    <span className="text-[10px] font-black text-blue-600">{getInitials(user.name)}</span>
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[11px] font-black text-gray-900 truncate leading-tight">{user.name}</p>
-                                  <p className="text-[9px] text-gray-400 font-bold truncate uppercase">{user.userType}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-2 py-3 text-center">
-                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight border ${user.userType === 'provider' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-purple-50 text-purple-600 border-purple-100'}`}>
-                                {user.userType || 'Unknown'}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 text-right">
-                              {getStatusLabel(user) ? (
-                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight border ${getStatusColor(user)}`}>
-                                  {getStatusLabel(user).split(' ')[0]}
-                                </span>
-                              ) : (
-                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tight border ${user.isVerified ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                                  {user.isVerified ? 'VER' : 'UNV'}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      {/* Footer strip */}
+                      <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                        <p className="text-[10px] font-bold text-gray-500 truncate flex-1 min-w-0">{user.email || user.phone}</p>
+                        <p className="text-sm font-black text-gray-900 flex-shrink-0">{formatCurrency(user.wallet?.balance || 0)}</p>
+                        <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                          <Clock className="h-2.5 w-2.5" />
+                          {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}
         </div>
 
         {!loading && users.length > 0 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 p-4">
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
             <div className="flex items-center justify-between w-full">
               <div>
                 <p className="text-xs md:text-sm text-gray-700">
