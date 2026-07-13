@@ -34,7 +34,7 @@ import {
 } from '../utils';
 
 // Hooks
-import { useJobs, useJobCounts, useJobCategories } from '../hooks/useJobs';
+import { useJobs, useJobCounts, useJobCategories, useJobMutations } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
 
 /**
@@ -275,7 +275,7 @@ const Jobs: React.FC = () => {
               {([
                 { label: 'All',      value: jobCounts.total,     filter: 'all',         Icon: Briefcase   as React.ElementType, activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
                 { label: 'Open',     value: jobCounts.open,      filter: 'open',        Icon: FolderOpen  as React.ElementType, activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-                { label: 'Assigned', value: jobCounts.assigned,  filter: 'in_progress', Icon: Clock       as React.ElementType, activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
+                { label: 'Assigned', value: jobCounts.inProgress, filter: 'in_progress', Icon: Clock       as React.ElementType, activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
                 { label: 'Done',     value: jobCounts.completed, filter: 'completed',   Icon: CheckCircle as React.ElementType, activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
               ] as { label: string; value: number; filter: string; Icon: React.ElementType; activeBg: string; border: string }[]).map(({ label, value, filter, Icon, activeBg, border }) => {
                 const active = statusFilter === filter;
@@ -321,7 +321,7 @@ const Jobs: React.FC = () => {
             <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('in_progress')}>
               <StatsCard
                 title="Assigned"
-                value={jobCounts.assigned.toLocaleString()}
+                value={jobCounts.inProgress.toLocaleString()}
                 icon={Clock}
                 color="indigo"
                 variant="tinted"
