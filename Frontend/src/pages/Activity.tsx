@@ -14,7 +14,8 @@ import {
   Calendar,
   Activity as ActivityIcon,
   MousePointerClick,
-  Briefcase
+  Briefcase,
+  Filter as FilterIcon
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -23,6 +24,7 @@ import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals'
 import { getInitials } from '../utils';
 import { useActivityLogs } from '../hooks';
 import { useSocket } from '../context/SocketContext';
+import StatsCard from '../components/Dashboard/StatsCard';
 import type { User, Transaction } from '../types';
 
 interface AdminInfo {
@@ -408,151 +410,209 @@ const Activity: React.FC = () => {
   }, [pagination.page, highlightedActivityId, searchParams, setSearchParams, activities, handleActivityClick]);
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0">
-      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Activity Logs</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">
-              Track and monitor all administrative actions and system events across the platform
-            </p>
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
+        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
+          <div className="hidden md:flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 bg-blue-50 rounded-lg">
+                  <ActivityIcon className="h-5 w-5 text-blue-600" />
+                </span>
+                <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                  Activity Center
+                </h1>
+              </div>
+              <p className="text-xs text-gray-500 font-medium">
+                Track and monitor all administrative actions and system events across the platform
+              </p>
+            </div>
+          </div>
+
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Logs</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{totalActivityLogs.toLocaleString()}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">User Actions</p>
+                <p className="text-base font-black text-gray-900 leading-tight">{userActivityLogs.toLocaleString()}</p>
+              </div>
+            </div>
+            {/* Filter pills */}
+            <div className="flex gap-2">
+              {([
+                { label: 'All',    value: totalActivityLogs,  filterVal: 'all',    activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
+                { label: 'User',   value: userActivityLogs,   filterVal: 'user',   activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
+                { label: 'System', value: systemActivityLogs, filterVal: 'system', activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
+                const active = typeFilter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setTypeFilter(filterVal as 'all' | 'user' | 'job' | 'system')}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="cursor-pointer" onClick={() => setTypeFilter('all')}>
+              <StatsCard
+                title="Total Activity"
+                value={totalActivityLogs.toString()}
+                icon={ActivityIcon}
+                color="blue"
+                variant="tinted"
+                isActive={typeFilter === 'all'}
+                smallIcon={true}
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => setTypeFilter('user')}>
+              <StatsCard
+                title="User Actions"
+                value={userActivityLogs.toString()}
+                icon={UserCheck}
+                color="purple"
+                variant="tinted"
+                isActive={typeFilter === 'user'}
+                smallIcon={true}
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => setTypeFilter('job')}>
+              <StatsCard
+                title="Job Actions"
+                value={activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length.toString()}
+                icon={Briefcase}
+                color="orange"
+                variant="tinted"
+                isActive={typeFilter === 'job'}
+                smallIcon={true}
+              />
+            </div>
+            <div className="cursor-pointer" onClick={() => setTypeFilter('system')}>
+              <StatsCard
+                title="System Actions"
+                value={systemActivityLogs.toString()}
+                icon={Shield}
+                color="green"
+                variant="tinted"
+                isActive={typeFilter === 'system'}
+                smallIcon={true}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Mobile: Compact Grid */}
-        <div className="grid grid-cols-2 gap-2 md:hidden mb-4">
-          <div
-            onClick={() => setTypeFilter('all')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${typeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <ActivityIcon className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">Total</span>
-            </div>
-            <span className="text-sm font-bold text-blue-700">{totalActivityLogs}</span>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('user')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-purple-50 border-purple-200 ${typeFilter === 'user' ? 'border-purple-400 ring-2 ring-purple-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-purple-600" />
-              <span className="text-sm font-medium text-gray-700">User</span>
-            </div>
-            <span className="text-sm font-bold text-purple-700">{userActivityLogs}</span>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('job')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-orange-50 border-orange-200 ${typeFilter === 'job' ? 'border-orange-400 ring-2 ring-orange-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-orange-600" />
-              <span className="text-sm font-medium text-gray-700">Job</span>
-            </div>
-            <span className="text-sm font-bold text-orange-700">{activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length}</span>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('system')}
-            className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${typeFilter === 'system' ? 'border-green-400 ring-2 ring-green-300' : ''
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-gray-700">System</span>
-            </div>
-            <span className="text-sm font-bold text-green-700">{systemActivityLogs}</span>
-          </div>
-        </div>
-
-        {/* Desktop: Full Grid */}
-        <div className="hidden md:grid grid-cols-4 gap-3 mb-4">
-          <div
-            onClick={() => setTypeFilter('all')}
-            className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'all' ? 'border-blue-500 ring-2 ring-blue-400 shadow-lg' : 'border-blue-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Total Activity Logs</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{totalActivityLogs}</p>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('user')}
-            className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'user' ? 'border-purple-500 ring-2 ring-purple-400 shadow-lg' : 'border-purple-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">User Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{userActivityLogs}</p>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('job')}
-            className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'job' ? 'border-orange-500 ring-2 ring-orange-400 shadow-lg' : 'border-orange-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">Job Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length}</p>
-          </div>
-
-          <div
-            onClick={() => setTypeFilter('system')}
-            className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${typeFilter === 'system' ? 'border-green-500 ring-2 ring-green-400 shadow-lg' : 'border-green-200'
-              }`}
-          >
-            <p className="text-xs text-gray-600 font-medium mb-1">System Actions</p>
-            <p className="text-xl md:text-2xl font-bold text-gray-900">{systemActivityLogs}</p>
-          </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
             <input
               type="text"
               placeholder="Search by admin, description, or target..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              className="w-full pl-8 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
             />
           </div>
 
-          <select
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            className="px-3 md:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
-          >
-            <option value="all">All Actions</option>
-            <option value="verification_approved">Verification Approved</option>
-            <option value="verification_rejected">Verification Rejected</option>
-            <option value="user_restricted">User Restricted</option>
-            <option value="user_suspended">User Suspended</option>
-            <option value="user_banned">User Banned</option>
-            <option value="user_unrestricted">User Unrestricted</option>
-            <option value="transaction_completed">Transaction Completed</option>
-            <option value="transaction_failed">Transaction Failed</option>
-            <option value="support_closed">Support Closed</option>
-            <option value="support_reopened">Support Reopened</option>
-            <option value="admin_login">Admin Login</option>
-            <option value="job_hidden">Job Hidden</option>
-            <option value="job_unhidden">Job Restored</option>
-            <option value="job_deleted">Job Deleted</option>
-            <option value="job_restored">Job Restored</option>
-          </select>
+          {/* Mobile filter dropdowns grid */}
+          <div className="grid grid-cols-2 gap-2 md:hidden">
+            <select
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            >
+              <option value="all">All Actions</option>
+              <option value="verification_approved">Verification Approved</option>
+              <option value="verification_rejected">Verification Rejected</option>
+              <option value="user_restricted">User Restricted</option>
+              <option value="user_suspended">User Suspended</option>
+              <option value="user_banned">User Banned</option>
+              <option value="user_unrestricted">User Unrestricted</option>
+              <option value="transaction_completed">Transaction Completed</option>
+              <option value="transaction_failed">Transaction Failed</option>
+              <option value="support_closed">Support Closed</option>
+              <option value="support_reopened">Support Reopened</option>
+              <option value="admin_login">Admin Login</option>
+              <option value="job_hidden">Job Hidden</option>
+              <option value="job_unhidden">Job Restored</option>
+              <option value="job_deleted">Job Deleted</option>
+              <option value="job_restored">Job Restored</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'user' | 'job' | 'system')}
+              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            >
+              <option value="all">All Types</option>
+              <option value="user">User Actions</option>
+              <option value="job">Job Actions</option>
+              <option value="system">System Actions</option>
+            </select>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2 md:gap-4 overflow-x-auto no-scrollbar pb-0.5 md:pb-0 shrink-0">
+            <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
+              <FilterIcon className="h-4 w-4 text-gray-400" />
+              <select
+                value={actionFilter}
+                onChange={(e) => setActionFilter(e.target.value)}
+                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
+              >
+                <option value="all">All Actions</option>
+                <option value="verification_approved">Verification Approved</option>
+                <option value="verification_rejected">Verification Rejected</option>
+                <option value="user_restricted">User Restricted</option>
+                <option value="user_suspended">User Suspended</option>
+                <option value="user_banned">User Banned</option>
+                <option value="user_unrestricted">User Unrestricted</option>
+                <option value="transaction_completed">Transaction Completed</option>
+                <option value="transaction_failed">Transaction Failed</option>
+                <option value="support_closed">Support Closed</option>
+                <option value="support_reopened">Support Reopened</option>
+                <option value="admin_login">Admin Login</option>
+                <option value="job_hidden">Job Hidden</option>
+                <option value="job_unhidden">Job Restored</option>
+                <option value="job_deleted">Job Deleted</option>
+                <option value="job_restored">Job Restored</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 md:order-3 shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
           {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading activity logs...</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="relative">
+                <div className="h-16 w-16 rounded-full border-4 border-gray-100 border-t-blue-600 animate-spin" />
+                <ActivityIcon className="absolute inset-0 m-auto h-6 w-6 text-blue-600 animate-pulse" />
+              </div>
+              <div className="flex flex-col items-center italic">
+                <p className="text-sm font-black text-gray-900 tracking-widest uppercase">Loading Activity Logs</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] mt-1">Fetching System Events</p>
               </div>
             </div>
           ) : filteredActivities.length === 0 ? (
@@ -567,16 +627,16 @@ const Activity: React.FC = () => {
             <>
               <div className="hidden md:block bg-white">
                 <table className="min-w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-10 border-b-2 border-gray-300">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Admin</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Target</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Admin</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Target</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white border-b border-gray-300">
                     {paginatedActivities.map((activity: ActivityLog) => (
                       <tr
                         key={activity._id}
@@ -605,37 +665,37 @@ const Activity: React.FC = () => {
                             : ''
                           }`}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-semibold text-gray-700">
+                        <td className="px-6 py-2.5 whitespace-nowrap border-b border-gray-300">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
+                              <span className="text-sm font-bold text-blue-600 uppercase">
                                 {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
                               </span>
                             </div>
-                            <div className="ml-3">
+                            <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold text-gray-900">{activity.adminId?.name || 'Unknown Admin'}</div>
+                                <div className="text-sm font-bold text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</div>
                                 {activity.adminId?.userType === 'superadmin' && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50">
                                     Super Admin
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-500 truncate max-w-[150px]">{activity.adminId?.email || 'No email'}</div>
+                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{activity.adminId?.email || 'No email'}</div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-current shadow-sm ${ACTION_COLORS[activity.actionType] || 'bg-gray-50 text-gray-700 border-gray-200'
                             }`}>
                             {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
                             {ACTION_LABELS[activity.actionType] || activity.actionType}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 border-b border-gray-300">
                           <div className="text-sm text-gray-900 max-w-[300px]">{formatDescriptionWithDuration(activity)}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 border-b border-gray-300">
                           {(() => {
                             const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
                             const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
@@ -667,7 +727,7 @@ const Activity: React.FC = () => {
                             return null;
                           })()}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <div className="text-xs text-gray-500">
                             {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                           </div>
@@ -682,7 +742,7 @@ const Activity: React.FC = () => {
                 </table>
               </div>
 
-              <div className="md:hidden px-4 py-4 space-y-3">
+              <div className="md:hidden px-3 py-3 space-y-2">
                 {paginatedActivities.map((activity: ActivityLog) => (
                   <div
                     key={activity._id}
@@ -702,56 +762,54 @@ const Activity: React.FC = () => {
                       }
                     }}
                     onClick={() => handleActivityClick(activity)}
-                    className={`relative bg-white rounded-lg border border-gray-200 p-4 transition-all duration-200 ${activity.targetId && activity.targetType
-                      ? 'hover:bg-gray-100 cursor-pointer'
-                      : 'hover:bg-gray-50'
+                    className={`relative bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all ${activity.targetId && activity.targetType
+                      ? 'cursor-pointer'
+                      : ''
                       } ${highlightedActivityId === activity._id
-                        ? 'bg-yellow-100 ring-2 ring-yellow-400'
+                        ? 'ring-2 ring-yellow-400 bg-yellow-50'
                         : ''
                       }`}
                   >
                     {activity.adminId?.userType === 'superadmin' && (
-                      <span className="absolute top-4 right-4 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                      <span className="absolute top-2 right-3 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50">
                         Super Admin
                       </span>
                     )}
 
-                    <div className="flex items-center gap-3 mb-3 pr-20"> {/* Added padding for absolute badge */}
-                      <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                        <span className="text-base font-semibold text-gray-700">
+                    <div className="flex items-center gap-1.5 px-3 py-2 pr-20">
+                      <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100 shadow-sm">
+                        <span className="text-sm font-bold text-blue-600 uppercase">
                           {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</h3>
-                        </div>
-                        <p className="text-xs text-gray-500 truncate">{activity.adminId?.email || 'No email'}</p>
+                        <h3 className="text-sm font-black text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</h3>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider truncate">{activity.adminId?.email || 'No email'}</p>
                       </div>
                     </div>
 
-                    {(() => {
-                      const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
-                      const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
-                      const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
+                    <div className="px-3 py-2.5">
+                      {(() => {
+                        const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
+                        const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
+                        const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
 
-                      return (
-                        <>
-                          <div className="mb-3">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${ACTION_COLORS[activity.actionType] || 'bg-gray-100 text-gray-700'
-                              }`}>
-                              {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
-                              {ACTION_LABELS[activity.actionType] || activity.actionType}
-                            </span>
-                          </div>
+                        return (
+                          <>
+                            <div className="mb-2">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-current shadow-sm ${ACTION_COLORS[activity.actionType] || 'bg-gray-50 text-gray-700 border-gray-200'
+                                }`}>
+                                {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-3.5 w-3.5" />}
+                                {ACTION_LABELS[activity.actionType] || activity.actionType}
+                              </span>
+                            </div>
 
-                          <p className="text-sm text-gray-900 mb-3">{formatDescriptionWithDuration(activity)}</p>
+                            <p className="text-xs text-gray-900 mb-2">{formatDescriptionWithDuration(activity)}</p>
 
-                          {(activity.targetId || showTransactionTarget) && (
-                            <div className="mb-3 pb-3 border-b border-gray-100">
-                              <p className="text-xs text-gray-500 mb-1">Target:</p>
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2 flex-1">
+                            {(activity.targetId || showTransactionTarget) && (
+                              <div className="mb-2 pb-2 border-b border-gray-100">
+                                <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-0.5">Target</p>
+                                <p className="text-xs font-medium text-gray-900 truncate flex items-center gap-1.5">
                                   {typeof activity.targetId === 'object' && activity.targetId !== null ? (
                                     activity.targetId.name ||
                                     activity.targetId.title ||
@@ -765,63 +823,59 @@ const Activity: React.FC = () => {
                                     <MousePointerClick className="h-3 w-3 text-blue-600" />
                                   )}
                                 </p>
+                                {activity.targetId?.email && (
+                                  <p className="text-[10px] text-gray-500 truncate">{activity.targetId.email}</p>
+                                )}
                               </div>
-                              {activity.targetId?.email && (
-                                <p className="text-xs text-gray-500 truncate">{activity.targetId.email}</p>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                            )}
 
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <Calendar className="h-3 w-3" />
-                      <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                            <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                              <Calendar className="h-3 w-3" />
+                              <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {totalPages > 1 && (
-                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
-                  <div className="flex items-center justify-between w-full">
-                    <div>
-                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
-                        Showing{' '}
-                        <span className="font-medium">
-                          {((pagination.page - 1) * pagination.limit) + 1}
-                        </span>{' '}
-                        to{' '}
-                        <span className="font-medium">
-                          {Math.min(pagination.page * pagination.limit, filteredActivities.length)}
-                        </span>{' '}
-                        of{' '}
-                        <span className="font-medium">{filteredActivities.length}</span> results
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                        disabled={pagination.page === 1}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
-                        disabled={pagination.page === totalPages}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* Pagination — outside scroll, always sticky at bottom */}
+        {totalPages > 1 && (
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
+            <div className="flex items-center justify-between w-full">
+              <p className="text-xs md:text-sm text-gray-700">
+                Showing{' '}
+                <span className="font-medium">{((pagination.page - 1) * pagination.limit) + 1}</span>{' '}
+                to{' '}
+                <span className="font-medium">{Math.min(pagination.page * pagination.limit, filteredActivities.length)}</span>{' '}
+                of{' '}
+                <span className="font-medium">{filteredActivities.length}</span> results
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                  disabled={pagination.page === 1}
+                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+                  disabled={pagination.page === totalPages}
+                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <UserDetailsModal

@@ -16,7 +16,11 @@ export interface Job {
   _id: string;
   title: string;
   description: string;
-  category: string;
+  category?: string;
+  categoryId?: string;
+  categoryName?: string;
+  profession?: string;
+  professionName?: string;
   icon?: string;
   media: string[];
   location?: any;
@@ -34,6 +38,7 @@ export interface Job {
     lastName?: string;
     email: string;
     phone?: string;
+    phoneNumber?: string;
     location?: string;
     barangay?: string;
     city?: string;
@@ -47,6 +52,12 @@ export interface Job {
     email: string;
   };
   budget: number;
+  agreedPrice?: number;
+  acceptedProvider?: {
+    providerId: string;
+    agreedPrice: number;
+    acceptedAt: string | Date;
+  };
   paymentStatus: 'pending' | 'paid' | 'refunded' | 'escrow_required' | 'escrow_held' | 'failed';
   escrowAmount: number;
   escrowStatus?: 'none' | 'pending' | 'releasing' | 'released' | 'refunded' | 'failed';

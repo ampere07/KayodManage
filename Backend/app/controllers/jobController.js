@@ -11,6 +11,15 @@ const ProviderBookingSlot = require('../models/ProviderBookingSlot');
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
 
+// Helper function to strip random suffix from icon paths
+const cleanIconPath = (iconPath) => {
+  if (!iconPath || !iconPath.startsWith('ik:')) return iconPath;
+  
+  // Pattern: filename_[randomString].webp → filename.webp
+  // Example: auto-mechanic_rLSXphs9nd.webp → auto-mechanic.webp
+  return iconPath.replace(/_([^_]+)\.webp$/, '.webp');
+};
+
 const getJobs = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -70,8 +79,8 @@ const getJobs = async (req, res) => {
     
     // Fetch jobs and populate user virtuals
     const jobs = await Job.find(query)
-      .populate('userId', 'name email userType profileImage')
-      .populate('assignedToId', 'name email userType profileImage')
+      .populate('userId', 'name email phone phoneNumber userType profileImage')
+      .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -107,8 +116,12 @@ const getJobs = async (req, res) => {
         locationDisplay = 'Location not specified';
       }
       
+      // Clean icon path to remove random suffix
+      const cleanedIcon = cleanIconPath(job.icon);
+      
       return {
         ...job,
+        icon: cleanedIcon,
         user: job.userId,
         assignedTo: job.assignedToId,
         applicationCount: countMap[job._id.toString()] || 0,
@@ -149,8 +162,8 @@ const getJobDetails = async (req, res) => {
     const { jobId } = req.params;
     
     const job = await Job.findById(jobId)
-      .populate('userId', 'name firstName lastName email phone userType profileImage location barangay city isVerified')
-      .populate('assignedToId', 'name email phone userType profileImage')
+      .populate('userId', 'name firstName lastName email phone phoneNumber userType profileImage location barangay city isVerified')
+      .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
       .lean();
     
     if (!job) {
@@ -176,6 +189,7 @@ const getJobDetails = async (req, res) => {
     
     const jobWithData = {
       ...job,
+      icon: cleanIconPath(job.icon),
       user: job.userId,
       assignedTo: job.assignedToId,
       applications,

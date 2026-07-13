@@ -7,19 +7,35 @@ import { getInitials, formatPHPCurrency, getUser, getToUser } from '../../utils'
 import { transactionsService } from '../../services';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { SidebarContext } from '../Layout/Layout';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
+  onStatusUpdate?: (transactionId: string, status: string, type?: string) => Promise<void>;
 }
 
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   isOpen,
   onClose,
-  transaction
+  transaction,
+  onStatusUpdate
 }) => {
-  if (!isOpen || !transaction) return null;
+  const { setIsHeaderHidden } = React.useContext(SidebarContext);
+
+  React.useEffect(() => {
+    if (setIsHeaderHidden) {
+      setIsHeaderHidden(isOpen);
+    }
+    return () => {
+      if (setIsHeaderHidden) {
+        setIsHeaderHidden(false);
+      }
+    };
+  }, [isOpen, setIsHeaderHidden]);
+
+  if (!transaction) return null;
 
   const formatCurrency = (amount: number) => {
     return formatPHPCurrency(amount, {
@@ -297,7 +313,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   <div className="flex items-start gap-2">
                     <p className="text-gray-600 min-w-[110px]">Job Category:</p>
                     <p className="text-gray-900 font-medium capitalize">
-                      {transaction.job?.category || transaction.jobId?.category || 'N/A'}
+                      {(() => {
+                        const job = (transaction.job || transaction.jobId) as any;
+                        const raw = job?.professionName || job?.categoryName || job?.category || '';
+                        return /^[a-fA-F0-9]{24}$/.test(raw) ? 'General Service' : raw || 'N/A';
+                      })()}
                     </p>
                   </div>
 
@@ -681,7 +701,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   <div className="flex">
                     <p className="font-semibold text-gray-700 w-32">Job Category:</p>
                     <p className="text-gray-600 flex-1 capitalize">
-                      {transaction.job?.category || transaction.jobId?.category || 'N/A'}
+                      {(() => {
+                        const job = (transaction.job || transaction.jobId) as any;
+                        const raw = job?.professionName || job?.categoryName || job?.category || '';
+                        return /^[a-fA-F0-9]{24}$/.test(raw) ? 'General Service' : raw || 'N/A';
+                      })()}
                     </p>
                   </div>
                   <div className="flex">

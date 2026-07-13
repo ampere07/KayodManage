@@ -19,23 +19,24 @@ export const useUsers = (params: UseUsersParams) => {
   return useQuery({
     queryKey: [USERS_QUERY_KEY, params],
     queryFn: () => usersService.getUsers(params),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
 
 export const useUserCounts = (params?: any) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'counts', params, 'v2'],
+    queryKey: [USERS_QUERY_KEY, 'counts', params, 'v3'],
     queryFn: async () => {
-      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData, deletedData] = await Promise.all([
-        usersService.getUsers({ limit: 1, page: 1 }),
-        usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
+      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData, deletedData, verifiedData, unverifiedData] = await Promise.all([
+        usersService.getUsers({ ...params, limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, userType: 'client', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, userType: 'provider', limit: 1, page: 1 }),
         usersService.getUsers({ ...params, accountStatus: 'suspended', limit: 1, page: 1 }),
         usersService.getUsers({ ...params, accountStatus: 'restricted', limit: 1, page: 1 }),
         usersService.getUsers({ ...params, accountStatus: 'banned', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'deleted', limit: 1, page: 1 })
+        usersService.getUsers({ ...params, accountStatus: 'deleted', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, isVerified: 'true', limit: 1, page: 1 }),
+        usersService.getUsers({ ...params, isVerified: 'false', limit: 1, page: 1 })
       ]);
 
       return {
@@ -46,11 +47,10 @@ export const useUserCounts = (params?: any) => {
         restricted: restrictedData.pagination?.total || 0,
         banned: bannedData.pagination?.total || 0,
         deleted: deletedData.pagination?.total || 0,
-        verified: 0,
-        unverified: 0
+        verified: verifiedData.pagination?.total || 0,
+        unverified: unverifiedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -71,7 +71,6 @@ export const useStatusCounts = (baseParams: any) => {
         unverified: unverifiedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -111,7 +110,25 @@ export const useFlaggedUserCounts = () => {
         banned: flaggedBannedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000
+  });
+};
+
+export const useDeletedUserCounts = () => {
+  return useQuery({
+    queryKey: [USERS_QUERY_KEY, 'deletedCounts', 'v1'],
+    queryFn: async () => {
+      const [allData, customersData, providersData] = await Promise.all([
+        usersService.getUsers({ accountStatus: 'deleted', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'deleted', userType: 'client', limit: 1, page: 1 }),
+        usersService.getUsers({ accountStatus: 'deleted', userType: 'provider', limit: 1, page: 1 })
+      ]);
+
+      return {
+        total: allData.pagination?.total || 0,
+        customers: customersData.pagination?.total || 0,
+        providers: providersData.pagination?.total || 0
+      };
+    },
   });
 };
 

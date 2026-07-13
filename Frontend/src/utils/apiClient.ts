@@ -39,8 +39,14 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Request was intentionally cancelled (e.g. user cancelled an upload) — stay silent,
+    // never surface it as a network/connection error.
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
     const silent404Endpoints = ['/api/verifications/'];
-    const isSilent404 = error.response?.status === 404 && 
+    const isSilent404 = error.response?.status === 404 &&
       silent404Endpoints.some(endpoint => error.config?.url?.includes(endpoint));
     
     if (isNetworkError(error)) {

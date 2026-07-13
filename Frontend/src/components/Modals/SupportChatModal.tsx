@@ -9,6 +9,11 @@ import {
   ArrowLeft,
   Send,
   Eye,
+  Briefcase,
+  Tag,
+  MapPin,
+  Calendar,
+  Info,
 } from "lucide-react";
 import { getStatusBadge } from "../../utils";
 import UserTypeBadge from "../UI/UserTypeBadge";
@@ -22,6 +27,7 @@ interface Message {
   senderId?: string;
   senderName?: string;
   message: string;
+  imageUrl?: string;
   timestamp: string;
   isInternal?: boolean;
 }
@@ -80,6 +86,177 @@ interface SupportChatModalProps {
   counterpartChat?: ChatSupport | null;
   onSwitchChat?: (chat: ChatSupport) => void;
 }
+
+const DETAIL_ICONS: { [key: string]: any } = {
+  'Job': Briefcase,
+  'Job ID': Tag,
+  'Reference': Tag,
+  'Location': MapPin,
+  'Needed On': Calendar,
+  'Date': Calendar,
+  'Ticket ID': Tag,
+  'Subject': MessageSquare,
+  'Category': Info,
+  'Resolved': CheckCircle,
+  'Resolved By': Eye,
+  'Total Messages': MessageSquare,
+};
+
+function parseMessageContent(text: string) {
+  if (!text) return { body: '', jobDetails: null, systemSummary: null };
+
+  // Detect system summary (reopened ticket)
+  if (text.startsWith('✓ PREVIOUS TICKET RESOLVED')) {
+    const lines = text.split('\n').filter(l => l.trim());
+    const entries = [];
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0 && !line.startsWith('✓') && !line.startsWith('─')) {
+        const label = line.substring(0, colonIdx).trim();
+        const value = line.substring(colonIdx + 1).trim();
+        if (label && value) entries.push({ label, value });
+      }
+    }
+    return { body: '', jobDetails: null, systemSummary: entries };
+  }
+
+  // Detect "Job Details:" block
+  const jobIdx = text.indexOf('Job Details:');
+  if (jobIdx === -1) return { body: text, jobDetails: null, systemSummary: null };
+
+  const body = text.substring(0, jobIdx).trim();
+  const detailsBlock = text.substring(jobIdx + 'Job Details:'.length).trim();
+  const entries = [];
+
+  for (const line of detailsBlock.split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0) {
+      const label = line.substring(0, colonIdx).trim();
+      const value = line.substring(colonIdx + 1).trim();
+      if (label && value) entries.push({ label, value });
+    }
+  }
+
+  return { body, jobDetails: entries.length ? entries : null, systemSummary: null };
+}
+
+const JobDetailsCard: React.FC<{ entries: Array<{label: string, value: string}>, isUser: boolean }> = ({ entries, isUser }) => (
+  <div style={{ marginTop: 16 }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        paddingBottom: 12,
+        borderBottom: `1px solid ${isUser ? 'rgba(245,158,11,0.2)' : 'rgba(0,0,0,0.1)'}`,
+      }}
+    >
+      <Briefcase size={14} color={isUser ? '#B45309' : '#6B7280'} />
+      <span
+        style={{
+          marginLeft: 8,
+          fontSize: 11,
+          fontWeight: '700',
+          color: isUser ? '#92400E' : '#6B7280',
+          letterSpacing: 0.5,
+        }}
+      >
+        JOB DETAILS
+      </span>
+    </div>
+    {entries.map((entry, idx) => {
+      const IconComponent = DETAIL_ICONS[entry.label] || Info;
+      return (
+        <div
+          key={`${entry.label}-${idx}`}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            paddingTop: 10,
+            paddingBottom: 10,
+            borderBottom: idx < entries.length - 1 ? `1px solid ${isUser ? 'rgba(245,158,11,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none',
+          }}
+        >
+          <IconComponent
+            size={15}
+            color={isUser ? '#D97706' : '#9CA3AF'}
+            style={{ marginTop: 1, marginRight: 10, flexShrink: 0 }}
+          />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 11, color: isUser ? '#B45309' : '#9CA3AF', fontWeight: '600', marginBottom: 2, display: 'block' }}>
+              {entry.label}
+            </span>
+            <span style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', userSelect: 'text' }}>
+              {entry.value}
+            </span>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const SystemSummaryCard: React.FC<{ entries: Array<{label: string, value: string}> }> = ({ entries }) => (
+  <div
+    style={{
+      marginHorizontal: 16,
+      marginVertical: 8,
+      borderRadius: 16,
+      overflow: 'hidden',
+      border: '1px solid #D1FAE5',
+      backgroundColor: '#F0FDF4',
+    }}
+  >
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        backgroundColor: '#DCFCE7',
+        borderBottom: '1px solid #D1FAE5',
+      }}
+    >
+      <CheckCircle size={16} color="#16A34A" />
+      <span
+        style={{
+          marginLeft: 8,
+          fontSize: 13,
+          fontWeight: '700',
+          color: '#15803D',
+          letterSpacing: 0.3,
+        }}
+      >
+        PREVIOUS TICKET RESOLVED
+      </span>
+    </div>
+    <div style={{ paddingVertical: 4 }}>
+      {entries.map((entry, idx) => {
+        const IconComponent = DETAIL_ICONS[entry.label] || Info;
+        return (
+          <div
+            key={`${entry.label}-${idx}`}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+            }}
+          >
+            <IconComponent
+              size={14}
+              color="#6B7280"
+              style={{ marginTop: 2, marginRight: 10, flexShrink: 0 }}
+            />
+            <span style={{ fontSize: 13, color: '#374151', flex: 1 }}>
+              <span style={{ fontWeight: '600', color: '#6B7280' }}>{entry.label}: </span>
+              {entry.value}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
 
 const getInitials = (name: string): string => {
   const nameParts = name
@@ -526,9 +703,11 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                 // Check if this is a system message
                 const isTicketSummary =
-                  msg.message.includes("PREVIOUS TICKET RESOLVED") ||
-                  msg.message.includes("Previous Ticket Summary");
-                const messageText = msg.message.toLowerCase();
+                  !!msg.message && (
+                    msg.message.includes("PREVIOUS TICKET RESOLVED") ||
+                    msg.message.includes("Previous Ticket Summary")
+                  );
+                const messageText = (msg.message || '').toLowerCase();
                 const isSystemMessage =
                   !isTicketSummary &&
                   isAdmin &&
@@ -656,63 +835,127 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                   return (
                     <React.Fragment key={msg._id || index}>
-                      <div className="flex items-center justify-center my-6">
-                        <div className="max-w-2xl w-full space-y-4">
+                      <div className="flex justify-center my-8 px-4">
+                        <div className="w-full max-w-xs">
+
                           {sections.map((section, sectionIndex) => {
                             const isResolved = section.title.includes("✓");
                             const isNewTicket = section.title.includes("⚡");
+                            const titleText = section.title.replace(
+                              /^[✓⚡📋]\s*/,
+                              "",
+                            );
 
                             return (
-                              <div
-                                key={sectionIndex}
-                                className={`rounded-lg border-2 p-5 ${
-                                  isResolved
-                                    ? "bg-green-50 border-green-300"
-                                    : isNewTicket
-                                      ? "bg-blue-50 border-blue-300"
-                                      : "bg-gray-50 border-gray-300"
-                                }`}
-                              >
-                                <div className="mb-4">
-                                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                                    {section.title.replace(/^[✓⚡📋]\s*/, "")}
-                                  </h3>
-                                </div>
-
-                                {Object.keys(section.details).length > 0 && (
-                                  <div className="space-y-2.5">
-                                    {Object.entries(section.details).map(
-                                      ([key, value], detailIndex) => (
-                                        <div
-                                          key={detailIndex}
-                                          className="flex justify-between items-start"
-                                        >
-                                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                                            {key}
-                                          </span>
-                                          <span className="min-w-0 max-w-xs break-words text-right text-sm font-semibold text-gray-900 [overflow-wrap:anywhere]">
-                                            {value}
-                                          </span>
-                                        </div>
-                                      ),
-                                    )}
+                              <React.Fragment key={sectionIndex}>
+                                {/* Dashed connector between cards */}
+                                {sectionIndex > 0 && (
+                                  <div className="flex justify-center py-0.5">
+                                    <div className="w-px h-5 border-l-2 border-dashed border-gray-300" />
                                   </div>
                                 )}
-                              </div>
+
+                                <div
+                                  className={`rounded-2xl overflow-hidden ${
+                                    isResolved
+                                      ? "ring-1 ring-emerald-200"
+                                      : isNewTicket
+                                        ? "ring-1 ring-orange-200"
+                                        : "ring-1 ring-gray-200"
+                                  }`}
+                                >
+                                  {/* Coloured header bar */}
+                                  <div
+                                    className={`flex items-center justify-between px-4 py-2.5 ${
+                                      isResolved
+                                        ? "bg-emerald-500"
+                                        : isNewTicket
+                                          ? "bg-orange-400"
+                                          : "bg-gray-500"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {isResolved && (
+                                        <CheckCircle
+                                          className="w-3.5 h-3.5 text-white"
+                                          strokeWidth={2.5}
+                                        />
+                                      )}
+                                      {isNewTicket && (
+                                        <MessageSquare
+                                          className="w-3.5 h-3.5 text-white"
+                                          strokeWidth={2.5}
+                                        />
+                                      )}
+                                      <span className="text-white text-[11px] font-bold uppercase tracking-widest">
+                                        {titleText}
+                                      </span>
+                                    </div>
+                                    {isResolved && (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider bg-white/25 text-white rounded-full px-2 py-0.5">
+                                        Closed
+                                      </span>
+                                    )}
+                                    {isNewTicket && (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider bg-white/25 text-white rounded-full px-2 py-0.5">
+                                        Open
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Detail rows */}
+                                  {Object.keys(section.details).length > 0 && (
+                                    <div
+                                      className={`divide-y bg-white ${
+                                        isResolved
+                                          ? "divide-emerald-50"
+                                          : isNewTicket
+                                            ? "divide-orange-50"
+                                            : "divide-gray-50"
+                                      }`}
+                                    >
+                                      {Object.entries(section.details).map(
+                                        ([key, value], detailIndex) => (
+                                          <div
+                                            key={detailIndex}
+                                            className="flex items-start justify-between gap-4 px-4 py-2.5"
+                                          >
+                                            <span
+                                              className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap flex-shrink-0 ${
+                                                isResolved
+                                                  ? "text-emerald-600"
+                                                  : isNewTicket
+                                                    ? "text-orange-500"
+                                                    : "text-gray-500"
+                                              }`}
+                                            >
+                                              {key}
+                                            </span>
+                                            <span className="text-[12px] text-gray-800 font-medium text-right leading-snug">
+                                              {value}
+                                            </span>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </React.Fragment>
                             );
                           })}
 
-                          <div className="text-center">
-                            <p className="text-xs text-gray-500">
+                          {/* Timestamp pill */}
+                          <div className="flex justify-center mt-4">
+                            <span className="inline-flex items-center gap-1.5 text-[10px] text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+                              <Calendar className="w-2.5 h-2.5" />
                               {new Date(msg.timestamp).toLocaleDateString(
                                 "en-US",
                                 {
-                                  month: "long",
+                                  month: "short",
                                   day: "numeric",
                                   year: "numeric",
                                 },
-                              )}{" "}
-                              at{" "}
+                              )}{" · "}
                               {new Date(msg.timestamp).toLocaleTimeString(
                                 "en-US",
                                 {
@@ -721,8 +964,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                                   hour12: true,
                                 },
                               )}
-                            </p>
+                            </span>
                           </div>
+
                         </div>
                       </div>
                     </React.Fragment>
@@ -839,15 +1083,49 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           ref={(el) => {
                             messageRefs.current[messageId] = el;
                           }}
-                          className={`inline-block min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-left ${
+                          className={`inline-block min-w-0 max-w-full rounded-2xl overflow-hidden text-left ${
                             isAdmin
                               ? "bg-blue-600 text-white"
                               : "bg-white text-gray-900 shadow-sm"
-                          }`}
+                          } ${msg.imageUrl && !msg.message ? "" : "px-4 py-2.5"}`}
                         >
-                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
-                            {msg.message}
-                          </p>
+                          {msg.imageUrl && (
+                            <a
+                              href={msg.imageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Click to open full image"
+                            >
+                              <img
+                                src={msg.imageUrl}
+                                alt="Attachment"
+                                className="block max-w-[240px] max-h-[240px] w-auto h-auto object-cover rounded-2xl cursor-pointer hover:opacity-90 transition-opacity"
+                                style={{ display: 'block' }}
+                              />
+                            </a>
+                          )}
+                          {(() => {
+                            if (!msg.message) return null;
+                            const parsed = parseMessageContent(msg.message);
+                            const isUser = !isAdmin;
+                            return (
+                              <div className={msg.imageUrl ? "px-4 pb-2.5 pt-1" : "px-4 py-2.5"}>
+                                {parsed.body && (
+                                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+                                    {parsed.body}
+                                  </p>
+                                )}
+                                {parsed.jobDetails && (
+                                  <JobDetailsCard entries={parsed.jobDetails} isUser={isUser} />
+                                )}
+                                {!parsed.body && !parsed.jobDetails && (
+                                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+                                    {msg.message}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                         {showTimestamp && (
                           <p

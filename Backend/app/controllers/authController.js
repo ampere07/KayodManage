@@ -6,10 +6,14 @@ const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    console.log('[Auth] Login attempt for:', username);
+
     const admin = await User.findOne({ 
       email: username,
       userType: { $in: ['admin', 'superadmin'] }
     });
+    
+    console.log('[Auth] Admin found:', admin ? 'YES' : 'NO', admin ? `(type: ${admin.userType})` : '');
     
     if (!admin) {
       return res.status(401).json({
@@ -19,13 +23,16 @@ const login = async (req, res) => {
     }
 
     if (!admin.password) {
+      console.log('[Auth] No password set for admin user');
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
       });
     }
 
+    console.log('[Auth] Comparing password...');
     const isValidPassword = await bcrypt.compare(password, admin.password);
+    console.log('[Auth] Password valid:', isValidPassword);
     
     if (!isValidPassword) {
       return res.status(401).json({

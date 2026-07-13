@@ -26,9 +26,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
+      refetchOnMount: false, // Don't refetch when component mounts if data exists
+      refetchOnReconnect: false, // Don't refetch on network reconnect
       retry: 1,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 30 * 60 * 1000, // 30 minutes - data stays fresh longer
+      gcTime: 60 * 60 * 1000, // 1 hour - keep in cache longer
     },
   },
 });
@@ -37,14 +39,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <LoadingSpinner />
-        <div className="ml-4">
-          <p className="text-gray-600">Checking authentication...</p>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Checking authentication..." />;
   }
 
   if (!isAuthenticated) {
@@ -72,7 +67,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/users/providers" element={<ProtectedRoute><Layout title="Service Providers"><Users /></Layout></ProtectedRoute>} />
         <Route path="/users/flagged" element={<ProtectedRoute><Layout title="Flagged & Suspended"><Users /></Layout></ProtectedRoute>} />
         <Route path="/users/deleted" element={<ProtectedRoute><Layout title="Deleted Users"><Users /></Layout></ProtectedRoute>} />
-        <Route path="/jobs" element={<ProtectedRoute><Layout title="Jobs"><Jobs /></Layout></ProtectedRoute>} />
+        <Route path="/jobs" element={<ProtectedRoute><Layout title="Jobs Management"><Jobs /></Layout></ProtectedRoute>} />
         <Route path="/jobs/archived" element={<ProtectedRoute><Layout title="Archived Jobs"><ArchivedJobs /></Layout></ProtectedRoute>} />
         <Route path="/transactions/fee-records" element={<ProtectedRoute><Layout title="Fee Records"><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/transactions/top-up" element={<ProtectedRoute><Layout title="Top-up Transactions"><Transactions /></Layout></ProtectedRoute>} />

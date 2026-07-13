@@ -79,6 +79,7 @@ export interface TransactionStats {
   pending: number;
   completed: number;
   failed: number;
+  cancelled: number;
   totalAmount: number;
 }
 
@@ -99,6 +100,12 @@ export interface TransactionsResponse {
   success: boolean;
   transactions: Transaction[];
   stats: TransactionStats | null;
+  pagination?: {
+    total: number;
+    pages: number;
+    page: number;
+    limit: number;
+  };
 }
 
 export interface UpdateTransactionStatusRequest {

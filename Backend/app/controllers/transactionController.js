@@ -75,7 +75,7 @@ const getTransactions = async (req, res) => {
       .populate('toUserId', 'name email phone location profileImage')
       .populate({
         path: 'jobId',
-        select: 'title category userId assignedToId budget',
+        select: 'title category categoryName professionName icon userId assignedToId budget',
         populate: [
           {
             path: 'userId',
@@ -162,7 +162,7 @@ const getTransactions = async (req, res) => {
         })
         .populate({
           path: 'jobId',
-          select: 'title category userId assignedToId budget',
+          select: 'title category categoryName professionName icon userId assignedToId budget',
           populate: [
             {
               path: 'userId',
@@ -283,7 +283,7 @@ const getTransactionDetails = async (req, res) => {
         })
         .populate({
           path: 'jobId',
-          select: 'title description category userId assignedToId budget',
+          select: 'title description category categoryName professionName icon userId assignedToId budget',
           populate: [
             {
               path: 'userId',
@@ -350,7 +350,7 @@ const getTransactionDetails = async (req, res) => {
         .populate('toUserId', 'name email phone location profileImage')
         .populate({
           path: 'jobId',
-          select: 'title description category userId assignedToId budget',
+          select: 'title description category categoryName professionName icon userId assignedToId budget',
           populate: [
             {
               path: 'userId',
@@ -426,7 +426,7 @@ const updateTransactionStatus = async (req, res) => {
       .populate('toUser', 'name email phone location')
       .populate('fromUserId', 'name email phone location')
       .populate('toUserId', 'name email phone location')
-      .populate('jobId', 'title category')
+      .populate('jobId', 'title category categoryName professionName icon')
       .lean();
       
       if (updatedTransaction) {
@@ -505,7 +505,7 @@ const updateTransactionStatus = async (req, res) => {
     .populate('toUserId', 'name email phone location')
     .populate({
       path: 'jobId',
-      select: 'title category userId assignedToId budget',
+      select: 'title category categoryName professionName icon userId assignedToId budget',
       populate: [
         {
           path: 'userId',

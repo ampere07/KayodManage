@@ -1,6 +1,30 @@
 const JobCategory = require('../models/JobCategory');
+const Job = require('../models/Job');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+const imageKitService = require('../services/imageKitService');
+
+const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
+const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
+
+// Must stay in lockstep with the Kayod client's profession-icon resolver
+// (kayod/client: JobCard.jsx & categoryVisualMapping.js), which builds
+// professionIconsUpload/<slug>.webp from the profession NAME. If these diverge the
+// client requests a filename the stored icon doesn't have and the icon 404s.
+const generateIconFilename = (professionName) => {
+  return generateIconSlug(professionName) + '.webp';
+};
+
+const generateIconSlug = (professionName) => {
+  return professionName
+    .replace(/([a-z])([A-Z])/g, '$1-$2') // camelCase → kebab (parity with Kayod client)
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-');
+};
 
 // Get socket.io instance
 let io;
@@ -265,6 +289,10 @@ exports.updateProfession = async (req, res) => {
       });
     }
 
+    // Capture old values before updating
+    const oldName = profession.name;
+    const oldIcon = profession.icon;
+
     if (name !== undefined) {
       if (!name || !name.trim()) {
         return res.status(400).json({
@@ -300,13 +328,170 @@ exports.updateProfession = async (req, res) => {
       profession.quickAccessOrder = quickAccessOrder;
     }
 
+    // When a profession is renamed and its icon already lives in ImageKit (and no new
+    // icon is being uploaded in this same request), rename the ImageKit file so its name
+    // stays in sync with the profession. The Kayod client resolves profession icons by
+    // building professionIconsUpload/<slug>.webp from the profession NAME, so the stored
+    // file MUST match the new name or the icon 404s. Only the filename/URL changes — the
+    // image content is untouched — so the profession keeps using the same icon.
+    let renamedIkIcon = null;
+    let ikRollback = null;
+    const requestIconChanged = icon !== undefined && icon !== oldIcon;
+    const professionRenamed = name !== undefined && name.trim() !== oldName;
+
+    if (professionRenamed && !requestIconChanged && oldIcon && oldIcon.startsWith('ik:')) {
+      const oldFilePath = oldIcon.replace('ik:', '');
+      const normalizedPath = oldFilePath.startsWith('/') ? oldFilePath : `/${oldFilePath}`;
+      const oldFileName = normalizedPath.split('/').pop();
+      const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+      // Keep the original extension (legacy ImageKit icons may be .png, new ones are .webp)
+      const oldExt = oldFileName.includes('.') ? oldFileName.slice(oldFileName.lastIndexOf('.')) : '.webp';
+      const newBaseName = generateIconSlug(name.trim());
+      const newFileName = `${newBaseName}${oldExt}`;
+
+      // Skip if the new name sanitizes to nothing (symbol-only / non-Latin), which would
+      // produce a degenerate ".webp" filename that collides across professions.
+      if (newBaseName && oldFileName !== newFileName) {
+        try {
+          await imageKitService.renameFile(normalizedPath, newFileName, true);
+          renamedIkIcon = `ik:${folderPath}/${newFileName}`;
+          profession.icon = renamedIkIcon;
+          // Compensating action: if the DB write below fails, rename the file back so the
+          // stored icon path and the actual ImageKit file never drift apart.
+          ikRollback = () => imageKitService.renameFile(`${folderPath}/${newFileName}`, oldFileName, true);
+          console.log(`[Configurations] ImageKit profession icon renamed: "${oldFileName}" → "${newFileName}"`);
+        } catch (ikErr) {
+          // e.g. a file with the new name already exists, or a transient API error.
+          // Keep the existing icon reference so the profession still shows its icon.
+          console.warn(`[Configurations] Could not rename ImageKit profession icon: ${ikErr.message}`);
+        }
+      }
+    }
+
     profession.updatedAt = new Date();
 
-    await category.save();
+    try {
+      await category.save();
+    } catch (saveErr) {
+      // The ImageKit file was already renamed but persisting the profession failed — roll
+      // the file back so the stored icon path and the actual ImageKit file stay consistent.
+      if (ikRollback) {
+        try {
+          await ikRollback();
+          console.warn('[Configurations] Rolled back ImageKit rename after profession save failure');
+        } catch (rbErr) {
+          console.error(`[Configurations] ImageKit rename rollback FAILED: ${rbErr.message}`);
+        }
+      }
+      throw saveErr;
+    }
+
+    // Cascade profession name and icon changes to existing Job and Draft documents
+    const warnings = [];
+    const nameChanged = name && name.trim() !== oldName;
+    const iconChanged = requestIconChanged || !!renamedIkIcon;
+
+    if (nameChanged || iconChanged) {
+      const update = {};
+
+      if (nameChanged) {
+        update.professionName = name.trim();
+      }
+      if (renamedIkIcon) {
+        // ImageKit file was renamed — point existing jobs/drafts at the new path.
+        update.icon = renamedIkIcon;
+      } else if (requestIconChanged) {
+        if (icon.startsWith('ik:')) {
+          update.icon = icon;
+        } else {
+          update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
+        }
+      }
+
+      // Handle icon files on disk (only for legacy custom icons)
+      if (requestIconChanged && !icon.startsWith('ik:') && !oldIcon?.startsWith('ik:')) {
+        // Derive old filename from DB icon field, or fall back to generating from old profession name
+        const oldFileName = oldIcon
+          ? (oldIcon.startsWith('custom:') ? oldIcon.replace('custom:', '') : oldIcon)
+          : generateIconFilename(oldName);
+        const newFileName = icon.startsWith('custom:') ? icon.replace('custom:', '') : icon;
+
+        if (oldFileName !== newFileName) {
+          // COPY in kayod client (preserves static imports, adds new filename for URL serving)
+          try {
+            const oldPath = path.join(KAYOD_PROFESSIONS_DIR, oldFileName);
+            const newPath = path.join(KAYOD_PROFESSIONS_DIR, newFileName);
+            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+              fs.copyFileSync(oldPath, newPath);
+              console.log(`[Configurations] Icon file copied: "${oldFileName}" → "${newFileName}" in kayod client`);
+            }
+          } catch (fileErr) {
+            console.warn(`[Configurations] Could not copy icon file in kayod client: ${fileErr.message}`);
+          }
+
+          // RENAME in KayodManage (no static imports, safe to rename)
+          try {
+            const oldPath = path.join(MANAGE_PROFESSIONS_DIR, oldFileName);
+            const newPath = path.join(MANAGE_PROFESSIONS_DIR, newFileName);
+            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+              fs.renameSync(oldPath, newPath);
+              console.log(`[Configurations] Icon file renamed: "${oldFileName}" → "${newFileName}" in KayodManage`);
+            }
+          } catch (fileErr) {
+            console.warn(`[Configurations] Could not rename icon file in KayodManage: ${fileErr.message}`);
+          }
+        }
+      }
+
+      // Update Jobs with old profession name
+      const jobQuery = { professionName: oldName };
+      try {
+        const jobResult = await Job.updateMany(jobQuery, { $set: update });
+        console.log(`[Configurations] Updated ${jobResult.modifiedCount} jobs.`);
+      } catch (jobErr) {
+        console.warn(`[Configurations] Could not update jobs: ${jobErr.message}`);
+        // Surface the partial cascade so the admin knows existing jobs may still point at
+        // the old icon path (which no longer exists after the ImageKit rename).
+        warnings.push(`Failed to update some jobs to the renamed icon: ${jobErr.message}`);
+      }
+
+      // Update Drafts with old profession name (no Draft model, use raw collection)
+      try {
+        const draftsCollection = mongoose.connection.collection('drafts');
+        const draftResult = await draftsCollection.updateMany(
+          { professionName: oldName },
+          { $set: update }
+        );
+        console.log(`[Configurations] Updated ${draftResult.modifiedCount} drafts.`);
+      } catch (draftErr) {
+        console.warn(`[Configurations] Could not update drafts: ${draftErr.message}`);
+        warnings.push(`Failed to update some drafts to the renamed icon: ${draftErr.message}`);
+      }
+
+      console.log(
+        `[Configurations] Profession renamed: "${oldName}" → "${name ? name.trim() : oldName}". `
+      );
+    }
+
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'profession',
+          action: 'updated',
+          professionId,
+          profession,
+        });
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
 
     res.status(200).json({
       success: true,
       profession,
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (error) {
     console.error('Error updating profession:', error);
@@ -336,6 +521,20 @@ exports.deleteProfession = async (req, res) => {
     category.professions.pull(professionId);
     await category.save();
 
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'profession',
+          action: 'deleted',
+          professionId,
+        });
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Profession deleted successfully',
@@ -345,6 +544,139 @@ exports.deleteProfession = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete profession',
+      error: error.message,
+    });
+  }
+};
+
+// Transfer profession to another category
+exports.transferProfession = async (req, res) => {
+  try {
+    const { professionId } = req.params;
+    const { targetCategoryId } = req.body;
+
+    if (!targetCategoryId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target category ID is required',
+      });
+    }
+
+    // Find the source category containing the profession
+    const sourceCategory = await JobCategory.findOne({
+      'professions._id': professionId,
+    });
+
+    if (!sourceCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profession not found',
+      });
+    }
+
+    // Prevent transferring to the same category
+    if (sourceCategory._id.toString() === targetCategoryId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Profession is already in this category',
+      });
+    }
+
+    // Find the target category
+    const targetCategory = await JobCategory.findById(targetCategoryId);
+
+    if (!targetCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target category not found',
+      });
+    }
+
+    // Get the profession data
+    const profession = sourceCategory.professions.id(professionId);
+
+    if (!profession) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profession not found in source category',
+      });
+    }
+
+    // Check if a profession with the same name already exists in the target category
+    const existingProfession = targetCategory.professions.find(
+      p => p.name.toLowerCase() === profession.name.toLowerCase()
+    );
+
+    if (existingProfession) {
+      return res.status(400).json({
+        success: false,
+        message: `A profession named "${profession.name}" already exists in "${targetCategory.name}"`,
+      });
+    }
+
+    // Copy profession data to the target category (new _id will be generated)
+    const professionData = {
+      name: profession.name,
+      icon: profession.icon,
+      isQuickAccess: profession.isQuickAccess,
+      quickAccessOrder: profession.quickAccessOrder,
+      createdAt: profession.createdAt,
+      updatedAt: new Date(),
+    };
+
+    targetCategory.professions.push(professionData);
+    await targetCategory.save();
+
+    // Get the newly created profession in the target category
+    const newProfession = targetCategory.professions[targetCategory.professions.length - 1];
+
+    // Remove from source category
+    sourceCategory.professions.pull(professionId);
+    await sourceCategory.save();
+
+    // Update any existing jobs that reference this profession's categoryId
+    try {
+      const jobResult = await Job.updateMany(
+        { professionName: profession.name, 'jobCategory': sourceCategory._id },
+        { $set: { 'jobCategory': targetCategory._id } }
+      );
+      if (jobResult.modifiedCount > 0) {
+        console.log(`[Configurations] Transferred ${jobResult.modifiedCount} jobs to new category.`);
+      }
+    } catch (jobErr) {
+      console.warn(`[Configurations] Could not update jobs during transfer: ${jobErr.message}`);
+    }
+
+    // Update drafts
+    try {
+      const draftsCollection = mongoose.connection.collection('drafts');
+      const draftResult = await draftsCollection.updateMany(
+        { professionName: profession.name, 'jobCategory': sourceCategory._id },
+        { $set: { 'jobCategory': targetCategory._id } }
+      );
+      if (draftResult.modifiedCount > 0) {
+        console.log(`[Configurations] Transferred ${draftResult.modifiedCount} drafts to new category.`);
+      }
+    } catch (draftErr) {
+      console.warn(`[Configurations] Could not update drafts during transfer: ${draftErr.message}`);
+    }
+
+    console.log(
+      `[Configurations] Profession "${profession.name}" transferred from "${sourceCategory.name}" to "${targetCategory.name}".`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Profession "${profession.name}" transferred to "${targetCategory.name}" successfully`,
+      profession: newProfession,
+      sourceCategoryId: sourceCategory._id,
+      targetCategoryId: targetCategory._id,
+    });
+  } catch (error) {
+    console.error('Error transferring profession:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to transfer profession',
       error: error.message,
     });
   }
@@ -444,7 +776,21 @@ exports.uploadCategoryIcon = async (req, res) => {
 };
 
 exports.uploadProfessionIcon = async (req, res) => {
+  // Detect client cancellation: when the browser aborts the request (user clicked
+  // "Cancel Upload"), the response socket closes before we finish writing. We upload to a
+  // TEMPORARY name first and only promote it to the live icon if the client did NOT cancel,
+  // so a cancelled upload never changes the saved icon.
+  let clientAborted = false;
+  res.on('close', () => {
+    if (!res.writableFinished) clientAborted = true;
+  });
+
+  let tempFilePath = null;
+  let tempFileId = null;
+
   try {
+    console.log(`[Configurations] Starting profession icon upload for ${req.body.professionName}`);
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -452,8 +798,8 @@ exports.uploadProfessionIcon = async (req, res) => {
       });
     }
 
-    const { buffer, originalname } = req.file;
-    const { professionName, oldIcon } = req.body;
+    const { buffer } = req.file;
+    const { professionName, oldIcon, professionId } = req.body;
 
     if (!professionName) {
       return res.status(400).json({
@@ -462,102 +808,85 @@ exports.uploadProfessionIcon = async (req, res) => {
       });
     }
 
-    const fileExtension = path.extname(originalname);
-    const sanitizedName = professionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    let fileName = `${sanitizedName}${fileExtension}`;
+    // Use the shared slug so the uploaded filename matches what the Kayod client requests
+    const sanitizedName = generateIconSlug(professionName);
+    const fileName = `${sanitizedName}.webp`;
+    // Unique, non-destructive staging name. The live icon is untouched until we commit.
+    const tempName = `tmp-${sanitizedName}-${Date.now()}-${Math.round(Math.random() * 1e6)}.webp`;
 
-    const kayodPath = path.join(
-      __dirname,
-      '../../../..',
-      'kayod/client/src/assets/icons/professions',
-      fileName
+    // 1) Upload the new image to the TEMP name. This is the slow part and is safe to cancel.
+    console.log(`[Configurations] Staging profession icon on ImageKit: ${tempName}`);
+    const tempResult = await imageKitService.uploadFile(
+      buffer,
+      tempName,
+      'professionIconsUpload',
+      ['profession-icon-temp', sanitizedName]
     );
+    tempFilePath = tempResult.filePath;
+    tempFileId = tempResult.fileId;
 
-    const kayodManagePath = path.join(
-      __dirname,
-      '../../..',
-      'Frontend/public/assets/icons/professions',
-      fileName
-    );
-
-    const kayodDir = path.dirname(kayodPath);
-    const kayodManageDir = path.dirname(kayodManagePath);
-
-    if (!fs.existsSync(kayodDir)) {
-      fs.mkdirSync(kayodDir, { recursive: true });
-    }
-    if (!fs.existsSync(kayodManageDir)) {
-      fs.mkdirSync(kayodManageDir, { recursive: true });
+    // 2) If the user cancelled while the upload was in flight, discard the staged file and
+    //    leave the existing icon exactly as it was.
+    if (clientAborted) {
+      await imageKitService.deleteFile(tempFileId);
+      tempFileId = null;
+      console.log(`[Configurations] Upload cancelled by client; staged file discarded, icon unchanged for "${professionName}"`);
+      return; // connection already closed — nothing to respond
     }
 
-    if (oldIcon && oldIcon.startsWith('custom:')) {
-      const oldFileName = oldIcon.replace('custom:', '');
-      const oldKayodPath = path.join(kayodDir, oldFileName);
-      const oldKayodManagePath = path.join(kayodManageDir, oldFileName);
-
+    // 3) Commit. Free the target filename, drop any differently-named old icon, then promote
+    //    the staged file to the live name.
+    const deleteIkByName = async (name) => {
       try {
-        if (fs.existsSync(oldKayodPath)) {
-          fs.unlinkSync(oldKayodPath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
+        const files = await imageKitService.listFiles({ name, path: 'professionIconsUpload' });
+        const match = files && files.find(f => f.name === name);
+        if (match) await imageKitService.deleteFile(match.fileId);
+      } catch (e) {
+        console.warn(`[Configurations] Could not delete ImageKit file ${name}: ${e.message}`);
       }
+    };
 
-      try {
-        if (fs.existsSync(oldKayodManagePath)) {
-          fs.unlinkSync(oldKayodManagePath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
+    await deleteIkByName(fileName);
+
+    if (oldIcon && oldIcon.startsWith('ik:')) {
+      const oldFileName = oldIcon.replace('ik:', '').split('/').pop();
+      if (oldFileName && oldFileName !== fileName) {
+        await deleteIkByName(oldFileName);
       }
     }
 
-    // Write files with fallback to timestamped filename
-    let writeSuccess = false;
-    let finalFileName = fileName;
+    await imageKitService.renameFile(tempFilePath, fileName, true);
+    tempFileId = null; // committed — the temp file no longer exists under its old name
+    const ikPath = `ik:/professionIconsUpload/${fileName}`;
 
-    try {
-      // Try to write with original filename first
-      fs.writeFileSync(kayodPath, buffer);
-      fs.writeFileSync(kayodManagePath, buffer);
-      writeSuccess = true;
-    } catch (err) {
-      console.warn('Failed to write with original filename, trying with timestamp:', err.message);
-      
-      // If write fails, try with timestamp
-      const timestamp = Date.now();
-      finalFileName = `${sanitizedName}-${timestamp}${fileExtension}`;
-      
-      const kayodPathTimestamped = path.join(
-        __dirname,
-        '../../../..',
-        'kayod/client/src/assets/icons/professions',
-        finalFileName
-      );
-      
-      const kayodManagePathTimestamped = path.join(
-        __dirname,
-        '../../..',
-        'Frontend/public/assets/icons/professions',
-        finalFileName
-      );
-      
-      try {
-        fs.writeFileSync(kayodPathTimestamped, buffer);
-        fs.writeFileSync(kayodManagePathTimestamped, buffer);
-        writeSuccess = true;
-        fileName = finalFileName;
-      } catch (timestampErr) {
-        console.error('Failed to write even with timestamp:', timestampErr);
-        throw new Error(`Failed to save icon: ${timestampErr.message}`);
+    // 4) Update the profession in the database with the new icon
+    if (professionId) {
+      const category = await JobCategory.findOne({
+        'professions._id': professionId,
+      });
+
+      if (!category) {
+        throw new Error('Profession not found');
       }
+
+      const profession = category.professions.id(professionId);
+      if (!profession) {
+        throw new Error('Profession not found');
+      }
+
+      profession.icon = ikPath;
+      profession.updatedAt = new Date();
+      await category.save();
+      console.log(`[Configurations] Updated profession icon in database: ${professionName} -> ${ikPath}`);
     }
 
+    console.log(`[Configurations] Profession icon upload complete: ${professionName}`);
     res.status(200).json({
       success: true,
-      iconName: `custom:${fileName}`,
-      fullPath: `/assets/icons/professions/${fileName}`,
-      message: 'Profession icon uploaded successfully',
+      iconName: ikPath,
+      fullPath: `${process.env.IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/9vpn8u272'}/professionIconsUpload/${fileName}`,
+      message: 'Profession icon uploaded to ImageKit successfully',
+      professionId, // Return professionId for frontend reference
     });
 
     // Emit socket event for real-time update
@@ -567,23 +896,28 @@ exports.uploadProfessionIcon = async (req, res) => {
         adminNamespace.emit('configuration:updated', {
           type: 'profession',
           action: 'icon-updated',
-          professionId: profession._id,
+          professionId,
           professionName,
-          iconName: `custom:${fileName}`,
+          iconName: ikPath,
           timestamp: new Date()
         });
-        console.log('Socket emitted: configuration:updated - profession icon updated');
       } catch (socketErr) {
         console.error('Error emitting socket event:', socketErr);
       }
     }
   } catch (error) {
+    // Clean up the staged temp file on any failure so we never leak orphans.
+    if (tempFileId) {
+      try { await imageKitService.deleteFile(tempFileId); } catch (e) { /* best effort */ }
+    }
     console.error('Error uploading profession icon:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to upload profession icon',
-      error: error.message,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to upload profession icon',
+        error: error.message,
+      });
+    }
   }
 };
 

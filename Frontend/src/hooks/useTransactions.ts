@@ -19,7 +19,6 @@ export const useTransactions = (params: UseTransactionsParams) => {
   return useQuery({
     queryKey: [TRANSACTIONS_QUERY_KEY, params],
     queryFn: () => transactionsService.getTransactions(params),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -40,13 +39,18 @@ export const useTransactionCounts = (type?: string) => {
 
       return {
         total: totalData.pagination?.total || 0,
+        totalAmount: totalData.stats?.totalAmount || 0,
         pending: pendingData.pagination?.total || 0,
+        pendingAmount: pendingData.stats?.totalAmount || 0,
         completed: completedData.pagination?.total || 0,
+        completedAmount: completedData.stats?.totalAmount || 0,
+        completedRevenue: completedData.stats?.totalAmount || 0, // for backward compatibility/clarity
         failed: failedData.pagination?.total || 0,
-        cancelled: cancelledData.pagination?.total || 0
+        failedAmount: failedData.stats?.totalAmount || 0,
+        cancelled: cancelledData.pagination?.total || 0,
+        cancelledAmount: cancelledData.stats?.totalAmount || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -59,8 +63,8 @@ export const useTransactionMutations = () => {
   };
 
   const updateTransactionStatus = useMutation({
-    mutationFn: ({ transactionId, status }: { transactionId: string; status: string }) =>
-      transactionsService.updateTransactionStatus(transactionId, status),
+    mutationFn: ({ transactionId, status, type }: { transactionId: string; status: any; type: string }) =>
+      transactionsService.updateTransactionStatus(transactionId, { status, type }),
     onSuccess: () => {
       invalidateTransactions();
       toast.success('Transaction status updated successfully');

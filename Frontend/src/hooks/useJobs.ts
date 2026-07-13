@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { jobsService } from '../services';
+import { jobsService, settingsService } from '../services';
 import toast from 'react-hot-toast';
+import { useMemo } from 'react';
 
 interface UseJobsParams {
   page: number;
@@ -20,7 +21,6 @@ export const useJobs = (params: UseJobsParams) => {
   return useQuery({
     queryKey: [JOBS_QUERY_KEY, params],
     queryFn: () => jobsService.getJobs(params),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -48,7 +48,6 @@ export const useJobCounts = () => {
         totalValue
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -57,7 +56,6 @@ export const useArchivedJobs = (params: UseJobsParams) => {
   return useQuery({
     queryKey: [JOBS_QUERY_KEY, 'archived', params],
     queryFn: () => jobsService.getJobs({ ...params, archived: true }),
-    staleTime: 2 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -76,7 +74,6 @@ export const useArchivedJobCounts = () => {
         removed: removedData.pagination?.total || 0
       };
     },
-    staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 };
@@ -169,4 +166,18 @@ export const useJobMutations = () => {
     unhideJob,
     restoreJob,
   };
+};
+
+export const useJobCategories = () => {
+  const { data: jobCategoriesData, isLoading } = useQuery({
+    queryKey: ['job-categories'],
+    queryFn: () => settingsService.getJobCategories(),
+  });
+  const categories = useMemo(() => jobCategoriesData?.categories || [], [jobCategoriesData]);
+  const professionsList = useMemo(() => {
+    const allProfessions = categories.flatMap(cat => cat.professions || []).map(prof => prof.name);
+    // Deduplicate profession names
+    return [...new Set(allProfessions)].sort();
+  }, [categories]);
+  return { categories, professionsList, isLoading };
 };

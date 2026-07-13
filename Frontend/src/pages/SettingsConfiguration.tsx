@@ -22,7 +22,7 @@ const SettingsConfiguration: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh)] md:h-[calc(100vh-2rem)] -mx-2 sm:-mx-4 md:-mx-6 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 bg-gray-50">
+    <div className="flex flex-col h-screen -mx-2 sm:-mx-4 md:-mx-6 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 bg-gray-50">
       {/* Custom Header combining Page Header + Mobile sidebar toggle */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-4 sticky top-0 z-40">
         <div className="flex items-start justify-between">

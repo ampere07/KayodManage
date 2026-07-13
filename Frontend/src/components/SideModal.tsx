@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface SideModalProps {
@@ -56,23 +57,23 @@ const SideModal: React.FC<SideModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity z-40"
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity z-[9998]"
         onClick={onClose}
       />
 
       {/* Side Modal */}
-      <div 
-        className={`fixed top-0 right-0 h-full ${widthClasses[width]} w-full bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-50 flex flex-col`}
-        style={{ 
+      <div
+        className={`fixed inset-0 md:inset-auto md:top-0 md:right-0 md:h-full ${widthClasses[width]} w-full bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-[9999] flex flex-col`}
+        style={{
           transform: isOpen ? 'translateX(0)' : 'translateX(100%)'
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
           {headerContent ? (
             <>
               {headerContent}
@@ -86,7 +87,7 @@ const SideModal: React.FC<SideModalProps> = ({
             </>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{title}</h2>
               <button
                 onClick={onClose}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
@@ -99,11 +100,12 @@ const SideModal: React.FC<SideModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-hidden flex flex-col">
           {children}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 

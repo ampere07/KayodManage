@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
-import { X, Plus, Trash2, ImageIcon, Search } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { X, Plus, Trash2, ImageIcon, Search, ArrowRightLeft, Upload } from 'lucide-react';
 import { settingsService } from '../../services';
-import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getAllIcons } from '../../constants/categoryIcons';
+import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getProfessionIconFromName, generateProfessionIconFilename, getAllIcons } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
+import { useQueryClient } from '@tanstack/react-query';
+import TransferProfessionModal from './TransferProfessionModal';
 
 // Helper function to generate consistent icon filename from profession name
 const generateIconFilename = (professionName: string): string => {
   return professionName
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s]/g, '') // Remove special characters except spaces
     .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/[^a-z0-9-]/g, '') // Remove special characters except hyphens
+    .replace(/-+/g, '-') // Collapse multiple hyphens into one
     + '.webp';
 };
 
@@ -61,8 +64,24 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const professionFileInputRef = React.useRef<HTMLInputElement>(null);
+  const uploadAbortRef = React.useRef<AbortController | null>(null);
   const [currentProfessionForUpload, setCurrentProfessionForUpload] = useState<string | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferProfession, setTransferProfession] = useState<Profession | null>(null);
+  const [isDraggingIcon, setIsDraggingIcon] = useState(false);
+  // Staged-but-not-yet-uploaded icon. The file only hits ImageKit when the user clicks
+  // Save Changes, so cancelling/closing the editor never changes the saved icon.
+  const [pendingIconFile, setPendingIconFile] = useState<File | null>(null);
+  const [pendingIconPreview, setPendingIconPreview] = useState<string | null>(null);
   const { socket } = useSocket();
+  const queryClient = useQueryClient();
+
+  // Revoke the previous local preview object URL when it changes or on unmount.
+  React.useEffect(() => {
+    return () => {
+      if (pendingIconPreview) URL.revokeObjectURL(pendingIconPreview);
+    };
+  }, [pendingIconPreview]);
 
   // Filter professions based on search query
   const filteredProfessions = professions.filter(profession =>
@@ -84,6 +103,8 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       setIsAddingProfession(false);
       setIsEditingProfession(false);
       setProfessionSearchQuery('');
+      setPendingIconFile(null);
+      setPendingIconPreview(null);
     }
   }, [isOpen, initialProfession]);
 
@@ -92,22 +113,22 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     if (!socket) return;
 
     const handleConfigurationUpdate = (data: any) => {
-      if (data.type === 'profession' && data.action === 'icon-updated') {
+      if (data.type === 'profession' && data.action === 'icon-updated' && data.professionId) {
         // Update the timestamp to force icon refresh
         setIconTimestamp(Date.now());
-        
+
         // Update the profession icon timestamps for cache busting
         setProfessionIconTimestamps(prev => ({
           ...prev,
           [data.professionId]: Date.now()
         }));
-        
+
         // If this profession is currently being edited, update its icon
         if (editingProfession && editingProfession._id === data.professionId) {
           setEditingProfessionIcon(data.iconName);
           setEditingProfession(prev => prev ? { ...prev, icon: data.iconName } : null);
         }
-        
+
         // Update the profession in the list
         setProfessions(prev =>
           prev.map(prof =>
@@ -126,7 +147,20 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     };
   }, [socket, editingProfession]);
 
+  const resetProfessionEditState = () => {
+    setEditingProfession(null);
+    setEditingProfessionName('');
+    setEditingProfessionIcon(undefined);
+    setIsAddingProfession(false);
+    setIsEditingProfession(false);
+    setNewProfessionName('');
+    setPendingIconFile(null);
+    setPendingIconPreview(null);
+  };
+
   const handleEditProfession = (profession: Profession) => {
+    setPendingIconFile(null);
+    setPendingIconPreview(null);
     setEditingProfession(profession);
     setEditingProfessionName(profession.name);
     setEditingProfessionIcon(profession.icon);
@@ -135,87 +169,78 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   };
 
   const handleSaveProfessionEdit = async () => {
-    if (!editingProfessionName.trim()) {
+    const finalName = editingProfessionName.trim();
+    if (!finalName) {
       toast.error('Profession name cannot be empty');
       return;
     }
 
     try {
-      if (editingProfession) {
-        // Update existing profession
-        const updateData: any = {};
-        const nameChanged = editingProfessionName.trim() !== editingProfession.name;
-        
-        if (nameChanged) {
-          updateData.name = editingProfessionName.trim();
-          
-          // Automatically update icon filename when profession name changes
-          // Only if the current icon follows the naming pattern or if there's no custom icon
-          const currentIcon = editingProfessionIcon || editingProfession.icon;
-          const shouldUpdateIcon = !currentIcon || 
-            currentIcon.includes(editingProfession.name.toLowerCase().replace(/\s+/g, '-'));
-          
-          if (shouldUpdateIcon) {
-            const newIconFilename = generateIconFilename(editingProfessionName.trim());
-            updateData.icon = newIconFilename;
-            setEditingProfessionIcon(newIconFilename);
-            
-            toast.success(`Icon filename will be updated to: ${newIconFilename}`);
-          }
-        }
-        
-        if (editingProfessionIcon !== editingProfession.icon && !nameChanged) {
-          updateData.icon = editingProfessionIcon;
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          await settingsService.updateProfession(editingProfession._id, updateData);
-          
-          setProfessions(prev =>
-            prev.map(prof =>
-              prof._id === editingProfession._id
-                ? { ...prof, ...updateData }
-                : prof
-            )
-          );
-          
-          const message = nameChanged && updateData.icon 
-            ? 'Profession name and icon updated successfully'
-            : nameChanged 
-            ? 'Profession name updated successfully'
-            : 'Profession icon updated successfully';
-          
-          toast.success(message);
-        }
-      } else {
-        // Add new profession
+      // Add new profession (the add form does not offer an icon dropzone)
+      if (!editingProfession) {
         const response = await settingsService.createProfession({
-          name: editingProfessionName.trim(),
+          name: finalName,
           categoryId: category._id,
         });
-        
         setProfessions(prev => [...prev, response.profession]);
         toast.success('Profession added successfully');
+        resetProfessionEditState();
+        return;
       }
-      
-      // Reset editing state
-      setEditingProfession(null);
-      setEditingProfessionName('');
-      setEditingProfessionIcon(undefined);
-      setIsAddingProfession(false);
-      setIsEditingProfession(false);
-      setNewProfessionName('');
+
+      const nameChanged = finalName !== editingProfession.name;
+      let committedIcon: string | undefined;
+
+      // 1) Upload the staged icon FIRST, under the final name. This is the ONLY place the
+      //    icon reaches ImageKit, so cancelling before Save leaves the saved icon untouched.
+      if (pendingIconFile) {
+        const uploaded = await uploadStagedIcon(
+          pendingIconFile,
+          finalName,
+          editingProfession.icon,
+          editingProfession._id,
+        );
+        if (uploaded === null) return; // upload was cancelled — keep the editor open
+        committedIcon = uploaded;
+      }
+
+      // 2) Persist the name change. When an icon was just uploaded we pass it along so the
+      //    backend does not try to rename a file that already sits at the final name.
+      const updateData: { name?: string; icon?: string } = {};
+      if (nameChanged) updateData.name = finalName;
+      if (nameChanged && committedIcon) updateData.icon = committedIcon;
+
+      if (Object.keys(updateData).length > 0) {
+        const res = await settingsService.updateProfession(editingProfession._id, updateData);
+        const resolvedIcon = res?.profession?.icon ?? committedIcon;
+        setProfessions(prev =>
+          prev.map(prof =>
+            prof._id === editingProfession._id
+              ? { ...prof, name: finalName, ...(resolvedIcon ? { icon: resolvedIcon } : {}) }
+              : prof
+          )
+        );
+        setProfessionIconTimestamps(prev => ({ ...prev, [editingProfession._id]: Date.now() }));
+        queryClient.invalidateQueries({ queryKey: ['job-categories'] });
+      }
+
+      if (nameChanged || committedIcon) {
+        toast.success(
+          nameChanged && committedIcon
+            ? 'Profession name and icon updated successfully'
+            : nameChanged
+              ? 'Profession name updated successfully'
+              : 'Profession icon updated successfully'
+        );
+      }
+      resetProfessionEditState();
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to save profession');
     }
   };
 
   const handleCancelProfessionEdit = () => {
-    setEditingProfession(null);
-    setEditingProfessionName('');
-    setEditingProfessionIcon(undefined);
-    setIsAddingProfession(false);
-    setIsEditingProfession(false);
+    resetProfessionEditState();
   };
 
   const handleDeleteProfession = async (professionId: string) => {
@@ -299,63 +324,92 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     }
   };
 
-  const handleProfessionFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !currentProfessionForUpload) return;
-
+  // Stage a chosen image LOCALLY. It is not uploaded until the user clicks Save Changes,
+  // so cancelling or closing the editor never touches ImageKit or the saved icon.
+  const stageProfessionIcon = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload an image file');
       return;
     }
-
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File size must be less than 5MB');
       return;
     }
+    setPendingIconFile(file);
+    setPendingIconPreview(URL.createObjectURL(file));
+  }, []);
 
-    const profession = professions.find(p => p._id === currentProfessionForUpload);
-    if (!profession) return;
+  // Upload the staged icon to ImageKit. Called only from Save. Returns the new icon path,
+  // or null if the user cancelled the in-flight upload.
+  const uploadStagedIcon = useCallback(async (
+    file: File,
+    professionName: string,
+    oldIcon: string | undefined,
+    professionId: string,
+  ): Promise<string | null> => {
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
 
     try {
-      setUploadingProfessionIcon(currentProfessionForUpload);
+      setUploadingProfessionIcon(professionId);
       const response = await settingsService.uploadProfessionIcon(
         file,
-        profession.name,
-        profession.icon
+        professionName,
+        oldIcon,
+        professionId,
+        controller.signal
       );
-      
-      if (editingProfession && editingProfession._id === currentProfessionForUpload) {
+
+      if (editingProfession && editingProfession._id === professionId) {
         setEditingProfessionIcon(response.iconName);
         setEditingProfession(prev => prev ? { ...prev, icon: response.iconName } : null);
       }
-      
+
       setProfessions(prev =>
         prev.map(prof =>
-          prof._id === currentProfessionForUpload
+          prof._id === professionId
             ? { ...prof, icon: response.iconName }
             : prof
         )
       );
-      
+
       setProfessionIconTimestamps(prev => ({
         ...prev,
-        [currentProfessionForUpload]: Date.now()
+        [professionId]: Date.now()
       }));
-      
-      // Also update the main icon timestamp to force refresh
+
       setIconTimestamp(Date.now());
-      
-      toast.success('Profession icon uploaded successfully');
+
+      return response.iconName as string;
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to upload profession icon');
+      // Axios flags user-cancelled requests with code ERR_CANCELED / name CanceledError.
+      if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
+        toast('Upload cancelled');
+        return null;
+      }
+      throw error;
     } finally {
+      uploadAbortRef.current = null;
       setUploadingProfessionIcon(null);
       setCurrentProfessionForUpload(null);
       if (professionFileInputRef.current) {
         professionFileInputRef.current.value = '';
       }
     }
+  }, [editingProfession, queryClient]);
+
+  const handleProfessionFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) stageProfessionIcon(file);
+    if (professionFileInputRef.current) {
+      professionFileInputRef.current.value = '';
+    }
   };
+
+  // Abort an in-flight profession icon upload.
+  const cancelProfessionIconUpload = useCallback(() => {
+    uploadAbortRef.current?.abort();
+  }, []);
 
   const triggerProfessionIconUpload = () => {
     if (editingProfession) {
@@ -363,6 +417,32 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       professionFileInputRef.current?.click();
     }
   };
+
+  // Drag and drop handlers for profession icon
+  const handleIconDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(true);
+  }, []);
+
+  const handleIconDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(false);
+  }, []);
+
+  const handleIconDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingIcon(false);
+
+    if (!editingProfession) return;
+
+    const files = e.dataTransfer.files;
+    if (files.length === 0) return;
+
+    stageProfessionIcon(files[0]);
+  }, [editingProfession, stageProfessionIcon]);
 
   const getProfessionIconName = (profession: Profession) => {
     if (editingProfession && editingProfession._id === profession._id && editingProfessionIcon !== undefined) {
@@ -373,22 +453,22 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
   const getProfessionIconData = (profession: Profession) => {
     const iconName = getProfessionIconName(profession);
+    const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
 
-    // If profession has no icon, use the default icon
+    // If profession has no icon field, auto-generate from profession name
     if (!iconName) {
-      const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
+      const iconData = getProfessionIconFromName(profession.name, category.icon);
       return {
-        color: '#0F766E', // Use consistent color for all profession icons
-        imagePath: `/src/assets/icons/Default_Icon.webp?t=${timestamp}`
+        ...iconData,
+        color: '#0F766E',
+        imagePath: `${iconData.imagePath}?t=${timestamp}`
       };
     }
 
     const iconData = getProfessionIconByName(iconName, categoryIcon);
-    // Use the most recent timestamp for this profession
-    const timestamp = professionIconTimestamps[profession._id] || iconTimestamp;
     return {
       ...iconData,
-      color: '#0F766E', // Use consistent color for all profession icons
+      color: '#0F766E',
       imagePath: `${iconData.imagePath}?t=${timestamp}`
     };
   };
@@ -426,17 +506,10 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             if (nameChanged) {
               updateData.name = prof.name;
               
-              // Automatically update icon filename when profession name changes
-              // Only if the current icon follows the naming pattern or if there's no custom icon
-              const shouldUpdateIcon = !currentIcon || 
-                currentIcon.includes(original.name.toLowerCase().replace(/\s+/g, '-'));
-              
-              if (shouldUpdateIcon) {
-                const newIconFilename = generateIconFilename(prof.name);
-                updateData.icon = newIconFilename;
-                // Update the local profession icon as well
-                prof.icon = newIconFilename;
-              }
+              // Always update icon filename when profession name changes
+              const newIconFilename = `custom:${generateIconFilename(prof.name)}`;
+              updateData.icon = newIconFilename;
+              prof.icon = newIconFilename;
             }
             
             if (iconChanged && !nameChanged) {
@@ -445,6 +518,14 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
             
             updates.push(
               settingsService.updateProfession(prof._id, updateData)
+            );
+          }
+        } else {
+          // This is a newly added profession in this editing session
+          // It was created in DB, but its icon might have been set after creation
+          if (prof.icon) {
+            updates.push(
+              settingsService.updateProfession(prof._id, { icon: prof.icon })
             );
           }
         }
@@ -750,60 +831,122 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Icon
                 </label>
-                <div className="flex items-center gap-3 mb-3">
-                  <div 
-                    className="flex-shrink-0 p-3 rounded-lg border-2 border-gray-300" 
-                    style={{ 
-                      backgroundColor: `${getProfessionIconData(editingProfession).color}15` 
-                    }}
-                  >
-                    <img 
-                      src={getProfessionIconData(editingProfession).imagePath}
-                      alt="Icon"
-                      className="w-7 h-7" 
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
+                <div
+                  onDragOver={handleIconDragOver}
+                  onDragLeave={handleIconDragLeave}
+                  onDrop={handleIconDrop}
+                  onClick={triggerProfessionIconUpload}
+                  className={`relative rounded-lg border-2 border-dashed p-4 transition-all cursor-pointer ${
+                    isDraggingIcon
+                      ? 'border-blue-500 bg-blue-50 scale-[1.02]'
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+                  } ${uploadingProfessionIcon === editingProfession._id ? 'opacity-60 pointer-events-none' : ''}`}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <div 
+                      className="p-3 rounded-lg border-2 border-gray-200 bg-white" 
+                      style={{ 
+                        backgroundColor: `${getProfessionIconData(editingProfession).color}15` 
                       }}
-                    />
-                  </div>
-                  <button
-                    onClick={triggerProfessionIconUpload}
-                    disabled={uploadingProfessionIcon === editingProfession._id}
-                    className="flex-1 px-4 py-2.5 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
+                    >
+                      <img
+                        key={pendingIconPreview || getProfessionIconData(editingProfession).imagePath}
+                        src={pendingIconPreview || getProfessionIconData(editingProfession).imagePath}
+                        alt="Icon"
+                        className="w-10 h-10 object-contain"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = `/src/assets/icons/Default_Icon.webp?t=${Date.now()}`;
+                        }}
+                      />
+                    </div>
                     {uploadingProfessionIcon === editingProfession._id ? (
-                      <>
+                      <div className="flex items-center gap-2 text-blue-600">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                        <span>Uploading...</span>
-                      </>
+                        <span className="text-sm">Uploading...</span>
+                      </div>
+                    ) : isDraggingIcon ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-blue-500" />
+                        <span className="text-sm font-medium text-blue-600">Drop image here</span>
+                      </div>
+                    ) : pendingIconFile ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-sm font-medium text-gray-700">Image selected</span>
+                        <span className="text-xs text-gray-400">Click Save Changes to upload, or pick another</span>
+                      </div>
                     ) : (
-                      <>
-                        <ImageIcon className="w-4 h-4" />
-                        <span>Upload Custom Image</span>
-                      </>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-2 text-blue-600">
+                          <ImageIcon className="w-4 h-4" />
+                          <span className="text-sm font-medium">Click or drag & drop</span>
+                        </div>
+                        <span className="text-xs text-gray-400">PNG, JPG, WebP up to 5MB</span>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-200">
               <button
-                onClick={handleCancelProfessionEdit}
-                className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                onClick={() => {
+                  if (editingProfession) {
+                    setTransferProfession(editingProfession);
+                    setShowTransferModal(true);
+                  }
+                }}
+                disabled={uploadingProfessionIcon === editingProfession._id}
+                className="px-3 py-2.5 border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Transfer to another category"
               >
-                Cancel
+                <ArrowRightLeft className="w-4 h-4" />
+                <span className="text-sm hidden sm:inline">Transfer</span>
+              </button>
+              <button
+                onClick={
+                  uploadingProfessionIcon === editingProfession._id
+                    ? cancelProfessionIconUpload
+                    : handleCancelProfessionEdit
+                }
+                className={`flex-1 px-4 py-2.5 border rounded-lg transition-colors ${
+                  uploadingProfessionIcon === editingProfession._id
+                    ? 'border-red-300 text-red-600 hover:bg-red-50'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {uploadingProfessionIcon === editingProfession._id ? 'Cancel Upload' : 'Cancel'}
               </button>
               <button
                 onClick={handleSaveProfessionEdit}
-                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={uploadingProfessionIcon === editingProfession._id}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
               >
-                Save Changes
+                {uploadingProfessionIcon === editingProfession._id ? 'Uploading…' : 'Save Changes'}
               </button>
             </div>
           </div>
         </>
+      )}
+      {/* Transfer Profession Modal */}
+      {transferProfession && (
+        <TransferProfessionModal
+          isOpen={showTransferModal}
+          onClose={() => {
+            setShowTransferModal(false);
+            setTransferProfession(null);
+          }}
+          onSuccess={() => {
+            // Close the profession editor and refresh
+            handleCancelProfessionEdit();
+            onSuccess();
+            onClose();
+          }}
+          profession={transferProfession}
+          currentCategoryId={category._id}
+          currentCategoryName={category.name}
+        />
       )}
     </>
   );

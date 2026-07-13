@@ -26,17 +26,36 @@ router.post(
   broadcastMobileMessage
 );
 
-router.post('/notify-new-ticket', supportServiceAuth, (req, res) => {
-  const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate(
-    {
-      ticketId: req.body.ticketId,
-      chatSupportId: req.body.chatSupportId,
-      priority: req.body.priority
-    },
-    'new_ticket'
-  );
-  return res.json({ success: true });
+router.post('/notify-new-ticket', supportServiceAuth, async (req, res) => {
+  const { emitSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
+  const ChatSupport = require('../models/ChatSupport');
+
+  try {
+    // If a ChatSupport was created alongside the ticket, emit it to the admin
+    // panel — support:new_chat triggers fetchTickets() in useSupportSocket.
+    const { chatSupportId } = req.body;
+    if (chatSupportId && mongoose.isValidObjectId(chatSupportId)) {
+      const chatSupport = await ChatSupport.findById(chatSupportId).lean();
+      if (chatSupport) {
+        emitNewChatSupport(chatSupport);
+      }
+    }
+
+    // Also emit the legacy ticket_updated event for backwards compat
+    emitSupportUpdate(
+      {
+        ticketId: req.body.ticketId,
+        chatSupportId,
+        priority: req.body.priority
+      },
+      'new_ticket'
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Error handling notify-new-ticket:', err);
+    // Still return 200 so the mobile side doesn't retry indefinitely
+    return res.json({ success: false, message: err.message });
+  }
 });
 
 router.post('/notify-new-message', supportServiceAuth, async (req, res) => {

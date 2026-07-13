@@ -75,6 +75,13 @@ export const settingsService = {
     return response.data;
   },
 
+  transferProfession: async (professionId: string, targetCategoryId: string) => {
+    const response = await apiClient.patch(`/api/admin/configurations/professions/${professionId}/transfer`, {
+      targetCategoryId,
+    });
+    return response.data;
+  },
+
   uploadCategoryIcon: async (file: File, categoryName: string, oldIcon?: string) => {
     const formData = new FormData();
     formData.append('icon', file);
@@ -90,17 +97,21 @@ export const settingsService = {
     return response.data;
   },
 
-  uploadProfessionIcon: async (file: File, professionName: string, oldIcon?: string) => {
+  uploadProfessionIcon: async (file: File, professionName: string, oldIcon?: string, professionId?: string, signal?: AbortSignal) => {
     const formData = new FormData();
     formData.append('icon', file);
     formData.append('professionName', professionName);
     if (oldIcon) {
       formData.append('oldIcon', oldIcon);
     }
+    if (professionId) {
+      formData.append('professionId', professionId);
+    }
     const response = await apiClient.post('/api/admin/configurations/upload-profession-icon', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      signal,
     });
     return response.data;
   },

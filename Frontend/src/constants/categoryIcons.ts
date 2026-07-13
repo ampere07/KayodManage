@@ -1,3 +1,5 @@
+import { iconCacheService } from '../services/iconCacheService';
+
 export interface CategoryIcon {
   name: string;
   imagePath: string;
@@ -74,7 +76,19 @@ export const CATEGORY_ICONS: Record<string, CategoryIcon> = {
   }
 };
 
+export const IMAGEKIT_URL_ENDPOINT = 'https://ik.imagekit.io/9vpn8u272';
+
 export const getIconByName = (iconName: string): CategoryIcon => {
+  if (iconName.startsWith('ik:')) {
+    const filePath = iconName.replace('ik:', '');
+    return {
+      name: iconName,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}${filePath}`,
+      color: '#0F766E',
+      label: filePath.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/-/g, ' ') || 'Icon',
+    };
+  }
+  
   if (iconName.startsWith('custom:')) {
     const fileName = iconName.replace('custom:', '');
     return {
@@ -105,24 +119,46 @@ export const getDefaultIconForCategory = (categoryName: string): string => {
   return DEFAULT_CATEGORY_ICONS[categoryName] || 'professional-services';
 };
 
+export const generateProfessionIconFilename = (professionName: string): string => {
+  return professionName
+    .replace(/([a-z])([A-Z])/g, '$1-$2') // camelCase → kebab (parity with backend + Kayod client)
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    + '.webp';
+};
+
 export const getProfessionIconByName = (iconName: string, categoryIcon?: string): CategoryIcon => {
   if (!iconName) {
     return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
   }
-  
+
+  if (iconName.startsWith('ik:')) {
+    const filePath = iconName.replace('ik:', '');
+    return {
+      name: iconName,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}${filePath}`,
+      color: '#0F766E',
+      label: filePath.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/-/g, ' ') || 'Profession Icon',
+    };
+  }
+
   if (iconName.startsWith('custom:')) {
     const fileName = iconName.replace('custom:', '');
     return {
       name: iconName,
-      imagePath: `/assets/icons/professions/${fileName}`,
+      imagePath: `${IMAGEKIT_URL_ENDPOINT}/professionIconsUpload/${fileName}`,
       color: '#0F766E',
-      label: fileName.replace(/\.\w+$/, '').replace(/^prof-/, '').replace(/-\d+$/, '').replace(/-/g, ' '),
+      label: fileName.replace(/\.[^/.]+$/, '').replace(/-/g, ' '),
     };
   }
-  
-  if (CATEGORY_ICONS[iconName]) {
-    return CATEGORY_ICONS[iconName];
-  }
-  
+
+  return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
+};
+
+export const getProfessionIconFromName = (professionName: string, categoryIcon?: string): CategoryIcon => {
+  // Fall back to default category icon - only ImageKit icons are supported
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };

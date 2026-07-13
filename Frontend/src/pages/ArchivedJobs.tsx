@@ -1,32 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { getProfessionIconByName } from '../constants/categoryIcons';
 import {
   Search,
-  Eye,
   Archive,
-  CheckCircle,
   XCircle,
-  Clock,
-  MapPin,
-  User,
-  Wallet,
   Calendar,
-  Users,
-  X,
-  ChevronDown,
-  Briefcase,
-  RotateCcw,
+  ShieldAlert,
+  Clock,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
-import VerificationStatusBadge from '../components/UI/VerificationStatusBadge';
-import UserTypeBadge from '../components/UI/UserTypeBadge';
+// Component imports
 import { JobDetailsModal } from '../components/Modals';
+import StatsCard from '../components/Dashboard/StatsCard';
 
-import type { Job, JobsPagination, JobCategory } from '../types';
-import { settingsService } from '../services';
+// Tpye imports
+import type { Job, JobsPagination } from '../types';
 
+
+// Utility imports
 import {
   getInitials,
   getJobStatusColor,
@@ -34,38 +28,105 @@ import {
   formatPHPCurrency
 } from '../utils';
 
-import { useArchivedJobs, useJobCounts, useArchivedJobCounts } from '../hooks/useJobs';
+// Hooks
+import { useArchivedJobs, useArchivedJobCounts, useJobCategories } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
 
+/**
+ * Archived Jobs Management Page
+ * Displays and manages hidden or removed jobs
+ */
 const ArchivedJobs: React.FC = () => {
+  // State management
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [archiveTypeFilter, setArchiveTypeFilter] = useState<'all' | 'hidden' | 'removed'>('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [pagination, setPagination] = useState<JobsPagination>({
     page: 1,
     limit: 20,
     total: 0,
     pages: 0
   });
-  
-  const [professionsList, setProfessionsList] = useState<string[]>([]);
 
-  useEffect(() => {
-    settingsService.getJobCategories().then(res => {
-      const fetchedCategories = res.categories || [];
-      const allProfessions = fetchedCategories
-        .flatMap((cat: any) => cat.professions || [])
-        .map((prof: any) => prof.name)
-        .sort();
-      setProfessionsList(allProfessions);
-    }).catch(err => {
-      console.error('Failed to fetch dynamic categories:', err);
-    });
-  }, []);
+  const { categories, professionsList } = useJobCategories();
+  const [iconTimestamp] = useState(Date.now());
+
+  // Resolver logic adapted from Dashboard.tsx for icons parity
+  const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
+    if (!jobCategory) return { imagePath: '/assets/icons/categories/professional-services.png', label: 'General Service' };
+
+    // If a direct icon path or URL is provided, use it
+    if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
+      // Strip custom: prefix if present
+      const iconFileName = jobIcon.startsWith('custom:') ? jobIcon.replace('custom:', '') : jobIcon;
+      return {
+        imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${iconFileName}`,
+        label: jobCategory
+      };
+    }
+
+    const cleanName = jobCategory.trim().toLowerCase();
+    const normalizedSearch = cleanName.replace(/[^a-z0-9]/g, '');
+    let categoryIconStr = '';
+    let iconStr = '';
+
+    // 1. Try to find in fetched categories/professions (with normalization)
+    const cat = categories.find((c: any) => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
+    if (cat) {
+      categoryIconStr = cat.icon || '';
+    } else {
+      for (const c of categories) {
+        const prof = c.professions?.find((p: any) => {
+          const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
+        });
+        if (prof) {
+          iconStr = prof.icon || '';
+          categoryIconStr = c.icon || '';
+          break;
+        }
+      }
+    }
+
+    // 2. Legacy/Fuzzy mapping fallback for known platform variants
+    if (!iconStr) {
+      const legacyMap: Record<string, string> = {
+        'catering': 'custom:catering.webp',
+        'painting': 'custom:painter.webp',
+        'beauty': 'custom:beauty--personal-care.webp',
+        'cleaning': 'custom:house-cleaning.webp',
+        'carpentry': 'custom:carpentry-cabinetry.webp',
+        'acrefrigeration': 'custom:ac--refrigerator.webp',
+        'acref': 'custom:ac--refrigerator.webp',
+        'gardening': 'custom:gardening--landscaping.webp',
+        'landscaping': 'custom:gardening--landscaping.webp',
+        'moving': 'custom:lipat-bahay-mover.webp',
+        'delivery': 'custom:delivery.webp',
+        'courier': 'custom:delivery.webp',
+        'computerrepair': 'custom:computer-technician.webp',
+        'itrep': 'custom:computer-technician.webp',
+        'automechanic': 'custom:auto-mechanic.webp',
+        'automecanic': 'custom:auto-mechanic.webp',
+        'creativedesign': 'custom:graphic-design.webp',
+        'graphicdesign': 'custom:graphic-design.webp',
+        'logo': 'custom:graphic-design.webp',
+        'housekeeping': 'custom:house-cleaning.webp',
+        'handyman': 'custom:general-handyman.webp',
+        'maintenance': 'custom:general-handyman.webp',
+        'welding': 'custom:welding.webp',
+        'architecture': 'custom:architecture-drafting.webp',
+        'architectural': 'custom:architecture-drafting.webp',
+        'architecturedrafting': 'custom:architecture-drafting.webp'
+      };
+      iconStr = legacyMap[normalizedSearch] || '';
+    }
+
+    const resolved = getProfessionIconByName(iconStr, categoryIconStr);
+    return resolved;
+  }, [categories]);
 
   const queryParams = useMemo(() => ({
     page: pagination.page,
@@ -120,16 +181,25 @@ const ArchivedJobs: React.FC = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, [searchTerm, statusFilter, professionFilter, archiveTypeFilter]);
 
+  /**
+   * Open job details modal
+   */
   const openJobModal = (job: Job) => {
     setSelectedJob(job);
     setJobModal({ isOpen: true });
   };
 
+  /**
+   * Close job details modal
+   */
   const closeJobModal = () => {
     setJobModal({ isOpen: false });
     setTimeout(() => setSelectedJob(null), 300);
   };
 
+  /**
+   * Format currency with zero decimals
+   */
   const formatCurrency = (amount: number) => {
     if (!amount || isNaN(amount)) {
       return '₱0';
@@ -141,136 +211,175 @@ const ArchivedJobs: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-gray-50 -mx-2 sm:-mx-4 md:-mx-8 lg:-mx-8 -my-2 sm:-my-3 md:-my-4">
-      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200">
-        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Archived Jobs</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">View and manage archived job listings</p>
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
+      {/* Header Section */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
+        <div className="px-4 pt-3 pb-3 md:px-6 md:py-5">
+          <div className="hidden md:flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 bg-gray-100 rounded-lg">
+                  <Archive className="h-5 w-5 text-gray-600" />
+                </span>
+                <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                  Archived Jobs
+                </h1>
+              </div>
+              <p className="text-xs text-gray-500 font-medium">
+                View and manage job listings that have been hidden or removed
+              </p>
+            </div>
+
+
+          </div>
+
+          {/* Mobile Header */}
+          <div className="md:hidden">
+            {/* Summary strip */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Archived</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Hidden</p>
+                <p className="text-base font-black text-orange-600 leading-tight">{archivedCounts.hidden.toLocaleString()}</p>
+              </div>
+            </div>
+            {/* Filter pills */}
+            <div className="flex gap-2">
+              {([
+                { label: 'All',     value: archivedCounts.hidden + archivedCounts.removed, filterVal: 'all',     activeBg: 'bg-blue-500',   border: 'border-blue-500'   },
+                { label: 'Hidden',  value: archivedCounts.hidden,                          filterVal: 'hidden',  activeBg: 'bg-orange-500', border: 'border-orange-500' },
+                { label: 'Deleted', value: archivedCounts.removed,                         filterVal: 'removed', activeBg: 'bg-red-500',    border: 'border-red-500'    },
+              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
+                const active = archiveTypeFilter === filterVal;
+                return (
+                  <button
+                    key={filterVal}
+                    onClick={() => setArchiveTypeFilter(filterVal as 'all' | 'hidden' | 'removed')}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                  >
+                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Stats Cards Grid */}
+          <div className="hidden md:grid md:grid-cols-3 gap-3 md:gap-4">
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('all')}>
+              <StatsCard
+                title="Total"
+                value={(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}
+                icon={Archive}
+                color="blue"
+                variant="tinted"
+                isActive={archiveTypeFilter === 'all'}
+                smallIcon={true}
+              />
+            </div>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('hidden')}>
+              <StatsCard
+                title="Hidden"
+                value={archivedCounts.hidden.toLocaleString()}
+                icon={Archive}
+                color="orange"
+                variant="tinted"
+                isActive={archiveTypeFilter === 'hidden'}
+                smallIcon={true}
+              />
+            </div>
+            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setArchiveTypeFilter('removed')}>
+              <StatsCard
+                title="Deleted"
+                value={archivedCounts.removed.toLocaleString()}
+                icon={XCircle}
+                color="red"
+                variant="tinted"
+                isActive={archiveTypeFilter === 'removed'}
+                smallIcon={true}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="mb-4">
-          {/* Mobile: Compact Grid */}
-          <div className="grid grid-cols-2 gap-2 md:hidden">
-            <div
-              onClick={() => setArchiveTypeFilter('all')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <Archive className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">All</span>
-              </div>
-              <span className="text-sm font-bold text-blue-700">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</span>
+        {/* Filter Bar */}
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
+          <div className="flex items-center gap-2 md:contents">
+            <div className="relative flex-1 md:order-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4 md:left-3.5" />
+              <input
+                type="text"
+                placeholder="Search archived jobs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm h-8 md:h-10 md:pl-10"
+              />
             </div>
 
-            <div
-              onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-orange-50 border-orange-200 ${archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : ''
-                }`}
+            {/* Page Limit - Mobile only */}
+            <select
+              value={pagination.limit}
+              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              className="md:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
-              <div className="flex items-center gap-2">
-                <Archive className="h-4 w-4 text-orange-600" />
-                <span className="text-sm font-medium text-gray-700">Hidden</span>
-              </div>
-              <span className="text-sm font-bold text-orange-700">{archivedCounts.hidden.toLocaleString()}</span>
-            </div>
-
-            <div
-              onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
-              className={`col-span-2 rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-red-50 border-red-200 ${archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <X className="h-4 w-4 text-red-600" />
-                <span className="text-sm font-medium text-gray-700">Deleted</span>
-              </div>
-              <span className="text-sm font-bold text-red-700">{archivedCounts.removed.toLocaleString()}</span>
-            </div>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
           </div>
 
-          {/* Desktop: Grid Layout */}
-          <div className="hidden md:grid grid-cols-5 gap-3">
-            <div
-              onClick={() => setArchiveTypeFilter('all')}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-blue-600">All</span>
-                <Archive className="h-4 w-4 text-blue-600" />
-              </div>
-              <p className="text-2xl font-bold text-blue-900">{(archivedCounts.hidden + archivedCounts.removed).toLocaleString()}</p>
-            </div>
-
-            <div
-              onClick={() => setArchiveTypeFilter(prev => prev === 'hidden' ? 'all' : 'hidden')}
-              className={`bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'hidden' ? 'border-orange-400 ring-2 ring-orange-300' : 'border-orange-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-orange-600">Hidden</span>
-                <Archive className="h-4 w-4 text-orange-600" />
-              </div>
-              <p className="text-2xl font-bold text-orange-900">{archivedCounts.hidden.toLocaleString()}</p>
-            </div>
-
-            <div
-              onClick={() => setArchiveTypeFilter(prev => prev === 'removed' ? 'all' : 'removed')}
-              className={`bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${archiveTypeFilter === 'removed' ? 'border-red-400 ring-2 ring-red-300' : 'border-red-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-red-600">Deleted</span>
-                <X className="h-4 w-4 text-red-600" />
-              </div>
-              <p className="text-2xl font-bold text-red-900">{archivedCounts.removed.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
-            <input
-              type="text"
-              placeholder="Search archived jobs..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 md:flex gap-2 md:gap-3 flex-shrink-0">
+          {/* Row 2 on Mobile: Profession filter */}
+          <div className="grid grid-cols-1 gap-2 md:hidden">
             <select
               value={professionFilter}
               onChange={(e) => setProfessionFilter(e.target.value)}
-              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
+              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 truncate"
             >
-              <option value="all">All Professions</option>
+              <option value="all">Professions</option>
               {professionsList.map(prof => (
-                <option key={prof} value={prof} className="capitalize">
-                  {prof}
-                </option>
+                <option key={String(prof)} value={String(prof)} className="capitalize">{String(prof)}</option>
               ))}
             </select>
+          </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
-            >
-              <option value="all">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+          {/* Desktop: filters + page limit */}
+          <div className="hidden md:flex items-center justify-end gap-6 shrink-0 md:order-2">
+            <div className="flex items-center gap-2">
+              <select
+                value={professionFilter}
+                onChange={(e) => setProfessionFilter(e.target.value)}
+                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] md:max-w-[160px] truncate"
+              >
+                <option value="all">Professions</option>
+                {professionsList.map(prof => (
+                  <option key={String(prof)} value={String(prof)} className="capitalize">{String(prof)}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Pagination Limit for Desktop */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+              <select
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Content Area */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -281,376 +390,234 @@ const ArchivedJobs: React.FC = () => {
               </div>
             </div>
           ) : jobs.length === 0 ? (
-            <div className="bg-white p-12 text-center">
-              <div className="text-gray-400 mb-4">
-                <Archive className="h-12 w-12 mx-auto" />
+            <div className="bg-white p-20 text-center">
+              <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gray-50 mb-6">
+                <Archive className="h-10 w-10 text-gray-300" />
               </div>
-              <p className="text-gray-600 font-medium">No archived jobs found</p>
-              <p className="text-sm text-gray-500 mt-1">Archived jobs will appear here</p>
+              <p className="text-gray-900 font-black text-xl mb-2">No archived records</p>
+              <p className="text-gray-500 text-sm max-w-xs mx-auto">There are no archived jobs matching your current filter criteria.</p>
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white">
-                <table className="min-w-full w-full table-fixed">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-                    <tr>
-                      <th className="w-[22%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Job Title
+              {/* Desktop View */}
+              <div className="hidden md:block bg-white flex-1 relative">
+                <table className="min-w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
+                    <tr className="border-b border-gray-200">
+                      <th className="w-[35%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Job Information
                       </th>
-                      <th className="w-[18%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[23%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Customer
                       </th>
-                      <th className="w-[13%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Budget
-                      </th>
-                      <th className="w-[13%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="w-[12%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[11%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Applications
+                      <th className="w-[12%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Archive Info
                       </th>
-                      <th className="w-[11%] px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Archive Type
-                      </th>
-                      <th className="w-[12%] px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Archived
+                      <th className="w-[18%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Archived Date
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white">
-                    {jobs.map((job, index) => (
-                      <React.Fragment key={job._id}>
+                  <tbody className="bg-white border-b border-gray-300">
+                    {jobs.map((job) => {
+                      const iconData = resolveIconForJob(job.category || '', job.icon);
+                      return (
                         <tr
+                          key={job._id}
                           onClick={() => openJobModal(job)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          className="group transition-all duration-150 cursor-pointer"
                         >
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-semibold text-gray-900">{job.title}</p>
-                                {job.isUrgent && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                                    Urgent
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500 line-clamp-1">{job.description}</p>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              {job.user?.profileImage ? (
+                          <td className="px-6 py-2 border-b border-gray-300">
+                            <div className="flex items-center gap-4">
+                              <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
                                 <img
-                                  src={job.user.profileImage}
-                                  alt={job.user.name}
-                                  className="h-8 w-8 rounded-full object-cover flex-shrink-0"
+                                  src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                  alt={job.category}
+                                  className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                    (e.target as HTMLImageElement).onerror = null;
+                                  }}
                                 />
-                              ) : (
-                                <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                                  <span className="text-xs font-semibold text-gray-700">
-                                    {getInitials(job.user?.name || 'Unknown')}
-                                  </span>
-                                </div>
-                              )}
+                              </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {job.user?.name || 'Unknown User'}
+                                <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
+                                  {job.title}
                                 </p>
-                                <p className="text-xs text-gray-500 truncate">
-                                  {job.user?.email || 'No email'}
-                                </p>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{iconData.label || job.category}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-bold text-gray-900">{formatCurrency(job.budget)}</p>
-                              <div className="flex items-center gap-1 text-xs text-gray-500">
-                                <Wallet className="h-3 w-3" />
-                                <span className="capitalize">{job.paymentMethod}</span>
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
+                                <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
+                                <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.email || 'No email'}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${getJobStatusColor(job.status)}`}>
-                                {getJobStatusIcon(job.status)}
-                                <span className="capitalize">{job.status.replace('_', ' ')}</span>
-                              </span>
-                            </div>
+                          <td className="px-6 py-4 text-center border-b border-gray-300">
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)}`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
+                            </span>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Users className="h-4 w-4 text-gray-400" />
-                              <span className="text-sm font-semibold text-gray-900">{job.applicationCount || 0}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex justify-center">
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex flex-col items-center">
                               {job.archiveType === 'hidden' ? (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">
-                                  <Archive className="h-3.5 w-3.5" />
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100">
+                                  <Archive className="h-2.5 w-2.5" />
                                   Hidden
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
-                                  <X className="h-3.5 w-3.5" />
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-red-600 border border-red-100">
+                                  <ShieldAlert className="h-2.5 w-2.5" />
                                   Deleted
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              <p className="text-xs text-gray-500">
-                                {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                          <td className="px-6 py-4 border-b border-gray-300">
+                            <div className="flex flex-col">
+                              <p className="text-xs font-bold text-gray-900">
+                                {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
                               </p>
-                              <div className="flex items-center gap-1 text-xs text-gray-400">
+                              <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
                                 <Calendar className="h-3 w-3" />
-                                {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString() : 'N/A'}
                               </div>
                             </div>
                           </td>
                         </tr>
-                        {index < jobs.length - 1 && (
-                          <tr>
-                            <td colSpan={7} className="p-0">
-                              <div className="border-b border-gray-200" />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               {/* Mobile Card View */}
-              <div className="md:hidden px-4 py-4 space-y-4">
-                {jobs.map((job) => (
-                  <div
-                    key={job._id}
-                    onClick={() => openJobModal(job)}
-                    className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
-                  >
-                    {/* Header: User Info & Status */}
-                    <div className="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        {job.user?.profileImage ? (
-                          <img
-                            src={job.user.profileImage}
-                            alt={job.user.name}
-                            className="h-10 w-10 rounded-full object-cover border border-white shadow-sm"
-                          />
-                        ) : (
-                          <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center border border-white shadow-sm">
-                            <span className="text-xs font-bold">
-                              {getInitials(job.user?.name || 'Unknown')}
+              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+                    {jobs.map((job) => {
+                      const iconData = resolveIconForJob(job.category || '', job.icon);
+                      const price = formatCurrency(job.budget || job.agreedPrice || 0);
+                      return (
+                        <div
+                          key={job._id}
+                          onClick={() => openJobModal(job)}
+                          className="relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                        >
+                          {/* Top-right badges: status then archive type */}
+                          <div className="absolute top-2.5 right-3 flex flex-col items-end gap-1 z-10">
+                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white`}>
+                              {getJobStatusIcon(job.status)}
+                              {job.status.replace('_', ' ')}
                             </span>
+                            {job.archiveType === 'hidden' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-orange-500 text-white">HIDDEN</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-red-500 text-white">DELETED</span>
+                            )}
                           </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-bold text-gray-900 leading-tight">
-                            {job.user?.name || 'Unknown User'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {job.user?.email || 'No email'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className="text-xs font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded capitalize">
-                          {(job.category || '').replace(/([A-Z])/g, ' $1').trim()}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {job.archiveType === 'hidden' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-orange-100 text-orange-700 border border-orange-200">
-                              Hidden
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-700 border border-red-200">
-                              Deleted
-                            </span>
-                          )}
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getJobStatusColor(job.status)}`}>
-                            {job.isUrgent && <span className="text-orange-600 mr-1">⚠️</span>}
-                            {job.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
 
-                    {/* Job Details: Title, Description, Price */}
-                    <div className="p-4 border-b border-gray-100">
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Job Title:</p>
-                          <h3 className="text-sm font-bold text-gray-900 truncate">{job.title}</h3>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Budget:</p>
-                          <p className="text-sm font-bold text-gray-900">{formatCurrency(job.budget)}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Description:</p>
-                        <p className="text-xs text-gray-900 line-clamp-2 leading-relaxed">{job.description}</p>
-                      </div>
-                    </div>
+                          {/* Main Row */}
+                          <div className="flex items-center gap-3 px-3 pt-3 pb-2.5 pr-24">
+                            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                              <img
+                                src={`${iconData.imagePath}?t=${iconTimestamp}`}
+                                alt={job.category}
+                                className="h-9 w-9 object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
+                                  (e.target as HTMLImageElement).onerror = null;
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[130px]">
+                                  {iconData.label || job.category || 'General Service'}
+                                </span>
+                              </div>
+                              <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
+                            </div>
+                          </div>
 
-                    {/* Meta: Dates & Location */}
-                    <div className="p-4 border-b border-gray-100 bg-gray-50/30">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Archived:</p>
-                          <p className="text-xs font-medium text-gray-900 truncate">
-                            {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}
-                          </p>
+                          {/* Footer strip */}
+                          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
+                                {getInitials(job.user?.name || 'U')}
+                              </div>
+                              <p className="text-[10px] font-bold text-gray-500 truncate">{job.user?.name || 'Anonymous'}</p>
+                            </div>
+                            <p className="text-sm font-black text-gray-900 flex-shrink-0">{price}</p>
+                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                              <Clock className="h-2.5 w-2.5" />
+                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Created:</p>
-                          <p className="text-xs font-medium text-gray-900">
-                            {new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <p className="text-xs font-semibold text-gray-600 whitespace-nowrap">Location:</p>
-                        <p className="text-xs font-medium text-gray-900 truncate">
-                          {job.locationDisplay || 'Location not specified'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Additional Info: Applicants, Payment, Tier */}
-                    <div className="px-4 py-3 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-semibold text-gray-700">Applicants</p>
-                        <span className="text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full">{job.applicationCount || 0}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-semibold text-gray-700">Payment Method</p>
-                        <span className="text-xs bg-white border px-1.5 py-0.5 rounded capitalize text-gray-700">{job.paymentMethod}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-semibold text-gray-700">Service Tier</p>
-                        <span className="text-xs bg-white border px-1.5 py-0.5 rounded capitalize text-gray-700">{job.serviceTier}</span>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
               </div>
 
-              {pagination.pages > 1 && (
-                <div className="sticky bottom-0 flex bg-white border-t border-gray-200 shadow-lg z-10 p-4">
-                  <div className="flex items-center justify-between w-full">
-                    <div>
-                      <p className="text-xs md:text-sm text-gray-700 text-center md:text-left">
-                        Showing{' '}
-                        <span className="font-medium">
-                          {((pagination.page - 1) * pagination.limit) + 1}
-                        </span>{' '}
-                        to{' '}
-                        <span className="font-medium">
-                          {Math.min(pagination.page * pagination.limit, pagination.total)}
-                        </span>{' '}
-                        of{' '}
-                        <span className="font-medium">{pagination.total}</span> results
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                        disabled={pagination.page === 1}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-                        disabled={pagination.page === pagination.pages}
-                        className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* Pagination — outside scroll area, always anchored at bottom */}
+        {!loading && jobs.length > 0 && pagination.pages > 1 && (
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 font-inter h-[65px] flex items-center">
+            <div className="flex items-center justify-between w-full">
+              <div>
+                <p className="text-xs md:text-sm text-gray-700">
+                  Showing{' '}
+                  <span className="font-medium">
+                    {((pagination.page - 1) * pagination.limit) + 1}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {Math.min(pagination.page * pagination.limit, pagination.total)}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                  disabled={pagination.page === 1}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
+                  disabled={pagination.page === pagination.pages}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Job Details Modal */}
       <JobDetailsModal
         isOpen={jobModal.isOpen}
         onClose={closeJobModal}
         job={selectedJob}
       />
-
-      {selectedJob && selectedJob.media && selectedJob.media.length > 0 && selectedImageIndex !== null && (
-        <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-90 z-[60] transition-opacity"
-            onClick={() => setSelectedImageIndex(null)}
-          />
-
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <button
-              onClick={() => setSelectedImageIndex(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors p-2 bg-black bg-opacity-50 rounded-full"
-              aria-label="Close image viewer"
-            >
-              <X className="w-6 h-6" />
-            </button>
-
-            {selectedJob.media.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === 0 ? selectedJob.media.length - 1 : prev! - 1
-                    );
-                  }}
-                  className="absolute left-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Previous image"
-                >
-                  <ChevronDown className="w-6 h-6 rotate-90" />
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedImageIndex((prev) =>
-                      prev === selectedJob.media.length - 1 ? 0 : prev! + 1
-                    );
-                  }}
-                  className="absolute right-4 text-white hover:text-gray-300 transition-colors p-3 bg-black bg-opacity-50 rounded-full"
-                  aria-label="Next image"
-                >
-                  <ChevronDown className="w-6 h-6 -rotate-90" />
-                </button>
-              </>
-            )}
-
-            <div className="max-w-7xl max-h-full w-full h-full flex items-center justify-center">
-              <img
-                src={selectedJob.media[selectedImageIndex]}
-                alt={`Job media ${selectedImageIndex + 1}`}
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded-full">
-              {selectedImageIndex + 1} / {selectedJob.media.length}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 };

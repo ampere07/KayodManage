@@ -22,8 +22,8 @@ const getStats = async (req, res) => {
     const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
     const onlineUsers = await User.countDocuments({ isOnline: true });
     
-    const completedTransactions = await Transaction.find({ status: 'completed' });
-    const totalRevenue = completedTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const completedFeeTransactions = await Transaction.find({ status: 'completed', type: 'platform_fee' });
+    const totalRevenue = completedFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
     
     const pendingFeeRecords = await FeeRecord.find({ 
       status: { $in: ['pending', 'overdue'] } 
@@ -46,11 +46,12 @@ const getStats = async (req, res) => {
       status: 'completed', 
       completedAt: { $gte: today } 
     });
-    const todayTransactions = await Transaction.find({ 
+    const todayFeeTransactions = await Transaction.find({ 
       status: 'completed',
+      type: 'platform_fee',
       completedAt: { $gte: today }
     });
-    const revenueToday = todayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const revenueToday = todayFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
     const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
       status: 'approved' 
@@ -368,6 +369,7 @@ const getRevenueChart = async (req, res) => {
 
         const dayTransactions = await Transaction.find({
           status: 'completed',
+          type: 'platform_fee',
           $or: [
             { completedAt: { $gte: startDate, $lte: endDate } },
             { 
@@ -398,6 +400,7 @@ const getRevenueChart = async (req, res) => {
 
         const weekTransactions = await Transaction.find({
           status: 'completed',
+          type: 'platform_fee',
           $or: [
             { completedAt: { $gte: startDate, $lte: endDate } },
             { 
@@ -445,6 +448,7 @@ const getStatsComparison = async (req, res) => {
 
     const currentMonthRevenueDocs = await Transaction.find({
       status: 'completed',
+      type: 'platform_fee',
       $or: [
         { completedAt: { $gte: currentMonthStart } },
         { completedAt: null, createdAt: { $gte: currentMonthStart } }
@@ -454,6 +458,7 @@ const getStatsComparison = async (req, res) => {
 
     const lastMonthRevenueDocs = await Transaction.find({
       status: 'completed',
+      type: 'platform_fee',
       $or: [
         { completedAt: { $gte: lastMonthStart, $lte: lastMonthEnd } },
         { completedAt: null, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }

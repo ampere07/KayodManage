@@ -13,7 +13,8 @@ const getUsers = async (req, res) => {
       userType: req.query.userType,
       restricted: req.query.restricted,
       isVerified: req.query.isVerified,
-      accountStatus: req.query.accountStatus
+      accountStatus: req.query.accountStatus,
+      profession: req.query.profession
     };
     
     const query = userService.buildUserQuery(filters);

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Image as ImageIcon } from 'lucide-react';
 import { settingsService } from '../../services';
+import { getProfessionIconByName, generateProfessionIconFilename } from '../../constants/categoryIcons';
 
 interface EditProfessionModalProps {
   isOpen: boolean;
@@ -23,6 +24,16 @@ const EditProfessionModal: React.FC<EditProfessionModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // What the icon file will be named on ImageKit. A newly uploaded file is always saved as
+  // .webp; renaming an existing icon keeps its current extension (e.g. legacy .png).
+  const targetIconFileName = (() => {
+    if (!name.trim()) return 'profession-name.webp';
+    const slug = generateProfessionIconFilename(name).replace(/\.webp$/, '');
+    if (iconFile) return `${slug}.webp`;
+    const existingExt = profession.icon?.match(/\.([a-z0-9]+)$/i)?.[1];
+    return `${slug}.${existingExt || 'webp'}`;
+  })();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -158,9 +169,9 @@ const EditProfessionModal: React.FC<EditProfessionModalProps> = ({
                   {iconPreview ? (
                     <img src={iconPreview} alt="Preview" className="w-12 h-12 object-contain" />
                   ) : profession.icon ? (
-                    <img 
-                      src={`/assets/icons/professions/${profession.icon.replace('custom:', '')}?t=${Date.now()}`} 
-                      alt={profession.name} 
+                    <img
+                      src={getProfessionIconByName(profession.icon).imagePath}
+                      alt={profession.name}
                       className="w-12 h-12 object-contain"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
@@ -172,7 +183,7 @@ const EditProfessionModal: React.FC<EditProfessionModalProps> = ({
               )}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              PNG or JPG, max 5MB. Icon will be saved as: {name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.png
+              PNG or JPG, max 5MB. Saved on ImageKit as: {targetIconFileName}
             </p>
           </div>
 
