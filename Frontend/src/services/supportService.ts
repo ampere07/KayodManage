@@ -88,26 +88,18 @@ class SupportService {
   }
 
   /**
-   * Broadcast a message to a specific chat support (Admin function)
+   * Add an admin-only note to a chat support thread — never shown to the
+   * customer (see isInternal on ChatSupport.messages).
    */
-  async broadcastMessage(
-    chatSupportId: string,
-    message: { text: string; sender: string }
-  ): Promise<any> {
-    const response = await apiClient.post(
-      `/api/support/broadcast-message`,
-      {
-        chatSupportId,
-        message
-      },
-      {
-        headers: {
-          'x-api-key': 'kayod-admin-access-key-123'
-        }
-      }
+  async addInternalNote(chatSupportId: string, note: string): Promise<ChatActionResponse> {
+    const response = await apiClient.post<ChatActionResponse>(
+      `${this.baseUrl}/${chatSupportId}/internal-notes`,
+      { note }
     );
     return response.data;
   }
+
+
 }
 
 // Export a singleton instance

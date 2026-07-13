@@ -23,6 +23,7 @@ interface Message {
   senderName?: string;
   message: string;
   timestamp: string;
+  isInternal?: boolean;
 }
 
 interface ChatSupport {
@@ -68,8 +69,16 @@ interface SupportChatModalProps {
   sendMessage: () => void;
   sendingMessage: boolean;
   handleChatAction: (chatSupportId: string, action: string) => void;
-  handleAcceptTicket: (chatSupportId: string) => void;
-  chatSupports: ChatSupport[];
+  handleAcceptTicket: (chatSupportId: string) => Promise<void> | void;
+  onResolveDispute?: (
+    jobId: string,
+    outcome: "pay_provider" | "refund_client" | "rebook",
+    note?: string,
+  ) => Promise<void>;
+  onAddInternalNote?: (chatSupportId: string, note: string) => Promise<void>;
+  /** The other party's thread of the same dispute (cross-linked by metadata.jobId). */
+  counterpartChat?: ChatSupport | null;
+  onSwitchChat?: (chat: ChatSupport) => void;
 }
 
 const getInitials = (name: string): string => {
@@ -98,6 +107,28 @@ const formatResponseTime = (minutes: number): string => {
   return parts.join(" ");
 };
 
+const getPriorityClasses = (priority = "medium") => {
+  const normalized = priority.toLowerCase();
+  if (normalized === "urgent") return "bg-red-100 text-red-800";
+  if (normalized === "high") return "bg-orange-100 text-orange-800";
+  if (normalized === "low") return "bg-green-100 text-green-800";
+  return "bg-yellow-100 text-yellow-800";
+};
+
+const formatSystemEventMessage = (message: Message) => {
+  const text = message.message || "";
+  const normalized = text.toLowerCase();
+  const sender = message.senderName || "Support Agent";
+
+  if (normalized.includes("reopened")) return `Ticket reopened by ${sender}`;
+  if (normalized.includes("accepted")) return `Ticket accepted by ${sender}`;
+  if (normalized.includes("resolved") || normalized.includes("closed")) {
+    return `Ticket resolved by ${sender}`;
+  }
+
+  return text;
+};
+
 const SupportChatModal: React.FC<SupportChatModalProps> = ({
   isOpen,
   onClose,
@@ -108,7 +139,10 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   sendingMessage,
   handleChatAction,
   handleAcceptTicket,
-  chatSupports,
+  onResolveDispute,
+  onAddInternalNote,
+  counterpartChat,
+  onSwitchChat,
 }) => {
   const { user } = useAuth();
   const [showMobileDetails, setShowMobileDetails] = useState(false);
@@ -117,6 +151,16 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   const [jobModalOpen, setJobModalOpen] = useState(false);
   const [jobModalLoading, setJobModalLoading] = useState(false);
   const [jobModalData, setJobModalData] = useState<any>(null);
+  const [disputeNote, setDisputeNote] = useState("");
+  const [resolvingOutcome, setResolvingOutcome] = useState<string | null>(null);
+  const [internalNoteText, setInternalNoteText] = useState("");
+  const [sendingInternalNote, setSendingInternalNote] = useState(false);
+  const [acceptingTicket, setAcceptingTicket] = useState(false);
+  const activeTicketIdRef = useRef<string | null>(null);
+  const acceptRequestIdRef = useRef(0);
+  const jobRequestIdRef = useRef(0);
+  const disputeRequestIdRef = useRef(0);
+  const noteRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -129,6 +173,27 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
       document.body.style.overflow = "unset";
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    const nextTicketId = isOpen ? selectedChat?._id || null : null;
+    if (activeTicketIdRef.current === nextTicketId) return;
+
+    activeTicketIdRef.current = nextTicketId;
+    acceptRequestIdRef.current += 1;
+    jobRequestIdRef.current += 1;
+    disputeRequestIdRef.current += 1;
+    noteRequestIdRef.current += 1;
+    messageRefs.current = {};
+    setShowMobileDetails(false);
+    setJobModalOpen(false);
+    setJobModalLoading(false);
+    setJobModalData(null);
+    setDisputeNote("");
+    setResolvingOutcome(null);
+    setInternalNoteText("");
+    setSendingInternalNote(false);
+    setAcceptingTicket(false);
+  }, [isOpen, selectedChat?._id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -165,6 +230,108 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   };
 
   const hasJobId = getJobIdFromSnapshot() !== null;
+  const isDisputeTicket = selectedChat.metadata?.kind === "dispute";
+  const disputeJobId = selectedChat.metadata?.jobId || getJobIdFromSnapshot();
+  const isAdminUser = user?.role === "admin" || user?.role === "superadmin";
+  const canManageTicket =
+    isAdminUser &&
+    (user?.role === "superadmin" || Boolean(selectedChat.acceptedBy));
+  const normalizedPriority = (selectedChat.priority || "medium").toLowerCase();
+
+  const handleAcceptCurrentTicket = async () => {
+    if (!isAdminUser || selectedChat.acceptedBy || acceptingTicket) return;
+
+    const ticketId = selectedChat._id;
+    const requestId = ++acceptRequestIdRef.current;
+    setAcceptingTicket(true);
+    try {
+      await handleAcceptTicket(ticketId);
+    } catch (error) {
+      console.error("Error accepting support ticket:", error);
+      if (activeTicketIdRef.current === ticketId) {
+        alert("Failed to accept ticket. Please try again.");
+      }
+    } finally {
+      if (
+        requestId === acceptRequestIdRef.current &&
+        activeTicketIdRef.current === ticketId
+      ) {
+        setAcceptingTicket(false);
+      }
+    }
+  };
+
+  const handleResolveDispute = async (
+    outcome: "pay_provider" | "refund_client" | "rebook",
+  ) => {
+    if (
+      !canManageTicket ||
+      !onResolveDispute ||
+      !disputeJobId ||
+      resolvingOutcome
+    ) {
+      return;
+    }
+
+    const ticketId = selectedChat._id;
+    const requestId = ++disputeRequestIdRef.current;
+    setResolvingOutcome(outcome);
+    try {
+      await onResolveDispute(
+        disputeJobId,
+        outcome,
+        disputeNote.trim() || undefined,
+      );
+      if (activeTicketIdRef.current === ticketId) {
+        setDisputeNote("");
+      }
+    } catch (error) {
+      console.error("Error resolving dispute:", error);
+      if (activeTicketIdRef.current === ticketId) {
+        alert("Failed to resolve dispute. Please try again.");
+      }
+    } finally {
+      if (
+        requestId === disputeRequestIdRef.current &&
+        activeTicketIdRef.current === ticketId
+      ) {
+        setResolvingOutcome(null);
+      }
+    }
+  };
+
+  const handleAddInternalNote = async () => {
+    if (
+      !canManageTicket ||
+      !onAddInternalNote ||
+      !internalNoteText.trim() ||
+      sendingInternalNote
+    ) {
+      return;
+    }
+
+    const ticketId = selectedChat._id;
+    const requestId = ++noteRequestIdRef.current;
+    setSendingInternalNote(true);
+    try {
+      await onAddInternalNote(ticketId, internalNoteText.trim());
+      if (activeTicketIdRef.current === ticketId) {
+        setInternalNoteText("");
+      }
+    } catch (error) {
+      console.error("Error adding internal note:", error);
+      if (activeTicketIdRef.current === ticketId) {
+        alert("Failed to add internal note. Please try again.");
+      }
+    } finally {
+      if (
+        requestId === noteRequestIdRef.current &&
+        activeTicketIdRef.current === ticketId
+      ) {
+        setSendingInternalNote(false);
+      }
+    }
+  };
 
   const handleViewJobDetails = async () => {
     const jobId = getJobIdFromSnapshot();
@@ -173,16 +340,27 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
       return;
     }
 
+    const ticketId = selectedChat._id;
+    const requestId = ++jobRequestIdRef.current;
     try {
       setJobModalLoading(true);
       const data = await jobsService.getJobById(jobId);
+      if (activeTicketIdRef.current !== ticketId) return;
+
       setJobModalData(data);
       setJobModalOpen(true);
     } catch (error) {
       console.error("Failed to load job details:", error);
-      alert("Failed to load job details.");
+      if (activeTicketIdRef.current === ticketId) {
+        alert("Failed to load job details.");
+      }
     } finally {
-      setJobModalLoading(false);
+      if (
+        requestId === jobRequestIdRef.current &&
+        activeTicketIdRef.current === ticketId
+      ) {
+        setJobModalLoading(false);
+      }
     }
   };
 
@@ -250,6 +428,27 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
               {/* Actions */}
               <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                {isDisputeTicket && counterpartChat && onSwitchChat && (
+                  <button
+                    data-testid="dispute-counterpart-switch-btn"
+                    onClick={() => onSwitchChat(counterpartChat)}
+                    title={`Open the ${counterpartChat.userType || "other party"}'s thread of this dispute`}
+                    className="relative inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-full bg-purple-600 text-white shadow-sm hover:bg-purple-700"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span className="hidden md:inline">
+                      Switch to {counterpartChat.userType === "provider" ? "Provider" : "Client"}
+                    </span>
+                    <span className="md:hidden">
+                      {counterpartChat.userType === "provider" ? "Provider" : "Client"}
+                    </span>
+                    {(counterpartChat.unreadCount || 0) > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                        {counterpartChat.unreadCount}
+                      </span>
+                    )}
+                  </button>
+                )}
                 {selectedChat.acceptedBy && hasJobId && (
                   <button
                     onClick={handleViewJobDetails}
@@ -264,11 +463,17 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                   !selectedChat.acceptedBy &&
                   (user?.role === "admin" || user?.role === "superadmin") && (
                     <button
-                      onClick={() => handleAcceptTicket(selectedChat._id)}
-                      className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs md:text-sm font-medium transition-colors whitespace-nowrap"
+                      data-testid="support-chat-accept-btn"
+                      onClick={handleAcceptCurrentTicket}
+                      disabled={acceptingTicket}
+                      className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-xs md:text-sm font-medium transition-colors whitespace-nowrap"
                     >
-                      <CheckCircle className="h-3 w-3 md:h-4 md:w-4" />
-                      Accept
+                      {acceptingTicket ? (
+                        <RefreshCw className="h-3 w-3 md:h-4 md:w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle className="h-3 w-3 md:h-4 md:w-4" />
+                      )}
+                      {acceptingTicket ? "Accepting?" : "Accept"}
                     </button>
                   )}
 
@@ -276,6 +481,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                 {/* Mobile Menu / Details Toggle */}
                 <button
+                  data-testid="support-chat-mobile-details-btn"
                   onClick={() => setShowMobileDetails(true)}
                   className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                 >
@@ -296,7 +502,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
           )}
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto bg-gray-50 p-6 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-50 p-4 md:p-6">
             {!selectedChat.messages || selectedChat.messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-gray-400">
                 <div className="text-center">
@@ -334,6 +540,37 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 const showDateSeparator =
                   !previousDate ||
                   currentDate.toDateString() !== previousDate.toDateString();
+
+                // Internal admin-only notes (dispute mediation reasoning, SLA
+                // escalation flags) — never shown to the customer, so only an
+                // admin viewing this same thread ever sees this branch render.
+                if (msg.isInternal) {
+                  return (
+                    <div
+                      key={msg._id || index}
+                      ref={(el) => {
+                        messageRefs.current[msg._id || `msg-${index}`] = el;
+                      }}
+                      className="my-3 mx-auto min-w-0 max-w-lg rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5"
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">
+                        Internal Note — {msg.senderName || "Admin"} (not visible to user)
+                      </p>
+                      <p className="whitespace-pre-wrap break-words text-sm text-amber-900 [overflow-wrap:anywhere]">
+                        {msg.message}
+                      </p>
+                      <p className="text-[10px] text-amber-600 mt-1">
+                        {new Date(msg.timestamp).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: true,
+                        })}
+                      </p>
+                    </div>
+                  );
+                }
 
                 const getDateLabel = (date: Date) => {
                   const today = new Date();
@@ -386,15 +623,8 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                   messageText.includes("resolved") ||
                   messageText.includes("closed");
                 const isReopenedMessage = messageText.includes("reopened");
-                const isFirstAdminMessage =
-                  isAdmin &&
-                  !selectedChat
-                    .messages!.slice(0, index)
-                    .some((m) => m.senderType === "Admin");
-
-                // Generate a unique ID for special messages
+                // Generate a stable ID for special messages.
                 let messageId = msg._id || `msg-${index}`;
-                if (isFirstAdminMessage) messageId = "first-admin-message";
                 if (isResolvedMessage) messageId = `resolved-${msg.timestamp}`;
                 if (isReopenedMessage) messageId = `reopened-${msg.timestamp}`;
 
@@ -460,7 +690,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                                           <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
                                             {key}
                                           </span>
-                                          <span className="text-sm font-semibold text-gray-900 text-right max-w-xs">
+                                          <span className="min-w-0 max-w-xs break-words text-right text-sm font-semibold text-gray-900 [overflow-wrap:anywhere]">
                                             {value}
                                           </span>
                                         </div>
@@ -508,7 +738,6 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                   if (isResolvedOrClosed) {
                     // Display as a centered message like image 2
-                    const adminName = msg.senderName || "admin";
                     return (
                       <React.Fragment key={msg._id || index}>
                         <div className="flex items-center justify-center my-3">
@@ -519,7 +748,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                               }}
                               className="text-sm text-gray-600 font-medium"
                             >
-                              Ticket resolved by {adminName}
+                              {formatSystemEventMessage(msg)}
                             </div>
                             <p className="text-xs text-gray-400 mt-1">
                               {new Date(msg.timestamp).toLocaleTimeString(
@@ -548,29 +777,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                             }}
                             className="text-sm text-gray-500 bg-gray-100 px-4 py-2 rounded-full"
                           >
-                            {msg.message.replace(
-                              /^(Chat has been reopened|Ticket has been resolved|Ticket has been closed|Ticket has been accepted)/,
-                              (match) => {
-                                const sender = msg.senderName || "superadmin";
-                                return match
-                                  .replace(
-                                    "Chat has been",
-                                    `Chat reopened by ${sender}`,
-                                  )
-                                  .replace(
-                                    "Ticket has been resolved",
-                                    `Ticket resolved by ${sender}`,
-                                  )
-                                  .replace(
-                                    "Ticket has been closed",
-                                    `Ticket closed by ${sender}`,
-                                  )
-                                  .replace(
-                                    "Ticket has been accepted",
-                                    `Ticket accepted by ${sender}`,
-                                  );
-                              },
-                            )}
+                            {formatSystemEventMessage(msg)}
                           </div>
                           <p className="text-xs text-gray-400 mt-1">
                             {(() => {
@@ -607,7 +814,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 return (
                   <React.Fragment key={msg._id || index}>
                     <div
-                      className={`flex ${isAdmin ? "justify-end" : "justify-start"} ${isGroupedWithNext ? "mb-1" : "mb-3"}`}
+                      className={`flex min-w-0 ${isAdmin ? "justify-end" : "justify-start"} ${isGroupedWithNext ? "mb-1" : "mb-3"}`}
                     >
                       {!isAdmin &&
                         (selectedChat.userProfileImage ? (
@@ -624,7 +831,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           </div>
                         ))}
                       <div
-                        className={`max-w-sm ${
+                        className={`min-w-0 max-w-[75%] ${
                           isAdmin ? "text-right" : "text-left"
                         }`}
                       >
@@ -632,13 +839,13 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           ref={(el) => {
                             messageRefs.current[messageId] = el;
                           }}
-                          className={`inline-block px-4 py-2.5 rounded-2xl ${
+                          className={`inline-block min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-left ${
                             isAdmin
                               ? "bg-blue-600 text-white"
                               : "bg-white text-gray-900 shadow-sm"
                           }`}
                         >
-                          <p className="text-sm leading-relaxed">
+                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
                             {msg.message}
                           </p>
                         </div>
@@ -677,11 +884,11 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
           {/* Message Input */}
           {selectedChat.status === "open" ? (
-            !selectedChat.acceptedBy ? (
+            !canManageTicket ? (
               <div className="flex-shrink-0 p-6 bg-gray-100 border-t">
                 <div className="flex items-center justify-center">
                   <p className="text-sm font-medium text-gray-600">
-                    You must accept this ticket before sending messages
+                    Accept this ticket before sending messages or taking action
                   </p>
                 </div>
               </div>
@@ -807,36 +1014,6 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                   <span className="text-sm text-gray-600">User Type: </span>
                   <UserTypeBadge userType={selectedChat.userType || "client"} />
                 </div>
-                <div>
-                  <span className="text-sm text-gray-600">Member Since: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {new Date(selectedChat.createdAt).toLocaleDateString(
-                      "en-US",
-                      {
-                        year: "numeric",
-                        month: "long",
-                      },
-                    )}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">
-                    Total Bookings:{" "}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-900">0</span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">
-                    Tickets Submitted:{" "}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {
-                      chatSupports.filter(
-                        (chat) => chat.userId === selectedChat.userId,
-                      ).length
-                    }
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -865,6 +1042,16 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                         year: "numeric",
                       },
                     )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Priority:</span>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold capitalize ${getPriorityClasses(
+                      normalizedPriority,
+                    )}`}
+                  >
+                    {normalizedPriority}
                   </span>
                 </div>
                 <div>
@@ -930,19 +1117,22 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                       : null,
                   });
 
-                  // 2. Ticket Accepted (first admin response)
-                  const firstAdminMessage = selectedChat.messages?.find(
-                    (msg) => msg.senderType === "Admin",
-                  );
-                  if (firstAdminMessage) {
+                  // 2. Ticket Accepted ? use persisted acceptance metadata,
+                  // not the first admin or system message in the thread.
+                  if (selectedChat.acceptedAt) {
+                    const acceptanceMessage = selectedChat.messages?.find(
+                      (msg) =>
+                        msg.senderType === "Admin" &&
+                        msg.message.toLowerCase().includes("accepted"),
+                    );
                     events.push({
                       type: "accepted",
-                      title: "Ticket Accepted",
-                      date: firstAdminMessage.timestamp,
-                      timestamp: new Date(
-                        firstAdminMessage.timestamp,
-                      ).getTime(),
-                      messageId: "first-admin-message",
+                      title: selectedChat.acceptedByName
+                        ? `Ticket Accepted by ${selectedChat.acceptedByName}`
+                        : "Ticket Accepted",
+                      date: selectedChat.acceptedAt,
+                      timestamp: new Date(selectedChat.acceptedAt).getTime(),
+                      messageId: acceptanceMessage?._id || null,
                     });
                   }
 
@@ -1045,13 +1235,181 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 })()}
               </div>
             </div>
+            {isAdminUser && !canManageTicket && selectedChat.status === "open" && (
+              <>
+                <div className="border-t border-gray-300 my-4"></div>
+                <div className="px-6 pb-6">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-sm font-semibold text-blue-900">
+                      Accept this ticket to take ownership
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Messaging, internal notes, dispute rulings, and resolution
+                      actions are locked until the ticket is accepted.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Dispute threads — both parties keep their own thread with admin;
+                mediate in each, then rule once. */}
+            {isDisputeTicket && (
+              <>
+                <div className="border-t border-gray-300 my-4"></div>
+                <div className="px-6 pb-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">
+                    Dispute Threads
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Each party has their own thread for this job. Talk to both
+                    before ruling.
+                  </p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between rounded-lg border border-purple-300 bg-purple-50 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-purple-900 truncate">
+                          {selectedChat.userName || "This user"}
+                        </p>
+                        <p className="text-[11px] text-purple-700 capitalize">
+                          {selectedChat.userType || "client"} — current thread
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase text-purple-700 bg-purple-100 rounded-full px-2 py-1">
+                        Viewing
+                      </span>
+                    </div>
+                    {counterpartChat && onSwitchChat ? (
+                      <button
+                        data-testid="dispute-counterpart-open-btn"
+                        onClick={() => onSwitchChat(counterpartChat)}
+                        className="w-full flex items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2.5 hover:border-purple-400 hover:bg-purple-50 transition-colors text-left"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">
+                            {counterpartChat.userName || "Other party"}
+                          </p>
+                          <p className="text-[11px] text-gray-500 capitalize">
+                            {counterpartChat.userType || "user"} — open their thread
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(counterpartChat.unreadCount || 0) > 0 && (
+                            <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                              {counterpartChat.unreadCount}
+                            </span>
+                          )}
+                          <RefreshCw className="w-4 h-4 text-gray-400" />
+                        </div>
+                      </button>
+                    ) : (
+                      <p className="text-xs text-gray-400 px-1">
+                        The other party's thread isn't loaded — check the
+                        Support inbox for the matching “{selectedChat.subject}”
+                        ticket.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Dispute Resolution — only on tickets raiseDispute filed
+                (metadata.kind === 'dispute'); see improvements doc §6. */}
+            {isDisputeTicket &&
+              selectedChat.status === "open" &&
+              canManageTicket && (
+                <>
+                  <div className="border-t border-gray-300 my-4"></div>
+                  <div className="px-6 pb-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">
+                      Resolve Dispute
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Pick the outcome once you've reviewed both parties'
+                      dispute threads for this job.
+                    </p>
+                    <textarea
+                      data-testid="resolve-dispute-note"
+                      value={disputeNote}
+                      onChange={(e) => setDisputeNote(e.target.value)}
+                      placeholder="Resolution note (sent to both parties)…"
+                      rows={2}
+                      className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <div className="space-y-2">
+                      <button
+                        data-testid="resolve-dispute-pay-provider"
+                        onClick={() => handleResolveDispute("pay_provider")}
+                        disabled={!!resolvingOutcome}
+                        className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {resolvingOutcome === "pay_provider"
+                          ? "Resolving…"
+                          : "Pay Provider"}
+                      </button>
+                      <button
+                        data-testid="resolve-dispute-refund-client"
+                        onClick={() => handleResolveDispute("refund_client")}
+                        disabled={!!resolvingOutcome}
+                        className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {resolvingOutcome === "refund_client"
+                          ? "Resolving…"
+                          : "Refund Client"}
+                      </button>
+                      <button
+                        data-testid="resolve-dispute-rebook"
+                        onClick={() => handleResolveDispute("rebook")}
+                        disabled={!!resolvingOutcome}
+                        className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {resolvingOutcome === "rebook" ? "Resolving…" : "Rebook"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+            {/* Internal Notes — admin-only, never rendered to the customer
+                (see isInternal on ChatSupport.messages). */}
+            {canManageTicket && (
+              <>
+                <div className="border-t border-gray-300 my-4"></div>
+                <div className="px-6 pb-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">
+                    Internal Note
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Visible only to admins — never shown to the user.
+                  </p>
+                  <textarea
+                    data-testid="internal-note-input"
+                    value={internalNoteText}
+                    onChange={(e) => setInternalNoteText(e.target.value)}
+                    placeholder="Add a note for other admins…"
+                    rows={2}
+                    className="w-full mb-2 px-3 py-2 border border-amber-300 bg-amber-50 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                  <button
+                    data-testid="internal-note-submit"
+                    onClick={handleAddInternalNote}
+                    disabled={!internalNoteText.trim() || sendingInternalNote}
+                    className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {sendingInternalNote ? "Adding…" : "Add Internal Note"}
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* Actions - Visible on both Mobile and Desktop */}
           </div>
 
           {/* Sticky Footer Actions */}
-          {((selectedChat.status === "open" && selectedChat.acceptedBy) ||
-            selectedChat.status === "closed") &&
-            (user?.role === "admin" || user?.role === "superadmin") && (
+          {canManageTicket &&
+            (selectedChat.status === "open" ||
+              selectedChat.status === "closed") && (
               <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 bg-gray-50 z-[50]">
                 {selectedChat.status === "open" ? (
                   <button

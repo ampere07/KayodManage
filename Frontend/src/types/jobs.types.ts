@@ -47,8 +47,10 @@ export interface Job {
     email: string;
   };
   budget: number;
-  paymentStatus: 'pending' | 'paid' | 'refunded';
+  paymentStatus: 'pending' | 'paid' | 'refunded' | 'escrow_required' | 'escrow_held' | 'failed';
   escrowAmount: number;
+  escrowStatus?: 'none' | 'pending' | 'releasing' | 'released' | 'refunded' | 'failed';
+  escrowReleaseAt?: Date | string | null;
   paidAmount: number;
   paidAt?: Date | string;
   applicationCount: number;
@@ -60,6 +62,32 @@ export interface Job {
   hiddenAt?: Date | string;
   hiddenBy?: string;
   deletedBy?: string;
+  cancellation?: {
+    cancelledAt?: Date | string | null;
+    cancelledBy?: string | null;
+    reason?: string | null;
+    feeApplied?: number | null;
+  };
+  completionStatus?: {
+    clientConfirmed?: boolean;
+    providerConfirmed?: boolean;
+    completedAt?: Date | string | null;
+    dispute?: {
+      isActive: boolean;
+      raisedBy?: 'client' | 'provider' | null;
+      raisedAt?: Date | string | null;
+      reason?: string | null;
+      resolvedAt?: Date | string | null;
+      resolution?: 'provider_paid' | 'client_refunded' | 'rebook' | null;
+    };
+    disputeHistory?: Array<{
+      raisedBy: 'client' | 'provider';
+      raisedAt: Date | string;
+      reason: string;
+      resolvedAt: Date | string;
+      resolution: 'provider_paid' | 'client_refunded' | 'rebook';
+    }>;
+  };
   createdAt: Date | string;
   updatedAt: Date | string;
 }

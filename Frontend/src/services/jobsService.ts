@@ -47,6 +47,38 @@ class JobsService {
   }
 
   /**
+   * Force-cancel a job — the only path that releases held funds and notifies
+   * both parties correctly. updateJobStatus deliberately no longer accepts
+   * "cancelled" (see improvements doc §1) — use this instead.
+   */
+  async forceCancelJob(
+    jobId: string,
+    reason?: string
+  ): Promise<{ success: boolean; job: Job; refundedAmount: number }> {
+    const response = await apiClient.post<{ success: boolean; job: Job; refundedAmount: number }>(
+      `${this.baseUrl}/${jobId}/force-cancel`,
+      { reason }
+    );
+    return response.data;
+  }
+
+  /**
+   * Resolve an active dispute on a job. outcome must be one of:
+   * 'pay_provider' | 'refund_client' | 'rebook' (see improvements doc §6).
+   */
+  async resolveDispute(
+    jobId: string,
+    outcome: 'pay_provider' | 'refund_client' | 'rebook',
+    note?: string
+  ): Promise<{ success: boolean; job: Job; outcome: string; refundedAmount: number; draftId: string | null }> {
+    const response = await apiClient.post<{ success: boolean; job: Job; outcome: string; refundedAmount: number; draftId: string | null }>(
+      `${this.baseUrl}/${jobId}/resolve-dispute`,
+      { outcome, note }
+    );
+    return response.data;
+  }
+
+  /**
    * Get job applications
    */
   async getJobApplications(jobId: string): Promise<{ success: boolean; applications: Application[] }> {

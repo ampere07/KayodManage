@@ -28,6 +28,11 @@ const chatSupportSchema = new mongoose.Schema({
     required: true,
     enum: ['account', 'payment', 'technical', 'job', 'general', 'feedback']
   },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
+  },
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
@@ -133,8 +138,12 @@ const chatSupportSchema = new mongoose.Schema({
     },
     message: {
       type: String,
-      required: true,
+      default: '',
       trim: true
+    },
+    imageUrl: {
+      type: String,
+      default: null
     },
     timestamp: {
       type: Date,
@@ -143,15 +152,17 @@ const chatSupportSchema = new mongoose.Schema({
     isRead: {
       type: Boolean,
       default: false
+    },
+    // Admin-only note (e.g. dispute mediation reasoning) — never returned by
+    // any user-facing endpoint, only the admin-facing ones.
+    isInternal: {
+      type: Boolean,
+      default: false
     }
   }],
   lastMessage: {
     text: String,
     timestamp: Date
-  },
-  unreadCount: {
-    type: Number,
-    default: 0
   }
 }, {
   timestamps: true
@@ -203,5 +214,8 @@ chatSupportSchema.pre('save', function (next) {
 
 chatSupportSchema.index({ userId: 1, createdAt: -1 });
 chatSupportSchema.index({ status: 1 });
+chatSupportSchema.index({ assignedTo: 1, status: 1, createdAt: -1 });
+chatSupportSchema.index({ 'ticketHistory.resolvedBy': 1, createdAt: -1 });
+chatSupportSchema.index({ category: 1, priority: 1, createdAt: -1 });
 
 module.exports = mongoose.model('ChatSupport', chatSupportSchema);

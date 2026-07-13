@@ -1,12 +1,7 @@
 const express = require('express');
-const router = express.Router();
+const mongoose = require('mongoose');
+
 const {
-  getAllTickets,
-  getTicket,
-  acceptTicket,
-  rejectTicket,
-  resolveTicket,
-  addMessage,
   getSupportStats,
   getAllChatSupports,
   getChatSupport,
@@ -14,87 +9,110 @@ const {
   closeChatSupport,
   reopenChatSupport,
   addChatSupportMessage,
+  addInternalNote,
   broadcastMobileMessage
 } = require('../controllers/supportController');
 const { authMiddleware, adminAuth } = require('../middleware/auth');
+const { supportServiceAuth } = require('../middleware/supportServiceAuth');
 
-// Public routes (no authentication required for mobile users)
-router.post('/broadcast-mobile-message', broadcastMobileMessage);
+const router = express.Router();
 
-// Mobile user routes (accessible without admin auth)
-router.get('/chat/:chatSupportId', getChatSupport);
-router.post('/chat/:chatSupportId/messages', addChatSupportMessage);
+// Inter-service routes. Mobile clients use the authenticated endpoints on the
+// main Kayod API; these admin-backend callbacks are only for server-to-server
+// synchronization and socket fan-out.
+router.post(
+  '/broadcast-mobile-message',
+  supportServiceAuth,
+  broadcastMobileMessage
+);
 
-// Notification endpoints (no auth required for inter-service communication)
-router.post('/notify-new-ticket', (req, res) => {
-  console.log('New support ticket notification received:', req.body);
+router.post('/notify-new-ticket', supportServiceAuth, (req, res) => {
   const { emitSupportUpdate } = require('../socket/socketHandlers');
-  emitSupportUpdate({ ticketId: req.body.ticketId }, 'new_ticket');
-  res.json({ success: true });
+  emitSupportUpdate(
+    {
+      ticketId: req.body.ticketId,
+      chatSupportId: req.body.chatSupportId,
+      priority: req.body.priority
+    },
+    'new_ticket'
+  );
+  return res.json({ success: true });
 });
 
-// Upsert metadata/snapshot and emit new message
-router.post('/notify-new-message', async (req, res) => {
-  console.log('New support message notification received:', req.body);
+router.post('/notify-new-message', supportServiceAuth, async (req, res) => {
   const { emitSupportUpdate } = require('../socket/socketHandlers');
   const ChatSupport = require('../models/ChatSupport');
 
   try {
-    const { chatSupportId, jobDetailsSnapshot, metadata } = req.body;
+    const {
+      chatSupportId,
+      ticketId,
+      jobDetailsSnapshot,
+      metadata,
+      priority
+    } = req.body;
 
     if (chatSupportId) {
-      await ChatSupport.findByIdAndUpdate(
+      if (!mongoose.isValidObjectId(chatSupportId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid chat support ID'
+        });
+      }
+
+      const allowedPriorities = new Set(['low', 'medium', 'high', 'urgent']);
+      const updates = {
+        ...(metadata ? { metadata } : {}),
+        ...(jobDetailsSnapshot ? { jobDetailsSnapshot } : {}),
+        ...(allowedPriorities.has(priority) ? { priority } : {})
+      };
+
+      const updatedChat = await ChatSupport.findByIdAndUpdate(
         chatSupportId,
-        {
-          ...(metadata ? { metadata } : {}),
-          ...(jobDetailsSnapshot ? { jobDetailsSnapshot } : {})
-        },
-        { new: true }
+        { $set: updates },
+        { new: true, runValidators: true }
       );
+
+      if (!updatedChat) {
+        return res.status(404).json({
+          success: false,
+          message: 'Chat support not found'
+        });
+      }
     }
 
-    emitSupportUpdate({ ticketId: req.body.ticketId || chatSupportId, jobDetailsSnapshot, metadata }, 'new_message');
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error handling notify-new-message:', err);
-    res.status(500).json({ success: false, message: 'Failed to process support notification' });
+    emitSupportUpdate(
+      {
+        ticketId: ticketId || chatSupportId,
+        chatSupportId,
+        jobDetailsSnapshot,
+        metadata,
+        priority
+      },
+      'new_message'
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error handling support notification:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process support notification'
+    });
   }
 });
 
-// Admin routes (require authentication)
+// Admin routes (require an authenticated admin session).
 router.use(authMiddleware);
 router.use(adminAuth);
 
-// GET /api/support/tickets - Get all tickets with filtering
-router.get('/tickets', getAllTickets);
-
-// GET /api/support/stats - Get support statistics
 router.get('/stats', getSupportStats);
 
-// GET /api/support/tickets/:ticketId - Get single ticket
-router.get('/tickets/:ticketId', getTicket);
-
-// PUT /api/support/tickets/:ticketId/accept - Accept ticket
-router.put('/tickets/:ticketId/accept', acceptTicket);
-
-// PUT /api/support/tickets/:ticketId/reject - Reject ticket
-router.put('/tickets/:ticketId/reject', rejectTicket);
-
-// PUT /api/support/tickets/:ticketId/resolve - Resolve ticket
-router.put('/tickets/:ticketId/resolve', resolveTicket);
-
-// POST /api/support/tickets/:ticketId/messages - Add message to ticket
-router.post('/tickets/:ticketId/messages', addMessage);
-
-// ChatSupport Routes (admin only)
 router.get('/chatsupports', getAllChatSupports);
 router.get('/chatsupports/:chatSupportId', getChatSupport);
-router.put('/chatsupports/:chatSupportId/accept', (req, res, next) => {
-  console.log('🎯 Accept endpoint hit:', req.params.chatSupportId);
-  acceptChatSupport(req, res, next);
-});
+router.put('/chatsupports/:chatSupportId/accept', acceptChatSupport);
 router.put('/chatsupports/:chatSupportId/close', closeChatSupport);
 router.put('/chatsupports/:chatSupportId/reopen', reopenChatSupport);
 router.post('/chatsupports/:chatSupportId/messages', addChatSupportMessage);
+router.post('/chatsupports/:chatSupportId/internal-notes', addInternalNote);
 
 module.exports = router;

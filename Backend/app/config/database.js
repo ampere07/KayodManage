@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const { getMongoUri } = require('./mongoUri');
 
 dotenv.config();
 
 const connectDatabase = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI;
+    const mongoUri = getMongoUri();
     
     if (!mongoUri) {
       throw new Error('MONGODB_URI is not defined in environment variables');

@@ -84,6 +84,7 @@ const LoginForm: React.FC = () => {
               type="text"
               id="username"
               name="username"
+              data-testid="admin-login-username"
               value={credentials.username}
               onChange={handleChange}
               placeholder="Enter your username"
@@ -102,6 +103,7 @@ const LoginForm: React.FC = () => {
                 type={showPassword ? 'text' : 'password'}
                 id="password"
                 name="password"
+                data-testid="admin-login-password"
                 value={credentials.password}
                 onChange={handleChange}
                 placeholder="Enter your password"
@@ -122,6 +124,7 @@ const LoginForm: React.FC = () => {
 
           <button
             type="submit"
+            data-testid="admin-login-submit"
             disabled={loading}
             className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >

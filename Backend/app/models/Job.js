@@ -12,23 +12,35 @@ const JobSchema = new Schema({
     required: true,
     trim: true
   },
+  // profession/categoryId were never real fields — kayod/server's actual Job
+  // schema (the app that writes every real job) only has professionName
+  // (String, no default requirement) and category (String). Marking these
+  // required here made KayodManage's own job.save() calls (forceCancelJob,
+  // resolveDispute) fail full-document validation on any real job, since
+  // real documents never had them in the first place.
   profession: {
     type: Schema.Types.ObjectId,
-    required: true
+    required: false
   },
   professionName: {
     type: String,
-    required: true,
+    required: false,
+    default: null,
     trim: true
   },
   categoryId: {
     type: Schema.Types.ObjectId,
     ref: 'JobCategory',
-    required: true
+    required: false
   },
   categoryName: {
     type: String,
-    required: true,
+    required: false,
+    trim: true
+  },
+  // The real field kayod/server actually writes (String, required there).
+  category: {
+    type: String,
     trim: true
   },
   icon: {
@@ -45,7 +57,7 @@ const JobSchema = new Schema({
   },
   location: {
     type: Schema.Types.Mixed,
-    required: true
+    required: false
   },
   locationDetails: {
     type: String,
@@ -53,7 +65,19 @@ const JobSchema = new Schema({
   },
   date: {
     type: Date,
-    required: true
+    required: false
+  },
+  selectedDates: {
+    type: [Date],
+    default: []
+  },
+  timeWindows: {
+    type: [String],
+    default: []
+  },
+  dateDetails: {
+    type: Schema.Types.Mixed,
+    default: null
   },
   isUrgent: {
     type: Boolean,
@@ -72,7 +96,7 @@ const JobSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ['open', 'in_progress', 'completed', 'cancelled'],
+    enum: ['open', 'in_progress', 'scheduled', 'completed', 'cancelled'],
     default: 'open'
   },
   userId: {
@@ -92,7 +116,7 @@ const JobSchema = new Schema({
   },
   budget: {
     type: Number,
-    required: true,
+    default: 0,
     min: 0
   },
   budgetType: {
@@ -133,7 +157,7 @@ const JobSchema = new Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'refunded'],
+    enum: ['pending', 'escrow_required', 'escrow_held', 'paid', 'refunded', 'failed'],
     default: 'pending'
   },
   escrowAmount: {
@@ -174,7 +198,59 @@ const JobSchema = new Schema({
     paymentReleasedAt: {
       type: Date,
       default: null
-    }
+    },
+    completedAt: {
+      type: Date,
+      default: null
+    },
+    dispute: {
+      isActive: { type: Boolean, default: false },
+      raisedBy: { type: String, enum: ['client', 'provider'], default: null },
+      raisedAt: { type: Date, default: null },
+      reason: { type: String, default: null },
+      resolvedAt: { type: Date, default: null },
+      resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', null], default: null },
+      escalatedAt: { type: Date, default: null },
+      internalNotes: [{
+        adminId: { type: Schema.Types.ObjectId, ref: 'User' },
+        adminName: String,
+        note: String,
+        createdAt: { type: Date, default: Date.now }
+      }]
+    },
+    disputeHistory: [{
+      raisedBy: { type: String, enum: ['client', 'provider'] },
+      raisedAt: Date,
+      reason: String,
+      resolvedAt: Date,
+      resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook'] }
+    }]
+  },
+  cancellation: {
+    cancelledAt: { type: Date, default: null },
+    cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    reason: { type: String, default: null },
+    feeApplied: { type: Number, default: null }
+  },
+  escrowAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  escrowReleaseAt: {
+    type: Date,
+    default: null
+  },
+  escrowStatus: {
+    type: String,
+    enum: ['none', 'pending', 'releasing', 'released', 'refunded', 'failed'],
+    default: 'none'
+  },
+  escrowScheduledAt: {
+    type: Date,
+    default: null
   },
   acceptedProvider: {
     type: Schema.Types.ObjectId,

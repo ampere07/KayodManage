@@ -7,34 +7,68 @@ const ChatSupport = require('../models/ChatSupport');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const FeeRecord = require('../models/FeeRecord');
-const axios = require('axios');
+const mongoose = require('mongoose');
 
 let adminNamespace = null;
 let chatSupportChangeStream = null;
 let activeIntervals = new Map();
 
-// Mobile backend URL for HTTP broadcasts
-const MOBILE_BACKEND_URL = process.env.MOBILE_BACKEND_URL || 'http://localhost:8080';
+const canViewSupportChat = (chatSupport, adminId, adminRole) => {
+  if (adminRole === 'superadmin') return true;
+  if (!chatSupport?.assignedTo) return true;
+  if (chatSupport.assignedTo.toString() === adminId) return true;
+
+  return (
+    chatSupport.status === 'closed' &&
+    (chatSupport.ticketHistory || []).some(
+      (entry) => entry.resolvedBy?.toString() === adminId
+    )
+  );
+};
 
 const setupSocketHandlers = (io) => {
   adminNamespace = io.of('/admin');
 
+  adminNamespace.use(async (socket, next) => {
+    try {
+      const session = socket.request.session;
+      if (
+        !session?.isAuthenticated ||
+        !session.adminId ||
+        !['admin', 'superadmin'].includes(session.role)
+      ) {
+        return next(new Error('Unauthorized'));
+      }
+
+      const admin = await User.findById(session.adminId)
+        .select('_id name email userType accountStatus')
+        .lean();
+      if (
+        !admin ||
+        admin.accountStatus !== 'active' ||
+        !['admin', 'superadmin'].includes(admin.userType)
+      ) {
+        return next(new Error('Unauthorized'));
+      }
+
+      socket.data.adminId = admin._id.toString();
+      socket.data.adminRole = admin.userType;
+      return next();
+    } catch (error) {
+      console.error('Admin socket authentication failed:', error.message);
+      return next(new Error('Unauthorized'));
+    }
+  });
+
   setupChatSupportChangeStream();
 
-  // Track connected admins to avoid duplicate logs
-  const connectedAdmins = new Set();
-
   adminNamespace.on('connection', async (socket) => {
+    const { adminId, adminRole } = socket.data;
     socket.join('admin');
     socket.emit('connection:status', 'connected');
 
-    const adminId = socket.handshake.auth?.adminId || socket.handshake.query?.adminId;
-    if (adminId) {
-      socket.data.adminId = adminId;
-    }
-
     await sendInitialData(socket, adminId);
-    const intervals = setupRealtimeIntervals(socket, adminId);
+    setupRealtimeIntervals(socket, adminId);
 
     socket.on('request:dashboard', () => broadcastDashboardStats());
     socket.on('request:alerts', async () => {
@@ -42,205 +76,62 @@ const setupSocketHandlers = (io) => {
       socket.emit('alerts:update', { alerts, timestamp: new Date() });
     });
 
-    // Test handler for Activity page socket connection
     socket.on('test:ping', (data) => {
-      console.log('🏓 Received test:ping from:', data);
-      socket.emit('test:pong', { message: 'Socket connection working!', page: data.page });
+      socket.emit('test:pong', {
+        message: 'Socket connection working!',
+        page: data?.page
+      });
     });
 
-    socket.on('support:join_chat', (data) => {
-      if (data.chatSupportId) {
-        socket.join(`support:${data.chatSupportId}`);
-        socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
+    socket.on('support:join_chat', async (data = {}) => {
+      const chatSupportId = data.chatSupportId;
+      if (!mongoose.isValidObjectId(chatSupportId)) {
+        socket.emit('support:join_error', {
+          error: 'Invalid chat support ID',
+          chatSupportId
+        });
+        return;
+      }
+
+      try {
+        const chatSupport = await ChatSupport.findById(chatSupportId)
+          .select('assignedTo status ticketHistory.resolvedBy')
+          .lean();
+        if (!chatSupport || !canViewSupportChat(chatSupport, adminId, adminRole)) {
+          socket.emit('support:join_error', {
+            error: 'Chat support not found',
+            chatSupportId
+          });
+          return;
+        }
+
+        socket.join(`support:${chatSupportId}`);
+        socket.emit('support:joined_chat', { chatSupportId });
+      } catch (error) {
+        console.error('Error joining support chat:', error.message);
+        socket.emit('support:join_error', {
+          error: 'Failed to join support chat',
+          chatSupportId
+        });
       }
     });
 
-    socket.on('support:leave_chat', (data) => {
+    socket.on('support:leave_chat', (data = {}) => {
       if (data.chatSupportId) {
         socket.leave(`support:${data.chatSupportId}`);
       }
     });
 
-    socket.on('support:send_message', async (data) => {
-      if (data.chatSupportId && data.message) {
-        try {
-          const chatSupport = await ChatSupport.findById(data.chatSupportId);
-
-          if (!chatSupport) {
-            socket.emit('support:message_error', {
-              error: 'Chat support not found',
-              chatSupportId: data.chatSupportId
-            });
-            return;
-          }
-
-          if (chatSupport.status !== 'open') {
-            socket.emit('support:message_error', {
-              error: 'Chat support is closed',
-              chatSupportId: data.chatSupportId
-            });
-            return;
-          }
-
-          const mongoose = require('mongoose');
-          const adminId = '000000000000000000000000';
-          const adminObjectId = new mongoose.Types.ObjectId(adminId);
-
-          const newMessage = {
-            senderId: data.senderId || adminObjectId,
-            senderName: data.senderName || 'Support Agent',
-            senderType: data.senderType || 'Admin',
-            message: data.message.trim(),
-            timestamp: new Date()
-          };
-
-          chatSupport.messages.push(newMessage);
-          await chatSupport.save();
-
-          const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
-
-          const messageData = {
-            chatSupportId: data.chatSupportId,
-            message: {
-              _id: savedMessage._id.toString(),
-              senderId: savedMessage.senderId.toString(),
-              senderName: savedMessage.senderName,
-              senderType: savedMessage.senderType,
-              message: savedMessage.message,
-              timestamp: savedMessage.timestamp.toISOString()
-            }
-          };
-
-          // Send confirmation back to the admin who sent it
-          // NOTE: Commented out to prevent duplicate messages. The MongoDB change stream
-          // will automatically broadcast this message to all connected clients.
-          // socket.emit('support:new_message', messageData);
-          // Also broadcast to anyone in the support room
-          // adminNamespace.to(`support:${data.chatSupportId}`).emit('support:new_message', messageData);
-        } catch (error) {
-          console.error('❌ Error sending admin message:', error.message);
-          socket.emit('support:message_error', {
-            error: 'Failed to send message',
-            chatSupportId: data.chatSupportId
-          });
-        }
-      }
-    });
-
     socket.on('disconnect', () => {
-      connectedAdmins.delete(socket.id);
       const intervals = activeIntervals.get(socket.id);
       if (intervals) {
-        Object.values(intervals).forEach(interval => clearInterval(interval));
+        Object.values(intervals).forEach((interval) => clearInterval(interval));
         activeIntervals.delete(socket.id);
       }
     });
   });
 
   return adminNamespace;
-};
-
-const setupMainNamespaceHandlers = (io) => {
-  const connectedUsers = new Set();
-
-  io.on('connection', (socket) => {
-
-    socket.on('authenticate', (data) => {
-      socket.emit('authenticated');
-    });
-
-    socket.on('support:join_chat', (data) => {
-      if (data.chatSupportId) {
-        socket.join(`support:${data.chatSupportId}`);
-        socket.emit('support:joined_chat', { chatSupportId: data.chatSupportId });
-      }
-    });
-
-    socket.on('support:leave_chat', (data) => {
-      if (data.chatSupportId) {
-        socket.leave(`support:${data.chatSupportId}`);
-      }
-    });
-
-    socket.on('support:send_message', async (data) => {
-      if (!data.chatSupportId) {
-        socket.emit('support:message_error', { error: 'Missing chatSupportId' });
-        return;
-      }
-
-      if (!data.message) {
-        socket.emit('support:message_error', { error: 'Missing message', chatSupportId: data.chatSupportId });
-        return;
-      }
-
-      try {
-        const chatSupport = await ChatSupport.findById(data.chatSupportId);
-
-        if (!chatSupport) {
-          socket.emit('support:message_error', {
-            error: 'Chat support not found',
-            chatSupportId: data.chatSupportId
-          });
-          return;
-        }
-
-        if (chatSupport.status !== 'open') {
-          socket.emit('support:message_error', {
-            error: 'Chat support is closed',
-            chatSupportId: data.chatSupportId
-          });
-          return;
-        }
-
-        const mongoose = require('mongoose');
-        const userId = data.userId || socket.handshake.auth?.userId || '000000000000000000000000';
-
-        const userObjectId = mongoose.Types.ObjectId.isValid(userId)
-          ? new mongoose.Types.ObjectId(userId)
-          : new mongoose.Types.ObjectId('000000000000000000000000');
-
-        const newMessage = {
-          senderId: userObjectId,
-          senderName: data.senderName || 'User',
-          senderType: 'User',
-          message: data.message.trim(),
-          timestamp: new Date()
-        };
-
-        chatSupport.messages.push(newMessage);
-        await chatSupport.save();
-
-        const savedMessage = chatSupport.messages[chatSupport.messages.length - 1];
-
-        // Immediately send confirmation back to sender
-        const messageData = {
-          chatSupportId,
-          message: {
-            _id: savedMessage._id.toString(),
-            senderId: savedMessage.senderId.toString(),
-            senderName: savedMessage.senderName,
-            senderType: savedMessage.senderType,
-            message: savedMessage.message,
-            timestamp: savedMessage.timestamp.toISOString()
-          }
-        };
-
-        socket.emit('support:new_message', messageData);
-        io.to(`support:${chatSupportId}`).emit('support:new_message', messageData);
-
-      } catch (error) {
-        console.error('❌ Error sending message:', error.message);
-        socket.emit('support:message_error', {
-          error: 'Failed to send message: ' + error.message,
-          chatSupportId: data.chatSupportId
-        });
-      }
-    });
-
-    socket.on('disconnect', () => {
-      connectedUsers.delete(socket.id);
-    });
-  });
 };
 
 const sendInitialData = async (socket, adminId) => {

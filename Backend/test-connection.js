@@ -1,9 +1,14 @@
 const axios = require('axios');
 
 const KAYOD_BACKEND_URL = 'http://localhost:8080';
-const KAYOD_API_KEY = 'kayod-admin-access-key-123';
+const KAYOD_API_KEY =
+  process.env.ADMIN_API_KEY ||
+  (process.env.NODE_ENV !== 'production' ? 'kayod-local-admin-api-key' : null);
 
 async function testConnection() {
+    if (!KAYOD_API_KEY) {
+        throw new Error('ADMIN_API_KEY is required in production');
+    }
     console.log('🔍 Testing Kayod Backend Connection...\n');
     
     // Test 1: Basic connectivity

@@ -1,8 +1,10 @@
 const express = require('express');
-const { 
-  getJobs, 
-  getJobDetails, 
-  updateJobStatus, 
+const {
+  getJobs,
+  getJobDetails,
+  updateJobStatus,
+  forceCancelJob,
+  resolveDispute,
   assignJobToProvider,
   getJobStats,
   hideJob,
@@ -23,8 +25,14 @@ router.get('/stats', adminAuth, getJobStats);
 // Get specific job details with applications
 router.get('/:jobId', adminAuth, getJobDetails);
 
-// Update job status
+// Update job status (cancellation excluded — see force-cancel below)
 router.patch('/:jobId/status', adminAuth, updateJobStatus);
+
+// Cancel a job — the only path that does the money/notification work correctly
+router.post('/:jobId/force-cancel', adminAuth, forceCancelJob);
+
+// Resolve an active dispute: { outcome: 'pay_provider' | 'refund_client' | 'rebook', note? }
+router.post('/:jobId/resolve-dispute', adminAuth, resolveDispute);
 
 // Hide job
 router.patch('/:jobId/hide', adminAuth, hideJob);

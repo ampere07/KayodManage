@@ -20,6 +20,7 @@ import Settings from './pages/Settings';
 import SettingsManagement from './pages/SettingsManagement';
 import SettingsConfiguration from './pages/SettingsConfiguration';
 import LoadingSpinner from './components/UI/LoadingSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -97,7 +98,9 @@ function App() {
         <SocketProvider>
           <Router>
             <div className="min-h-screen bg-gray-50">
-              <AppRoutes />
+              <ErrorBoundary>
+                <AppRoutes />
+              </ErrorBoundary>
               <Toaster
                 position="top-right"
                 toastOptions={{

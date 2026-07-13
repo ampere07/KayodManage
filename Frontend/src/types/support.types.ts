@@ -9,6 +9,7 @@ export interface Message {
   senderName?: string;
   message: string;
   timestamp: string;
+  isInternal?: boolean;
 }
 
 export interface ChatSupport {

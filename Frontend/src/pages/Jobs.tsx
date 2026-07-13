@@ -87,7 +87,7 @@ const Jobs: React.FC = () => {
   const queryClient = useQueryClient();
   const { socket } = useSocketContext();
   const { data: jobsData, isLoading } = useJobs(queryParams);
-  const { data: jobCounts = { total: 0, open: 0, assigned: 0, completed: 0, totalValue: 0 } } = useJobCounts();
+  const { data: jobCounts = { total: 0, open: 0, inProgress: 0, completed: 0, totalValue: 0 } } = useJobCounts();
   const mutations = useJobMutations();
 
   const jobs = jobsData?.jobs || [];
@@ -206,9 +206,9 @@ const Jobs: React.FC = () => {
             >
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">Assigned</span>
+                <span className="text-sm font-medium text-gray-700">In Progress</span>
               </div>
-              <span className="text-sm font-bold text-yellow-700">{jobCounts.assigned}</span>
+              <span className="text-sm font-bold text-yellow-700">{jobCounts.inProgress}</span>
             </div>
 
             <div
@@ -262,10 +262,10 @@ const Jobs: React.FC = () => {
                 }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-yellow-600">Assigned Jobs</span>
+                <span className="text-xs font-medium text-yellow-600">In Progress Jobs</span>
                 <Clock className="h-4 w-4 text-yellow-600" />
               </div>
-              <p className="text-2xl font-bold text-yellow-900">{jobCounts.assigned.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-yellow-900">{jobCounts.inProgress.toLocaleString()}</p>
             </div>
 
             <div
@@ -296,6 +296,7 @@ const Jobs: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
             <input
               type="text"
+              data-testid="admin-jobs-search"
               placeholder="Search jobs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -320,15 +321,12 @@ const Jobs: React.FC = () => {
             <select
               value={paymentMethodFilter}
               onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                         <select
-                           value={paymentMethodFilter}
-                           onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                           className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
-                         >
-                           <option value="all">Payment Method</option>
-                           <option value="wallet">Wallet</option>
-                           <option value="xendit">Xendit</option>
-                         </select>
+              className="px-2 md:px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs md:text-sm font-medium"
+            >
+              <option value="all">Payment Method</option>
+              <option value="wallet">Wallet</option>
+              <option value="xendit">Xendit</option>
+            </select>
 
             <select
               value={urgentFilter}
@@ -392,6 +390,7 @@ const Jobs: React.FC = () => {
                     {jobs.map((job, index) => (
                       <React.Fragment key={job._id}>
                         <tr
+                          data-testid={`admin-job-row-${job._id}`}
                           onClick={() => openJobModal(job)}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                         >

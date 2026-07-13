@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+const configuredSocketUrl =
+  import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL;
+const socketBaseUrl = configuredSocketUrl
+  ? configuredSocketUrl.replace(/\/api\/?$/, '').replace(/\/$/, '')
+  : import.meta.env.DEV
+    ? 'http://localhost:5000'
+    : window.location.origin;
+
 interface UseSupportSocketReturn {
   socket: Socket | null;
   isConnected: boolean;
-  sendMessage: (chatSupportId: string, message: string, senderName: string) => void;
   joinChat: (chatSupportId: string) => void;
   leaveChat: (chatSupportId: string) => void;
 }
@@ -31,7 +38,7 @@ export const useSupportSocket = (
   }, [onNewMessage, onChatUpdate, onNewChat]);
 
   useEffect(() => {
-    const newSocket = io('http://localhost:5000/admin', {
+    const newSocket = io(`${socketBaseUrl}/admin`, {
       transports: ['websocket', 'polling'],
       withCredentials: true
     });
@@ -59,9 +66,6 @@ export const useSupportSocket = (
     newSocket.on('support:new_message', (data) => onNewMessageRef.current(data));
     newSocket.on('support:chat_updated', (data) => onChatUpdateRef.current(data));
     newSocket.on('support:new_chat', () => onNewChatRef.current());
-    newSocket.on('support:message_error', () => {
-      console.error('Message send error');
-    });
 
     setSocket(newSocket);
 
@@ -90,21 +94,9 @@ export const useSupportSocket = (
     }
   }, [socket]);
 
-  const sendMessage = useCallback((chatSupportId: string, message: string, senderName: string) => {
-    if (socket && isConnected) {
-      socket.emit('support:send_message', {
-        chatSupportId,
-        message,
-        senderName,
-        senderType: 'Admin'
-      });
-    }
-  }, [socket, isConnected]);
-
   return {
     socket,
     isConnected,
-    sendMessage,
     joinChat,
     leaveChat
   };

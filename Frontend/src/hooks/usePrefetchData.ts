@@ -98,7 +98,7 @@ export const usePrefetchData = () => {
           queryClient.prefetchQuery({
             queryKey: ['jobs', 'counts'],
             queryFn: async () => {
-              const [totalData, openData, assignedData, completedData] = await Promise.all([
+              const [totalData, openData, inProgressData, completedData] = await Promise.all([
                 jobsService.getJobs({ limit: 1, page: 1 }),
                 jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
                 jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
@@ -107,7 +107,7 @@ export const usePrefetchData = () => {
               return {
                 total: totalData.pagination?.total || 0,
                 open: openData.pagination?.total || 0,
-                assigned: assignedData.pagination?.total || 0,
+                inProgress: inProgressData.pagination?.total || 0,
                 completed: completedData.pagination?.total || 0,
                 totalValue: totalData.stats?.totalValue || 0
               };

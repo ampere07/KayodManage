@@ -28,3 +28,8 @@ dist-ssr
 *.txt
 *.bat
 *.ps1
+
+# Playwright artifacts
+Frontend/test-results/
+Frontend/playwright-report/
+Frontend/e2e/evidence/

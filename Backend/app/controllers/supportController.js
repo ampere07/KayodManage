@@ -1,447 +1,82 @@
 const ChatSupport = require('../models/ChatSupport');
 const User = require('../models/User');
 const mongoose = require('mongoose');
-const { emitSupportUpdate, emitChatSupportUpdate, emitNewChatSupport } = require('../socket/socketHandlers');
+const { emitChatSupportUpdate } = require('../socket/socketHandlers');
 const { logActivity } = require('../utils/activityLogger');
 
-// Get all chat support conversations
-const getAllTickets = async (req, res) => {
-  try {
-    const {
-      status,
-      priority,
-      category,
-      page = 1,
-      limit = 20,
-      sortBy = 'createdAt',
-      sortOrder = 'desc'
-    } = req.query;
+const SUPPORT_QUERY_LOGS_ENABLED =
+  process.env.NODE_ENV !== 'production' || process.env.SUPPORT_QUERY_LOGS === '1';
 
-    const filters = {};
-
-    if (status && status !== 'all') {
-      if (status === 'pending' || status === 'accepted' || status === 'in_progress') {
-        filters.status = 'open';
-      } else if (status === 'resolved' || status === 'closed' || status === 'rejected') {
-        filters.status = 'closed';
-      }
-    }
-
-    if (category && category !== 'all') filters.category = category;
-
-    const sortOptions = {};
-    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
-
-    const chatSupports = await ChatSupport.find(filters)
-      .sort(sortOptions)
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-
-    const totalPromise = ChatSupport.countDocuments(filters);
-    const total = await totalPromise;
-
-    const tickets = chatSupports.map(chat => ({
-      _id: chat._id,
-      ticketId: `CHAT-${chat._id.toString().slice(-8).toUpperCase()}`,
-      userId: chat.userId.toString(),
-      userEmail: chat.userEmail,
-      userName: chat.userName,
-      title: chat.subject,
-      description: chat.messages[0]?.message || '',
-      category: chat.category,
-      priority: 'medium',
-      status: chat.status === 'open' ? 'in_progress' : 'closed',
-      messages: chat.messages,
-      createdAt: chat.createdAt,
-      updatedAt: chat.updatedAt
-    }));
-
-    res.json({
-      success: true,
-      tickets,
-      pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / limit),
-        count: total
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching chat supports:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+const getAdminObjectId = (req) => {
+  const adminId = req.user?.id;
+  return mongoose.Types.ObjectId.isValid(adminId)
+    ? new mongoose.Types.ObjectId(adminId)
+    : null;
 };
 
-// Get single chat support
-const getTicket = async (req, res) => {
-  try {
-    const { ticketId } = req.params;
+const buildChatSupportAccessFilter = (req) => {
+  if (req.user?.role === 'superadmin') return {};
 
-    const chatSupport = await ChatSupport.findById(ticketId);
+  const adminObjectId = getAdminObjectId(req);
+  if (!adminObjectId) return null;
 
-    if (!chatSupport) {
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
-
-    const ticket = {
-      _id: chatSupport._id,
-      ticketId: `CHAT-${chatSupport._id.toString().slice(-8).toUpperCase()}`,
-      userId: chatSupport.userId.toString(),
-      userEmail: chatSupport.userEmail,
-      userName: chatSupport.userName,
-      title: chatSupport.subject,
-      description: chatSupport.messages[0]?.message || '',
-      category: chatSupport.category,
-      priority: 'medium',
-      status: chatSupport.status === 'open' ? 'in_progress' : 'closed',
-      messages: chatSupport.messages,
-      createdAt: chatSupport.createdAt,
-      updatedAt: chatSupport.updatedAt
-    };
-
-    res.json({ success: true, ticket });
-  } catch (error) {
-    console.error('Error fetching chat support:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+  return {
+    $or: [
+      { assignedTo: { $exists: false } },
+      { assignedTo: null },
+      { assignedTo: adminObjectId },
+      {
+        status: 'closed',
+        'ticketHistory.resolvedBy': adminObjectId
+      }
+    ]
+  };
 };
 
-// Accept ticket (no-op for chat support, already open)
-const acceptTicket = async (req, res) => {
-  try {
-    const { ticketId } = req.params;
-    const adminId = req.user.id;
+const canAccessChatSupport = (req, chatSupport) => {
+  if (req.user?.role === 'superadmin') return true;
 
-    const chatSupport = await ChatSupport.findById(ticketId);
+  const adminObjectId = getAdminObjectId(req);
+  if (!adminObjectId || !chatSupport) return false;
 
-    if (!chatSupport) {
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
+  if (!chatSupport.assignedTo) return true;
+  if (chatSupport.assignedTo.toString() === adminObjectId.toString()) return true;
 
-    if (chatSupport.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only open chats can be accepted'
-      });
-    }
-
-    const ticket = {
-      _id: chatSupport._id,
-      ticketId: `CHAT-${chatSupport._id.toString().slice(-8).toUpperCase()}`,
-      userId: chatSupport.userId.toString(),
-      userEmail: chatSupport.userEmail,
-      userName: chatSupport.userName,
-      title: chatSupport.subject,
-      description: chatSupport.messages[0]?.message || '',
-      category: chatSupport.category,
-      priority: 'medium',
-      status: 'accepted',
-      messages: chatSupport.messages,
-      createdAt: chatSupport.createdAt,
-      updatedAt: chatSupport.updatedAt
-    };
-
-    emitSupportUpdate(ticket, 'accepted');
-
-    res.json({ success: true, ticket });
-  } catch (error) {
-    console.error('Error accepting chat:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+  return (
+    chatSupport.status === 'closed' &&
+    (chatSupport.ticketHistory || []).some(
+      (entry) => entry.resolvedBy?.toString() === adminObjectId.toString()
+    )
+  );
 };
 
-// Reject ticket (close chat support)
-const rejectTicket = async (req, res) => {
-  try {
-    const { ticketId } = req.params;
-    const { reason } = req.body;
+const rejectInaccessibleChatSupport = (req, res, chatSupport) => {
+  if (canAccessChatSupport(req, chatSupport)) return false;
 
-    const chatSupport = await ChatSupport.findById(ticketId);
-
-    if (!chatSupport) {
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
-
-    if (chatSupport.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only open chats can be rejected'
-      });
-    }
-
-    chatSupport.status = 'closed';
-    chatSupport.closedAt = new Date();
-
-    const adminId = req.user?.id || '000000000000000000000000';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
-      ? new mongoose.Types.ObjectId(adminId)
-      : null;
-
-    if (!chatSupport.assignedTo && adminObjectId) {
-      chatSupport.assignedTo = adminObjectId;
-      chatSupport.assignedToName = req.admin?.name || req.user?.username || 'Support Agent';
-    }
-
-    if (chatSupport.ticketHistory && chatSupport.ticketHistory.length > 0) {
-      const lastTicket = chatSupport.ticketHistory[chatSupport.ticketHistory.length - 1];
-      if (!lastTicket.closedAt) {
-        lastTicket.closedAt = new Date();
-        lastTicket.resolvedBy = adminObjectId;
-      }
-    }
-
-    if (!chatSupport.statusHistory) {
-      chatSupport.statusHistory = [];
-    }
-    chatSupport.statusHistory.push({
-      status: 'resolved',
-      performedBy: adminObjectId,
-      performedByName: req.admin?.name || req.user?.username || 'Support Agent',
-      timestamp: new Date(),
-      reason: reason || 'Ticket resolved'
-    });
-
-    const adminMsgObjectId = adminObjectId || new mongoose.Types.ObjectId('000000000000000000000000');
-
-    const rejectMessage = reason
-      ? `Ticket has been closed: ${reason}`
-      : 'Ticket has been closed';
-
-    chatSupport.messages.push({
-      senderId: adminMsgObjectId,
-      senderName: req.admin?.name || req.user?.username || 'Support Agent',
-      senderType: 'Admin',
-      message: rejectMessage,
-      timestamp: new Date()
-    });
-
-    await chatSupport.save();
-    console.log(`✅ Ticket ${ticketId} rejected - status: ${chatSupport.status}`);
-
-    if (adminObjectId) {
-      try {
-        await User.findByIdAndUpdate(
-          adminObjectId,
-          { $inc: { ticketsResolved: 1 } },
-          { new: true }
-        );
-        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
-      } catch (updateError) {
-        console.error('❌ Error updating admin ticketsResolved:', updateError);
-      }
-    }
-
-    if (chatSupport.userId) {
-      try {
-        await User.findByIdAndUpdate(
-          chatSupport.userId,
-          { $inc: { ticketsSubmittedResolved: 1 } },
-          { new: true }
-        );
-        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
-      } catch (updateError) {
-        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
-      }
-    }
-
-    const ticket = {
-      _id: chatSupport._id,
-      ticketId: `CHAT-${chatSupport._id.toString().slice(-8).toUpperCase()}`,
-      userId: chatSupport.userId.toString(),
-      userEmail: chatSupport.userEmail,
-      userName: chatSupport.userName,
-      title: chatSupport.subject,
-      description: chatSupport.messages[0]?.message || '',
-      category: chatSupport.category,
-      priority: 'medium',
-      status: 'rejected',
-      messages: chatSupport.messages,
-      createdAt: chatSupport.createdAt,
-      updatedAt: chatSupport.updatedAt
-    };
-
-    emitSupportUpdate(ticket, 'rejected');
-
-    res.json({ success: true, ticket });
-  } catch (error) {
-    console.error('Error rejecting chat:', error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
-  }
+  // Use 404 so ticket IDs cannot be enumerated across support agents.
+  res.status(404).json({ success: false, message: 'Chat support not found' });
+  return true;
 };
 
-// Resolve ticket (close chat support)
-const resolveTicket = async (req, res) => {
-  try {
-    const { ticketId } = req.params;
-    const { resolution } = req.body;
+const canModifyChatSupport = (req, chatSupport) => {
+  if (req.user?.role === 'superadmin') return true;
 
-    const chatSupport = await ChatSupport.findById(ticketId);
-
-    if (!chatSupport) {
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
-
-    if (chatSupport.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only open chats can be resolved'
-      });
-    }
-
-    chatSupport.status = 'closed';
-    chatSupport.closedAt = new Date();
-
-    const adminId = req.user?.id || '000000000000000000000000';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
-      ? new mongoose.Types.ObjectId(adminId)
-      : null;
-
-    if (!chatSupport.assignedTo && adminObjectId) {
-      chatSupport.assignedTo = adminObjectId;
-      chatSupport.assignedToName = req.admin?.name || req.user?.username || 'Support Agent';
-    }
-
-    if (!chatSupport.statusHistory) {
-      chatSupport.statusHistory = [];
-    }
-    chatSupport.statusHistory.push({
-      status: 'resolved',
-      performedBy: adminObjectId,
-      performedByName: req.admin?.name || req.user?.username || 'Support Agent',
-      timestamp: new Date(),
-      reason: resolution || 'Ticket resolved'
-    });
-
-    const adminMsgObjectId = adminObjectId || new mongoose.Types.ObjectId('000000000000000000000000');
-
-    const resolveMessage = resolution
-      ? `Ticket has been resolved: ${resolution}`
-      : 'Ticket has been resolved';
-
-    chatSupport.messages.push({
-      senderId: adminMsgObjectId,
-      senderName: req.admin?.name || req.user?.username || 'Support Agent',
-      senderType: 'Admin',
-      message: resolveMessage,
-      timestamp: new Date()
-    });
-
-    await chatSupport.save();
-    console.log(`✅ Ticket ${ticketId} resolved - status: ${chatSupport.status}`);
-
-    if (adminObjectId) {
-      try {
-        await User.findByIdAndUpdate(
-          adminObjectId,
-          { $inc: { ticketsResolved: 1 } },
-          { new: true }
-        );
-        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
-      } catch (updateError) {
-        console.error('❌ Error updating admin ticketsResolved:', updateError);
-      }
-    }
-
-    if (chatSupport.userId) {
-      try {
-        await User.findByIdAndUpdate(
-          chatSupport.userId,
-          { $inc: { ticketsSubmittedResolved: 1 } },
-          { new: true }
-        );
-        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
-      } catch (updateError) {
-        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
-      }
-    }
-
-    const ticket = {
-      _id: chatSupport._id,
-      ticketId: `CHAT-${chatSupport._id.toString().slice(-8).toUpperCase()}`,
-      userId: chatSupport.userId.toString(),
-      userEmail: chatSupport.userEmail,
-      userName: chatSupport.userName,
-      title: chatSupport.subject,
-      description: chatSupport.messages[0]?.message || '',
-      category: chatSupport.category,
-      priority: 'medium',
-      status: 'resolved',
-      messages: chatSupport.messages,
-      createdAt: chatSupport.createdAt,
-      updatedAt: chatSupport.updatedAt
-    };
-
-    emitSupportUpdate(ticket, 'resolved');
-
-    res.json({ success: true, ticket });
-  } catch (error) {
-    console.error('Error resolving chat:', error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
-  }
+  const adminObjectId = getAdminObjectId(req);
+  return Boolean(
+    adminObjectId &&
+      chatSupport?.assignedTo &&
+      chatSupport.assignedTo.toString() === adminObjectId.toString()
+  );
 };
 
-// Add message to chat support
-const addMessage = async (req, res) => {
-  try {
-    const { ticketId } = req.params;
-    const { message } = req.body;
-    const adminId = req.user?.id || '000000000000000000000000';
+const rejectUnownedChatSupport = (req, res, chatSupport) => {
+  if (canModifyChatSupport(req, chatSupport)) return false;
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({ success: false, message: 'Message is required' });
-    }
-
-    const chatSupport = await ChatSupport.findById(ticketId);
-
-    if (!chatSupport) {
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
-
-    if (chatSupport.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        message: 'Can only send messages to open chats'
-      });
-    }
-
-    const adminName = req.admin?.name || req.user?.username || 'Support Agent';
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
-      ? new mongoose.Types.ObjectId(adminId)
-      : new mongoose.Types.ObjectId('000000000000000000000000');
-
-    const newMessage = {
-      senderId: adminObjectId,
-      senderName: adminName,
-      senderType: 'Admin',
-      message: message.trim(),
-      timestamp: new Date()
-    };
-
-    chatSupport.messages.push(newMessage);
-    await chatSupport.save();
-
-    const ticket = {
-      _id: chatSupport._id,
-      ticketId: `CHAT-${chatSupport._id.toString().slice(-8).toUpperCase()}`,
-      userId: chatSupport.userId.toString(),
-      userEmail: chatSupport.userEmail,
-      userName: chatSupport.userName,
-      title: chatSupport.subject,
-      description: chatSupport.messages[0]?.message || '',
-      category: chatSupport.category,
-      priority: 'medium',
-      status: 'in_progress',
-      messages: chatSupport.messages,
-      createdAt: chatSupport.createdAt,
-      updatedAt: chatSupport.updatedAt
-    };
-
-    emitSupportUpdate(ticket, 'message_added');
-
-    res.json({ success: true, ticket });
-  } catch (error) {
-    console.error('Error adding message:', error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
-  }
+  res.status(403).json({
+    success: false,
+    message: 'Accept this ticket before modifying it'
+  });
+  return true;
 };
 
 // Get support statistics for dashboard
@@ -479,6 +114,14 @@ const getSupportStats = async (req, res) => {
 
 // Get all chat supports
 const getAllChatSupports = async (req, res) => {
+  const requestStartedAt = Date.now();
+  const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const logQuery = (stage, details) => {
+    if (SUPPORT_QUERY_LOGS_ENABLED) {
+      console.log(`[support:list:${requestId}] ${stage}`, details);
+    }
+  };
+
   try {
     const {
       status,
@@ -490,98 +133,132 @@ const getAllChatSupports = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    const adminId = req.user.id;
-    const adminRole = req.user.role;
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
-      ? new mongoose.Types.ObjectId(adminId)
-      : null;
+    const parsedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 50));
+    const allowedSortFields = new Set([
+      'createdAt',
+      'updatedAt',
+      'status',
+      'priority',
+      'category'
+    ]);
+    const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'createdAt';
+    const sortOptions = { [safeSortBy]: sortOrder === 'asc' ? 1 : -1 };
+    const accessFilter = buildChatSupportAccessFilter(req);
 
-    if (!adminObjectId) {
+    if (!accessFilter) {
       return res.status(400).json({ success: false, message: 'Invalid admin ID' });
     }
 
-    let baseFilters;
-
-    // Superadmins can see ALL tickets
-    if (adminRole === 'superadmin') {
-      baseFilters = {};
-    } else {
-      // Regular admins can only see unassigned tickets or tickets assigned to them
-      baseFilters = {
-        $or: [
-          { assignedTo: { $exists: false } },
-          { assignedTo: null },
-          { assignedTo: adminObjectId }
-        ]
-      };
+    const filters = { ...accessFilter };
+    if (status && status !== 'all') {
+      if (status === 'pending') {
+        filters.status = 'open';
+        filters.acceptedBy = { $ne: null };
+      } else if (status === 'resolved') {
+        filters.status = 'closed';
+      } else if (status === 'open' || status === 'closed') {
+        filters.status = status;
+      }
     }
-
-    const myTickets = await ChatSupport.find(baseFilters).select('userId');
-    const userIds = [...new Set(myTickets.map(t => t.userId.toString()))];
-
-    let filters;
-    // Superadmins see everything
-    if (adminRole === 'superadmin') {
-      filters = {};
-    } else {
-      // Regular admins see unassigned, assigned to them, or from users they've helped
-      filters = {
-        $or: [
-          { assignedTo: { $exists: false } },
-          { assignedTo: null },
-          { assignedTo: adminObjectId },
-          { userId: { $in: userIds.map(id => new mongoose.Types.ObjectId(id)) } },
-          { 'ticketHistory.resolvedBy': adminObjectId }
-        ]
-      };
-    }
-
-    // Apply additional filters (status, category, priority) for all roles
-    if (status && status !== 'all') filters.status = status;
     if (category && category !== 'all') filters.category = category;
     if (priority && priority !== 'all') filters.priority = priority;
 
-    const sortOptions = {};
-    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    logQuery('start', {
+      role: req.user?.role,
+      page: parsedPage,
+      limit: parsedLimit,
+      status: status || 'all',
+      category: category || 'all',
+      priority: priority || 'all'
+    });
 
-    const chatSupports = await ChatSupport.find(filters)
-      .sort(sortOptions)
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
-      .populate('userId', 'userType profileImage')
-      .lean();
+    const queryStartedAt = Date.now();
+    const [chatSupports, total] = await Promise.all([
+      ChatSupport.find(filters)
+        .sort(sortOptions)
+        .skip((parsedPage - 1) * parsedLimit)
+        .limit(parsedLimit)
+        .lean()
+        .maxTimeMS(15000),
+      ChatSupport.countDocuments(filters).maxTimeMS(15000)
+    ]);
 
-    const total = await ChatSupport.countDocuments(filters);
+    logQuery('tickets', {
+      returned: chatSupports.length,
+      total,
+      ms: Date.now() - queryStartedAt
+    });
 
-    // Map and include userType, profileImage, and displayStatus
-    const chatSupportsWithUserData = chatSupports.map(chat => {
-      let displayStatus = 'open';
-      if (chat.status === 'closed') {
-        displayStatus = 'resolved';
-      } else if (chat.status === 'open') {
-        displayStatus = chat.acceptedBy ? 'pending' : 'open';
-      }
+    const userIds = [
+      ...new Set(
+        chatSupports
+          .map((chat) => chat.userId?.toString())
+          .filter(Boolean)
+      )
+    ];
+    const usersStartedAt = Date.now();
+    const users = userIds.length
+      ? await User.find({ _id: { $in: userIds } })
+          .select('_id userType profileImage')
+          .lean()
+          .maxTimeMS(10000)
+      : [];
+    const usersById = new Map(users.map((user) => [user._id.toString(), user]));
+
+    logQuery('users', {
+      requested: userIds.length,
+      returned: users.length,
+      ms: Date.now() - usersStartedAt
+    });
+
+    const chatSupportsWithUserData = chatSupports.map((chat) => {
+      const supportUser = usersById.get(chat.userId?.toString());
+      const displayStatus =
+        chat.status === 'closed'
+          ? 'resolved'
+          : chat.acceptedBy
+            ? 'pending'
+            : 'open';
+
+      // Live unread count — user messages the assigned admin hasn't opened
+      // yet (getChatSupport marks them read). The stored schema field was
+      // never written, so it always showed 0.
+      const unreadCount = (chat.messages || []).filter(
+        (message) => message.senderType === 'User' && !message.isRead
+      ).length;
 
       return {
         ...chat,
-        userType: chat.userId?.userType || 'client',
-        userProfileImage: chat.userId?.profileImage || null,
-        displayStatus
+        priority: chat.priority || 'medium',
+        userType: supportUser?.userType || 'client',
+        userProfileImage: supportUser?.profileImage || null,
+        displayStatus,
+        unreadCount
       };
     });
 
-    res.json({
+    logQuery('complete', { ms: Date.now() - requestStartedAt });
+
+    return res.json({
       success: true,
       chatSupports: chatSupportsWithUserData,
       pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / limit),
+        current: parsedPage,
+        total: Math.ceil(total / parsedLimit),
         count: total
       }
     });
   } catch (error) {
-    console.error('Error fetching chat supports:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error(
+      `[support:list:${requestId}] failed after ${Date.now() - requestStartedAt}ms`,
+      error
+    );
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      ...(process.env.NODE_ENV !== 'production' ? { detail: error.message } : {})
+    });
   }
 };
 
@@ -597,6 +274,22 @@ const getChatSupport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
+    if (rejectInaccessibleChatSupport(req, res, chatSupport)) return;
+
+    // Opening the thread marks the user's messages as read — this is what
+    // clears the unread badge in the ticket list.
+    const hasUnread = chatSupport.messages?.some(
+      (message) => message.senderType === 'User' && !message.isRead
+    );
+    if (hasUnread) {
+      chatSupport.messages.forEach((message) => {
+        if (message.senderType === 'User' && !message.isRead) {
+          message.isRead = true;
+        }
+      });
+      await chatSupport.save();
+    }
+
     // Include userType, profileImage, and displayStatus in response
     let displayStatus = 'open';
     if (chatSupport.status === 'closed') {
@@ -608,6 +301,7 @@ const getChatSupport = async (req, res) => {
     const chatSupportObj = chatSupport.toObject ? chatSupport.toObject() : chatSupport;
     const chatSupportWithUserData = {
       ...chatSupportObj,
+      priority: chatSupport.priority || 'medium',
       userType: chatSupport.userId?.userType || 'client',
       userProfileImage: chatSupport.userId?.profileImage || null,
       displayStatus
@@ -624,92 +318,81 @@ const getChatSupport = async (req, res) => {
 const acceptChatSupport = async (req, res) => {
   try {
     const { chatSupportId } = req.params;
-    const adminId = req.user?.id || '000000000000000000000000';
-
-    console.log('🔍 Accepting ticket:', { chatSupportId, adminId, user: req.user });
-
-    const chatSupport = await ChatSupport.findById(chatSupportId);
-
-    console.log('📝 Found chat support:', chatSupport ? 'YES' : 'NO');
-
-    if (!chatSupport) {
-      console.log('❌ Chat support not found');
-      return res.status(404).json({ success: false, message: 'Chat support not found' });
-    }
-
-    if (chatSupport.status !== 'open') {
-      console.log('❌ Status not open:', chatSupport.status);
-      return res.status(400).json({
-        success: false,
-        message: 'Only open chats can be accepted'
-      });
-    }
-
-    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
-      ? new mongoose.Types.ObjectId(adminId)
-      : null;
-
-    console.log('🔑 Admin ObjectId:', adminObjectId?.toString());
+    const adminObjectId = getAdminObjectId(req);
+    const adminRole = req.user?.role;
+    const adminName = req.admin?.name || req.user?.username || 'Support Agent';
 
     if (!adminObjectId) {
-      console.log('❌ Invalid admin ID');
       return res.status(400).json({
         success: false,
         message: 'Invalid admin ID'
       });
     }
 
-    // Check if user is an admin (allow both admin and superadmin)
-    const adminRole = req.user?.role;
-    const adminUsername = req.user?.username;
+    const assignmentFilter =
+      adminRole === 'superadmin'
+        ? {}
+        : {
+            $or: [
+              { assignedTo: { $exists: false } },
+              { assignedTo: null },
+              { assignedTo: adminObjectId }
+            ]
+          };
+    const acceptedAt = new Date();
+    const chatSupport = await ChatSupport.findOneAndUpdate(
+      {
+        _id: chatSupportId,
+        status: 'open',
+        acceptedBy: null,
+        ...assignmentFilter
+      },
+      {
+        $set: {
+          assignedTo: adminObjectId,
+          assignedToName: adminName,
+          acceptedBy: adminObjectId,
+          acceptedByName: adminName,
+          acceptedAt
+        },
+        $push: {
+          messages: {
+            senderId: adminObjectId,
+            senderName: adminName,
+            senderType: 'Admin',
+            message: 'Ticket has been accepted',
+            timestamp: acceptedAt,
+            isRead: true
+          }
+        }
+      },
+      { new: true, runValidators: true }
+    ).populate('userId', 'userType profileImage');
 
-    console.log('👤 Admin from session:', { username: adminUsername, role: adminRole });
+    if (!chatSupport) {
+      const current = await ChatSupport.findById(chatSupportId)
+        .select('status acceptedBy assignedTo')
+        .lean();
 
-    if (!adminUsername || !adminRole) {
-      console.log('❌ Admin session data incomplete');
-      return res.status(401).json({
+      if (!current) {
+        return res.status(404).json({
+          success: false,
+          message: 'Chat support not found'
+        });
+      }
+      if (current.status !== 'open') {
+        return res.status(409).json({
+          success: false,
+          message: 'Only open tickets can be accepted'
+        });
+      }
+
+      return res.status(409).json({
         success: false,
-        message: 'Admin session data incomplete'
+        message: 'This ticket has already been accepted by another admin'
       });
     }
 
-    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
-      console.log('❌ Not an admin or superadmin:', adminRole);
-      return res.status(403).json({
-        success: false,
-        message: 'Only admins can accept tickets.'
-      });
-    }
-
-    // Regular admins cannot take tickets assigned to others, but superadmins can
-    if (adminRole !== 'superadmin' && chatSupport.assignedTo && !chatSupport.assignedTo.equals(adminObjectId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'This ticket is already assigned to another admin'
-      });
-    }
-
-    // Check if already accepted
-    if (chatSupport.acceptedBy) {
-      return res.status(400).json({
-        success: false,
-        message: 'This ticket has already been accepted'
-      });
-    }
-
-    // Accept the ticket
-    chatSupport.assignedTo = adminObjectId;
-    chatSupport.assignedToName = req.admin?.name || req.user?.username || 'Support Agent';
-    chatSupport.acceptedBy = adminObjectId;
-    chatSupport.acceptedByName = req.admin?.name || req.user?.username || 'Support Agent';
-    chatSupport.acceptedAt = new Date();
-
-    await chatSupport.save();
-
-    console.log(`✅ Ticket ${chatSupportId} accepted by admin ${adminObjectId.toString()} (${adminUsername})`);
-    console.log(`Ticket assignedTo: ${chatSupport.assignedTo.toString()}, acceptedBy: ${chatSupport.acceptedBy.toString()}`);
-
-    // Log activity - ALWAYS log this action
     try {
       await logActivity(
         adminObjectId.toString(),
@@ -722,37 +405,43 @@ const acceptChatSupport = async (req, res) => {
           metadata: {
             ticketId: chatSupport.ticketId,
             userName: chatSupport.userName,
-            adminUsername: adminUsername,
+            adminUsername: req.user?.username,
             subject: chatSupport.subject
           },
           ipAddress: req.ip
         }
       );
-      console.log('✅ Activity logged successfully');
     } catch (activityError) {
-      console.error('❌ Error logging activity:', activityError);
-      // Continue even if activity logging fails
+      console.error('Error logging support acceptance:', activityError);
     }
 
-    const freshChatSupport = await ChatSupport.findById(chatSupportId)
-      .populate('userId', 'userType profileImage')
-      .lean();
-
-    console.log('Emitting socket update with status:', freshChatSupport.status);
-    emitChatSupportUpdate(freshChatSupport._id, {
-      status: freshChatSupport.status,
-      assignedTo: freshChatSupport.assignedTo,
-      assignedToName: freshChatSupport.assignedToName,
-      acceptedBy: freshChatSupport.acceptedBy,
-      acceptedByName: freshChatSupport.acceptedByName,
-      acceptedAt: freshChatSupport.acceptedAt,
-      updatedAt: freshChatSupport.updatedAt
+    emitChatSupportUpdate(chatSupport._id, {
+      status: chatSupport.status,
+      assignedTo: chatSupport.assignedTo,
+      assignedToName: chatSupport.assignedToName,
+      acceptedBy: chatSupport.acceptedBy,
+      acceptedByName: chatSupport.acceptedByName,
+      acceptedAt: chatSupport.acceptedAt,
+      messages: chatSupport.messages,
+      updatedAt: chatSupport.updatedAt
     });
 
-    res.json({ success: true, chatSupport: freshChatSupport });
+    return res.json({
+      success: true,
+      chatSupport: {
+        ...chatSupport.toObject(),
+        priority: chatSupport.priority || 'medium',
+        userType: chatSupport.userId?.userType || 'client',
+        userProfileImage: chatSupport.userId?.profileImage || null,
+        displayStatus: 'pending'
+      }
+    });
   } catch (error) {
     console.error('Error accepting chat support:', error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 };
 
@@ -775,6 +464,8 @@ const closeChatSupport = async (req, res) => {
     if (!chatSupport) {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
+
+    if (rejectUnownedChatSupport(req, res, chatSupport)) return;
 
     if (chatSupport.status !== 'open') {
       return res.status(400).json({
@@ -909,6 +600,8 @@ const reopenChatSupport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
+    if (rejectUnownedChatSupport(req, res, chatSupport)) return;
+
     if (chatSupport.status !== 'closed') {
       return res.status(400).json({
         success: false,
@@ -1009,6 +702,8 @@ const addChatSupportMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
+    if (rejectUnownedChatSupport(req, res, chatSupport)) return;
+
     if (chatSupport.status !== 'open') {
       return res.status(400).json({
         success: false,
@@ -1041,6 +736,59 @@ const addChatSupportMessage = async (req, res) => {
   }
 };
 
+// Add an internal, admin-only note to a chat support thread — used for
+// dispute mediation reasoning that should never reach the customer (see
+// isInternal on ChatSupport.messages, and stripInternalMessages on
+// kayod/server's user-facing endpoints, which filter these out).
+const addInternalNote = async (req, res) => {
+  try {
+    const { chatSupportId } = req.params;
+    const { note } = req.body;
+    const adminId = req.user?.id || '000000000000000000000000';
+    const adminRole = req.user?.role;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ success: false, message: 'Note is required' });
+    }
+
+    if (adminRole !== 'admin' && adminRole !== 'superadmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can add internal notes'
+      });
+    }
+
+    const chatSupport = await ChatSupport.findById(chatSupportId);
+
+    if (!chatSupport) {
+      return res.status(404).json({ success: false, message: 'Chat support not found' });
+    }
+
+    if (rejectUnownedChatSupport(req, res, chatSupport)) return;
+
+    const adminName = req.admin?.name || req.user?.username || 'Support Agent';
+    const adminObjectId = mongoose.Types.ObjectId.isValid(adminId)
+      ? new mongoose.Types.ObjectId(adminId)
+      : new mongoose.Types.ObjectId('000000000000000000000000');
+
+    chatSupport.messages.push({
+      senderId: adminObjectId,
+      senderName: adminName,
+      senderType: 'Admin',
+      message: note.trim(),
+      isInternal: true,
+      timestamp: new Date()
+    });
+
+    await chatSupport.save();
+
+    res.json({ success: true, chatSupport });
+  } catch (error) {
+    console.error('Error adding internal note:', error);
+    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
+  }
+};
+
 const broadcastMobileMessage = async (req, res) => {
   try {
     const { chatSupportId, message } = req.body;
@@ -1068,12 +816,6 @@ const broadcastMobileMessage = async (req, res) => {
 };
 
 module.exports = {
-  getAllTickets,
-  getTicket,
-  acceptTicket,
-  rejectTicket,
-  resolveTicket,
-  addMessage,
   getSupportStats,
   getAllChatSupports,
   getChatSupport,
@@ -1081,5 +823,6 @@ module.exports = {
   closeChatSupport,
   reopenChatSupport,
   addChatSupportMessage,
+  addInternalNote,
   broadcastMobileMessage
 };

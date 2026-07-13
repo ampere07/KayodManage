@@ -25,47 +25,64 @@ const reportRoutes = require('./app/routes/reportRoutes');
 dotenv.config();
 
 const app = express();
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 const server = createServer(app);
 
-const allowedOrigins = [
+const configuredOrigins = String(
+  process.env.ADMIN_FRONTEND_ORIGINS || process.env.ADMIN_FRONTEND_URL || ''
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = new Set([
   'http://localhost:5173',
-  'http://localhost:8081',
-  'http://localhost:3000',
-  'http://localhost:19000',
-  'http://localhost:19006',
-  'http://10.0.2.2:8081',
-  'exp://localhost:8081',
-];
+  'http://127.0.0.1:5173',
+  ...configuredOrigins
+]);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+
+  if (process.env.NODE_ENV !== 'production') {
+    return /^http:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(
+      origin
+    );
+  }
+
+  return false;
+};
+
+const verifyOrigin = (origin, callback) => {
+  if (isAllowedOrigin(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  callback(new Error('Origin is not allowed by CORS policy'));
+};
 
 const io = new Server(server, {
   cors: {
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://192.168.')) {
-        callback(null, true);
-      } else {
-        callback(null, true);
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    origin: verifyOrigin,
+    methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
 // Middleware
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || origin?.startsWith('http://192.168.')) {
-      callback(null, true);
-    } else {
-      callback(null, true);
-    }
-  },
+  origin: verifyOrigin,
   credentials: true
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionConfig);
+io.engine.use(sessionConfig);
 
 // Connect to MongoDB
 connectDatabase();

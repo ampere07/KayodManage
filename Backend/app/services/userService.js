@@ -22,7 +22,7 @@ class UserService {
 
     const userIds = users.map(user => user._id);
 
-    const wallets = await Wallet.find({ user: { $in: userIds } }).lean();
+    const wallets = await Wallet.find({ userId: { $in: userIds } }).lean();
     const feeRecords = await FeeRecord.find({ provider: { $in: userIds } }).lean();
 
     const walletMap = this._createWalletMap(wallets);
@@ -47,7 +47,7 @@ class UserService {
     const user = await User.findById(userId).lean();
     if (!user) return null;
 
-    const wallet = await Wallet.findOne({ user: userId }).lean();
+    const wallet = await Wallet.findOne({ userId }).lean();
     const feeRecords = await FeeRecord.find({ provider: userId }).lean();
 
     // Fetch verification record for audit details
@@ -325,7 +325,7 @@ class UserService {
   _createWalletMap(wallets) {
     const map = {};
     wallets.forEach(wallet => {
-      map[wallet.user.toString()] = wallet;
+      map[wallet.userId.toString()] = wallet;
     });
     return map;
   }

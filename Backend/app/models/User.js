@@ -121,6 +121,19 @@ const UserSchema = new Schema({
     type: Boolean,
     default: false
   },
+  ratings: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  isPremium: {
+    type: Boolean,
+    default: false
+  },
+  premiumExpiresAt: {
+    type: Date,
+    default: null
+  },
   isOnline: {
     type: Boolean,
     default: false
@@ -160,7 +173,7 @@ const UserSchema = new Schema({
 UserSchema.virtual('wallet', {
   ref: 'Wallet',
   localField: '_id',
-  foreignField: 'user',
+  foreignField: 'userId',
   justOne: true
 });
 

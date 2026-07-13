@@ -9,7 +9,7 @@ import {
   Clock
 } from 'lucide-react';
 import { SupportChatModal } from '../components/Modals';
-import { supportService } from '../services';
+import { supportService, jobsService } from '../services';
 import { useAuth } from '../context/AuthContext';
 import { useSupportTickets } from '../hooks/useSupportTickets';
 import { useSupportSocket } from '../hooks/useSupportSocket';
@@ -22,7 +22,10 @@ const Support: React.FC = () => {
   const [selectedChat, setSelectedChat] = useState<ChatSupport | null>(null);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
   const [message, setMessage] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
+  const [sendingChatId, setSendingChatId] = useState<string | null>(null);
+  const selectedChatIdRef = useRef<string | null>(null);
+  selectedChatIdRef.current = selectedChat?._id || null;
+  const sendingMessage = selectedChat?._id === sendingChatId;
 
   const {
     tickets,
@@ -41,34 +44,28 @@ const Support: React.FC = () => {
     reopenTicket
   } = useSupportTickets();
 
-  // Store timeout IDs to clear them when messages arrive
-  const messageTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const selectRequestIdRef = useRef(0);
 
   const handleNewMessage = useCallback((data: any) => {
     const { chatSupportId, message: newMessage } = data;
     console.log('[handleNewMessage] Received:', { chatSupportId, newMessage });
     if (!newMessage) return;
 
-    // Clear any pending timeouts for this chat
-    const timeoutId = messageTimeoutsRef.current.get(chatSupportId);
-    if (timeoutId) {
-      console.log('[handleNewMessage] Clearing timeout for chat:', chatSupportId);
-      clearTimeout(timeoutId);
-      messageTimeoutsRef.current.delete(chatSupportId);
-    } else {
-      console.log('[handleNewMessage] No timeout found for chat:', chatSupportId);
-    }
-
-    setSendingMessage(false);
-
     // Check for duplicates before adding
     const currentTicket = tickets.find(t => t._id === chatSupportId);
     const messageExists = currentTicket?.messages?.some(m => m._id === newMessage._id);
 
     if (!messageExists) {
+      // A user message on a thread the admin isn't looking at bumps its
+      // unread badge; opening the thread clears it (server marks read).
+      const isUnreadUserMessage =
+        newMessage.senderType === 'User' && selectedChat?._id !== chatSupportId;
       updateTicket(chatSupportId, {
         messages: [...(currentTicket?.messages?.filter(m => !m._id?.startsWith('temp-')) || []), newMessage],
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        ...(isUnreadUserMessage
+          ? { unreadCount: (currentTicket?.unreadCount || 0) + 1 }
+          : {})
       });
     }
 
@@ -104,25 +101,39 @@ const Support: React.FC = () => {
   }, [updateTicket, selectedChat]);
 
   const {
-    isConnected,
-    sendMessage: socketSendMessage,
     joinChat,
     leaveChat
   } = useSupportSocket(handleNewMessage, handleChatUpdate, fetchTickets);
 
   const handleSelectChat = async (chat: ChatSupport) => {
+    const requestId = ++selectRequestIdRef.current;
+
+    // Switching threads directly (e.g. dispute counterpart button) — leave
+    // the previous socket room first.
+    if (selectedChat && selectedChat._id !== chat._id) {
+      leaveChat(selectedChat._id);
+    }
+
     try {
       const data = await supportService.getChatSupportById(chat._id);
+      if (requestId !== selectRequestIdRef.current) return;
+
       setSelectedChat(data.chatSupport);
       setIsChatModalOpen(true);
       joinChat(chat._id);
+      // Opening the thread marked the user's messages read server-side.
+      updateTicket(chat._id, { unreadCount: 0 });
     } catch (error) {
+      if (requestId !== selectRequestIdRef.current) return;
+
+      console.error('Error loading support conversation:', error);
       setSelectedChat(chat);
       setIsChatModalOpen(true);
     }
   };
 
   const closeChatModal = () => {
+    selectRequestIdRef.current += 1;
     if (selectedChat) {
       leaveChat(selectedChat._id);
     }
@@ -136,81 +147,61 @@ const Support: React.FC = () => {
   const handleSendMessage = async () => {
     if (!message.trim() || !selectedChat || sendingMessage) return;
 
+    const chatSupportId = selectedChat._id;
     const messageText = message.trim();
-    console.log('[handleSendMessage] Sending message:', messageText, 'to chat:', selectedChat._id);
-    setSendingMessage(true);
+    setSendingChatId(chatSupportId);
     setMessage('');
 
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage: Message = {
       _id: tempId,
       senderType: 'Admin',
-      senderName: 'Support Agent',
+      senderName: user?.name || user?.username || 'Support Agent',
       message: messageText,
       timestamp: new Date().toISOString()
     };
 
-    console.log('[handleSendMessage] Adding optimistic message with tempId:', tempId);
     setSelectedChat(prev => {
-      if (!prev) return prev;
+      if (!prev || prev._id !== chatSupportId) return prev;
       return {
         ...prev,
         messages: [...(prev.messages || []), optimisticMessage]
       };
     });
 
-    const timeoutId = setTimeout(() => {
-      console.log('[TIMEOUT FIRED] Removing temp message after 10s:', tempId);
+    // Always send over HTTP — the response is the commit acknowledgment.
+    // (The old socket emit was fire-and-forget: a flaky websocket silently
+    // dropped messages.) Other admin viewers still receive the message via
+    // the backend's change-stream broadcast; handleNewMessage dedupes by _id.
+    try {
+      const result = await supportService.sendMessage(chatSupportId, {
+        message: messageText
+      });
+
       setSelectedChat(prev => {
-        if (!prev) return prev;
+        if (!prev || prev._id !== chatSupportId) return prev;
+        const withoutTemp = prev.messages?.filter(m => m._id !== tempId) || [];
+        const alreadyExists = withoutTemp.some(m => m._id === result.message._id);
         return {
           ...prev,
-          messages: prev.messages?.filter(m => m._id !== tempId) || []
+          messages: alreadyExists ? withoutTemp : [...withoutTemp, result.message]
         };
       });
-      setMessage(messageText);
-      setSendingMessage(false);
-      messageTimeoutsRef.current.delete(selectedChat._id);
-    }, 10000);
-
-    // Store the timeout ID so it can be cleared when the message arrives
-    messageTimeoutsRef.current.set(selectedChat._id, timeoutId);
-    console.log('[handleSendMessage] Timeout set and stored for chat:', selectedChat._id);
-
-    try {
-      if (isConnected) {
-        console.log('[handleSendMessage] Sending via socket...');
-        socketSendMessage(selectedChat._id, messageText, 'Support Agent');
-      } else {
-        console.log('[handleSendMessage] Socket disconnected, using HTTP API...');
-        const result = await supportService.sendMessage(selectedChat._id, { message: messageText });
-        clearTimeout(timeoutId);
-        messageTimeoutsRef.current.delete(selectedChat._id);
-
-        setSelectedChat(prev => {
-          if (!prev) return prev;
-          const filtered = prev.messages?.filter(m => !m._id?.startsWith('temp-')) || [];
-          return {
-            ...prev,
-            messages: [...filtered, result.message]
-          };
-        });
-
-        setSendingMessage(false);
-      }
     } catch (error) {
       console.error('[handleSendMessage] Error sending message:', error);
-      clearTimeout(timeoutId);
-      messageTimeoutsRef.current.delete(selectedChat._id);
       setSelectedChat(prev => {
-        if (!prev) return prev;
+        if (!prev || prev._id !== chatSupportId) return prev;
         return {
           ...prev,
           messages: prev.messages?.filter(m => m._id !== tempId) || []
         };
       });
-      setMessage(messageText);
-      setSendingMessage(false);
+      if (selectedChatIdRef.current === chatSupportId) {
+        setMessage(messageText);
+      }
+      alert('Your message was not sent. Please try again.');
+    } finally {
+      setSendingChatId(current => current === chatSupportId ? null : current);
     }
   };
 
@@ -220,20 +211,68 @@ const Support: React.FC = () => {
         await closeTicket(chatSupportId);
         closeChatModal();
       } else if (action === 'reopen') {
-        await reopenTicket(chatSupportId);
+        const result = await reopenTicket(chatSupportId);
+        setSelectedChat(prev =>
+          prev?._id === chatSupportId
+            ? { ...prev, ...result.chatSupport }
+            : prev
+        );
       }
     } catch (error) {
       console.error(`Error ${action} ticket:`, error);
+      throw error;
     }
   };
 
   const handleAcceptTicket = async (chatSupportId: string) => {
     try {
-      await acceptTicket(chatSupportId);
+      const result = await acceptTicket(chatSupportId);
+      setSelectedChat(prev =>
+        prev?._id === chatSupportId
+          ? { ...prev, ...result.chatSupport }
+          : prev
+      );
     } catch (error) {
       console.error('Error accepting ticket:', error);
+      throw error;
     }
   };
+
+  const refreshSelectedChat = async (chatSupportId: string) => {
+    const data = await supportService.getChatSupportById(chatSupportId);
+    setSelectedChat(prev =>
+      prev?._id === chatSupportId ? data.chatSupport : prev
+    );
+    updateTicket(chatSupportId, data.chatSupport);
+  };
+
+  const handleResolveDispute = async (
+    jobId: string,
+    outcome: 'pay_provider' | 'refund_client' | 'rebook',
+    note?: string
+  ) => {
+    await jobsService.resolveDispute(jobId, outcome, note);
+    if (selectedChat) {
+      await refreshSelectedChat(selectedChat._id);
+    }
+  };
+
+  const handleAddInternalNote = async (chatSupportId: string, note: string) => {
+    await supportService.addInternalNote(chatSupportId, note);
+    await refreshSelectedChat(chatSupportId);
+  };
+
+  // The other party's thread of the same dispute — raiseDispute files one
+  // ChatSupport per party, cross-linked by metadata.jobId.
+  const counterpartChat =
+    selectedChat?.metadata?.kind === 'dispute' && selectedChat.metadata?.jobId
+      ? tickets.find(
+          t =>
+            t._id !== selectedChat._id &&
+            t.metadata?.kind === 'dispute' &&
+            t.metadata?.jobId === selectedChat.metadata.jobId
+        ) || null
+      : null;
 
   const stats = calculateTicketStats(tickets);
 
@@ -456,6 +495,7 @@ const Support: React.FC = () => {
                     {paginatedTickets.map((chat) => (
                       <tr
                         key={chat._id}
+                        data-testid={`support-ticket-row-${chat._id}`}
                         onClick={() => handleSelectChat(chat)}
                         className="hover:bg-gray-50 transition-colors cursor-pointer"
                       >
@@ -539,6 +579,7 @@ const Support: React.FC = () => {
                 {paginatedTickets.map((chat) => (
                   <div
                     key={chat._id}
+                    data-testid={`support-ticket-row-${chat._id}`}
                     onClick={() => handleSelectChat(chat)}
                     className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
                   >
@@ -677,7 +718,10 @@ const Support: React.FC = () => {
         sendingMessage={sendingMessage}
         handleChatAction={handleChatAction}
         handleAcceptTicket={handleAcceptTicket}
-        chatSupports={tickets}
+        onResolveDispute={handleResolveDispute}
+        onAddInternalNote={handleAddInternalNote}
+        counterpartChat={counterpartChat}
+        onSwitchChat={handleSelectChat}
       />
     </div>
   );

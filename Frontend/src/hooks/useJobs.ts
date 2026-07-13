@@ -29,7 +29,9 @@ export const useJobCounts = () => {
   return useQuery({
     queryKey: [JOBS_QUERY_KEY, 'counts'],
     queryFn: async () => {
-      const [totalData, openData, assignedData, completedData] = await Promise.all([
+      // Was labeled "assigned" — there is no "assigned" job status in the
+      // real app (see improvements doc §2); this counts in_progress jobs.
+      const [totalData, openData, inProgressData, completedData] = await Promise.all([
         jobsService.getJobs({ limit: 1, page: 1 }),
         jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
         jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
@@ -41,7 +43,7 @@ export const useJobCounts = () => {
       return {
         total: totalData.pagination?.total || 0,
         open: openData.pagination?.total || 0,
-        assigned: assignedData.pagination?.total || 0,
+        inProgress: inProgressData.pagination?.total || 0,
         completed: completedData.pagination?.total || 0,
         totalValue
       };
@@ -87,7 +89,8 @@ export const useJobMutations = () => {
   };
 
   const updateJobStatus = useMutation({
-    mutationFn: ({ jobId, status }: { jobId: string; status: 'open' | 'in_progress' | 'completed' | 'cancelled' }) =>
+    // "cancelled" intentionally excluded — see forceCancelJob below.
+    mutationFn: ({ jobId, status }: { jobId: string; status: 'open' | 'in_progress' | 'completed' }) =>
       jobsService.updateJobStatus(jobId, { status }),
     onSuccess: () => {
       invalidateJobs();
@@ -95,6 +98,22 @@ export const useJobMutations = () => {
     },
     onError: () => {
       toast.error('Failed to update job status');
+    },
+  });
+
+  const forceCancelJob = useMutation({
+    mutationFn: ({ jobId, reason }: { jobId: string; reason?: string }) =>
+      jobsService.forceCancelJob(jobId, reason),
+    onSuccess: (data) => {
+      invalidateJobs();
+      toast.success(
+        data.refundedAmount > 0
+          ? `Job cancelled — ₱${data.refundedAmount} refunded to client`
+          : 'Job cancelled successfully'
+      );
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || 'Failed to cancel job');
     },
   });
 
@@ -109,8 +128,45 @@ export const useJobMutations = () => {
     },
   });
 
+  const hideJob = useMutation({
+    mutationFn: (jobId: string) => jobsService.hideJob(jobId),
+    onSuccess: () => {
+      invalidateJobs();
+      toast.success('Job hidden successfully');
+    },
+    onError: () => {
+      toast.error('Failed to hide job');
+    },
+  });
+
+  const unhideJob = useMutation({
+    mutationFn: (jobId: string) => jobsService.unhideJob(jobId),
+    onSuccess: () => {
+      invalidateJobs();
+      toast.success('Job unhidden successfully');
+    },
+    onError: () => {
+      toast.error('Failed to unhide job');
+    },
+  });
+
+  const restoreJob = useMutation({
+    mutationFn: (jobId: string) => jobsService.restoreJob(jobId),
+    onSuccess: () => {
+      invalidateJobs();
+      toast.success('Job restored successfully');
+    },
+    onError: () => {
+      toast.error('Failed to restore job');
+    },
+  });
+
   return {
     updateJobStatus,
+    forceCancelJob,
     deleteJob,
+    hideJob,
+    unhideJob,
+    restoreJob,
   };
 };

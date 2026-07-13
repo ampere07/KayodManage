@@ -7,7 +7,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  XCircle
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -149,6 +150,30 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     } catch (error) {
       console.error('Failed to restore job:', error);
       toast.error('Failed to restore job');
+    }
+  };
+
+  const handleForceCancelJob = async () => {
+    if (!job) return;
+
+    const reason = window.prompt(
+      'Reason for cancelling this job? This will release any held payment back to the client in full and notify both parties.'
+    );
+    if (reason === null) return; // user hit Cancel on the prompt
+
+    try {
+      const result = await jobsService.forceCancelJob(job._id, reason || undefined);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+      toast.success(
+        result.refundedAmount > 0
+          ? `Job cancelled — ₱${result.refundedAmount} refunded to client`
+          : 'Job cancelled successfully'
+      );
+      onClose();
+    } catch (error: any) {
+      console.error('Failed to cancel job:', error);
+      toast.error(error?.response?.data?.error || 'Failed to cancel job');
     }
   };
 
@@ -304,6 +329,53 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 <p className="text-sm font-medium text-gray-900 capitalize">{job.paymentMethod}</p>
               </div>
             </div>
+
+            {(job.completionStatus?.dispute?.isActive ||
+              job.cancellation?.reason ||
+              (job.escrowStatus && job.escrowStatus !== 'none')) && (
+              <>
+                <div className="mb-6 space-y-3">
+                  {job.completionStatus?.dispute?.isActive && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                      <p className="text-sm font-semibold text-amber-800 mb-1">
+                        Active Dispute — raised by {job.completionStatus.dispute.raisedBy || 'unknown'}
+                      </p>
+                      <p className="text-sm text-amber-900">{job.completionStatus.dispute.reason || 'No reason given'}</p>
+                      {job.completionStatus.dispute.raisedAt && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          Raised {new Date(job.completionStatus.dispute.raisedAt).toLocaleString('en-US')}
+                        </p>
+                      )}
+                      <p className="text-xs text-amber-700 mt-2">Resolve this from the Support inbox.</p>
+                    </div>
+                  )}
+
+                  {job.cancellation?.reason && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                      <p className="text-sm font-semibold text-red-800 mb-1">Cancellation</p>
+                      <p className="text-sm text-red-900">{job.cancellation.reason}</p>
+                      <p className="text-xs text-red-700 mt-1">
+                        Fee applied: {job.cancellation.feeApplied ? formatCurrency(job.cancellation.feeApplied) : '₱0'}
+                        {job.cancellation.cancelledAt &&
+                          ` — ${new Date(job.cancellation.cancelledAt).toLocaleString('en-US')}`}
+                      </p>
+                    </div>
+                  )}
+
+                  {job.escrowStatus && job.escrowStatus !== 'none' && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <p className="text-sm font-semibold text-blue-800 mb-1">Escrow</p>
+                      <p className="text-sm text-blue-900 capitalize">Status: {job.escrowStatus}</p>
+                      {job.escrowReleaseAt && (
+                        <p className="text-xs text-blue-700 mt-1">
+                          Release date: {new Date(job.escrowReleaseAt).toLocaleString('en-US')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
             <div className="border-t border-gray-300 mb-6 -mx-6" />
 
@@ -502,6 +574,16 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               </>
             )}
           </div>
+          {!job.archived && job.status !== 'cancelled' && job.status !== 'completed' && (
+            <button
+              onClick={handleForceCancelJob}
+              className="w-full mt-3 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+              data-testid="admin-force-cancel-job-btn"
+            >
+              <XCircle className="h-4 w-4" />
+              Cancel Job (release held payment)
+            </button>
+          )}
         </div>
       </div>
 
