@@ -270,7 +270,10 @@ const JobSchema = new Schema({
     default: null
   },
   startNavigation: {
-    type: Boolean,
+    // Mirrors kayod/server's tri-state field: false (idle), true (en route),
+    // and "arrived". Admin dispute resolution saves the shared Job document,
+    // so this schema must accept the app's arrival value without casting it.
+    type: Schema.Types.Mixed,
     default: false
   },
   navigationStartedAt: {
