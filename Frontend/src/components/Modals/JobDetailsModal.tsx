@@ -378,7 +378,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               <>
                 <div className="px-6 pt-6 space-y-3">
                   {job.completionStatus?.dispute?.isActive && (
-                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                    <div data-testid="admin-job-active-dispute-banner" className="rounded-lg border border-amber-300 bg-amber-50 p-4">
                       <p className="text-sm font-semibold text-amber-800 mb-1">
                         Active Dispute — raised by {job.completionStatus.dispute.raisedBy || 'unknown'}
                       </p>
@@ -405,11 +405,11 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   )}
 
                   {job.escrowStatus && job.escrowStatus !== 'none' && (
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <div data-testid="admin-job-escrow-card" className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                       <p className="text-sm font-semibold text-blue-800 mb-1">Escrow</p>
-                      <p className="text-sm text-blue-900 capitalize">Status: {job.escrowStatus}</p>
+                      <p data-testid="admin-job-escrow-status" className="text-sm text-blue-900 capitalize">Status: {job.escrowStatus}</p>
                       {job.escrowReleaseAt && (
-                        <p className="text-xs text-blue-700 mt-1">
+                        <p data-testid="admin-job-escrow-release-date" className="text-xs text-blue-700 mt-1">
                           Release date: {new Date(job.escrowReleaseAt).toLocaleString('en-US')}
                         </p>
                       )}
@@ -635,7 +635,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
       <div className="border-t border-gray-100 p-6 bg-white flex-shrink-0">
           <div className="flex gap-3">
-            {job.archived && job.archiveType === 'removed' ? (
+            {job.isDeleted ? (
               <button
                 onClick={handleRestoreJob}
                 className="flex-1 px-4 py-3.5 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 shadow-md shadow-emerald-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
@@ -643,23 +643,6 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                 <RotateCcw className="h-4 w-4" />
                 Restore Job
               </button>
-            ) : job.archived && job.archiveType === 'hidden' ? (
-              <>
-                <button
-                  onClick={handleUnhideJob}
-                  className="flex-1 px-4 py-3.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md shadow-blue-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                >
-                  <Eye className="h-4 w-4" />
-                  Unhide
-                </button>
-                <button
-                  onClick={handleDeleteJob}
-                  className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-700 shadow-md shadow-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </button>
-              </>
             ) : (
               <>
                 {job.isHidden ? (
@@ -689,7 +672,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
               </>
             )}
           </div>
-          {!job.archived && job.status !== 'cancelled' && job.status !== 'completed' && (
+          {!job.isHidden && !job.isDeleted && job.status !== 'cancelled' && job.status !== 'completed' && (
             <button
               onClick={handleForceCancelJob}
               className="w-full mt-3 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"

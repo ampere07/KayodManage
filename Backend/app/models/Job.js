@@ -96,7 +96,7 @@ const JobSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ['open', 'in_progress', 'scheduled', 'completed', 'cancelled'],
+    enum: ['open', 'in_progress', 'scheduled', 'completed', 'cancelled', 'expired'],
     default: 'open'
   },
   userId: {
@@ -270,7 +270,10 @@ const JobSchema = new Schema({
     default: null
   },
   startNavigation: {
-    type: Boolean,
+    // Mirrors kayod/server's tri-state field: false (idle), true (en route),
+    // and "arrived". Admin dispute resolution saves the shared Job document,
+    // so this schema must accept the app's arrival value without casting it.
+    type: Schema.Types.Mixed,
     default: false
   },
   navigationStartedAt: {
@@ -288,19 +291,6 @@ const JobSchema = new Schema({
   deletionReason: {
     type: String,
     trim: true,
-    default: null
-  },
-  archived: {
-    type: Boolean,
-    default: false
-  },
-  archiveType: {
-    type: String,
-    enum: ['hidden', 'removed'],
-    default: null
-  },
-  archivedAt: {
-    type: Date,
     default: null
   },
   isHidden: {
@@ -368,18 +358,18 @@ JobSchema.index({ createdAt: -1 });
 JobSchema.index({ date: 1 });
 JobSchema.index({ isUrgent: 1 });
 JobSchema.index({ isDeleted: 1 });
-JobSchema.index({ archived: 1 });
 JobSchema.index({ isHidden: 1 });
-JobSchema.index({ archiveType: 1 });
 JobSchema.index({ deletedAt: -1 });
 JobSchema.index({ title: 'text', description: 'text' });
 
-// Instance method for soft deletion
+// Instance method for soft deletion. isDeleted is an absolute override —
+// it hides the job everywhere (including from its owner) regardless of
+// status, so this deliberately does not touch status.
 JobSchema.methods.softDelete = function(deletedBy, reason = 'Deleted due to policy violation') {
   this.isDeleted = true;
   this.deletedAt = new Date();
+  this.deletedBy = deletedBy;
   this.deletionReason = reason;
-  this.status = 'cancelled';
   return this.save();
 };
 
@@ -387,8 +377,8 @@ JobSchema.methods.softDelete = function(deletedBy, reason = 'Deleted due to poli
 JobSchema.methods.restore = function() {
   this.isDeleted = false;
   this.deletedAt = null;
+  this.deletedBy = null;
   this.deletionReason = null;
-  this.status = 'open';
   return this.save();
 };
 

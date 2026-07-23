@@ -8,6 +8,7 @@ const Notification = require('../models/Notification');
 const Draft = require('../models/Draft');
 const ChatSupport = require('../models/ChatSupport');
 const ProviderBookingSlot = require('../models/ProviderBookingSlot');
+const EscrowRelease = require('../models/EscrowRelease');
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
 
@@ -35,17 +36,24 @@ const getJobs = async (req, res) => {
     
     let query = {};
     
-    // Filter archived jobs
+    // Filter archived jobs. "archived" is a union of isHidden and isDeleted;
+    // archiveType narrows to one or the other.
     const archived = req.query.archived === 'true';
     const archiveType = req.query.archiveType;
-    
+
     if (archived) {
-      query.archived = true;
-      if (archiveType && (archiveType === 'hidden' || archiveType === 'removed')) {
-        query.archiveType = archiveType;
+      if (archiveType === 'hidden') {
+        query.isHidden = true;
+      } else if (archiveType === 'removed') {
+        query.isDeleted = true;
+      } else {
+        // Merged via $and (not query.$or) so it can't collide with the
+        // separate $or the search filter below sets.
+        query.$and = [...(query.$and || []), { $or: [{ isHidden: true }, { isDeleted: true }] }];
       }
     } else {
-      query.archived = { $ne: true };
+      query.isHidden = { $ne: true };
+      query.isDeleted = { $ne: true };
     }
     
     if (search) {
@@ -654,8 +662,12 @@ const resolveDispute = async (req, res) => {
       job.escrowStatus = 'pending';
       job.status = 'completed';
       job.completionStatus.completedAt = job.completionStatus.completedAt || new Date();
-      job.completionStatus.paymentReleased = true;
-      job.completionStatus.paymentReleasedAt = new Date();
+      // Do NOT set paymentReleased/paymentReleasedAt here — scheduleEscrowRelease
+      // below only starts a fresh 5-day hold. Flipping this flag now (before
+      // money actually moves) makes the wallet UI show "Released" immediately
+      // and, worse, makes kayod/server's EscrowService.processEscrowRelease see
+      // paymentReleased already true when the real 5-day release runs and skip
+      // crediting the provider entirely (see its "already released" guard).
       job.paymentDetails = job.paymentDetails || {};
       job.paymentDetails.isPaid = true;
       await job.save({ session });
@@ -691,7 +703,7 @@ const resolveDispute = async (req, res) => {
         heldTransaction.completedAt = heldTransaction.completedAt || new Date();
         await heldTransaction.save({ session });
 
-        await Transaction.create([{
+        const [refundTransaction] = await Transaction.create([{
           fromUserId: null,
           toUserId: job.userId,
           amount: refundedAmount,
@@ -702,6 +714,17 @@ const resolveDispute = async (req, res) => {
           completedAt: new Date(),
           metadata: { reason: note || 'Dispute resolved: client refunded', resolvedBy: 'admin', adminId: adminObjectId },
         }], { session });
+
+        // A dispute raised during the 5-day escrow hold leaves a live
+        // EscrowRelease record (scheduled/processing/failed) pointing at this
+        // job. Without cancelling it here, clearing dispute.isActive below
+        // would let the next scheduler tick pay the provider out of that
+        // stale record — after the client was just refunded the same money.
+        await EscrowRelease.updateMany(
+          { jobId: job._id, status: { $in: ['scheduled', 'processing', 'failed'] } },
+          { $set: { status: 'refunded', refundTransactionId: refundTransaction._id } },
+          { session }
+        );
       }
 
       const [draft] = await Draft.create([{
@@ -726,6 +749,7 @@ const resolveDispute = async (req, res) => {
       draftId = draft._id;
 
       job.status = 'cancelled';
+      job.escrowStatus = 'refunded';
       job.cancellation = {
         cancelledAt: new Date(),
         cancelledBy: adminObjectId,
@@ -968,10 +992,7 @@ const hideJob = async (req, res) => {
     
     const job = await Job.findByIdAndUpdate(
       jobId,
-      { 
-        archived: true,
-        archiveType: 'hidden',
-        archivedAt: new Date(),
+      {
         isHidden: true,
         hiddenAt: new Date(),
         hiddenBy: adminName
@@ -981,12 +1002,12 @@ const hideJob = async (req, res) => {
     .populate('userId', 'name email userType profileImage')
     .populate('assignedToId', 'name email userType profileImage')
     .lean();
-    
+
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
-    
-    const notificationMessage = reason 
+
+    const notificationMessage = reason
       ? `Your job "${job.title}" has been hidden by admin. Reason: ${reason}`
       : `Your job "${job.title}" has been hidden by admin for review.`;
     
@@ -1075,10 +1096,7 @@ const unhideJob = async (req, res) => {
     
     const job = await Job.findByIdAndUpdate(
       jobId,
-      { 
-        archived: false,
-        archiveType: null,
-        archivedAt: null,
+      {
         isHidden: false,
         hiddenAt: null,
         hiddenBy: null
@@ -1176,10 +1194,9 @@ const deleteJob = async (req, res) => {
     
     const job = await Job.findByIdAndUpdate(
       jobId,
-      { 
-        archived: true,
-        archiveType: 'removed',
-        archivedAt: new Date(),
+      {
+        isDeleted: true,
+        deletedAt: new Date(),
         deletedBy: adminName
       },
       { new: true }
@@ -1254,10 +1271,9 @@ const restoreJob = async (req, res) => {
     
     const job = await Job.findByIdAndUpdate(
       jobId,
-      { 
-        archived: false,
-        archiveType: null,
-        archivedAt: null,
+      {
+        isDeleted: false,
+        deletedAt: null,
         deletedBy: null,
         isHidden: false,
         hiddenAt: null,
