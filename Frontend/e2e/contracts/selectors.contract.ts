@@ -13,6 +13,10 @@ export const selectors = {
     search: 'admin-jobs-search',
     row: (jobId: string) => `admin-job-row-${jobId}`,
     forceCancelButton: 'admin-force-cancel-job-btn',
+    escrowCard: 'admin-job-escrow-card',
+    escrowStatus: 'admin-job-escrow-status',
+    escrowReleaseDate: 'admin-job-escrow-release-date',
+    activeDisputeBanner: 'admin-job-active-dispute-banner',
   },
   support: {
     resolveDisputePayProvider: 'resolve-dispute-pay-provider',

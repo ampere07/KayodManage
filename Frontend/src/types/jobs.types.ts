@@ -30,7 +30,7 @@ export interface Job {
   isUrgent: boolean;
   serviceTier: 'basic' | 'standard' | 'premium';
   paymentMethod: 'wallet' | 'xendit';
-  status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
   user?: {
     _id: string;
     name: string;
@@ -66,12 +66,11 @@ export interface Job {
   paidAt?: Date | string;
   applicationCount: number;
   applications?: Application[];
-  archived?: boolean;
-  archiveType?: 'hidden' | 'removed';
-  archivedAt?: Date | string;
   isHidden?: boolean;
   hiddenAt?: Date | string;
   hiddenBy?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date | string;
   deletedBy?: string;
   cancellation?: {
     cancelledAt?: Date | string | null;

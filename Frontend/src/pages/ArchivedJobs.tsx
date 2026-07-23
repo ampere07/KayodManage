@@ -470,7 +470,7 @@ const ArchivedJobs: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 border-b border-gray-300">
                             <div className="flex flex-col items-center">
-                              {job.archiveType === 'hidden' ? (
+                              {job.isHidden ? (
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100">
                                   <Archive className="h-2.5 w-2.5" />
                                   Hidden
@@ -485,13 +485,20 @@ const ArchivedJobs: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 border-b border-gray-300">
                             <div className="flex flex-col">
-                              <p className="text-xs font-bold text-gray-900">
-                                {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
-                              </p>
-                              <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
-                                <Calendar className="h-3 w-3" />
-                                {job.archivedAt ? new Date(job.archivedAt).toLocaleDateString() : 'N/A'}
-                              </div>
+                              {(() => {
+                                const archivedAt = job.isHidden ? job.hiddenAt : job.deletedAt;
+                                return (
+                                  <>
+                                    <p className="text-xs font-bold text-gray-900">
+                                      {archivedAt ? formatDistanceToNow(new Date(archivedAt), { addSuffix: true }) : 'N/A'}
+                                    </p>
+                                    <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {archivedAt ? new Date(archivedAt).toLocaleDateString() : 'N/A'}
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </td>
                         </tr>
@@ -519,7 +526,7 @@ const ArchivedJobs: React.FC = () => {
                               {getJobStatusIcon(job.status)}
                               {job.status.replace('_', ' ')}
                             </span>
-                            {job.archiveType === 'hidden' ? (
+                            {job.isHidden ? (
                               <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-orange-500 text-white">HIDDEN</span>
                             ) : (
                               <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-red-500 text-white">DELETED</span>
@@ -560,7 +567,10 @@ const ArchivedJobs: React.FC = () => {
                             <p className="text-sm font-black text-gray-900 flex-shrink-0">{price}</p>
                             <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
                               <Clock className="h-2.5 w-2.5" />
-                              {job.archivedAt ? formatDistanceToNow(new Date(job.archivedAt), { addSuffix: true }) : 'N/A'}
+                              {(() => {
+                                const archivedAt = job.isHidden ? job.hiddenAt : job.deletedAt;
+                                return archivedAt ? formatDistanceToNow(new Date(archivedAt), { addSuffix: true }) : 'N/A';
+                              })()}
                             </div>
                           </div>
                         </div>
