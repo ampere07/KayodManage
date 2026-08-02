@@ -250,9 +250,10 @@ const Support: React.FC = () => {
   const handleResolveDispute = async (
     jobId: string,
     outcome: 'pay_provider' | 'refund_client' | 'rebook',
-    note?: string
+    note?: string,
+    rebookDeadlineAt?: string
   ) => {
-    await jobsService.resolveDispute(jobId, outcome, note);
+    await jobsService.resolveDispute(jobId, outcome, note, rebookDeadlineAt);
     if (selectedChat) {
       await refreshSelectedChat(selectedChat._id);
     }

@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const {
+  REPORT_REASONS,
+  REPORT_STATUSES,
+} = require('../constants/reportTaxonomy');
+
 const jobDetailsSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, default: "" },
@@ -90,20 +95,7 @@ const ReportedPostSchema = new Schema({
   reason: {
     type: String,
     required: true,
-    enum: [
-      'spam',
-      'inappropriate_content',
-      'fake_job',
-      'misleading_information',
-      'harassment',
-      'unfinished_work',
-      'substandard_work',
-      'discrimination',
-      'scam',
-      'unsafe_work_conditions',
-      'payment_issues',
-      'other'
-    ],
+    enum: REPORT_REASONS,
     trim: true
   },
   comment: {
@@ -114,8 +106,8 @@ const ReportedPostSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'reviewed', 'resolved', 'dismissed'],
-    default: 'pending'
+    enum: REPORT_STATUSES,
+    default: 'open'
   },
   reviewedBy: {
     type: Schema.Types.ObjectId,
@@ -202,9 +194,9 @@ ReportedPostSchema.statics.getReportsSummary = async function() {
   return result;
 };
 
-// Instance method to mark as reviewed
-ReportedPostSchema.methods.markAsReviewed = function(adminId, notes = '') {
-  this.status = 'reviewed';
+// Instance method to move a report into review
+ReportedPostSchema.methods.markUnderReview = function(adminId, notes = '') {
+  this.status = 'under_review';
   this.reviewedBy = adminId;
   this.reviewedAt = new Date();
   this.adminNotes = notes;

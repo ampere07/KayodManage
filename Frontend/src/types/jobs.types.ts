@@ -150,3 +150,24 @@ export type ServiceTier = 'basic' | 'standard' | 'premium';
 export type PaymentMethod = 'wallet' | 'xendit';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 export type ApplicationStatus = 'pending' | 'accepted' | 'rejected';
+
+/**
+ * resolveDispute's response. `escrow` describes what actually happened to the
+ * hold: a dispute raised during the 5-day window RESUMES its original release
+ * date rather than restarting it (resumed: true), and pays out immediately when
+ * that date already passed during mediation (releasedImmediately: true).
+ */
+export interface ResolveDisputeResponse {
+  success: boolean;
+  job: Job;
+  outcome: string;
+  refundedAmount: number;
+  draftId: string | null;
+  escrow: {
+    scheduledFor: string | null;
+    originalScheduledFor: string | null;
+    releasedImmediately: boolean;
+    resumed: boolean;
+  } | null;
+  rebookDeadlineAt: string | null;
+}

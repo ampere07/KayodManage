@@ -19,7 +19,7 @@ export const useReports = (params?: {
       const response = await flaggedService.getAllReports(params);
       return {
         reports: response.data?.reports || [],
-        stats: response.data?.stats || { total: 0, pending: 0, reviewed: 0, resolved: 0, dismissed: 0 },
+        stats: response.data?.stats || { total: 0, open: 0, under_review: 0, action_taken: 0, dismissed: 0, escalated: 0 },
         pagination: response.data?.pagination,
       };
     },

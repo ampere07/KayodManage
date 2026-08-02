@@ -40,7 +40,7 @@ const EscrowReleaseSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['scheduled', 'processing', 'released', 'failed', 'cancelled', 'refunded'],
+      enum: ['scheduled', 'processing', 'released', 'failed', 'cancelled', 'refunded', 'suspended'],
       default: 'scheduled',
       index: true
     },

@@ -226,7 +226,22 @@ const JobSchema = new Schema({
       resolvedAt: Date,
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook'] }
-    }]
+    }],
+    // Set when a dispute is resolved as "rebook": the provider has to redo the
+    // work, so the escrow hold is suspended (not released, not refunded) and the
+    // funds stay held as the leverage that makes the redo happen. Without a
+    // deadline that is an open-ended hold on the client's money, so the admin
+    // sets one and kayod/server's autoConfirmCompletion escalates back to admin
+    // if the job has still not been re-completed by then.
+    rebook: {
+      orderedAt: { type: Date, default: null },
+      orderedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      // The date by which the redo must be completed.
+      deadlineAt: { type: Date, default: null },
+      // Set once the missed-deadline escalation has fired, so the 5-minute
+      // scheduler doesn't re-notify admins on every tick.
+      escalatedAt: { type: Date, default: null }
+    }
   },
   cancellation: {
     cancelledAt: { type: Date, default: null },

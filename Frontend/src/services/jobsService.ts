@@ -6,7 +6,8 @@ import type {
   JobsQueryParams,
   UpdateJobStatusRequest,
   UpdateJobStatusResponse,
-  Application
+  Application,
+  ResolveDisputeResponse
 } from '../types/jobs.types';
 
 /**
@@ -65,15 +66,20 @@ class JobsService {
   /**
    * Resolve an active dispute on a job. outcome must be one of:
    * 'pay_provider' | 'refund_client' | 'rebook' (see improvements doc §6).
+   *
+   * rebookDeadlineAt is REQUIRED for the 'rebook' outcome: the client's payment
+   * stays held while the work is redone, so without a deadline it is an
+   * open-ended hold on their money. The server rejects rebook without it.
    */
   async resolveDispute(
     jobId: string,
     outcome: 'pay_provider' | 'refund_client' | 'rebook',
-    note?: string
-  ): Promise<{ success: boolean; job: Job; outcome: string; refundedAmount: number; draftId: string | null }> {
-    const response = await apiClient.post<{ success: boolean; job: Job; outcome: string; refundedAmount: number; draftId: string | null }>(
+    note?: string,
+    rebookDeadlineAt?: string
+  ): Promise<ResolveDisputeResponse> {
+    const response = await apiClient.post<ResolveDisputeResponse>(
       `${this.baseUrl}/${jobId}/resolve-dispute`,
-      { outcome, note }
+      { outcome, note, rebookDeadlineAt }
     );
     return response.data;
   }

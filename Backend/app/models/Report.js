@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 
+const {
+  REPORT_REASONS,
+  REPORT_STATUSES,
+  OPEN_REPORT_STATUSES,
+  ACTIONS_TAKEN,
+} = require('../constants/reportTaxonomy');
+
 const reportSchema = new mongoose.Schema({
   // Type of report (job, user, message, conversation, review, payment, other)
   reportType: {
@@ -25,6 +32,19 @@ const reportSchema = new mongoose.Schema({
     index: true
   },
   
+  // The job this report arose from, when there is one. For reportType "user"
+  // (a client reporting the provider who worked their job) relatedId holds the
+  // reported USER, so without this the report was not attached to a job at all:
+  // the unique index below let a client report a given provider exactly once
+  // ever, across every job they ever booked them for, and per-job report state
+  // could not be answered at all.
+  jobId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Job",
+    default: null,
+    index: true
+  },
+  
   // Who made the report
   reportedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -37,42 +57,10 @@ const reportSchema = new mongoose.Schema({
   reason: {
     type: String,
     required: true,
-    enum: [
-      // Job reasons
-      "spam",
-      "inappropriate_content",
-      "scam_or_fraud",
-      "misleading_information",
-      "copyright_violation",
-      "discrimination",
-      "harassment",
-      "violence_or_threats",
-      "adult_content",
-      "fake_job_posting",
-      "duplicate_posting",
-      "unsafe_work_conditions",
-      "payment_issues",
-      "fake_job",
-      // User reasons
-      "fake_profile",
-      "misconduct",
-      // Message reasons
-      "threats",
-      "unsolicited_solicitation",
-      // Conversation reasons
-      "fraud",
-      "inappropriate_behavior",
-      // Review reasons
-      "fake_review",
-      "defamation",
-      "conflict_of_interest",
-      // Payment reasons
-      "fraud",
-      "unauthorized_charge",
-      "payment_dispute",
-      // General
-      "other"
-    ],
+    // Canonical vocabulary — see src/constants/reportTaxonomy.js. Previously an
+    // inline list that duplicated "fraud" and disagreed with ReportedPost's
+    // list on the same concepts.
+    enum: REPORT_REASONS,
     index: true
   },
   
@@ -87,8 +75,8 @@ const reportSchema = new mongoose.Schema({
   // Report status
   status: {
     type: String,
-    enum: ["pending", "reviewed", "resolved", "dismissed"],
-    default: "pending",
+    enum: REPORT_STATUSES,
+    default: "open",
     index: true
   },
   
@@ -115,17 +103,7 @@ const reportSchema = new mongoose.Schema({
   // Action taken on the report
   actionTaken: {
     type: String,
-    enum: [
-      "none",
-      "post_deleted",
-      "post_approved",
-      "user_warned",
-      "user_restricted",
-      "user_suspended",
-      "report_dismissed",
-      "conversation_deleted",
-      "message_deleted"
-    ],
+    enum: ACTIONS_TAKEN,
     default: "none"
   },
   
@@ -146,14 +124,18 @@ const reportSchema = new mongoose.Schema({
 });
 
 // Compound indexes
-reportSchema.index({ reportType: 1, relatedId: 1, reportedBy: 1 }, { unique: true });
+// One report per reporter per target PER JOB. jobId is part of the key so a
+// client can report the same provider on a later booking; it indexes as null for
+// reports with no job (messages, reviews, payments), which keeps those unique
+// per target exactly as before.
+reportSchema.index({ reportType: 1, relatedId: 1, reportedBy: 1, jobId: 1 }, { unique: true });
 reportSchema.index({ status: 1, createdAt: -1 });
 reportSchema.index({ reportType: 1, status: 1 });
 reportSchema.index({ reportedUserId: 1, status: 1 });
 
 // Pre-save middleware
 reportSchema.pre("save", function(next) {
-  if (this.isModified("status") && this.status !== "pending" && !this.reviewedAt) {
+  if (this.isModified("status") && this.status !== "open" && !this.reviewedAt) {
     this.reviewedAt = new Date();
   }
   next();
@@ -189,18 +171,24 @@ reportSchema.statics.getReportStats = async function(reportType = null) {
     }
   ]);
   
-  const result = {
-    total: 0,
-    pending: 0,
-    reviewed: 0,
-    resolved: 0,
-    dismissed: 0
-  };
+  const result = REPORT_STATUSES.reduce(
+    (acc, status) => {
+      acc[status] = 0;
+      return acc;
+    },
+    { total: 0 }
+  );
   
   stats.forEach(item => {
     result[item._id] = item.count;
     result.total += item.count;
   });
+  
+  // Everything still awaiting an admin, in one number for the queue badge.
+  result.open_total = OPEN_REPORT_STATUSES.reduce(
+    (sum, status) => sum + (result[status] || 0),
+    0
+  );
   
   return result;
 };
