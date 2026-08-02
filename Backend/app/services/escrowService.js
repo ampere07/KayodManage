@@ -96,9 +96,98 @@ async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session
   return escrowRelease;
 }
 
+/** The live hold for a job, if any — the record a dispute paused. */
+async function findLiveEscrowRelease(jobId, session = null) {
+  return EscrowRelease.findOne({
+    jobId,
+    status: { $in: ['scheduled', 'processing', 'failed'] }
+  }).session(session || null);
+}
+
+/**
+ * Resume the hold a dispute paused, for the "pay provider" outcome.
+ *
+ * Deliberately does NOT call scheduleEscrowRelease: that overwrites
+ * scheduledFor with now + 5 days, which handed a provider who WON the dispute a
+ * second full warranty period on top of the one they had already served. The
+ * 5-day hold is a warranty on delivered work, and the work was delivered once.
+ *
+ *  - original release date still in the future -> leave it exactly as it is and
+ *    let kayod/server's EscrowScheduler pay out on the original date.
+ *  - original release date already passed (mediation outlasted the window) ->
+ *    make it due now, so the next tick pays out instead of the provider waiting
+ *    again for time that has already elapsed.
+ *
+ * Returns null when there is no live hold — that means the dispute was raised
+ * before completion, so there is no warranty already part-served and the caller
+ * should schedule a first hold normally.
+ */
+async function resumeEscrowRelease(jobId, session = null) {
+  const Job = require('../models/Job');
+
+  const escrowRelease = await findLiveEscrowRelease(jobId, session);
+  if (!escrowRelease) return null;
+
+  const now = new Date();
+  const originalScheduledFor = escrowRelease.scheduledFor;
+  const isOverdue = originalScheduledFor <= now;
+
+  escrowRelease.status = 'scheduled';
+  escrowRelease.failedAt = null;
+  escrowRelease.failureReason = null;
+  escrowRelease.retryCount = 0;
+  if (isOverdue) {
+    escrowRelease.scheduledFor = now;
+  }
+  await escrowRelease.save({ session: session || null });
+
+  const job = await Job.findById(jobId).session(session || null);
+  if (job) {
+    job.escrowReleaseAt = escrowRelease.scheduledFor;
+    job.escrowStatus = 'pending';
+    await job.save({ session: session || null });
+  }
+
+  return {
+    escrowRelease,
+    originalScheduledFor,
+    scheduledFor: escrowRelease.scheduledFor,
+    releasedImmediately: isOverdue
+  };
+}
+
+/**
+ * Pause the hold for the "rebook" outcome — the work is being redone, so the
+ * money must neither pay out nor refund, and the original countdown must stop
+ * rather than keep ticking toward a payout for work that is not finished.
+ *
+ * kayod/server's EscrowScheduler only picks up status "scheduled", so a
+ * suspended record is inert. Its EscrowService.scheduleEscrowRelease reuses
+ * suspended records, so when the redo is completed and confirmed the same
+ * record is revived with a fresh 5 days measured from the new completion.
+ */
+async function suspendEscrowRelease(jobId, reason = 'Rebook ordered by dispute resolution', session = null) {
+  const escrowRelease = await findLiveEscrowRelease(jobId, session);
+  if (!escrowRelease) return null;
+
+  escrowRelease.status = 'suspended';
+  escrowRelease.metadata = {
+    ...(escrowRelease.metadata?.toObject?.() || escrowRelease.metadata || {}),
+    suspendedAt: new Date(),
+    suspendedReason: reason,
+    suspendedFromScheduledFor: escrowRelease.scheduledFor
+  };
+  await escrowRelease.save({ session: session || null });
+
+  return escrowRelease;
+}
+
 module.exports = {
   ESCROW_DAYS,
   calculateReleaseDate,
   calculatePlatformFee,
-  scheduleEscrowRelease
+  scheduleEscrowRelease,
+  findLiveEscrowRelease,
+  resumeEscrowRelease,
+  suspendEscrowRelease
 };

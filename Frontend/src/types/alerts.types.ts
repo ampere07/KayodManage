@@ -6,7 +6,7 @@ export interface ReportedPost {
   jobPosterId: string;
   reason: string;
   comment: string;
-  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  status: 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';
   reviewedBy?: string;
   reviewedAt?: string;
   adminNotes: string;
@@ -53,9 +53,10 @@ export interface ReporterInfo {
 
 export interface ReportsSummary {
   total: number;
-  pending: number;
-  reviewed: number;
-  resolved: number;
+  open: number;
+  under_review: number;
+  action_taken: number;
+  escalated: number;
   dismissed: number;
   recentReports?: number;
   topReasons?: Array<{ _id: string; count: number }>;
@@ -85,4 +86,4 @@ export interface ReviewPostResponse {
   reportedPost: ReportedPost;
 }
 
-export type ReportFilterStatus = 'all' | 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+export type ReportFilterStatus = 'all' | 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';

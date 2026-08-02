@@ -83,7 +83,9 @@ exports.updateReportedPostStatus = async (req, res) => {
     const { reportId } = req.params;
     const adminId = req.user.id;
 
-    const allowed = ["pending", "reviewed", "resolved", "dismissed"];
+    // Admin-driven transitions only — "escalated" is set by the client-app
+    // dispute flow, never picked here. See constants/reportTaxonomy.js.
+    const allowed = ["under_review", "action_taken", "dismissed"];
     if (status && !allowed.includes(status)) {
       return res.status(400).json({ success: false, message: "Invalid status" });
     }
@@ -326,7 +328,8 @@ exports.updateReportStatus = async (req, res) => {
     const adminId = req.user.id;
 
     // Validate status
-    const validStatuses = ["pending", "reviewed", "resolved", "dismissed"];
+    // Admin-driven transitions only — see constants/reportTaxonomy.js.
+    const validStatuses = ["under_review", "action_taken", "dismissed"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,

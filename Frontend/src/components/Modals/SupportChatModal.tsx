@@ -80,6 +80,7 @@ interface SupportChatModalProps {
     jobId: string,
     outcome: "pay_provider" | "refund_client" | "rebook",
     note?: string,
+    rebookDeadlineAt?: string,
   ) => Promise<void>;
   onAddInternalNote?: (chatSupportId: string, note: string) => Promise<void>;
   /** The other party's thread of the same dispute (cross-linked by metadata.jobId). */
@@ -330,6 +331,9 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   const [jobModalData, setJobModalData] = useState<any>(null);
   const [disputeNote, setDisputeNote] = useState("");
   const [resolvingOutcome, setResolvingOutcome] = useState<string | null>(null);
+  // Required for the rebook outcome — the client's payment stays held while the
+  // work is redone, so the redo needs a date the scheduler can escalate on.
+  const [rebookDeadline, setRebookDeadline] = useState("");
   const [internalNoteText, setInternalNoteText] = useState("");
   const [sendingInternalNote, setSendingInternalNote] = useState(false);
   const [acceptingTicket, setAcceptingTicket] = useState(false);
@@ -450,6 +454,15 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
       return;
     }
 
+    // Guard here as well as server-side so the admin gets an immediate answer
+    // rather than a round trip that 400s.
+    if (outcome === "rebook" && !rebookDeadline) {
+      alert(
+        "Set a redo deadline before resolving with rebook — the client's payment stays held until the work is redone.",
+      );
+      return;
+    }
+
     const ticketId = selectedChat._id;
     const requestId = ++disputeRequestIdRef.current;
     setResolvingOutcome(outcome);
@@ -458,9 +471,13 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
         disputeJobId,
         outcome,
         disputeNote.trim() || undefined,
+        outcome === "rebook"
+          ? new Date(rebookDeadline).toISOString()
+          : undefined,
       );
       if (activeTicketIdRef.current === ticketId) {
         setDisputeNote("");
+        setRebookDeadline("");
       }
     } catch (error) {
       console.error("Error resolving dispute:", error);
@@ -1636,14 +1653,41 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           ? "Resolving…"
                           : "Refund Client"}
                       </button>
-                      <button
-                        data-testid="resolve-dispute-rebook"
-                        onClick={() => handleResolveDispute("rebook")}
-                        disabled={!!resolvingOutcome}
-                        className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {resolvingOutcome === "rebook" ? "Resolving…" : "Rebook"}
-                      </button>
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                        <label
+                          htmlFor="rebook-deadline"
+                          className="block text-[11px] font-bold text-gray-700 mb-1"
+                        >
+                          Redo deadline
+                        </label>
+                        <p className="text-[11px] text-gray-500 mb-2">
+                          Rebook keeps the client&apos;s payment held and pauses
+                          the payout countdown. A new hold starts from the new
+                          completion. Required — we escalate back to you if the
+                          work isn&apos;t redone by this date.
+                        </p>
+                        <input
+                          id="rebook-deadline"
+                          data-testid="resolve-dispute-rebook-deadline"
+                          type="date"
+                          value={rebookDeadline}
+                          min={new Date(Date.now() + 86400000)
+                            .toISOString()
+                            .slice(0, 10)}
+                          onChange={(e) => setRebookDeadline(e.target.value)}
+                          className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button
+                          data-testid="resolve-dispute-rebook"
+                          onClick={() => handleResolveDispute("rebook")}
+                          disabled={!!resolvingOutcome || !rebookDeadline}
+                          className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {resolvingOutcome === "rebook"
+                            ? "Resolving…"
+                            : "Rebook"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </>

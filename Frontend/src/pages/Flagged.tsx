@@ -57,10 +57,11 @@ const Flagged: React.FC = () => {
   const stats = useMemo(() => {
     return {
       total: reports.length,
-      pending: reports.filter((r: Report) => r.status === 'pending').length,
-      reviewed: reports.filter((r: Report) => r.status === 'reviewed').length,
-      resolved: reports.filter((r: Report) => r.status === 'resolved').length,
+      open: reports.filter((r: Report) => r.status === 'open').length,
+      under_review: reports.filter((r: Report) => r.status === 'under_review').length,
+      action_taken: reports.filter((r: Report) => r.status === 'action_taken').length,
       dismissed: reports.filter((r: Report) => r.status === 'dismissed').length,
+      escalated: reports.filter((r: Report) => r.status === 'escalated').length,
     };
   }, [reports]);
   
@@ -151,7 +152,7 @@ const Flagged: React.FC = () => {
       }
       return;
     }
-    const statusMap = { approve: 'resolved', dismiss: 'dismissed', delete: 'resolved' };
+    const statusMap = { approve: 'action_taken', dismiss: 'dismissed', delete: 'action_taken' };
     const actionMap = { approve: 'post_approved', dismiss: 'report_dismissed', delete: 'post_deleted' };
     await handleUpdateReport(selectedReport._id, statusMap[action as keyof typeof statusMap], actionMap[action as keyof typeof actionMap]);
   };
@@ -183,10 +184,11 @@ const Flagged: React.FC = () => {
 
   const statusCounts = useMemo(() => ({
     all: stats.total,
-    pending: stats.pending,
-    reviewed: stats.reviewed,
-    resolved: stats.resolved,
-    dismissed: stats.dismissed
+    open: stats.open,
+    under_review: stats.under_review,
+    action_taken: stats.action_taken,
+    dismissed: stats.dismissed,
+    escalated: stats.escalated
   }), [stats]);
 
   const filteredReports = useMemo(() => {
@@ -210,12 +212,13 @@ const Flagged: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pending: 'bg-yellow-50 text-yellow-700 border-yellow-100',
-      reviewed: 'bg-blue-50 text-blue-700 border-blue-100',
-      resolved: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-      dismissed: 'bg-gray-50 text-gray-700 border-gray-100'
+      open: 'bg-yellow-50 text-yellow-700 border-yellow-100',
+      under_review: 'bg-blue-50 text-blue-700 border-blue-100',
+      action_taken: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      dismissed: 'bg-gray-50 text-gray-700 border-gray-100',
+      escalated: 'bg-orange-50 text-orange-700 border-orange-100'
     };
-    return badges[status as keyof typeof badges] || badges.pending;
+    return badges[status as keyof typeof badges] || badges.open;
   };
 
   const getReportTypeIcon = (reportType: string) => {
@@ -267,10 +270,11 @@ const Flagged: React.FC = () => {
             {/* Filter pills */}
             <div className="flex gap-2">
               {([
-                { label: 'All',      value: statusCounts.all,       filterVal: 'all',       activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'Pending',  value: statusCounts.pending,   filterVal: 'pending',   activeBg: 'bg-amber-500',   border: 'border-amber-500'   },
-                { label: 'Reviewed', value: statusCounts.reviewed,  filterVal: 'reviewed',  activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
-                { label: 'Resolved', value: statusCounts.resolved,  filterVal: 'resolved',  activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
+                { label: 'All',       value: statusCounts.all,          filterVal: 'all',          activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
+                { label: 'Open',      value: statusCounts.open,         filterVal: 'open',         activeBg: 'bg-amber-500',   border: 'border-amber-500'   },
+                { label: 'In Review', value: statusCounts.under_review, filterVal: 'under_review', activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
+                { label: 'Actioned',  value: statusCounts.action_taken, filterVal: 'action_taken', activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
+                { label: 'Escalated', value: statusCounts.escalated,    filterVal: 'escalated',    activeBg: 'bg-orange-500',  border: 'border-orange-500'  },
               ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
                 const active = filter === filterVal;
                 return (
@@ -356,10 +360,11 @@ const Flagged: React.FC = () => {
               className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="reviewed">Reviewed</option>
-              <option value="resolved">Resolved</option>
+              <option value="open">Open</option>
+              <option value="under_review">Under Review</option>
+              <option value="action_taken">Action Taken</option>
               <option value="dismissed">Dismissed</option>
+              <option value="escalated">Escalated to Dispute</option>
             </select>
             <select
               value={itemsPerPage}

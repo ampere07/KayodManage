@@ -135,13 +135,14 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pending: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-      reviewed: 'bg-blue-100 text-blue-800 border border-blue-200',
-      resolved: 'bg-green-100 text-green-800 border border-green-200',
+      open: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+      under_review: 'bg-blue-100 text-blue-800 border border-blue-200',
+      action_taken: 'bg-green-100 text-green-800 border border-green-200',
+      escalated: 'bg-orange-100 text-orange-800 border border-orange-200',
       dismissed: 'bg-gray-100 text-gray-800 border border-gray-200'
     };
 
-    return badges[status as keyof typeof badges] || badges.pending;
+    return badges[status as keyof typeof badges] || badges.open;
   };
 
   const formatDate = (dateString: string) => {
@@ -386,7 +387,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
         <div className="border-t border-gray-200"></div>
 
         {/* Admin Notes */}
-        {reportedPost.status === 'pending' ? (
+        {reportedPost.status === 'open' ? (
           <div className="px-6 py-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Admin Notes
@@ -409,7 +410,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
         )}
 
         {/* Action Buttons - Fixed at Bottom */}
-        {reportedPost.status === 'pending' && (
+        {reportedPost.status === 'open' && (
           <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 px-6 py-4 bg-white z-10">
             {isUserReport && onUserAction ? (
               <div className="space-y-4">
