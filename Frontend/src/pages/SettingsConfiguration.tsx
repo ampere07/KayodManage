@@ -1,11 +1,13 @@
 import React, { useState, useContext } from 'react';
-import { Briefcase, Megaphone, Menu } from 'lucide-react';
+import { Briefcase, Megaphone, Menu, ClipboardList } from 'lucide-react';
 import JobCategoryConfiguration from '../components/Settings/JobCategoryConfiguration';
+import JobPostingConfiguration from '../components/Settings/JobPostingConfiguration';
+import AdvertisementManager from '../components/Settings/AdvertisementManager';
 import { SidebarContext } from '../components/Layout/Layout';
 import { useAuth } from '../context/AuthContext';
 
 const SettingsConfiguration: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'job-category' | 'advertisement'>('job-category');
+  const [activeTab, setActiveTab] = useState<'job-category' | 'job-posting' | 'advertisement'>('job-category');
   const { setSidebarOpen } = useContext(SidebarContext);
   const { user } = useAuth();
 
@@ -13,11 +15,15 @@ const SettingsConfiguration: React.FC = () => {
     if (activeTab === 'job-category') {
       return 'Manage Job Category Icons, Names, and Professions';
     }
+    if (activeTab === 'job-posting') {
+      return 'Configure job posting rules, limits, budget range, and moderation';
+    }
     return 'Configure advertisement placements, banners, and promotional content';
   };
 
   const sidebarItems = [
     { id: 'job-category' as const, label: 'Job Category', icon: Briefcase },
+    { id: 'job-posting' as const, label: 'Job Posting', icon: ClipboardList },
     { id: 'advertisement' as const, label: 'Advertisement', icon: Megaphone }
   ];
 
@@ -97,12 +103,9 @@ const SettingsConfiguration: React.FC = () => {
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'job-category' && <JobCategoryConfiguration />}
 
-          {activeTab === 'advertisement' && (
-            <div className="p-6 bg-white space-y-4">
-              <p className="text-gray-500">Advertisement configuration coming soon...</p>
+          {activeTab === 'job-posting' && <JobPostingConfiguration />}
 
-            </div>
-          )}
+          {activeTab === 'advertisement' && <AdvertisementManager />}
         </div>
       </div>
     </div>
