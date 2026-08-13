@@ -35,6 +35,39 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     };
   }, [isOpen, setIsHeaderHidden]);
 
+  // Hooks must run before the `!transaction` early return below — React
+  // requires the same hooks in the same order on every render, and bailing out
+  // above them made the hook order depend on the data. The mutations only ever
+  // fire from a button inside the rendered modal, so a null transaction here is
+  // unreachable by the time mutationFn runs.
+  const queryClient = useQueryClient();
+
+  const approveMutation = useMutation({
+    mutationFn: () => transactionsService.approveRefund(transaction!._id),
+    onSuccess: () => {
+      toast.success('Refund approved');
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onClose();
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to approve refund';
+      toast.error(msg);
+    }
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: () => transactionsService.declineRefund(transaction!._id),
+    onSuccess: () => {
+      toast.success('Refund request declined');
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onClose();
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to decline refund';
+      toast.error(msg);
+    }
+  });
+
   if (!transaction) return null;
 
   const formatCurrency = (amount: number) => {
@@ -87,34 +120,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     (user && typeof user === 'object' && (user.location || user.address || user.addressLine)) || undefined;
   const getId = (user: any) =>
     (user && typeof user === 'object' && user._id) || (typeof user === 'string' ? user : undefined);
-
-  const queryClient = useQueryClient();
-
-  const approveMutation = useMutation({
-    mutationFn: () => transactionsService.approveRefund(transaction._id),
-    onSuccess: () => {
-      toast.success('Refund approved');
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      onClose();
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error || err?.message || 'Failed to approve refund';
-      toast.error(msg);
-    }
-  });
-
-  const declineMutation = useMutation({
-    mutationFn: () => transactionsService.declineRefund(transaction._id),
-    onSuccess: () => {
-      toast.success('Refund request declined');
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      onClose();
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error || err?.message || 'Failed to decline refund';
-      toast.error(msg);
-    }
-  });
 
   // Render fee record layout
   if (isFeeRecord) {

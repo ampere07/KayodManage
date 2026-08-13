@@ -266,7 +266,7 @@ const Users: React.FC = () => {
   const handleVerify = async (userId: string, isVerified: boolean) => {
     try {
       await mutations.verifyUser.mutateAsync({ userId, isVerified });
-    } catch (error) {}
+    } catch { /* the mutation surfaces its own toast */ }
   };
 
   const handleAction = async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number, reason?: string) => {
@@ -280,7 +280,7 @@ const Users: React.FC = () => {
         case 'delete': await mutations.softDeleteUser.mutateAsync({ userId, reason: reason || 'Soft deleted' }); break;
       }
       closeDetailsModal();
-    } catch (error) {}
+    } catch { /* the mutation surfaces its own toast; keep the modal open */ }
   };
 
   return (

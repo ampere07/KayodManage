@@ -4,6 +4,12 @@ import { settingsService } from '../../services';
 import { Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
+import ServiceClassPicker from './ServiceClassPicker';
+import {
+  DEFAULT_SERVICE_CLASS,
+  normalizeServiceClass,
+  type ServiceClassId,
+} from '../../constants/serviceClasses';
 
 interface Profession {
   name: string;
@@ -18,6 +24,7 @@ interface AddCategoryModalProps {
 
 const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [categoryName, setCategoryName] = useState('');
+  const [serviceClass, setServiceClass] = useState<ServiceClassId>(DEFAULT_SERVICE_CLASS);
   const [professions, setProfessions] = useState<Profession[]>([]);
   const [editingProfession, setEditingProfession] = useState<Profession | null>(null);
   const [editingProfessionName, setEditingProfessionName] = useState('');
@@ -105,9 +112,11 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ isOpen, onClose, on
       setLoading(true);
       await settingsService.createJobCategory({
         name: categoryName.trim(),
+        serviceClass,
         professions: professions.map(prof => ({ name: prof.name })),
       });
       setCategoryName('');
+      setServiceClass(DEFAULT_SERVICE_CLASS);
       setProfessions([]);
       onSuccess();
       onClose();
@@ -142,6 +151,12 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ isOpen, onClose, on
                 placeholder="e.g., Electrical, IT, Construction"
                 required
               />
+            </div>
+
+            {/* Defaults to Standard — a new category never starts on a
+                shortened payment hold by accident. */}
+            <div className="mt-6">
+              <ServiceClassPicker value={serviceClass} onChange={(next) => setServiceClass(normalizeServiceClass(next))} />
             </div>
 
             {/* Category Icon UI removed per request */}

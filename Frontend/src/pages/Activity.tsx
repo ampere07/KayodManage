@@ -265,21 +265,23 @@ const Activity: React.FC = () => {
 
     try {
       switch (targetType) {
-        case 'user':
+        case 'user': {
           const user = await usersService.getUserById(targetId);
           if (user) {
             setSelectedUser(user);
             setUserModalOpen(true);
           }
           break;
+        }
 
-        case 'transaction':
+        case 'transaction': {
           const transaction = await transactionsService.getTransactionById(targetId);
           if (transaction) {
             setSelectedTransaction(transaction as any);
             setTransactionModalOpen(true);
           }
           break;
+        }
 
         case 'support':
           navigate('/support');

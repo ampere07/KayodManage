@@ -166,7 +166,8 @@ const Flagged: React.FC = () => {
       setIsFetchingTransaction(true);
       try {
         let transaction = null;
-        try { transaction = await transactionsService.getTransactionById(report.relatedId); } catch (e) {}
+        // Not every relatedId is a transaction id; fall through to the job lookup.
+        try { transaction = await transactionsService.getTransactionById(report.relatedId); } catch { /* try the job lookup below */ }
         if (!transaction) {
           const res = await transactionsService.getTransactions({ jobId: report.relatedId, limit: 10 });
           transaction = res.transactions.find(t => t.type === 'refund_request' || t.type === 'refund');
@@ -176,7 +177,7 @@ const Flagged: React.FC = () => {
           setIsTransactionModalOpen(true);
           return;
         }
-      } catch (err) {} finally { setIsFetchingTransaction(false); }
+      } catch { /* fall through to the plain report modal */ } finally { setIsFetchingTransaction(false); }
     }
     setSelectedReport(report);
     setIsModalOpen(true);

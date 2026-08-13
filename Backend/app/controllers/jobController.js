@@ -32,7 +32,6 @@ const getJobs = async (req, res) => {
     const category = req.query.category;
     const profession = req.query.profession;
     const paymentMethod = req.query.paymentMethod;
-    const isUrgent = req.query.isUrgent;
     
     let query = {};
     
@@ -79,10 +78,6 @@ const getJobs = async (req, res) => {
     
     if (paymentMethod && paymentMethod !== 'all') {
       query.paymentMethod = paymentMethod;
-    }
-    
-    if (isUrgent === 'true') {
-      query.isUrgent = true;
     }
     
     // Fetch jobs and populate user virtuals
@@ -582,7 +577,7 @@ const closeDisputeThreadsForJob = async (job, { outcome, adminObjectId, adminNam
  *  - pay_provider: the payment goes out through the escrow hold, never as an
  *    immediate transfer. If the dispute paused an existing hold, that hold
  *    RESUMES on its original release date (or pays out now if that date has
- *    already passed) — it is not restarted. The 5-day hold is a warranty on
+ *    already passed) — it is not restarted. The hold is a warranty on
  *    delivered work, and the work was delivered once; restarting it made a
  *    provider who won the dispute serve a second full warranty. Only when there
  *    was no hold yet (dispute raised before completion) is a first hold
@@ -594,7 +589,7 @@ const closeDisputeThreadsForJob = async (job, { outcome, adminObjectId, adminNam
  *    either direction — the held funds are the leverage that makes the redo
  *    happen — but the escrow hold is SUSPENDED so its countdown stops instead
  *    of paying out for work that is not finished. On re-completion the same
- *    hold is revived with a fresh 5 days measured from the new completion (see
+ *    hold is revived with a fresh window measured from the new completion (see
  *    kayod/server EscrowService.scheduleEscrowRelease, which reuses suspended
  *    records). Allowed on a completed-and-in-escrow job, which is the main case
  *    for it — substandard work the provider should come back and fix. Requires a
@@ -634,7 +629,7 @@ const resolveDispute = async (req, res) => {
     let refundedAmount = 0;
     let draftId = null;
     // Populated by pay_provider so the notifications and the API response can
-    // state the real release date rather than assuming "5 days from now".
+    // state the real release date rather than assuming a fixed window.
     let escrowOutcome = null;
 
     if (job.completionStatus?.paymentReleased && outcome !== 'rebook') {
@@ -645,7 +640,7 @@ const resolveDispute = async (req, res) => {
     }
 
     // A cancelled job has no booking left to redo. "completed" IS rebookable —
-    // a dispute raised during the 5-day hold is always on a completed job, and
+    // a dispute raised during the escrow hold is always on a completed job, and
     // ordering the work redone is the natural remedy for substandard work. The
     // branch below walks such a job back to in_progress and suspends its hold.
     if (outcome === 'rebook' && job.status === 'cancelled') {
@@ -718,7 +713,8 @@ const resolveDispute = async (req, res) => {
       // provider who won the dispute must not serve a second warranty period
       // for the same delivered work. resumeEscrowRelease returns null when
       // there is no live hold (dispute raised before the job ever completed),
-      // and only then is a first 5-day hold scheduled from now.
+      // and only then is a first hold scheduled from now, for this job's own
+      // window (see app/config/serviceClasses.js).
       escrowOutcome = await escrowService.resumeEscrowRelease(job._id, session);
       if (!escrowOutcome) {
         const scheduled = await escrowService.scheduleEscrowRelease(job._id, new Date(), session);
@@ -771,7 +767,7 @@ const resolveDispute = async (req, res) => {
           metadata: { reason: note || 'Dispute resolved: client refunded', resolvedBy: 'admin', adminId: adminObjectId },
         }], { session });
 
-        // A dispute raised during the 5-day escrow hold leaves a live
+        // A dispute raised during the escrow hold leaves a live
         // EscrowRelease record (scheduled/processing/failed) pointing at this
         // job. Without cancelling it here, clearing dispute.isActive below
         // would let the next scheduler tick pay the provider out of that
@@ -797,7 +793,6 @@ const resolveDispute = async (req, res) => {
         selectedDates: job.selectedDates || [],
         timeWindows: job.timeWindows || [],
         dateDetails: job.dateDetails || null,
-        isUrgent: job.isUrgent || false,
         serviceTier: job.serviceTier || 'standard',
         paymentMethod: 'wallet',
         sourceJobId: job._id,
@@ -845,7 +840,7 @@ const resolveDispute = async (req, res) => {
       // stays held as the leverage that makes the redo happen — but leaving the
       // hold "scheduled" would pay the provider on the original date for work
       // that has just been ruled unfinished. On re-completion kayod/server
-      // revives this same record with a fresh 5 days from the new completion.
+      // revives this same record with a fresh window from the new completion.
       await escrowService.suspendEscrowRelease(
         job._id,
         note ? `Rebook ordered: ${note}` : 'Rebook ordered by dispute resolution',
@@ -901,7 +896,7 @@ const resolveDispute = async (req, res) => {
       console.error('[resolveDispute] Activity log error:', activityErr);
     }
 
-    // State the actual release date rather than "the standard 5-day hold": a
+    // State the actual release date rather than a nominal hold length: a
     // resumed hold keeps its original date, and one whose date already passed
     // during mediation pays out on the next scheduler tick.
     const formatDate = (date) =>
@@ -912,6 +907,21 @@ const resolveDispute = async (req, res) => {
       ? 'Payment will be released to your available balance shortly — the original hold period has already elapsed.'
       : `Payment will be released to your available balance on ${formatDate(escrowOutcome?.scheduledFor)}, the original hold date for this job.`;
     const rebookDeadlineText = formatDate(rebookDeadline);
+    // The hold length is per-job now (see app/config/serviceClasses.js), so the
+    // rebook copy has to name this job's own window rather than a constant —
+    // an on-the-spot service redone under a 24-hour hold must not be told to
+    // expect five days.
+    const rebookHoldText = escrowService.describeReleaseWindow(job);
+
+    // A job on a zero-hold class has no window to name, so the sentence has to
+    // change shape rather than interpolate an empty one — otherwise the client
+    // is told "a new null hold starts", on a notification about their money.
+    const rebookClientHoldSentence = rebookHoldText
+      ? `a new ${rebookHoldText} hold starts once the redone work is completed and confirmed`
+      : 'your payment is released once the redone work is completed and confirmed';
+    const rebookProviderHoldSentence = rebookHoldText
+      ? `after which this job's standard ${rebookHoldText} hold applies`
+      : 'after which payment is released without a further hold';
 
     const outcomeMessages = {
       pay_provider: {
@@ -923,8 +933,8 @@ const resolveDispute = async (req, res) => {
         provider: `The dispute for "${job.title}" was resolved in the client's favor. No payment will be released, and the job has been cancelled.`,
       },
       rebook: {
-        client: `Your dispute for "${job.title}" was resolved: the same provider will redo the work by ${rebookDeadlineText}. Your payment stays held until then — it is not released and not refunded — and a new ${escrowService.ESCROW_DAYS}-day hold starts once the redone work is completed and confirmed.`,
-        provider: `The dispute for "${job.title}" was resolved: you are to redo the work by ${rebookDeadlineText}. The client's payment stays held until the redone work is completed and confirmed, after which the standard ${escrowService.ESCROW_DAYS}-day hold applies.`,
+        client: `Your dispute for "${job.title}" was resolved: the same provider will redo the work by ${rebookDeadlineText}. Your payment stays held until then — it is not released and not refunded — and ${rebookClientHoldSentence}.`,
+        provider: `The dispute for "${job.title}" was resolved: you are to redo the work by ${rebookDeadlineText}. The client's payment stays held until the redone work is completed and confirmed, ${rebookProviderHoldSentence}.`,
       },
     };
 
@@ -1083,7 +1093,6 @@ const getJobStats = async (req, res) => {
     const inProgressJobs = await Job.countDocuments({ status: 'in_progress' });
     const completedJobs = await Job.countDocuments({ status: 'completed' });
     const cancelledJobs = await Job.countDocuments({ status: 'cancelled' });
-    const urgentJobs = await Job.countDocuments({ isUrgent: true, status: { $in: ['open', 'in_progress'] } });
     
     const totalApplications = await Application.countDocuments();
     const pendingApplications = await Application.countDocuments({ status: 'pending' });
@@ -1094,7 +1103,6 @@ const getJobStats = async (req, res) => {
       inProgressJobs,
       completedJobs,
       cancelledJobs,
-      urgentJobs,
       totalApplications,
       pendingApplications
     });

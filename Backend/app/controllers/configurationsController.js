@@ -1,4 +1,5 @@
 const JobCategory = require('../models/JobCategory');
+const { isServiceClass, SERVICE_CLASS_IDS } = require('../config/serviceClasses');
 const Job = require('../models/Job');
 const mongoose = require('mongoose');
 const fs = require('fs');
@@ -55,12 +56,19 @@ exports.getJobCategories = async (req, res) => {
 
 exports.createJobCategory = async (req, res) => {
   try {
-    const { name, icon, professions } = req.body;
+    const { name, icon, professions, serviceClass } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Category name is required',
+      });
+    }
+
+    if (serviceClass !== undefined && !isServiceClass(serviceClass)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
       });
     }
 
@@ -79,6 +87,9 @@ exports.createJobCategory = async (req, res) => {
     const category = await JobCategory.create({
       name: name.trim(),
       icon: icon || undefined,
+      // Omitted means the schema default (`standard`) — a new category never
+      // starts on a shortened hold by accident.
+      ...(serviceClass !== undefined ? { serviceClass } : {}),
       professions: [],
     });
 
@@ -94,6 +105,10 @@ exports.createJobCategory = async (req, res) => {
             category.professions.push({
               name: professionData.name.trim(),
               icon: professionData.icon || undefined,
+              // null = inherit the category's class.
+              serviceClass: isServiceClass(professionData.serviceClass)
+                ? professionData.serviceClass
+                : null,
             });
           }
         }
@@ -120,7 +135,7 @@ exports.createJobCategory = async (req, res) => {
 exports.updateJobCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    const { name, icon } = req.body;
+    const { name, icon, serviceClass } = req.body;
 
     const category = await JobCategory.findById(categoryId);
 
@@ -156,6 +171,19 @@ exports.updateJobCategory = async (req, res) => {
 
     if (icon !== undefined) {
       category.icon = icon;
+    }
+
+    if (serviceClass !== undefined) {
+      if (!isServiceClass(serviceClass)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
+        });
+      }
+      // Only affects jobs created from here on: every job snapshots its own
+      // release window at creation, so live and completed jobs keep the terms
+      // their clients agreed to. See app/config/serviceClasses.js.
+      category.serviceClass = serviceClass;
     }
 
     await category.save();
@@ -206,12 +234,19 @@ exports.deleteJobCategory = async (req, res) => {
 // Professions
 exports.createProfession = async (req, res) => {
   try {
-    const { name, categoryId } = req.body;
+    const { name, categoryId, serviceClass } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Profession name is required',
+      });
+    }
+
+    if (serviceClass != null && !isServiceClass(serviceClass)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}, or null to inherit the category.`,
       });
     }
 
@@ -244,6 +279,9 @@ exports.createProfession = async (req, res) => {
 
     category.professions.push({
       name: name.trim(),
+      // null (the default) means "inherit the category's class", which is what
+      // almost every profession does.
+      serviceClass: isServiceClass(serviceClass) ? serviceClass : null,
     });
 
     await category.save();
@@ -267,7 +305,7 @@ exports.createProfession = async (req, res) => {
 exports.updateProfession = async (req, res) => {
   try {
     const { professionId } = req.params;
-    const { name, icon, isQuickAccess, quickAccessOrder } = req.body;
+    const { name, icon, isQuickAccess, quickAccessOrder, serviceClass } = req.body;
 
     const category = await JobCategory.findOne({
       'professions._id': professionId,
@@ -326,6 +364,18 @@ exports.updateProfession = async (req, res) => {
 
     if (quickAccessOrder !== undefined) {
       profession.quickAccessOrder = quickAccessOrder;
+    }
+
+    if (serviceClass !== undefined) {
+      if (serviceClass != null && !isServiceClass(serviceClass)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}, or null to inherit the category.`,
+        });
+      }
+      // Explicit null clears the override and returns the profession to its
+      // category's class.
+      profession.serviceClass = serviceClass ?? null;
     }
 
     // When a profession is renamed and its icon already lives in ImageKit (and no new

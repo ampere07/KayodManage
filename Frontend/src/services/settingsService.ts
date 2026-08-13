@@ -1,4 +1,10 @@
 import apiClient from '../utils/apiClient';
+import type {
+  CreateJobCategoryRequest,
+  CreateProfessionRequest,
+  UpdateJobCategoryRequest,
+  UpdateProfessionRequest,
+} from '../types/configuration.types';
 
 export const settingsService = {
   getAllAdmins: async () => {
@@ -44,12 +50,12 @@ export const settingsService = {
     return response.data;
   },
 
-  createJobCategory: async (data: { name: string }) => {
+  createJobCategory: async (data: CreateJobCategoryRequest) => {
     const response = await apiClient.post('/api/admin/configurations/job-categories', data);
     return response.data;
   },
 
-  updateJobCategory: async (categoryId: string, data: { name: string }) => {
+  updateJobCategory: async (categoryId: string, data: UpdateJobCategoryRequest) => {
     const response = await apiClient.patch(`/api/admin/configurations/job-categories/${categoryId}`, data);
     return response.data;
   },
@@ -60,12 +66,12 @@ export const settingsService = {
   },
 
   // Professions
-  createProfession: async (data: { name: string; categoryId: string }) => {
+  createProfession: async (data: CreateProfessionRequest) => {
     const response = await apiClient.post('/api/admin/configurations/professions', data);
     return response.data;
   },
 
-  updateProfession: async (professionId: string, data: { name?: string; icon?: string }) => {
+  updateProfession: async (professionId: string, data: UpdateProfessionRequest) => {
     const response = await apiClient.patch(`/api/admin/configurations/professions/${professionId}`, data);
     return response.data;
   },

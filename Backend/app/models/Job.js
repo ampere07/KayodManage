@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
+const {
+  SERVICE_CLASS_IDS,
+  DEFAULT_SERVICE_CLASS,
+  getPaymentReleaseHours,
+} = require('../config/serviceClasses');
+
 const { Schema } = mongoose;
+
+const DEFAULT_PAYMENT_RELEASE_HOURS = getPaymentReleaseHours(DEFAULT_SERVICE_CLASS);
 
 const JobSchema = new Schema({
   title: {
@@ -43,6 +51,21 @@ const JobSchema = new Schema({
     type: String,
     trim: true
   },
+  // Payment-release policy, snapshotted onto the job at creation by
+  // kayod/server. Mirrored here so admin reads (job details, dispute
+  // resolution) see the same terms, and so KayodManage's own job.save() calls
+  // round-trip the fields instead of dropping them. Never recomputed here —
+  // kayod/server owns the write. See app/config/serviceClasses.js.
+  serviceClass: {
+    type: String,
+    enum: SERVICE_CLASS_IDS,
+    default: DEFAULT_SERVICE_CLASS
+  },
+  paymentReleaseHours: {
+    type: Number,
+    min: 0,
+    default: DEFAULT_PAYMENT_RELEASE_HOURS
+  },
   icon: {
     type: String,
     trim: true
@@ -78,10 +101,6 @@ const JobSchema = new Schema({
   dateDetails: {
     type: Schema.Types.Mixed,
     default: null
-  },
-  isUrgent: {
-    type: Boolean,
-    default: false
   },
   serviceTier: {
     type: String,
@@ -371,7 +390,6 @@ JobSchema.index({ userId: 1 });
 JobSchema.index({ assignedToId: 1 });
 JobSchema.index({ createdAt: -1 });
 JobSchema.index({ date: 1 });
-JobSchema.index({ isUrgent: 1 });
 JobSchema.index({ isDeleted: 1 });
 JobSchema.index({ isHidden: 1 });
 JobSchema.index({ deletedAt: -1 });

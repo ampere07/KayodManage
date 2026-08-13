@@ -47,7 +47,6 @@ const Jobs: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
-  const [urgentFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
   const [pagination, setPagination] = useState<JobsPagination>({
@@ -157,8 +156,7 @@ const Jobs: React.FC = () => {
     ...(statusFilter !== 'all' && { status: statusFilter }),
     ...(professionFilter !== 'all' && { profession: professionFilter }),
     ...(paymentMethodFilter !== 'all' && { paymentMethod: paymentMethodFilter }),
-    ...(urgentFilter === 'true' && { isUrgent: 'true' })
-  }), [pagination.page, pagination.limit, searchTerm, statusFilter, professionFilter, paymentMethodFilter, urgentFilter]);
+  }), [pagination.page, pagination.limit, searchTerm, statusFilter, professionFilter, paymentMethodFilter]);
 
   const queryClient = useQueryClient();
   const { socket } = useSocketContext();
@@ -202,7 +200,7 @@ const Jobs: React.FC = () => {
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter, professionFilter, paymentMethodFilter, urgentFilter]);
+  }, [searchTerm, statusFilter, professionFilter, paymentMethodFilter]);
 
   /**
    * Open job details modal
@@ -669,9 +667,6 @@ const Jobs: React.FC = () => {
                                   <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
                                     {job.title}
                                   </p>
-                                  {job.isUrgent && (
-                                    <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700">Urgent</span>
-                                  )}
                                 </div>
                                 <p className="text-[11px] text-gray-600 font-medium truncate whitespace-nowrap" title={job.description}>
                                   {job.description || 'No description'}
@@ -765,9 +760,6 @@ const Jobs: React.FC = () => {
                                 <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[130px]">
                                   {categoryLabel}
                                 </span>
-                                {job.isUrgent && (
-                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 flex-shrink-0">Urgent</span>
-                                )}
                               </div>
                               <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
                             </div>
@@ -833,9 +825,6 @@ const Jobs: React.FC = () => {
                               <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[140px]">
                                 {categoryLabel}
                               </span>
-                              {job.isUrgent && (
-                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 flex-shrink-0">Urgent</span>
-                              )}
                             </div>
                             <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
                             <div className="flex items-center gap-1.5 mt-0.5">

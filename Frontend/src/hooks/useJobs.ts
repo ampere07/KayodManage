@@ -10,7 +10,6 @@ interface UseJobsParams {
   status?: string;
   category?: string;
   paymentMethod?: string;
-  isUrgent?: string;
   archived?: boolean;
   archiveType?: 'hidden' | 'removed';
 }

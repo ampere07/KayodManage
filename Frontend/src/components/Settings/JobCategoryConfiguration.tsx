@@ -5,6 +5,7 @@ import { JobCategory } from '../../types/configuration.types';
 import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import QuickAccessManager from './QuickAccessManager';
+import { ServiceClassBadge } from './ServiceClassPicker';
 import { getIconByName, getDefaultIconForCategory, getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
 import { useJobCategories } from '../../hooks/useJobs';
 import { useSocket } from '../../context/SocketContext';
@@ -195,6 +196,12 @@ const JobCategoryConfiguration: React.FC = () => {
                           {category.professions.length} profession{category.professions.length !== 1 ? 's' : ''}
                         </span>
                       </div>
+
+                      {/* Payment-release class. Always shown at category level
+                          so the taxonomy's money behaviour is scannable in one
+                          pass, rather than something you discover by opening
+                          each drawer. */}
+                      <ServiceClassBadge value={category.serviceClass} />
                     </div>
 
                     {isExpanded && (
@@ -254,6 +261,17 @@ const JobCategoryConfiguration: React.FC = () => {
                                     }}
                                   />
                                 </div>
+                                {/* Only professions that OVERRIDE their category
+                                    are marked — flagging every inheriting tile
+                                    would bury the exceptions this exists to
+                                    surface. Icon only: the tiles are ~96px wide
+                                    and the name is in the tooltip. */}
+                                {profession.serviceClass && (
+                                  <div className="mt-1.5">
+                                    <ServiceClassBadge value={profession.serviceClass} iconOnly />
+                                  </div>
+                                )}
+
                                 {/* Edit indicator on hover */}
                                 <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <div className="bg-blue-600 text-white rounded-full p-1">

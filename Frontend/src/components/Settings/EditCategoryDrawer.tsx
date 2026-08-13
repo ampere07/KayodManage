@@ -6,6 +6,12 @@ import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
 import { useQueryClient } from '@tanstack/react-query';
 import TransferProfessionModal from './TransferProfessionModal';
+import ServiceClassPicker from './ServiceClassPicker';
+import { normalizeServiceClass, type ServiceClassId } from '../../constants/serviceClasses';
+import type {
+  UpdateJobCategoryRequest,
+  UpdateProfessionRequest,
+} from '../../types/configuration.types';
 
 // Helper function to generate consistent icon filename from profession name
 const generateIconFilename = (professionName: string): string => {
@@ -22,6 +28,8 @@ interface Profession {
   _id: string;
   name: string;
   icon?: string;
+  /** Overrides the category's payment-release class. null/absent = inherit. */
+  serviceClass?: ServiceClassId | null;
 }
 
 interface EditCategoryDrawerProps {
@@ -32,6 +40,7 @@ interface EditCategoryDrawerProps {
     _id: string;
     name: string;
     icon?: string;
+    serviceClass?: ServiceClassId;
     professions: Profession[];
   };
   profession?: Profession | null; // Optional profession to edit
@@ -46,6 +55,12 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 }) => {
   const [categoryName, setCategoryName] = useState(category.name);
   const [categoryIcon, setCategoryIcon] = useState(category.icon || getDefaultIconForCategory(category.name));
+  const [categoryServiceClass, setCategoryServiceClass] = useState<ServiceClassId>(
+    normalizeServiceClass(category.serviceClass),
+  );
+  // null = inherit the category's class, which is what most professions do.
+  const [editingProfessionServiceClass, setEditingProfessionServiceClass] =
+    useState<ServiceClassId | null>(initialProfession?.serviceClass ?? null);
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
@@ -151,6 +166,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     setEditingProfession(null);
     setEditingProfessionName('');
     setEditingProfessionIcon(undefined);
+    setEditingProfessionServiceClass(null);
     setIsAddingProfession(false);
     setIsEditingProfession(false);
     setNewProfessionName('');
@@ -164,6 +180,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     setEditingProfession(profession);
     setEditingProfessionName(profession.name);
     setEditingProfessionIcon(profession.icon);
+    setEditingProfessionServiceClass(profession.serviceClass ?? null);
     setIsEditingProfession(true);
     setIsAddingProfession(false);
   };
@@ -181,6 +198,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         const response = await settingsService.createProfession({
           name: finalName,
           categoryId: category._id,
+          serviceClass: editingProfessionServiceClass,
         });
         setProfessions(prev => [...prev, response.profession]);
         toast.success('Profession added successfully');
@@ -189,6 +207,9 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
       }
 
       const nameChanged = finalName !== editingProfession.name;
+      const serviceClassChanged =
+        (editingProfessionServiceClass ?? null) !==
+        (editingProfession.serviceClass ?? null);
       let committedIcon: string | undefined;
 
       // 1) Upload the staged icon FIRST, under the final name. This is the ONLY place the
@@ -206,9 +227,12 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
       // 2) Persist the name change. When an icon was just uploaded we pass it along so the
       //    backend does not try to rename a file that already sits at the final name.
-      const updateData: { name?: string; icon?: string } = {};
+      const updateData: UpdateProfessionRequest = {};
       if (nameChanged) updateData.name = finalName;
       if (nameChanged && committedIcon) updateData.icon = committedIcon;
+      // Sent explicitly (including null) so clearing an override back to
+      // "inherit from category" actually persists.
+      if (serviceClassChanged) updateData.serviceClass = editingProfessionServiceClass;
 
       if (Object.keys(updateData).length > 0) {
         const res = await settingsService.updateProfession(editingProfession._id, updateData);
@@ -216,7 +240,12 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         setProfessions(prev =>
           prev.map(prof =>
             prof._id === editingProfession._id
-              ? { ...prof, name: finalName, ...(resolvedIcon ? { icon: resolvedIcon } : {}) }
+              ? {
+                  ...prof,
+                  name: finalName,
+                  serviceClass: editingProfessionServiceClass,
+                  ...(resolvedIcon ? { icon: resolvedIcon } : {}),
+                }
               : prof
           )
         );
@@ -224,13 +253,15 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
         queryClient.invalidateQueries({ queryKey: ['job-categories'] });
       }
 
-      if (nameChanged || committedIcon) {
+      if (nameChanged || committedIcon || serviceClassChanged) {
         toast.success(
           nameChanged && committedIcon
             ? 'Profession name and icon updated successfully'
             : nameChanged
               ? 'Profession name updated successfully'
-              : 'Profession icon updated successfully'
+              : committedIcon
+                ? 'Profession icon updated successfully'
+                : 'Payment release updated successfully'
         );
       }
       resetProfessionEditState();
@@ -479,13 +510,23 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     try {
       const updates: Promise<any>[] = [];
       
-      if (categoryName.trim() !== category.name || categoryIcon !== category.icon) {
-        const updateData: any = {};
+      const serviceClassChanged =
+        categoryServiceClass !== normalizeServiceClass(category.serviceClass);
+
+      if (
+        categoryName.trim() !== category.name ||
+        categoryIcon !== category.icon ||
+        serviceClassChanged
+      ) {
+        const updateData: UpdateJobCategoryRequest = {};
         if (categoryName.trim() !== category.name) {
           updateData.name = categoryName.trim();
         }
         if (categoryIcon !== category.icon) {
           updateData.icon = categoryIcon;
+        }
+        if (serviceClassChanged) {
+          updateData.serviceClass = categoryServiceClass;
         }
         updates.push(
           settingsService.updateJobCategory(category._id, updateData)
@@ -581,6 +622,16 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
           {/* Category icon UI removed per request */}
 
+          {/* The class every profession under this category inherits unless it
+              sets its own. This is the lever that makes on-the-spot services
+              (wellness, grooming) settle in a day instead of five. */}
+          <div className="mb-6">
+            <ServiceClassPicker
+              value={categoryServiceClass}
+              onChange={(next) => setCategoryServiceClass(normalizeServiceClass(next))}
+            />
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
@@ -635,6 +686,21 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
                     }
                   }}
                 />
+
+                {/* Per-profession override. Almost every profession inherits;
+                    this exists so a single outlier (a repair trade inside an
+                    otherwise on-the-spot category) does not force the category
+                    to be split in two. */}
+                <div className="mb-3">
+                  <ServiceClassPicker
+                    value={editingProfessionServiceClass}
+                    onChange={setEditingProfessionServiceClass}
+                    allowInherit
+                    inheritedFrom={categoryServiceClass}
+                    label="Payment release override"
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     onClick={handleSaveProfessionEdit}

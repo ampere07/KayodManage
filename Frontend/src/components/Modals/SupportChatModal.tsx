@@ -859,7 +859,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                             const isResolved = section.title.includes("✓");
                             const isNewTicket = section.title.includes("⚡");
                             const titleText = section.title.replace(
-                              /^[✓⚡📋]\s*/,
+                              /^[✓⚡📋]\s*/u,
                               "",
                             );
 

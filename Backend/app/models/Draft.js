@@ -18,7 +18,6 @@ const DraftSchema = new Schema({
   selectedDates: { type: [Date], default: [] },
   timeWindows: { type: [String], default: [] },
   dateDetails: { type: Schema.Types.Mixed, default: null },
-  isUrgent: { type: Boolean, default: false },
   serviceTier: { type: String, enum: ['standard', 'premium', 'economy'], default: 'standard' },
   paymentMethod: { type: String, enum: ['wallet'], default: 'wallet' },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },

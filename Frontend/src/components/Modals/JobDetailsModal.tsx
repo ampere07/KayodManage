@@ -26,6 +26,7 @@ import ClickableImage from '../UI/ClickableImage';
 import { jobsService } from '../../services';
 import type { Job, Application } from '../../types/jobs.types';
 import { SidebarContext } from '../Layout/Layout';
+import { formatReleaseWindow, getServiceClass } from '../../constants/serviceClasses';
 
 // ImageKit configuration
 const IMAGEKIT_URL_ENDPOINT = 'https://ik.imagekit.io/9vpn8u272';
@@ -408,6 +409,17 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                     <div data-testid="admin-job-escrow-card" className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                       <p className="text-sm font-semibold text-blue-800 mb-1">Escrow</p>
                       <p data-testid="admin-job-escrow-status" className="text-sm text-blue-900 capitalize">Status: {job.escrowStatus}</p>
+                      {/* The hold length is per-job, snapshotted at booking —
+                          an admin deciding a dispute needs the terms this
+                          client actually agreed to, not the current category
+                          setting, which may since have changed. */}
+                      <p data-testid="admin-job-service-class" className="text-xs text-blue-700 mt-1">
+                        Terms: {getServiceClass(job.serviceClass).label} · held{' '}
+                        {formatReleaseWindow(
+                          job.paymentReleaseHours ??
+                            getServiceClass(job.serviceClass).paymentReleaseHours,
+                        )}
+                      </p>
                       {job.escrowReleaseAt && (
                         <p data-testid="admin-job-escrow-release-date" className="text-xs text-blue-700 mt-1">
                           Release date: {new Date(job.escrowReleaseAt).toLocaleString('en-US')}

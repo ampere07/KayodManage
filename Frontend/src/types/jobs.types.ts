@@ -1,4 +1,6 @@
 // Job Types
+import type { ServiceClassId } from '../constants/serviceClasses';
+
 export interface Application {
   _id: string;
   provider: {
@@ -21,13 +23,15 @@ export interface Job {
   categoryName?: string;
   profession?: string;
   professionName?: string;
+  /** Payment-release terms, snapshotted onto the job when it was created. */
+  serviceClass?: ServiceClassId;
+  paymentReleaseHours?: number;
   icon?: string;
   media: string[];
   location?: any;
   locationDisplay: string;
   locationDetails?: string;
   date: Date | string;
-  isUrgent: boolean;
   serviceTier: 'basic' | 'standard' | 'premium';
   paymentMethod: 'wallet' | 'xendit';
   status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
@@ -109,7 +113,6 @@ export interface JobsQueryParams {
   status?: string;
   category?: string;
   paymentMethod?: string;
-  isUrgent?: string;
   archived?: boolean;
   archiveType?: 'hidden' | 'removed';
 }
