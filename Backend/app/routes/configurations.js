@@ -12,7 +12,17 @@ const {
   uploadCategoryIcon,
   uploadProfessionIcon,
   updateQuickAccessProfessions,
+  getJobPostingSettings,
+  updateJobPostingSettings,
 } = require('../controllers/configurationsController');
+const {
+  getAdvertisements,
+  getPublicAdvertisements,
+  createAdvertisement,
+  updateAdvertisement,
+  deleteAdvertisement,
+  uploadAdvertisementImage,
+} = require('../controllers/advertisementsController');
 
 const router = express.Router();
 
@@ -73,6 +83,18 @@ router.post('/upload-profession-icon', requireAdmin, upload.single('icon'), uplo
 
 // Quick Access Professions Management
 router.post('/quick-access-professions', requireAdmin, updateQuickAccessProfessions);
+
+// Job Posting Settings
+router.get('/job-posting', requireAdmin, getJobPostingSettings);
+router.patch('/job-posting', requireAdmin, updateJobPostingSettings);
+
+// Advertisements
+router.get('/advertisements/public', getPublicAdvertisements); // public (client app)
+router.get('/advertisements', requireAdmin, getAdvertisements);
+router.post('/advertisements', requireAdmin, createAdvertisement);
+router.post('/advertisements/upload-image', requireAdmin, upload.single('image'), uploadAdvertisementImage);
+router.patch('/advertisements/:id', requireAdmin, updateAdvertisement);
+router.delete('/advertisements/:id', requireAdmin, deleteAdvertisement);
 
 // Debug endpoint to check quick access professions
 router.get('/quick-access-professions/debug', async (req, res) => {

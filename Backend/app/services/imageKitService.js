@@ -75,6 +75,30 @@ const imageKitService = {
 	},
 
 	/**
+	 * Upload a wide banner/advertisement image (keeps aspect ratio, caps width).
+	 * Unlike uploadFile (which force-crops to 256x256 for icons), this is sized
+	 * for full-width promo banners.
+	 */
+	uploadBanner: async (file, fileName, folder = 'advertisements', tags = []) => {
+		try {
+			const result = await imagekit.upload({
+				file, // buffer or base64 string
+				fileName,
+				folder,
+				tags,
+				useUniqueFileName: true,
+				transformation: {
+					pre: 'q-80,w-1080', // quality 80, cap width at 1080px, keep aspect ratio
+				},
+			});
+			return result;
+		} catch (error) {
+			console.error('[ImageKit Backend] uploadBanner failed:', error);
+			throw error;
+		}
+	},
+
+	/**
 	 * Delete a file
 	 */
 	deleteFile: async (fileId) => {

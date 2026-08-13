@@ -1,5 +1,6 @@
 const JobCategory = require('../models/JobCategory');
 const { isServiceClass, SERVICE_CLASS_IDS } = require('../config/serviceClasses');
+const JobPostingSettings = require('../models/JobPostingSettings');
 const Job = require('../models/Job');
 const mongoose = require('mongoose');
 const fs = require('fs');
@@ -1051,6 +1052,133 @@ exports.updateQuickAccessProfessions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update quick access professions',
+      error: error.message,
+    });
+  }
+};
+
+// Job Posting Settings
+exports.getJobPostingSettings = async (req, res) => {
+  try {
+    const settings = await JobPostingSettings.getSettings();
+
+    res.status(200).json({
+      success: true,
+      settings,
+    });
+  } catch (error) {
+    console.error('Error fetching job posting settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch job posting settings',
+      error: error.message,
+    });
+  }
+};
+
+exports.updateJobPostingSettings = async (req, res) => {
+  try {
+    const numericFields = [
+      'maxActiveJobsPerUser',
+      'jobPostDurationDays',
+      'maxAttachments',
+      'asapFee',
+      'bookingFeePercentage',
+      'bookingFeeThreshold',
+      'bookingFeeMinimum',
+      'clientCancellationFeePercentage',
+      'clientCancellationFeeMinimum',
+      'providerStrikeLimit',
+      'providerStrikeRatingPenalty',
+    ];
+    const booleanFields = ['requireApproval', 'allowAttachments'];
+
+    const settings = await JobPostingSettings.getSettings();
+
+    // Validate and stage numeric fields (allow non-negative finite numbers only).
+    for (const field of numericFields) {
+      if (req.body[field] === undefined) continue;
+
+      const value = Number(req.body[field]);
+      if (!Number.isFinite(value) || value < 0) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} must be a non-negative number`,
+        });
+      }
+      settings[field] = value;
+    }
+
+    // maxActiveJobsPerUser and jobPostDurationDays must be at least 1.
+    if (settings.maxActiveJobsPerUser < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'maxActiveJobsPerUser must be at least 1',
+      });
+    }
+    if (settings.jobPostDurationDays < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'jobPostDurationDays must be at least 1',
+      });
+    }
+
+    // Booking fee percentage is a 0-100 rate.
+    if (settings.bookingFeePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'bookingFeePercentage cannot exceed 100',
+      });
+    }
+
+    // Client cancellation fee percentage is a 0-100 rate.
+    if (settings.clientCancellationFeePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'clientCancellationFeePercentage cannot exceed 100',
+      });
+    }
+
+    // Provider strike limit must be at least 1.
+    if (settings.providerStrikeLimit < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'providerStrikeLimit must be at least 1',
+      });
+    }
+
+    // Stage boolean fields.
+    for (const field of booleanFields) {
+      if (req.body[field] === undefined) continue;
+      settings[field] = Boolean(req.body[field]);
+    }
+
+    settings.updatedBy = req.session?.uid || req.session?.email || 'unknown';
+    await settings.save();
+
+    // Emit socket event for real-time update
+    if (io) {
+      try {
+        const adminNamespace = io.of('/admin');
+        adminNamespace.emit('configuration:updated', {
+          type: 'job-posting',
+          action: 'updated',
+          settings,
+        });
+      } catch (socketErr) {
+        console.error('Error emitting socket event:', socketErr);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      settings,
+    });
+  } catch (error) {
+    console.error('Error updating job posting settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update job posting settings',
       error: error.message,
     });
   }

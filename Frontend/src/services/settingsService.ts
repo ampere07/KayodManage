@@ -4,6 +4,7 @@ import type {
   CreateProfessionRequest,
   UpdateJobCategoryRequest,
   UpdateProfessionRequest,
+  UpdateJobPostingSettingsRequest,
 } from '../types/configuration.types';
 
 export const settingsService = {
@@ -124,6 +125,17 @@ export const settingsService = {
 
   updateQuickAccessProfessions: async (professions: Array<{ professionId: string }>) => {
     const response = await apiClient.post('/api/admin/configurations/quick-access-professions', { professions });
+    return response.data;
+  },
+
+  // Job Posting Settings
+  getJobPostingSettings: async () => {
+    const response = await apiClient.get('/api/admin/configurations/job-posting');
+    return response.data;
+  },
+
+  updateJobPostingSettings: async (data: UpdateJobPostingSettingsRequest) => {
+    const response = await apiClient.patch('/api/admin/configurations/job-posting', data);
     return response.data;
   },
 };
