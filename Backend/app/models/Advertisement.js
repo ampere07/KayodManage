@@ -31,13 +31,21 @@ const advertisementSchema = new mongoose.Schema({
   subtitle: { type: String, trim: true, default: '' }, // offer: description
   highlight: { type: String, trim: true, default: '' }, // invite: line 2 / offer: discount (e.g. "20% off")
   ctaLabel: { type: String, trim: true, default: '' }, // button label e.g. "Refer Now", "Post a Job"
-  // Image fields
+  // Image fields. For an 'image' ad this is the banner itself; for 'invite' and
+  // 'offer' it is an optional background photo replacing the flat brand colour.
   imageUrl: { type: String, trim: true, default: '' },
   imageFileId: { type: String, trim: true, default: '' }, // ImageKit fileId (for deletion)
-  // Text/button elements overlaid on an image ad.
+  // Text/button elements overlaid on an 'image' ad.
   overlays: { type: [overlaySchema], default: [] },
   // Optional deep link / action fired when the banner is tapped in the client.
   linkAction: { type: String, trim: true, default: '' },
+  // Lifecycle, as shown to admins: a 'draft' has never gone live, a 'paused' ad
+  // has been taken down. Deliberately has NO schema default — legacy documents
+  // predate the field and a default would be applied on hydration, masking an
+  // ad that is switched off as "published". The controller derives it from
+  // isActive instead, and keeps the two in sync (published <=> active) so the
+  // public endpoint and the mobile client contract stay unchanged.
+  status: { type: String, enum: ['draft', 'published', 'paused'] },
   // Presentation
   isActive: { type: Boolean, default: true },
   order: { type: Number, default: 0 },

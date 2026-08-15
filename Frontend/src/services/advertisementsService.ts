@@ -19,6 +19,12 @@ export const advertisementsService = {
     return response.data;
   },
 
+  /** Sets the carousel sequence. `ids` must be the full list, in display order. */
+  reorderAdvertisements: async (ids: string[]) => {
+    const response = await apiClient.patch(`${BASE}/reorder`, { ids });
+    return response.data;
+  },
+
   deleteAdvertisement: async (id: string) => {
     const response = await apiClient.delete(`${BASE}/${id}`);
     return response.data;
