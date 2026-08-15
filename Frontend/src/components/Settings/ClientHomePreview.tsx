@@ -59,13 +59,19 @@ interface ClientHomePreviewProps {
   ads?: Advertisement[];
   /** Hide the intro copy (e.g. when embedded next to the ad manager). */
   showIntro?: boolean;
+  /** Drop the outer padding when the parent already provides a frame. */
+  padded?: boolean;
 }
 
-const ClientHomePreview: React.FC<ClientHomePreviewProps> = ({ ads, showIntro = true }) => {
+const ClientHomePreview: React.FC<ClientHomePreviewProps> = ({
+  ads,
+  showIntro = true,
+  padded = true,
+}) => {
   const displayAds: AdBannerData[] = ads && ads.length > 0 ? ads : DEFAULT_ADS;
 
   return (
-    <div className="p-4 md:p-6 bg-white">
+    <div className={padded ? 'bg-white p-4 md:p-6' : ''}>
       {/* Intro */}
       {showIntro && (
         <div className="max-w-md mb-6">

@@ -97,6 +97,10 @@ export interface AdOverlay {
   position: AdOverlayPosition;
 }
 
+// Lifecycle shown to admins. `isActive` mirrors it (published <=> active) and
+// stays the field the client app filters on.
+export type AdStatus = 'draft' | 'published' | 'paused';
+
 export interface Advertisement {
   _id: string;
   type: AdvertisementType;
@@ -104,10 +108,12 @@ export interface Advertisement {
   subtitle: string;
   highlight: string;
   ctaLabel: string;
+  /** The banner itself for 'image' ads; an optional background photo for 'invite' / 'offer'. */
   imageUrl: string;
   imageFileId: string;
   overlays: AdOverlay[];
   linkAction: string;
+  status: AdStatus;
   isActive: boolean;
   order: number;
   createdAt?: Date | string;
