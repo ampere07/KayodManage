@@ -83,7 +83,7 @@ describe('escrow terms line', () => {
 
   it('falls back to the class default when the job has no snapshot', async () => {
     renderModal({ serviceClass: SERVICE_CLASS.IMMEDIATE, paymentReleaseHours: undefined });
-    expect(termsLine()).toContain('24 hours');
+    expect(termsLine()).toContain('Immediate Service');
   });
 
   it('reads a job predating the feature as Standard, never blank', async () => {

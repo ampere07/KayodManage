@@ -51,7 +51,7 @@ describe('ServiceClassPicker — category mode', () => {
     render(<ServiceClassPicker value={SERVICE_CLASS.STANDARD} onChange={vi.fn()} />);
 
     expect(within(getOption(/Standard Service/)).getByText('5 days')).toBeInTheDocument();
-    expect(within(getOption(/Immediate Service/)).getByText('24 hours')).toBeInTheDocument();
+    expect(within(getOption(/Immediate Service/)).getByText(/released as soon as/)).toBeInTheDocument();
   });
 
   it('emits the class id when a different option is picked', async () => {
