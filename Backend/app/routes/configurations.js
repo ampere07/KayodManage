@@ -20,6 +20,7 @@ const {
   getPublicAdvertisements,
   createAdvertisement,
   updateAdvertisement,
+  reorderAdvertisements,
   deleteAdvertisement,
   uploadAdvertisementImage,
 } = require('../controllers/advertisementsController');
@@ -93,6 +94,8 @@ router.get('/advertisements/public', getPublicAdvertisements); // public (client
 router.get('/advertisements', requireAdmin, getAdvertisements);
 router.post('/advertisements', requireAdmin, createAdvertisement);
 router.post('/advertisements/upload-image', requireAdmin, upload.single('image'), uploadAdvertisementImage);
+// Must precede '/advertisements/:id' — otherwise :id captures 'reorder'.
+router.patch('/advertisements/reorder', requireAdmin, reorderAdvertisements);
 router.patch('/advertisements/:id', requireAdmin, updateAdvertisement);
 router.delete('/advertisements/:id', requireAdmin, deleteAdvertisement);
 

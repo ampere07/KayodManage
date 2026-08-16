@@ -23,6 +23,9 @@ export interface AdBannerData {
   overlays?: AdOverlay[];
 }
 
+// Text drawn over a photo needs a shadow to stay legible on light areas.
+const OVER_IMAGE_SHADOW = '0 1px 3px rgba(0,0,0,0.55)';
+
 // Anchor an overlay to a corner/center of the image.
 const overlayPositionClass = (position?: AdOverlayPosition): string => {
   switch (position) {
@@ -48,6 +51,14 @@ const CtaPill: React.FC<{ label: string }> = ({ label }) => (
     {label}
     <span aria-hidden>›</span>
   </span>
+);
+
+/** Full-bleed photo + scrim, used when an invite/offer ad has a background image. */
+const PhotoBackdrop: React.FC<{ src: string; alt: string }> = ({ src, alt }) => (
+  <>
+    <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover" />
+    <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/25 to-black/60" />
+  </>
 );
 
 /**
@@ -80,7 +91,7 @@ export const AdBanner: React.FC<{ ad: AdBannerData }> = ({ ad }) => {
             ) : (
               <span
                 className="text-base font-extrabold leading-tight"
-                style={{ color: ov.color || '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}
+                style={{ color: ov.color || '#FFFFFF', textShadow: OVER_IMAGE_SHADOW }}
               >
                 {ov.text || 'Text'}
               </span>
@@ -91,20 +102,30 @@ export const AdBanner: React.FC<{ ad: AdBannerData }> = ({ ad }) => {
     );
   }
 
+  // A background photo replaces the flat brand colour and flips text to white.
+  const photo = ad.imageUrl || '';
+  const onPhoto = Boolean(photo);
+  const textShadow = onPhoto ? OVER_IMAGE_SHADOW : undefined;
+
   if (type === 'invite') {
     return (
       <div
         className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-4"
-        style={{ backgroundColor: KAYOD.inviteTeal }}
+        style={{ backgroundColor: onPhoto ? '#000000' : KAYOD.inviteTeal }}
       >
+        {onPhoto ? <PhotoBackdrop src={photo} alt={ad.title || 'Advertisement'} /> : null}
         <div className="relative z-10 max-w-[68%]">
-          <p className="text-lg font-extrabold leading-tight text-white">{ad.title || 'Invite a Friend,'}</p>
-          <p className="text-lg font-extrabold leading-tight text-white">{ad.highlight || 'Get ₱50 off'}</p>
+          <p className="text-lg font-extrabold leading-tight text-white" style={{ textShadow }}>
+            {ad.title || 'Invite a Friend,'}
+          </p>
+          <p className="text-lg font-extrabold leading-tight text-white" style={{ textShadow }}>
+            {ad.highlight || 'Get ₱50 off'}
+          </p>
         </div>
         <div className="relative z-10">
           <CtaPill label={ad.ctaLabel || 'Refer Now'} />
         </div>
-        <div className="absolute bottom-1 right-3 text-5xl">🙌</div>
+        {onPhoto ? null : <div className="absolute bottom-1 right-3 text-5xl">🙌</div>}
       </div>
     );
   }
@@ -113,24 +134,36 @@ export const AdBanner: React.FC<{ ad: AdBannerData }> = ({ ad }) => {
   return (
     <div
       className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-4"
-      style={{ backgroundColor: KAYOD.primaryLight }}
+      style={{ backgroundColor: onPhoto ? '#000000' : KAYOD.primaryLight }}
     >
-      {/* discount badge stand-in for discount.webp */}
-      <div className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400 text-lg font-black text-white shadow-sm">
-        %
-      </div>
+      {onPhoto ? <PhotoBackdrop src={photo} alt={ad.title || 'Advertisement'} /> : null}
+      {onPhoto ? null : (
+        /* discount badge stand-in for discount.webp */
+        <div className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400 text-lg font-black text-white shadow-sm">
+          %
+        </div>
+      )}
       <div className="relative z-10 max-w-[72%]">
-        <p className="text-base font-extrabold" style={{ color: KAYOD.primary }}>
+        <p
+          className="text-base font-extrabold"
+          style={{ color: onPhoto ? '#FFFFFF' : KAYOD.primary, textShadow }}
+        >
           {ad.title || 'Special Offer'}
         </p>
         {ad.subtitle ? (
-          <p className="mt-1 text-[11px] leading-snug" style={{ color: KAYOD.textSecondary }}>
+          <p
+            className="mt-1 text-[11px] leading-snug"
+            style={{ color: onPhoto ? 'rgba(255,255,255,0.9)' : KAYOD.textSecondary, textShadow }}
+          >
             {ad.subtitle}
           </p>
         ) : null}
       </div>
-      <div className="relative z-10 flex items-end justify-between">
-        <span className="text-2xl font-extrabold" style={{ color: KAYOD.primary }}>
+      <div className="relative z-10 flex items-end justify-between gap-2">
+        <span
+          className="text-2xl font-extrabold"
+          style={{ color: onPhoto ? '#FFFFFF' : KAYOD.primary, textShadow }}
+        >
           {ad.highlight || '20% off'}
         </span>
         <CtaPill label={ad.ctaLabel || 'Post a Job'} />
