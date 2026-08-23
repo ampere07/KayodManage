@@ -41,7 +41,17 @@ const TransactionSchema = new Schema({
       'withdrawal',
       'xendit_topup',
       'referral_bonus',
-      'premium_subscription'
+      'premium_subscription',
+      // Written by the Kayod server whenever a client cancels inside the fee
+      // window. It was missing here, so any admin action that saved such a
+      // document would have failed validation on a type the app creates
+      // routinely.
+      'cancellation_fee',
+      // Reserved-time payout, written by resolveDispute when an admin rules on
+      // a missed booking: the wronged party takes a share of the held amount
+      // and the rest is refunded. Must stay in step with the Kayod server's
+      // Transaction enum, which is the model the app reads these back through.
+      'no_show_payout'
     ],
     required: true
   },

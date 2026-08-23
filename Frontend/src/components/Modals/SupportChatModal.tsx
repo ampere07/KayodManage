@@ -18,7 +18,12 @@ import {
 import { getStatusBadge } from "../../utils";
 import UserTypeBadge from "../UI/UserTypeBadge";
 import { useAuth } from "../../context/AuthContext";
-import { jobsService } from "../../services";
+import type {
+  DisputeFinding,
+  FaultParty,
+  FindingReason,
+} from "../../types/jobs.types";
+import { jobsService, usersService } from "../../services";
 import JobDetailsModal from "./JobDetailsModal";
 
 interface Message {
@@ -78,9 +83,10 @@ interface SupportChatModalProps {
   handleAcceptTicket: (chatSupportId: string) => Promise<void> | void;
   onResolveDispute?: (
     jobId: string,
-    outcome: "pay_provider" | "refund_client" | "rebook",
+    outcome: "pay_provider" | "refund_client" | "rebook" | "no_show_payout",
     note?: string,
     rebookDeadlineAt?: string,
+    finding?: DisputeFinding,
   ) => Promise<void>;
   onAddInternalNote?: (chatSupportId: string, note: string) => Promise<void>;
   /** The other party's thread of the same dispute (cross-linked by metadata.jobId). */
@@ -331,9 +337,19 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   const [jobModalData, setJobModalData] = useState<any>(null);
   const [disputeNote, setDisputeNote] = useState("");
   const [resolvingOutcome, setResolvingOutcome] = useState<string | null>(null);
+  // Manual account restriction, alongside the money outcomes. The automatic
+  // restriction only ever fires on a PATTERN of missed bookings; a single
+  // egregious one still needs a human to be able to act on it.
+  const [restrictingUser, setRestrictingUser] = useState(false);
   // Required for the rebook outcome — the client's payment stays held while the
   // work is redone, so the redo needs a date the scheduler can escalate on.
   const [rebookDeadline, setRebookDeadline] = useState("");
+  // The FINDING, kept separate from the outcome. An admin can rule on the money
+  // without being forced to attribute blame — an unstated finding is recorded as
+  // "uncertain" and sanctions nobody, which is the honest default when a case
+  // genuinely cannot be called.
+  const [faultParty, setFaultParty] = useState<FaultParty>("uncertain");
+  const [findingReason, setFindingReason] = useState<FindingReason>("other");
   const [internalNoteText, setInternalNoteText] = useState("");
   const [sendingInternalNote, setSendingInternalNote] = useState(false);
   const [acceptingTicket, setAcceptingTicket] = useState(false);
@@ -443,7 +459,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   };
 
   const handleResolveDispute = async (
-    outcome: "pay_provider" | "refund_client" | "rebook",
+    outcome: "pay_provider" | "refund_client" | "rebook" | "no_show_payout",
   ) => {
     if (
       !canManageTicket ||
@@ -474,10 +490,13 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
         outcome === "rebook"
           ? new Date(rebookDeadline).toISOString()
           : undefined,
+        { faultParty, findingReason, notes: disputeNote.trim() || undefined },
       );
       if (activeTicketIdRef.current === ticketId) {
         setDisputeNote("");
         setRebookDeadline("");
+        setFaultParty("uncertain");
+        setFindingReason("other");
       }
     } catch (error) {
       console.error("Error resolving dispute:", error);
@@ -491,6 +510,51 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
       ) {
         setResolvingOutcome(null);
       }
+    }
+  };
+
+  /**
+   * Restrict the account of whoever owns THIS thread.
+   *
+   * Scoped to the current thread's user on purpose. A dispute has two sides and
+   * a single "restrict" button that had to guess which one it meant would be
+   * one misclick away from restricting the wronged party — the admin switches
+   * to the other party's thread (the button above) to act on them instead.
+   */
+  const handleRestrictThreadOwner = async () => {
+    if (!canManageTicket || !selectedChat || restrictingUser) return;
+    const targetId =
+      typeof selectedChat.userId === "string"
+        ? selectedChat.userId
+        : (selectedChat.userId as any)?._id;
+    if (!targetId) {
+      alert("This ticket has no user attached, so there is nobody to restrict.");
+      return;
+    }
+    const targetName =
+      typeof selectedChat.userId === "string"
+        ? "this user"
+        : (selectedChat.userId as any)?.name || "this user";
+    if (
+      !window.confirm(
+        `Restrict ${targetName}? They will not be able to post jobs, quote, or accept work until the restriction is lifted. They can appeal it.`,
+      )
+    ) {
+      return;
+    }
+    setRestrictingUser(true);
+    try {
+      await usersService.restrictUser(
+        targetId,
+        undefined,
+        disputeNote.trim() || "Restricted by support while resolving a dispute",
+      );
+      alert(`${targetName} has been restricted.`);
+    } catch (error) {
+      console.error("Error restricting user:", error);
+      alert("Failed to restrict the account. Please try again.");
+    } finally {
+      setRestrictingUser(false);
     }
   };
 
@@ -1632,6 +1696,57 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                       rows={2}
                       className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
+
+                    {/* The FINDING — who failed, and how — recorded separately
+                        from where the money goes. The same refund can mean "the
+                        provider never arrived", "the work was unacceptable" or
+                        "both sides called it off", so the outcome alone cannot
+                        carry it. Left as "Not established" this records honestly
+                        and sanctions nobody. */}
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-3">
+                      <p className="text-[11px] font-bold text-gray-700 mb-1">
+                        Finding (who was at fault)
+                      </p>
+                      <p className="text-[11px] text-gray-500 mb-2">
+                        Recorded against the party named and counted toward their
+                        restriction threshold. Leave as &quot;Not established&quot;
+                        when the case genuinely cannot be called — an unstated
+                        finding sanctions nobody. An emergency is recorded but never
+                        sanctioned.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          data-testid="resolve-dispute-fault-party"
+                          aria-label="Party at fault"
+                          value={faultParty}
+                          onChange={(e) =>
+                            setFaultParty(e.target.value as FaultParty)
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="uncertain">Not established</option>
+                          <option value="none">Nobody at fault</option>
+                          <option value="client">Client at fault</option>
+                          <option value="provider">Provider at fault</option>
+                          <option value="both">Both at fault</option>
+                        </select>
+                        <select
+                          data-testid="resolve-dispute-finding-reason"
+                          aria-label="What happened"
+                          value={findingReason}
+                          onChange={(e) =>
+                            setFindingReason(e.target.value as FindingReason)
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="other">Other / unspecified</option>
+                          <option value="no_show">Did not attend</option>
+                          <option value="late_cancel">Cancelled too late</option>
+                          <option value="access_failure">Could not access site</option>
+                          <option value="emergency">Emergency (not sanctioned)</option>
+                        </select>
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       <button
                         data-testid="resolve-dispute-pay-provider"
@@ -1653,6 +1768,21 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           ? "Resolving…"
                           : "Refund Client"}
                       </button>
+                      <button
+                        data-testid="resolve-dispute-no-show-payout"
+                        onClick={() => handleResolveDispute("no_show_payout")}
+                        disabled={!!resolvingOutcome}
+                        className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {resolvingOutcome === "no_show_payout"
+                          ? "Resolving…"
+                          : "Client Did Not Appear"}
+                      </button>
+                      <p className="text-[11px] text-gray-500 px-1 -mt-1">
+                        Pays the provider the reserved-time payout for the slot they
+                        held and refunds the rest to the client. The payout is held
+                        for the job&apos;s normal release window, not paid instantly.
+                      </p>
                       <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
                         <label
                           htmlFor="rebook-deadline"
@@ -1686,6 +1816,27 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           {resolvingOutcome === "rebook"
                             ? "Resolving…"
                             : "Rebook"}
+                        </button>
+                      </div>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-[11px] font-bold text-gray-700 mb-1">
+                          Account action
+                        </p>
+                        <p className="text-[11px] text-gray-500 mb-2">
+                          Separate from the money outcome, and scoped to THIS
+                          thread&apos;s party. Repeated missed bookings restrict an
+                          account on their own; use this when one case warrants it
+                          now. The resolution note above is recorded as the reason.
+                        </p>
+                        <button
+                          data-testid="dispute-restrict-user"
+                          onClick={handleRestrictThreadOwner}
+                          disabled={restrictingUser || !!resolvingOutcome}
+                          className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {restrictingUser
+                            ? "Restricting…"
+                            : "Restrict This Account"}
                         </button>
                       </div>
                     </div>

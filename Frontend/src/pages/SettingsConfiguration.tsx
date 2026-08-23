@@ -1,13 +1,16 @@
 import React, { useState, useContext } from 'react';
-import { Briefcase, Megaphone, Menu, ClipboardList } from 'lucide-react';
+import { Briefcase, Megaphone, Menu, ClipboardList, Scale } from 'lucide-react';
 import JobCategoryConfiguration from '../components/Settings/JobCategoryConfiguration';
 import JobPostingConfiguration from '../components/Settings/JobPostingConfiguration';
 import AdvertisementManager from '../components/Settings/AdvertisementManager';
+import LegalDocumentConfiguration from '../components/Settings/LegalDocumentConfiguration';
 import { SidebarContext } from '../components/Layout/Layout';
 import { useAuth } from '../context/AuthContext';
 
 const SettingsConfiguration: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'job-category' | 'job-posting' | 'advertisement'>('job-category');
+  const [activeTab, setActiveTab] = useState<
+    'job-category' | 'job-posting' | 'advertisement' | 'legal'
+  >('job-category');
   const { setSidebarOpen } = useContext(SidebarContext);
   const { user } = useAuth();
 
@@ -18,13 +21,17 @@ const SettingsConfiguration: React.FC = () => {
     if (activeTab === 'job-posting') {
       return 'Configure job posting rules, limits, budget range, and moderation';
     }
+    if (activeTab === 'legal') {
+      return 'Edit the Terms of Use, role addenda, Schedule A, and Privacy Policy shown in the Kayod app';
+    }
     return 'Configure advertisement placements, banners, and promotional content';
   };
 
   const sidebarItems = [
     { id: 'job-category' as const, label: 'Job Category', icon: Briefcase },
     { id: 'job-posting' as const, label: 'Job Posting', icon: ClipboardList },
-    { id: 'advertisement' as const, label: 'Advertisement', icon: Megaphone }
+    { id: 'advertisement' as const, label: 'Advertisement', icon: Megaphone },
+    { id: 'legal' as const, label: 'Legal', icon: Scale }
   ];
 
   return (
@@ -106,6 +113,8 @@ const SettingsConfiguration: React.FC = () => {
           {activeTab === 'job-posting' && <JobPostingConfiguration />}
 
           {activeTab === 'advertisement' && <AdvertisementManager />}
+
+          {activeTab === 'legal' && <LegalDocumentConfiguration />}
         </div>
       </div>
     </div>

@@ -34,7 +34,6 @@ const jobDetailsSchema = new Schema({
   locationDetails: { type: String, default: "" },
   date: { type: Date },
   isUrgent: { type: Boolean, default: false },
-  serviceTier: { type: String, default: "standard" },
   paymentMethod: { type: String, default: "wallet" },
   status: { type: String },
   softLimitBudget: { type: Number, default: 0 },

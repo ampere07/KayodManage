@@ -8,7 +8,18 @@ const Notification = require('../models/Notification');
 const Draft = require('../models/Draft');
 const ChatSupport = require('../models/ChatSupport');
 const ProviderBookingSlot = require('../models/ProviderBookingSlot');
+const JobPostingSettings = require('../models/JobPostingSettings');
+const { calculateNoShowPayout } = require('../utils/noShowPayout');
+const {
+  resolutionWentAgainstRaiser,
+  raiserUserId,
+  restrictForDisputeAbuse,
+} = require('../utils/disputeAbuse');
 const EscrowRelease = require('../models/EscrowRelease');
+const { findSettleableEscrow } = require('../utils/settleableEscrow');
+const { settleClientSpend } = require('../utils/clientSpend');
+const { normalizeFinding, describeFinding } = require('../utils/faultFinding');
+const { recordFaultFindings, restrictForConfirmedFault } = require('../utils/confirmedFault');
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
 
@@ -325,8 +336,18 @@ const forceCancelJob = async (req, res) => {
         //    be charged for an action they didn't take.
         const clientWallet = await Wallet.findOne({ userId: job.userId }).session(session);
         if (clientWallet) {
-          clientWallet.heldBalance = Math.max(0, (clientWallet.heldBalance || 0) - refundedAmount);
+          // Measured, not assumed. If completion already captured this hold the
+          // subtraction clamps to zero, and passing the face value as a debit
+          // would invent spend that never left the wallet. Net effect: money
+          // returned to the client comes back off their lifetime spend, which is
+          // the reversal the reported inaccuracy asked for.
+          const heldBefore = clientWallet.heldBalance || 0;
+          clientWallet.heldBalance = Math.max(0, heldBefore - refundedAmount);
           clientWallet.availableBalance = (clientWallet.availableBalance || 0) + refundedAmount;
+          settleClientSpend(clientWallet, {
+            heldDebited: heldBefore - clientWallet.heldBalance,
+            refunded: refundedAmount,
+          });
           clientWallet.lastActivity = new Date();
           await clientWallet.save({ session });
         }
@@ -494,12 +515,14 @@ const DISPUTE_RESOLUTION_MAP = {
   pay_provider: 'provider_paid',
   refund_client: 'client_refunded',
   rebook: 'rebook',
+  no_show_payout: 'no_show_payout',
 };
 
 const DISPUTE_OUTCOME_LABELS = {
   pay_provider: 'Provider paid',
   refund_client: 'Client refunded',
   rebook: 'Booking continued',
+  no_show_payout: 'Client did not appear',
 };
 
 /**
@@ -604,14 +627,21 @@ const resolveDispute = async (req, res) => {
 
   try {
     const { jobId } = req.params;
-    const { outcome, note, rebookDeadlineAt } = req.body || {};
+    const { outcome, note, rebookDeadlineAt, faultParty, findingReason, findingNotes } = req.body || {};
+
+    // What the admin FOUND, separate from where the money went. `resolution`
+    // cannot carry this: the same `client_refunded` covers "the provider never
+    // arrived", "the work was unacceptable" and "both sides called it off" — three
+    // findings with three different consequences. An unstated finding normalises
+    // to `uncertain`, which records honestly and sanctions nobody.
+    const finding = normalizeFinding({ faultParty, findingReason, notes: findingNotes });
     const adminId = req.user?.id;
     const adminObjectId = adminId && mongoose.Types.ObjectId.isValid(adminId) ? adminId : null;
 
     const resolution = DISPUTE_RESOLUTION_MAP[outcome];
     if (!resolution) {
       await session.abortTransaction();
-      return res.status(400).json({ error: 'outcome must be one of: pay_provider, refund_client, rebook' });
+      return res.status(400).json({ error: 'outcome must be one of: pay_provider, refund_client, rebook, no_show_payout' });
     }
 
     const job = await Job.findById(jobId).session(session);
@@ -625,12 +655,32 @@ const resolveDispute = async (req, res) => {
       return res.status(400).json({ error: 'This job has no active dispute to resolve.' });
     }
 
-    const disputeSnapshot = job.completionStatus.dispute;
+    // A COPY, not a reference. `job.completionStatus.dispute = {...}` below
+    // does not rebind this variable — Mongoose overwrites the existing
+    // subdocument in place — so every field read after that assignment came
+    // back as the cleared value. The repeat-dispute abuse check reads
+    // `raisedBy` there and saw null on every ruling, so it concluded no ruling
+    // had ever gone against a raiser and the restriction never fired for
+    // anyone. The history entry pushed just above it was correct, which is what
+    // made this invisible: the archive said `client` while the check said
+    // nobody.
+    const activeDispute = job.completionStatus.dispute;
+    const disputeSnapshot = {
+      raisedBy: activeDispute.raisedBy,
+      raisedAt: activeDispute.raisedAt,
+      reason: activeDispute.reason,
+      internalNotes: Array.isArray(activeDispute.internalNotes)
+        ? [...activeDispute.internalNotes]
+        : [],
+    };
     let refundedAmount = 0;
     let draftId = null;
-    // Populated by pay_provider so the notifications and the API response can
-    // state the real release date rather than assuming a fixed window.
+    // Populated by pay_provider and no_show_payout so the notifications and the
+    // API response can state the real release date rather than assuming a fixed
+    // window.
     let escrowOutcome = null;
+    // Populated by no_show_payout: how the held amount was split.
+    let noShowSettlement = null;
 
     if (job.completionStatus?.paymentReleased && outcome !== 'rebook') {
       await session.abortTransaction();
@@ -673,19 +723,25 @@ const resolveDispute = async (req, res) => {
     }
 
     if (outcome === 'pay_provider') {
-      const heldTransactionId = job.paymentDetails?.heldTransaction;
-      const heldTransaction = heldTransactionId
-        ? await Transaction.findById(heldTransactionId).session(session)
-        : null;
-
-      if (!heldTransaction || heldTransaction.status !== 'held') {
+      // Settleable in EITHER resting state: still held pre-completion, or
+      // already moved into the warranty hold by completion. See
+      // utils/settleableEscrow.js — requiring 'held' alone made every
+      // post-completion dispute unresolvable.
+      const settleable = await findSettleableEscrow(job, session);
+      if (!settleable) {
         await session.abortTransaction();
         return res.status(400).json({ error: 'No held payment found for this job — cannot release funds to the provider.' });
       }
+      const heldTransaction = settleable.heldTransaction;
 
       const clientWallet = await Wallet.findOne({ userId: job.userId }).session(session);
       if (clientWallet && clientWallet.heldBalance >= heldTransaction.amount) {
         clientWallet.heldBalance -= heldTransaction.amount;
+        // Inside the same guard as the debit, so the spend is recognised only
+        // when this branch is the one that actually captures the hold. A dispute
+        // raised AFTER completion finds the hold already captured (and already
+        // counted), the guard is false, and nothing is double-counted.
+        settleClientSpend(clientWallet, { heldDebited: heldTransaction.amount });
         clientWallet.lastActivity = new Date();
         await clientWallet.save({ session });
       }
@@ -726,27 +782,37 @@ const resolveDispute = async (req, res) => {
         };
       }
     } else if (outcome === 'refund_client') {
-      const heldTransactionId = job.paymentDetails?.heldTransaction;
-      const heldTransaction = heldTransactionId
-        ? await Transaction.findById(heldTransactionId).session(session)
-        : null;
-
-      // Never notify "you've been refunded ₱0" — if there is no held payment
-      // to return, refuse instead of silently cancelling with no refund.
-      if (!heldTransaction || heldTransaction.status !== 'held') {
+      // Never notify "you've been refunded ₱0" — if there is nothing left to
+      // return, refuse instead of silently cancelling with no refund. Both
+      // resting states count as something: see utils/settleableEscrow.js.
+      const settleable = await findSettleableEscrow(job, session);
+      if (!settleable) {
         await session.abortTransaction();
         return res.status(400).json({
           error: 'No held payment found for this job — there is nothing to refund. Resolve with rebook or handle manually.',
         });
       }
+      const heldTransaction = settleable.heldTransaction;
 
-      if (heldTransaction && heldTransaction.status === 'held') {
+      // Braced to keep the settlement's locals out of the rebook-draft code
+      // that follows, which declares its own.
+      {
         refundedAmount = heldTransaction.amount;
 
         const clientWallet = await Wallet.findOne({ userId: job.userId }).session(session);
         if (clientWallet) {
-          clientWallet.heldBalance = Math.max(0, (clientWallet.heldBalance || 0) - refundedAmount);
+          // Measured, not assumed. If completion already captured this hold the
+          // subtraction clamps to zero, and passing the face value as a debit
+          // would invent spend that never left the wallet. Net effect: money
+          // returned to the client comes back off their lifetime spend, which is
+          // the reversal the reported inaccuracy asked for.
+          const heldBefore = clientWallet.heldBalance || 0;
+          clientWallet.heldBalance = Math.max(0, heldBefore - refundedAmount);
           clientWallet.availableBalance = (clientWallet.availableBalance || 0) + refundedAmount;
+          settleClientSpend(clientWallet, {
+            heldDebited: heldBefore - clientWallet.heldBalance,
+            refunded: refundedAmount,
+          });
           clientWallet.lastActivity = new Date();
           await clientWallet.save({ session });
         }
@@ -793,7 +859,6 @@ const resolveDispute = async (req, res) => {
         selectedDates: job.selectedDates || [],
         timeWindows: job.timeWindows || [],
         dateDetails: job.dateDetails || null,
-        serviceTier: job.serviceTier || 'standard',
         paymentMethod: 'wallet',
         sourceJobId: job._id,
       }], { session });
@@ -813,12 +878,149 @@ const resolveDispute = async (req, res) => {
       job.paymentStatus = 'pending';
       await job.save({ session });
       await ProviderBookingSlot.releaseForJob(job._id, session);
+    } else if (outcome === 'no_show_payout') {
+      // The client did not appear. The provider held the slot, so they take a
+      // share of the held amount (the reserved-time payout) and the rest goes
+      // back to the client. A partial settlement, which is why this is its own
+      // outcome rather than a flavor of pay_provider.
+      //
+      // Only ever reachable from an issue somebody actually raised. A booking
+      // that lapsed in silence is refunded in full by the app's own scheduler
+      // and never arrives here — see kayod/server NoShowReviewService for why
+      // paying anyone for silence would be free money for doing nothing.
+      const settleable = await findSettleableEscrow(job, session);
+      if (!settleable) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          error: 'No held payment found for this job — there is nothing to split. Handle this one manually.',
+        });
+      }
+      const heldTransaction = settleable.heldTransaction;
+
+      // scheduleEscrowRelease needs the provider still assigned, so unlike
+      // refund_client this branch must not clear assignedToId.
+      if (!job.assignedToId) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          error: 'This job has no assigned provider, so there is nobody to pay the reserved-time payout to.',
+        });
+      }
+
+      const noShowConfig = await JobPostingSettings.getNoShowConfig();
+      const heldAmount = heldTransaction.amount;
+      const { payout, refundAmount: clientRefund } = calculateNoShowPayout(heldAmount, noShowConfig);
+      noShowSettlement = { payout, clientRefund, heldAmount };
+      refundedAmount = clientRefund;
+
+      const clientWallet = await Wallet.findOne({ userId: job.userId }).session(session);
+      if (clientWallet) {
+        // The whole held amount leaves heldBalance — the payout portion is now
+        // owed to the provider and is tracked by the EscrowRelease below, not
+        // by the client's wallet.
+        const heldBefore = clientWallet.heldBalance || 0;
+        clientWallet.heldBalance = Math.max(0, heldBefore - heldAmount);
+        clientWallet.availableBalance = (clientWallet.availableBalance || 0) + clientRefund;
+        // The reserved-time payout is genuinely spent and the rest is returned,
+        // so the lifetime figure nets to the payout — whether or not completion
+        // had already recognised this hold.
+        settleClientSpend(clientWallet, {
+          heldDebited: heldBefore - clientWallet.heldBalance,
+          refunded: clientRefund,
+        });
+        clientWallet.lastActivity = new Date();
+        await clientWallet.save({ session });
+      }
+
+      heldTransaction.status = 'completed';
+      heldTransaction.completedAt = new Date();
+      await heldTransaction.save({ session });
+
+      if (clientRefund > 0) {
+        await Transaction.create([{
+          fromUserId: null,
+          toUserId: job.userId,
+          amount: clientRefund,
+          type: 'job_budget_refund',
+          status: 'completed',
+          jobId: job._id,
+          description: `Partial refund — booking not attended: ${job.title}`,
+          completedAt: new Date(),
+          metadata: {
+            reason: note || 'No-show resolved: reserved-time payout to provider',
+            resolvedBy: 'admin',
+            adminId: adminObjectId,
+            noShowPayout: payout,
+          },
+        }], { session });
+      }
+
+      // The payout is recorded now and paid after the hold, the same as any
+      // other completed job's money. The record exists immediately so the
+      // provider can see what they are owed and when.
+      await Transaction.create([{
+        fromUserId: job.userId,
+        toUserId: job.assignedToId,
+        amount: payout,
+        type: 'no_show_payout',
+        status: 'held',
+        jobId: job._id,
+        description: `Reserved-time payout — client did not appear: ${job.title}`,
+        metadata: {
+          reason: note || 'No-show resolved by admin',
+          resolvedBy: 'admin',
+          adminId: adminObjectId,
+          heldAmount,
+          clientRefund,
+        },
+      }], { session });
+
+      // Cancelled, not completed: nobody did the work, and telling the client
+      // their unattended booking was "completed" would be a lie on the one
+      // screen where they go to check. kayod/server's escrow release knows to
+      // settle a job in this state from the dispute resolution instead of the
+      // status — see its processEscrowRelease.
+      job.status = 'cancelled';
+      job.escrowAmount = payout;
+      // NOT 'refunded': that value makes kayod/server cancel the scheduled
+      // release outright, which would strand the payout.
+      job.escrowStatus = 'pending';
+      job.paymentDetails = job.paymentDetails || {};
+      job.paymentDetails.isPaid = true;
+      job.paymentDetails.heldTransaction = null;
+      job.cancellation = {
+        cancelledAt: new Date(),
+        cancelledBy: adminObjectId,
+        reason: note || 'No-show resolved: client did not appear',
+        feeApplied: payout,
+      };
+      await job.save({ session });
+
+      // The hold window is its own setting, defaulting to this job's own
+      // snapshotted window when left at 0 — a ruling should be reversible for
+      // as long as a normal completion is.
+      const overrideReleaseHours = noShowConfig.noShowPayoutHoldHours > 0
+        ? noShowConfig.noShowPayoutHoldHours
+        : null;
+      const scheduled = await escrowService.scheduleEscrowRelease(
+        job._id,
+        new Date(),
+        session,
+        { overrideReleaseHours },
+      );
+      escrowOutcome = {
+        escrowRelease: scheduled,
+        originalScheduledFor: null,
+        scheduledFor: scheduled.scheduledFor,
+        releasedImmediately: false,
+      };
+
+      // The provider keeps the slot released either way — the booking is over.
+      await ProviderBookingSlot.releaseForJob(job._id, session);
     } else if (outcome === 'rebook') {
       job.completionStatus.clientConfirmed = false;
       job.completionStatus.providerConfirmed = false;
       job.completionStatus.clientConfirmedAt = null;
       job.completionStatus.providerConfirmedAt = null;
-      job.completionStatus.neitherConfirmedReminderSentAt = null;
 
       // Walk a completed-and-in-escrow job back to an active booking. Without
       // this the job would sit at "completed" with its confirmations cleared,
@@ -857,6 +1059,15 @@ const resolveDispute = async (req, res) => {
       raisedBy: disputeSnapshot.raisedBy,
       raisedAt: disputeSnapshot.raisedAt,
       reason: disputeSnapshot.reason,
+      // Both sides' accounts travel into the archive with the ruling. A rebooked
+      // job disputed again shows the next admin what each party said last time;
+      // keeping only the outcome would hide the pattern this history is for.
+      claims: disputeSnapshot.claims || [],
+      finding: {
+        faultParty: finding.faultParty,
+        findingReason: finding.findingReason,
+        notes: finding.notes,
+      },
       resolvedAt: new Date(),
       resolvedBy: adminObjectId,
       resolution,
@@ -866,6 +1077,17 @@ const resolveDispute = async (req, res) => {
       raisedBy: null,
       raisedAt: null,
       reason: null,
+      claims: [],
+      // The finding stays legible on the closed case, not only in the archive:
+      // both apps render "what support decided" from the live field, and a party
+      // told only where their money went learns nothing about why.
+      finding: {
+        faultParty: finding.faultParty,
+        findingReason: finding.findingReason,
+        notes: finding.notes,
+        decidedBy: adminObjectId,
+        decidedAt: new Date(),
+      },
       resolvedAt: new Date(),
       resolvedBy: adminObjectId,
       resolution,
@@ -873,7 +1095,104 @@ const resolveDispute = async (req, res) => {
     };
 
     await job.save({ session });
+
+    // A dispute resolved AGAINST the party who raised it now counts toward a
+    // rolling restriction. Deliberately AFTER the history entry above, so the
+    // count includes this loss, and inside the transaction so a restriction can
+    // never be applied for a ruling that then rolls back.
+    let raiserRestricted = false;
+    const raisedBy = disputeSnapshot.raisedBy;
+    if (resolutionWentAgainstRaiser(raisedBy, resolution)) {
+      const abuseConfig = await JobPostingSettings.getDisputeAbuseConfig();
+      raiserRestricted = await restrictForDisputeAbuse(
+        raiserUserId(job, raisedBy),
+        raisedBy,
+        abuseConfig.disputeLossRestrictionCount,
+        session,
+      );
+    }
+
+    // The finding itself, recorded against whoever it names — the thing that was
+    // missing entirely. A confirmed no-show used to move money and leave nothing
+    // behind, so the next admin to look at that account saw a clean record.
+    //
+    // Independent of the dispute-loss branch above, and deliberately: losing a
+    // dispute you raised and being found at fault are different facts, and a
+    // single ruling can produce one, both, or neither.
+    const faultRecorded = await recordFaultFindings(job, finding, {
+      adminId: adminObjectId,
+      session,
+      decidedAt: new Date(),
+    });
+
+    // Restriction reads the RECORD, not this ruling — so the threshold is about a
+    // party's pattern of proven absences rather than whichever case is being
+    // closed right now.
+    const faultRestricted = [];
+    if (faultRecorded.some((entry) => entry.sanctioned)) {
+      const { confirmedFaultRestrictionCount } = await JobPostingSettings.getNoShowConfig();
+      for (const entry of faultRecorded) {
+        if (!entry.sanctioned) continue;
+        const flipped = await restrictForConfirmedFault(
+          entry.userId,
+          entry.role,
+          confirmedFaultRestrictionCount,
+          session,
+        );
+        if (flipped) faultRestricted.push(entry);
+      }
+    }
+
     await session.commitTransaction();
+
+    // Notified separately from the ruling: one message is about this job, the
+    // other is about a pattern across several, and merging them would read as
+    // punishment for this single dispute.
+    if (raiserRestricted) {
+      try {
+        const restrictedId = raiserUserId(job, raisedBy);
+        await Notification.create({
+          userId: restrictedId,
+          title: 'Account Restricted',
+          message:
+            'Your account has been temporarily restricted after repeated disputes that were not upheld. You can appeal this from Support.',
+          type: 'admin_action',
+          relatedId: job._id,
+          relatedModel: 'Job',
+          priority: 'high',
+          data: { jobId: job._id.toString(), reason: 'dispute_abuse' },
+        });
+      } catch (notifyErr) {
+        console.error('[resolveDispute] Dispute-abuse restriction notification failed:', notifyErr);
+      }
+    }
+
+    // Told separately from the ruling, and told WHAT was found. A party who only
+    // learns where the money went cannot tell a finding against them from a
+    // routine refund, which is the gap that let confirmed no-shows go unnoticed
+    // by the people committing them.
+    for (const entry of faultRestricted) {
+      try {
+        await Notification.create({
+          userId: entry.userId,
+          title: 'Account Restricted',
+          message:
+            `Your account has been temporarily restricted: support found that ${describeFinding(finding)} on a recent booking, and this is not the first. You can appeal this from Support.`,
+          type: 'admin_action',
+          relatedId: job._id,
+          relatedModel: 'Job',
+          priority: 'high',
+          data: {
+            jobId: job._id.toString(),
+            reason: 'confirmed_fault',
+            faultParty: finding.faultParty,
+            findingReason: finding.findingReason,
+          },
+        });
+      } catch (notifyErr) {
+        console.error('[resolveDispute] Confirmed-fault restriction notification failed:', notifyErr);
+      }
+    }
 
     try {
       await createActivityLog(adminId, 'dispute_resolved', `Resolved dispute on job "${job.title}": ${outcome}`, {
@@ -935,6 +1254,10 @@ const resolveDispute = async (req, res) => {
       rebook: {
         client: `Your dispute for "${job.title}" was resolved: the same provider will redo the work by ${rebookDeadlineText}. Your payment stays held until then — it is not released and not refunded — and ${rebookClientHoldSentence}.`,
         provider: `The dispute for "${job.title}" was resolved: you are to redo the work by ${rebookDeadlineText}. The client's payment stays held until the redone work is completed and confirmed, ${rebookProviderHoldSentence}.`,
+      },
+      no_show_payout: {
+        client: `The issue on "${job.title}" was reviewed and it was found that the booking was not attended. ₱${noShowSettlement?.payout ?? 0} has been paid to the provider for the time they reserved, and ₱${noShowSettlement?.clientRefund ?? 0} has been refunded to your wallet.${note ? ` Admin note: ${note}` : ''}`,
+        provider: `The issue on "${job.title}" was reviewed in your favor. You are owed ₱${noShowSettlement?.payout ?? 0} for the time you reserved. ${escrowOutcome?.releasedImmediately ? 'It will reach your available balance shortly.' : `It will reach your available balance on ${formatDate(escrowOutcome?.scheduledFor)}.`}`,
       },
     };
 
@@ -1010,6 +1333,9 @@ const resolveDispute = async (req, res) => {
           }
         : null,
       rebookDeadlineAt: rebookDeadline || null,
+      // How the held amount was split, so the admin UI can confirm the exact
+      // figures it just committed rather than recomputing them client-side.
+      noShowSettlement,
     });
   } catch (error) {
     await session.abortTransaction();

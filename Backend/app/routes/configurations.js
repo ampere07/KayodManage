@@ -25,6 +25,12 @@ const {
   uploadAdvertisementImage,
 } = require('../controllers/advertisementsController');
 
+const {
+  getLegalDocuments,
+  updateLegalDocument,
+  resetLegalDocument,
+} = require('../controllers/legalController');
+
 const router = express.Router();
 
 const upload = multer({
@@ -88,6 +94,13 @@ router.post('/quick-access-professions', requireAdmin, updateQuickAccessProfessi
 // Job Posting Settings
 router.get('/job-posting', requireAdmin, getJobPostingSettings);
 router.patch('/job-posting', requireAdmin, updateJobPostingSettings);
+
+// Legal Documents — the five executed agreements shown in the Kayod app.
+// The client app reads its copy from the Kayod server's public
+// /configurations/legal-documents endpoint; these are the editing routes.
+router.get('/legal-documents', requireAdmin, getLegalDocuments);
+router.patch('/legal-documents/:documentId', requireAdmin, updateLegalDocument);
+router.post('/legal-documents/:documentId/reset', requireAdmin, resetLegalDocument);
 
 // Advertisements
 router.get('/advertisements/public', getPublicAdvertisements); // public (client app)

@@ -17,7 +17,27 @@ const NotificationSchema = new Schema({
   },
   type: {
     type: String,
-    enum: ['job_update', 'message', 'system', 'job_assigned', 'job_completed', 'payment', 'admin_action'],
+    // Everything the app can write, plus 'admin_action' which only the admin
+    // creates. The booking, quote, credential and strike types were all
+    // missing, so any admin save of one of those notifications failed on a
+    // value the server produces routinely.
+    enum: [
+      'job_update',
+      'message',
+      'system',
+      'job_assigned',
+      'job_completed',
+      'payment',
+      'booking_cancelled',
+      'booking_confirmed',
+      'booking_reminder',
+      'quote_received',
+      'quote_accepted',
+      'quote_rejected',
+      'credential_verification',
+      'cancellation_strike',
+      'admin_action'
+    ],
     required: true
   },
   relatedId: {

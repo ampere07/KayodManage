@@ -1088,8 +1088,19 @@ exports.updateJobPostingSettings = async (req, res) => {
       'bookingFeeMinimum',
       'clientCancellationFeePercentage',
       'clientCancellationFeeMinimum',
+      'clientCancellationFeeThreshold',
+      'clientCancellationDayOfFeePercentage',
+      'clientCancellationDayOfFeeMinimum',
       'providerStrikeLimit',
       'providerStrikeRatingPenalty',
+      'noShowReviewWindowHours',
+      'noShowReviewReminderHours',
+      'noShowPayoutPercentage',
+      'noShowPayoutMinimum',
+      'noShowPayoutHoldHours',
+      'noShowLapseRestrictionCount',
+      'confirmedFaultRestrictionCount',
+      'disputeLossRestrictionCount',
     ];
     const booleanFields = ['requireApproval', 'allowAttachments'];
 
@@ -1140,6 +1151,57 @@ exports.updateJobPostingSettings = async (req, res) => {
     }
 
     // Provider strike limit must be at least 1.
+    if (settings.clientCancellationDayOfFeePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'clientCancellationDayOfFeePercentage cannot exceed 100',
+      });
+    }
+
+    if (settings.noShowPayoutPercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'noShowPayoutPercentage cannot exceed 100',
+      });
+    }
+
+    if (settings.noShowReviewWindowHours < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'noShowReviewWindowHours must be at least 1',
+      });
+    }
+
+    // A reminder at or after the deadline is a reminder that never fires — the
+    // window resolves first. Caught here rather than silently swallowed by the
+    // scheduler, where it would look like the reminder was simply broken.
+    if (settings.noShowReviewReminderHours >= settings.noShowReviewWindowHours) {
+      return res.status(400).json({
+        success: false,
+        message: 'noShowReviewReminderHours must be less than noShowReviewWindowHours, or the reminder never fires',
+      });
+    }
+
+    // 0 or 1 disables the trigger; 1 would punish a single good-faith
+    // complaint, which is the opposite of what it is for.
+    if (
+      settings.disputeLossRestrictionCount !== undefined &&
+      settings.disputeLossRestrictionCount === 1
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'disputeLossRestrictionCount must be 0 (disabled) or at least 2 — restricting on a single lost dispute penalises a good-faith complaint',
+      });
+    }
+
+    if (settings.noShowLapseRestrictionCount < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'noShowLapseRestrictionCount must be at least 1',
+      });
+    }
+
     if (settings.providerStrikeLimit < 1) {
       return res.status(400).json({
         success: false,

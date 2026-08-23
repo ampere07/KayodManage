@@ -181,6 +181,23 @@ const Users: React.FC = () => {
   };
 
   const users = usersData?.users || [];
+
+  // The details modal must read the LIVE row, not the snapshot taken when it was
+  // opened.
+  //
+  // `selectedUser` is frozen at click time, and the list keeps rendering its
+  // previous page while an invalidated query refetches
+  // (`placeholderData: previousData`). So an admin who restricts a user and
+  // reopens them quickly — or who opens a row mid-refetch — gets a modal built
+  // from stale data: it offers to restrict an account that is already
+  // restricted, and the enforcement buttons reflect a status that has changed.
+  //
+  // Re-resolving by id means the modal follows the query. The snapshot remains
+  // the fallback for the frame after a row leaves the current page.
+  const selectedUserLive =
+    (selectedUser &&
+      users.find((candidate: User) => candidate._id === selectedUser._id)) ||
+    selectedUser;
   const loading = isLoading;
 
   useEffect(() => {
@@ -654,6 +671,7 @@ const Users: React.FC = () => {
               <input
                 type="text"
                 placeholder="Search..."
+                data-testid="users-search-input"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all shadow-sm h-8 text-xs lg:pl-10 lg:h-10 lg:text-sm lg:rounded-xl"
@@ -828,6 +846,7 @@ const Users: React.FC = () => {
                     {users.map((user) => (
                       <tr
                         key={user._id}
+                        data-testid={`user-row-${user._id}`}
                         onClick={() => openDetailsModal(user)}
                         className="group h-20 transition-all duration-150 cursor-pointer"
                       >
@@ -914,7 +933,7 @@ const Users: React.FC = () => {
                         <td className="w-[10%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex flex-col items-center gap-1.5">
                             {getStatusLabel(user) ? (
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
+                              <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
                                 {getStatusLabel(user)}
                               </span>
                             ) : (
@@ -950,6 +969,7 @@ const Users: React.FC = () => {
                   {users.map((user) => (
                     <div
                       key={user._id}
+                      data-testid={`user-card-${user._id}`}
                       onClick={() => openDetailsModal(user)}
                       className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                     >
@@ -976,7 +996,7 @@ const Users: React.FC = () => {
                         {/* Status + profession stacked on the right */}
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
                           {getStatusLabel(user) ? (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getStatusColor(user)}`}>
+                            <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getStatusColor(user)}`}>
                               {getStatusLabel(user)}
                             </span>
                           ) : (
@@ -1049,7 +1069,7 @@ const Users: React.FC = () => {
       <UserDetailsModal
         isOpen={detailsModal.isOpen}
         onClose={closeDetailsModal}
-        user={selectedUser}
+        user={selectedUserLive}
         onVerify={handleVerify}
         onAction={handleAction}
       />

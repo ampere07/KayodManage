@@ -124,6 +124,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   return (
                     <Link
                       key={item.name}
+                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                       to={item.href}
                       onClick={(e) => {
                         if (!allowed) {
@@ -177,6 +178,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -195,6 +197,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                 <div>
                   <button
                     type="button"
+                    data-testid="admin-nav-users-group"
                     onClick={() => hasPermission('users') && setIsUsersOpen(!isUsersOpen)}
                     disabled={!hasPermission('users')}
                     className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${!hasPermission('users')
@@ -222,6 +225,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -267,6 +271,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -288,6 +293,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   return (
                     <Link
                       key={item.name}
+                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                       to={item.href}
                       onClick={(e) => {
                         if (!allowed) {
@@ -339,6 +345,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -388,6 +395,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   return (
                     <Link
                       key={item.name}
+                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                       to={item.href}
                       className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
                         ? 'bg-blue-100 text-blue-900'
@@ -427,6 +435,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -444,6 +453,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                 <div>
                   <button
                     type="button"
+                    data-testid="admin-nav-users-group"
                     onClick={() => setIsUsersOpen(!isUsersOpen)}
                     className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${isUserPage
                       ? 'bg-blue-100 text-blue-900'
@@ -468,6 +478,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -509,6 +520,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'
@@ -529,6 +541,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                   return (
                     <Link
                       key={item.name}
+                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                       to={item.href}
                       onClick={(e) => {
                         if (!allowed) {
@@ -575,6 +588,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                         return (
                           <Link
                             key={item.name}
+                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                             to={item.href}
                             className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
                               ? 'bg-blue-50 text-blue-700'

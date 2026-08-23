@@ -32,7 +32,6 @@ export interface Job {
   locationDisplay: string;
   locationDetails?: string;
   date: Date | string;
-  serviceTier: 'basic' | 'standard' | 'premium';
   paymentMethod: 'wallet' | 'xendit';
   status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
   user?: {
@@ -92,14 +91,14 @@ export interface Job {
       raisedAt?: Date | string | null;
       reason?: string | null;
       resolvedAt?: Date | string | null;
-      resolution?: 'provider_paid' | 'client_refunded' | 'rebook' | null;
+      resolution?: 'provider_paid' | 'client_refunded' | 'rebook' | 'no_show_payout' | null;
     };
     disputeHistory?: Array<{
       raisedBy: 'client' | 'provider';
       raisedAt: Date | string;
       reason: string;
       resolvedAt: Date | string;
-      resolution: 'provider_paid' | 'client_refunded' | 'rebook';
+      resolution: 'provider_paid' | 'client_refunded' | 'rebook' | 'no_show_payout';
     }>;
   };
   createdAt: Date | string;
@@ -173,4 +172,39 @@ export interface ResolveDisputeResponse {
     resumed: boolean;
   } | null;
   rebookDeadlineAt: string | null;
+  /**
+   * Present only for the 'no_show_payout' outcome: how the held amount was
+   * split between the provider's reserved-time payout and the client's refund.
+   * Returned by the server rather than recomputed here so the confirmation the
+   * admin reads is the arithmetic that was actually committed.
+   */
+  noShowSettlement: {
+    payout: number;
+    clientRefund: number;
+    heldAmount: number;
+  } | null;
+}
+
+/**
+ * What an admin established about a disputed booking.
+ *
+ * Deliberately separate from the resolution outcome. `refund_client` alone cannot
+ * distinguish "the provider never arrived" from "the work was unacceptable" from
+ * "both sides called it off" — three findings with three different consequences —
+ * so the finding is stated rather than inferred. An omitted one is recorded as
+ * `uncertain` and sanctions nobody.
+ */
+export type FaultParty = 'client' | 'provider' | 'both' | 'none' | 'uncertain';
+
+export type FindingReason =
+  | 'no_show'
+  | 'late_cancel'
+  | 'access_failure'
+  | 'emergency'
+  | 'other';
+
+export interface DisputeFinding {
+  faultParty: FaultParty;
+  findingReason: FindingReason;
+  notes?: string;
 }

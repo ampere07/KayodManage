@@ -11,6 +11,7 @@ import {
 import StatsCard from '../components/Dashboard/StatsCard';
 import { SupportChatModal } from '../components/Modals';
 import { supportService, jobsService } from '../services';
+import type { DisputeFinding } from '../types/jobs.types';
 import { useAuth } from '../context/AuthContext';
 import { useSupportTickets } from '../hooks/useSupportTickets';
 import { useSupportSocket } from '../hooks/useSupportSocket';
@@ -249,11 +250,14 @@ const Support: React.FC = () => {
 
   const handleResolveDispute = async (
     jobId: string,
-    outcome: 'pay_provider' | 'refund_client' | 'rebook',
+    outcome: 'pay_provider' | 'refund_client' | 'rebook' | 'no_show_payout',
     note?: string,
-    rebookDeadlineAt?: string
+    rebookDeadlineAt?: string,
+    // Forwarded, not dropped: without this the finding controls in the modal
+    // would render and change nothing, and every ruling would record "uncertain".
+    finding?: DisputeFinding
   ) => {
-    await jobsService.resolveDispute(jobId, outcome, note, rebookDeadlineAt);
+    await jobsService.resolveDispute(jobId, outcome, note, rebookDeadlineAt, finding);
     if (selectedChat) {
       await refreshSelectedChat(selectedChat._id);
     }

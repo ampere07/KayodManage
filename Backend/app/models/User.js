@@ -18,7 +18,16 @@ const UserSchema = new Schema({
     type: String,
     required: function () {
       return this.userType === 'admin' || this.userType === 'superadmin' || this.userType === 'finance' || this.userType === 'customer support' || this.userType === 'support';
-    }
+    },
+    // Never returned unless a query asks for it with .select("+password").
+    //
+    // userService.getUsers and getUserById both do an unprojected
+    // find/findById().lean(), so every admin list and detail response was
+    // shipping every user's bcrypt hash to the browser. One console XSS, one
+    // logged response body, or one compromised support session was a full
+    // credential dump. Excluding it at the schema means the leak cannot be
+    // reintroduced by adding another unprojected query.
+    select: false
   },
   phone: {
     type: String,
@@ -67,7 +76,11 @@ const UserSchema = new Schema({
       category: String,
       status: {
         type: String,
-        enum: ["none", "pending", "approved", "rejected", "resubmission_requested", "flagged"],
+        // "expired" is written by the Kayod server's expireCertifications cron
+        // when a credential lapses. Without it here, saving a provider who has
+        // any lapsed credential failed validation — on exactly the documents an
+        // admin reviews credentials from.
+        enum: ["none", "pending", "approved", "rejected", "expired", "resubmission_requested", "flagged"],
         default: "none",
       },
       documents: [
@@ -89,6 +102,31 @@ const UserSchema = new Schema({
     enum: ['active', 'restricted', 'suspended', 'banned', 'deleted'],
     default: 'active'
   },
+  // Confirmed fault findings — what an admin ESTABLISHED, per job.
+  //
+  // Declared here as well as in the kayod server because Mongoose runs in strict
+  // mode: an undeclared path is silently dropped on write, so a `$push` from the
+  // resolve handler would appear to succeed and store nothing. This is the panel
+  // that MAKES the findings, so the omission would have been total.
+  //
+  // Distinct from every other count on this account: a lapse means nobody spoke
+  // up, a lost dispute means a complaint was not upheld, and neither is a finding
+  // of fault. See app/utils/faultFinding.js.
+  faultFindings: [{
+    jobId: { type: Schema.Types.ObjectId, ref: 'Job' },
+    role: { type: String, enum: ['client', 'provider'] },
+    faultParty: { type: String, enum: ['client', 'provider', 'both'] },
+    findingReason: {
+      type: String,
+      enum: ['no_show', 'late_cancel', 'access_failure', 'emergency', 'other'],
+    },
+    notes: { type: String, default: null },
+    // Decided by the rules in force when the finding was made, so widening the
+    // sanctionable set later cannot turn old rows into strikes retroactively.
+    sanctioned: { type: Boolean, default: false },
+    decidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    decidedAt: { type: Date, default: Date.now },
+  }],
   restrictionDetails: {
     type: {
       type: String,
@@ -168,7 +206,22 @@ const UserSchema = new Schema({
     activity: { type: Boolean, default: true },
     flagged: { type: Boolean, default: true },
     settings: { type: Boolean, default: false }
-  }
+  },
+  // Mirrors kayod/server/src/models/User.js. Read-only here: the Kayod server
+  // writes these rows, the admin only ever displays them. It has to exist on
+  // this schema regardless, because getUserById() reads .lean() and Mongoose
+  // strips fields the schema does not declare — without it a user's agreement
+  // history would silently be absent from the admin exactly when support needs
+  // it, which is during a dispute.
+  legalAcceptances: [{
+    version: { type: String, trim: true },
+    documentIds: { type: [String], default: [] },
+    context: { type: String },
+    jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' },
+    acceptedAt: { type: Date },
+    ipAddress: { type: String, trim: true },
+    userAgent: { type: String, trim: true }
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
