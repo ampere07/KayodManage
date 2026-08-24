@@ -14,7 +14,8 @@ import { getProfessionIconByName } from '../../constants/categoryIcons';
 import type {
   User,
   Verification,
-  PenaltyData
+  PenaltyData,
+  LegalAcceptance
 } from '../../types';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
@@ -43,6 +44,9 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   onAction
 }) => {
   const [verificationDetails, setVerificationDetails] = useState<Verification | null>(null);
+  // What this user has affirmed, and to which version of the agreements.
+  // The one thing support needs when a user disputes a clause.
+  const [legalAcceptances, setLegalAcceptances] = useState<LegalAcceptance[]>([]);
   const [loadingVerification, setLoadingVerification] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete' | null>(null);
   const [durationDays, setDurationDays] = useState<number>(0);
@@ -147,6 +151,12 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       } else {
         setVerificationDetails(null);
       }
+      // Same round-trip: the acceptance history rides along on getUserById
+      // rather than costing a second request, since support opens this modal
+      // for one reason at a time and usually already has it loaded.
+      setLegalAcceptances(
+        Array.isArray(fullUser?.legalAcceptances) ? fullUser.legalAcceptances : []
+      );
     } catch (error) {
       console.error('Error fetching verification details:', error);
       setVerificationDetails(null);
@@ -535,6 +545,61 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 </div>
               )}
             </section>
+
+            <div className="border-t border-gray-100" />
+
+            {/* Legal Acceptances.
+                Appended by the Kayod server whenever this user affirms the
+                agreements — at sign-up, at booking, when posting a job. Never
+                edited here: it is an audit trail, and a mutable one proves
+                nothing. Empty for accounts created before acceptances were
+                recorded, which is meaningful in itself and so is said plainly
+                rather than rendered as a blank list. */}
+            <section className="pb-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Legal Agreements</h3>
+              {legalAcceptances.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">
+                  No recorded acceptances. Accounts created before agreement
+                  tracking was added will show nothing here.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {legalAcceptances
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        new Date(b.acceptedAt).getTime() -
+                        new Date(a.acceptedAt).getTime()
+                    )
+                    .map((entry, index) => (
+                      <div
+                        key={`${entry.acceptedAt}-${index}`}
+                        className="bg-gray-50 rounded-lg p-3 border border-gray-100"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-gray-900 capitalize">
+                            {String(entry.context || "").replace("-", " ")}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                            v{entry.version}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          {entry.acceptedAt
+                            ? new Date(entry.acceptedAt).toLocaleString()
+                            : "—"}
+                        </p>
+                        {Array.isArray(entry.documentIds) &&
+                        entry.documentIds.length > 0 ? (
+                          <p className="text-[11px] text-gray-400 mt-1">
+                            {entry.documentIds.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </section>
           </div>
         </div>
 
@@ -549,6 +614,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                       <p className="text-[10px] font-bold text-gray-500 uppercase">Days</p>
                       <input
                         type="number"
+                        data-testid="user-action-duration-days"
                         value={durationDays}
                         onChange={(e) => setDurationDays(Math.max(0, parseInt(e.target.value) || 0))}
                         className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
@@ -574,6 +640,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                     </div>
                   </div>
                   <textarea
+                    data-testid="user-action-reason"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="Enter reason for restriction..."
@@ -603,12 +670,14 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirmNo}
+                  data-testid="user-action-cancel"
                   className="flex-1 h-11 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmYes}
+                  data-testid="user-action-confirm"
                   className="flex-1 h-11 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
                 >
                   Confirm {getActionLabel()}
@@ -621,6 +690,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 <>
                   <button
                     onClick={() => handleActionClick('restrict')}
+                    data-testid="user-action-restrict"
                     className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-100 rounded-lg hover:bg-orange-100"
                   >
                     <Shield className="w-5 h-5" />
@@ -628,6 +698,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </button>
                   <button
                     onClick={() => handleActionClick('suspend')}
+                    data-testid="user-action-suspend"
                     className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 rounded-lg hover:bg-yellow-100"
                   >
                     <Clock className="w-5 h-5" />
@@ -635,6 +706,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </button>
                   <button
                     onClick={() => handleActionClick('ban')}
+                    data-testid="user-action-ban"
                     className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100"
                   >
                     <Ban className="w-5 h-5" />
@@ -642,6 +714,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </button>
                   <button
                     onClick={() => handleActionClick('delete')}
+                    data-testid="user-action-delete"
                     className="flex-1 flex flex-col items-center gap-1.5 py-2 text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -651,6 +724,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               ) : (
                 <button
                   onClick={() => handleActionClick('unrestrict')}
+                  data-testid="user-action-unrestrict"
                   className="w-full h-12 flex items-center justify-center gap-2 text-sm font-bold text-green-700 bg-green-50 border border-green-100 rounded-lg hover:bg-green-100"
                 >
                   <UserX className="w-5 h-5" />

@@ -102,11 +102,6 @@ const JobSchema = new Schema({
     type: Schema.Types.Mixed,
     default: null
   },
-  serviceTier: {
-    type: String,
-    enum: ['basic', 'standard', 'premium'],
-    default: 'standard'
-  },
   paymentMethod: {
     type: String,
     enum: ['wallet', 'xendit'],
@@ -160,7 +155,9 @@ const JobSchema = new Schema({
 
     feeStatus: {
       type: String,
-      enum: ['not_applicable', 'pending', 'paid', 'waived'],
+      // Must admit everything the server's enum admits, including
+      // 'overdue'; 'waived' is kept for rows already carrying it.
+      enum: ['not_applicable', 'pending', 'paid', 'overdue', 'waived'],
       default: 'not_applicable'
     },
     feeRecord: {
@@ -222,6 +219,27 @@ const JobSchema = new Schema({
       type: Date,
       default: null
     },
+    // ── No-show review (owned by kayod/server) ─────────────────────────────
+    //
+    // Declared here purely so this schema round-trips it. This model is strict,
+    // so an undeclared path is stripped when a document is loaded — and
+    // resolveDispute calls job.save(), which would then write the job back
+    // WITHOUT its review state. An admin ruling on a no-show would erase the
+    // very record that proves the no-show happened.
+    //
+    // Never written on this side. kayod/server's NoShowReviewService owns it.
+    noShowReview: {
+      openedAt: { type: Date, default: null },
+      autoResolveAt: { type: Date, default: null },
+      reminderSentAt: { type: Date, default: null },
+      resolvedAt: { type: Date, default: null },
+      outcome: {
+        type: String,
+        enum: ['refunded_unclaimed', 'issue_raised', null],
+        default: null
+      }
+    },
+    neitherConfirmedReminderSentAt: { type: Date, default: null },
     dispute: {
       isActive: { type: Boolean, default: false },
       raisedBy: { type: String, enum: ['client', 'provider'], default: null },
@@ -229,7 +247,10 @@ const JobSchema = new Schema({
       reason: { type: String, default: null },
       resolvedAt: { type: Date, default: null },
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', null], default: null },
+      // Must stay in step with kayod/server's Job model — both apps write this
+      // same collection, and resolveDispute lives on THIS side, so a value
+      // missing here fails validation no matter what the other schema allows.
+      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', 'no_show_payout', null], default: null },
       escalatedAt: { type: Date, default: null },
       internalNotes: [{
         adminId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -244,7 +265,7 @@ const JobSchema = new Schema({
       reason: String,
       resolvedAt: Date,
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
-      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook'] }
+      resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', 'no_show_payout'] }
     }],
     // Set when a dispute is resolved as "rebook": the provider has to redo the
     // work, so the escrow hold is suspended (not released, not refunded) and the
@@ -266,7 +287,12 @@ const JobSchema = new Schema({
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     reason: { type: String, default: null },
-    feeApplied: { type: Number, default: null }
+    feeApplied: { type: Number, default: null },
+    // Same reason as noShowReview above: declared so a save() on this side
+    // cannot strip the lapse record that the rolling restriction count reads.
+    noShowLapse: { type: Boolean, default: false },
+    lapsedClientId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    lapsedProviderId: { type: Schema.Types.ObjectId, ref: 'User', default: null }
   },
   escrowAmount: {
     type: Number,

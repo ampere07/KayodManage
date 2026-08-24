@@ -5,6 +5,7 @@ import type {
   UpdateJobCategoryRequest,
   UpdateProfessionRequest,
   UpdateJobPostingSettingsRequest,
+  UpdateLegalDocumentRequest,
 } from '../types/configuration.types';
 
 export const settingsService = {
@@ -136,6 +137,28 @@ export const settingsService = {
 
   updateJobPostingSettings: async (data: UpdateJobPostingSettingsRequest) => {
     const response = await apiClient.patch('/api/admin/configurations/job-posting', data);
+    return response.data;
+  },
+
+  // Legal Documents
+  getLegalDocuments: async () => {
+    const response = await apiClient.get('/api/admin/configurations/legal-documents');
+    return response.data;
+  },
+
+  updateLegalDocument: async (documentId: string, data: UpdateLegalDocumentRequest) => {
+    const response = await apiClient.patch(
+      `/api/admin/configurations/legal-documents/${documentId}`,
+      data
+    );
+    return response.data;
+  },
+
+  /** Discard admin edits and restore the text that shipped with the build. */
+  resetLegalDocument: async (documentId: string) => {
+    const response = await apiClient.post(
+      `/api/admin/configurations/legal-documents/${documentId}/reset`
+    );
     return response.data;
   },
 };

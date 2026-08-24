@@ -8,10 +8,12 @@ const login = async (req, res) => {
 
     console.log('[Auth] Login attempt for:', username);
 
-    const admin = await User.findOne({ 
+    // +password: the field is `select: false` on the schema so it never rides
+    // along on an unprojected query. Login is the one place that needs it.
+    const admin = await User.findOne({
       email: username,
       userType: { $in: ['admin', 'superadmin'] }
-    });
+    }).select('+password');
     
     console.log('[Auth] Admin found:', admin ? 'YES' : 'NO', admin ? `(type: ${admin.userType})` : '');
     

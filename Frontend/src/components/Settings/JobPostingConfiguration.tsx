@@ -3,6 +3,7 @@ import {
   Zap,
   Percent,
   Ban,
+  UserX,
   Save,
   RotateCcw,
   Loader2,
@@ -28,8 +29,19 @@ const normalize = (s: Partial<JobPostingSettings>): FormState => ({
   bookingFeeMinimum: s.bookingFeeMinimum ?? 0,
   clientCancellationFeePercentage: s.clientCancellationFeePercentage ?? 10,
   clientCancellationFeeMinimum: s.clientCancellationFeeMinimum ?? 150,
+  clientCancellationFeeThreshold: s.clientCancellationFeeThreshold ?? 0,
+  clientCancellationDayOfFeePercentage: s.clientCancellationDayOfFeePercentage ?? 20,
+  clientCancellationDayOfFeeMinimum: s.clientCancellationDayOfFeeMinimum ?? 300,
   providerStrikeLimit: s.providerStrikeLimit ?? 4,
   providerStrikeRatingPenalty: s.providerStrikeRatingPenalty ?? 0,
+  noShowReviewWindowHours: s.noShowReviewWindowHours ?? 48,
+  noShowReviewReminderHours: s.noShowReviewReminderHours ?? 24,
+  noShowPayoutPercentage: s.noShowPayoutPercentage ?? 20,
+  noShowPayoutMinimum: s.noShowPayoutMinimum ?? 300,
+  noShowPayoutHoldHours: s.noShowPayoutHoldHours ?? 0,
+  noShowLapseRestrictionCount: s.noShowLapseRestrictionCount ?? 3,
+  confirmedFaultRestrictionCount: s.confirmedFaultRestrictionCount ?? 2,
+  disputeLossRestrictionCount: s.disputeLossRestrictionCount ?? 3,
   requireApproval: s.requireApproval ?? false,
   allowAttachments: s.allowAttachments ?? true,
   maxAttachments: s.maxAttachments ?? 5,
@@ -73,7 +85,19 @@ const JobPostingConfiguration: React.FC = () => {
     if (!form) return null;
     if (form.bookingFeePercentage < 0 || form.bookingFeePercentage > 100) return 'Booking fee percentage must be between 0 and 100.';
     if (form.clientCancellationFeePercentage < 0 || form.clientCancellationFeePercentage > 100) return 'Client cancellation fee percentage must be between 0 and 100.';
+    if (form.clientCancellationDayOfFeePercentage < 0 || form.clientCancellationDayOfFeePercentage > 100) return 'Day-of cancellation fee percentage must be between 0 and 100.';
     if (form.providerStrikeLimit < 1) return 'Provider strike limit must be at least 1.';
+    if (form.noShowPayoutPercentage < 0 || form.noShowPayoutPercentage > 100) return 'No-show payout percentage must be between 0 and 100.';
+    if (form.noShowReviewWindowHours < 1) return 'The no-show review window must be at least 1 hour.';
+    // A reminder at or after the deadline never fires — the window resolves
+    // first. Same rule the API enforces; catching it here means the admin sees
+    // why rather than a rejected save.
+    if (form.noShowReviewReminderHours >= form.noShowReviewWindowHours) return 'The reminder must fire before the review window closes, otherwise it never sends.';
+    if (form.noShowLapseRestrictionCount < 1) return 'Missed bookings before restriction must be at least 1.';
+    if (form.confirmedFaultRestrictionCount < 0) return 'Confirmed no-shows before restriction cannot be negative.';
+    // 1 would restrict on a single good-faith complaint, which is the opposite
+    // of what this protects against. 0 disables it.
+    if (form.disputeLossRestrictionCount === 1) return 'Lost disputes before restriction must be 0 (disabled) or at least 2 — one lost dispute is not abuse.';
     return null;
   }, [form]);
 
@@ -205,14 +229,25 @@ const JobPostingConfiguration: React.FC = () => {
                 <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">Cancellation</h3>
               </div>
               <p className="text-xs text-gray-400 mb-5 pl-6">
-                Client cancellation fee and the provider cancellation strike effect.
+                Two tiers, by when the client cancels: cancelling in advance frees a slot the
+                provider can refill, cancelling on the day costs them the day. Plus the provider
+                cancellation strike effect.
               </p>
               <div className="divide-y divide-gray-100">
-                <Row label="Client cancellation fee" desc="Percentage of the agreed price charged when a client cancels a booked job (floored at the minimum, capped at the agreed price).">
+                <Row label="Advance cancellation fee" desc="Percentage of the agreed price charged when a client cancels BEFORE the booking day.">
                   <NumInput value={form.clientCancellationFeePercentage} min={0} suffix="%" onChange={(v) => setField('clientCancellationFeePercentage', v)} />
                 </Row>
-                <Row label="Minimum cancellation fee" desc="Lowest fee a cancelling client pays, even when the percentage works out smaller.">
+                <Row label="Advance flat fee" desc="Charged INSTEAD of the percentage when the agreed price is at or below the trigger. Not a floor: above the trigger the percentage applies even if it works out smaller than this.">
                   <NumInput value={form.clientCancellationFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('clientCancellationFeeMinimum', v)} />
+                </Row>
+                <Row label="Day-of cancellation fee" desc="Percentage charged when a client cancels ON or AFTER the booking day. ASAP bookings count as day-of from the moment they are booked.">
+                  <NumInput value={form.clientCancellationDayOfFeePercentage} min={0} suffix="%" onChange={(v) => setField('clientCancellationDayOfFeePercentage', v)} />
+                </Row>
+                <Row label="Day-of flat fee" desc="Charged INSTEAD of the day-of percentage when the agreed price is at or below the trigger. Not a floor — see the advance flat fee.">
+                  <NumInput value={form.clientCancellationDayOfFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('clientCancellationDayOfFeeMinimum', v)} />
+                </Row>
+                <Row label="Percentage trigger (threshold)" desc="Agreed price above this amount pays the percentage; at or below it pays that tier's flat fee. 0 uses each tier's own flat fee as the trigger.">
+                  <NumInput value={form.clientCancellationFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('clientCancellationFeeThreshold', v)} />
                 </Row>
                 <Row label="Provider strike limit" desc="Cancellation strikes before a provider is restricted from accepting jobs.">
                   <NumInput value={form.providerStrikeLimit} min={1} onChange={(v) => setField('providerStrikeLimit', v)} />
@@ -221,6 +256,62 @@ const JobPostingConfiguration: React.FC = () => {
                   <NumInput value={form.providerStrikeRatingPenalty} min={0} step="any" onChange={(v) => setField('providerStrikeRatingPenalty', v)} />
                 </Row>
               </div>
+              <p className="text-xs text-gray-400 italic mt-3">
+                Above the trigger the PERCENTAGE applies; at or below it, the flat fee.
+                Before the day: {form.clientCancellationFeePercentage}% or ₱{form.clientCancellationFeeMinimum.toLocaleString()} flat ·
+                on the day: {form.clientCancellationDayOfFeePercentage}% or ₱{form.clientCancellationDayOfFeeMinimum.toLocaleString()} flat.
+                A ₱1,000 day-of cancellation therefore pays {form.clientCancellationDayOfFeePercentage}% — which can be
+                LESS than the flat fee. That is deliberate; the flat fee is not a floor.
+              </p>
+            </div>
+
+            {/* No-show review — full width, below both columns */}
+            <div className="xl:col-span-2">
+              <div className="flex items-center gap-2 mb-0.5">
+                <UserX className="w-4 h-4 text-purple-500" />
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">No-Show Review</h3>
+              </div>
+              <p className="text-xs text-gray-400 mb-5 pl-6">
+                When a booking's day passes with neither side confirming, both parties are notified
+                and both can raise an issue. If nobody does, the booking closes and the client is
+                refunded in full — no fee, no payout, no strike. The payout below applies only when
+                an admin reviews a raised issue and finds the client did not appear.
+              </p>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-16">
+                <div className="divide-y divide-gray-100">
+                  <Row label="Review window" desc="Hours from the booking day ending until the booking closes and the client is refunded in full.">
+                    <NumInput value={form.noShowReviewWindowHours} min={1} suffix="h" onChange={(v) => setField('noShowReviewWindowHours', v)} />
+                  </Row>
+                  <Row label="Reminder at" desc="Hours into the window when both parties get a single 'time is running out' reminder. Must be less than the window.">
+                    <NumInput value={form.noShowReviewReminderHours} min={0} suffix="h" onChange={(v) => setField('noShowReviewReminderHours', v)} />
+                  </Row>
+                  <Row label="Missed bookings before restriction" desc="Unclaimed no-shows within 30 days before an account is restricted automatically. A single one never restricts anyone.">
+                    <NumInput value={form.noShowLapseRestrictionCount} min={1} onChange={(v) => setField('noShowLapseRestrictionCount', v)} />
+                  </Row>
+                  <Row label="Lost disputes before restriction" desc="Disputes a party raised and did NOT win, within 30 days, before their account is restricted. Raising a dispute freezes a payout, so repeat losing claims are a denial-of-service. 0 disables; 1 is rejected because one lost dispute is not abuse.">
+                    <NumInput value={form.disputeLossRestrictionCount} min={0} onChange={(v) => setField('disputeLossRestrictionCount', v)} />
+                  </Row>
+                  <Row label="Confirmed no-shows before restriction" desc="Findings where an admin established that this party failed to attend, within 30 days, before their account is restricted. Lower than the two above on purpose: a lapse means nobody spoke up and a lost dispute is not a finding of fault, but a finding IS the evidence. 0 disables auto-restriction while still recording every finding.">
+                    <NumInput value={form.confirmedFaultRestrictionCount} min={0} onChange={(v) => setField('confirmedFaultRestrictionCount', v)} />
+                  </Row>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  <Row label="Reserved-time payout" desc="Percentage of the held amount paid to the provider when an admin finds the client did not appear. The rest is refunded to the client.">
+                    <NumInput value={form.noShowPayoutPercentage} min={0} suffix="%" onChange={(v) => setField('noShowPayoutPercentage', v)} />
+                  </Row>
+                  <Row label="Minimum payout (floor)" desc="A true FLOOR, unlike the cancellation flat fees above: the payout is never less than this, even when the percentage works out smaller. Capped at the held amount.">
+                    <NumInput value={form.noShowPayoutMinimum} min={0} prefix="₱" onChange={(v) => setField('noShowPayoutMinimum', v)} />
+                  </Row>
+                  <Row label="Payout hold" desc="Hours the payout is held before reaching the provider's balance. 0 uses the job's own release window, so an instant-service job isn't paid out the moment you click.">
+                    <NumInput value={form.noShowPayoutHoldHours} min={0} suffix="h" onChange={(v) => setField('noShowPayoutHoldHours', v)} />
+                  </Row>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 italic mt-3">
+                Nobody raises an issue within {form.noShowReviewWindowHours}h → client refunded in full.
+                Issue raised and upheld → provider gets {form.noShowPayoutPercentage}% (min ₱{form.noShowPayoutMinimum.toLocaleString()}),
+                held for {form.noShowPayoutHoldHours > 0 ? `${form.noShowPayoutHoldHours}h` : "the job's own release window"}.
+              </p>
             </div>
 
           </div>

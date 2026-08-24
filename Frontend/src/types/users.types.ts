@@ -107,7 +107,26 @@ export interface UsersResponse {
   };
 }
 
-export interface UserDetailsResponse extends User { }
+/**
+ * One affirmation of the platform's agreements, appended by the Kayod server.
+ *
+ * Read-only in the admin: it is an audit trail, and support reads it during a
+ * dispute to establish which version of which documents a user accepted, and
+ * when. Mirrors the subdocument on the User schema in both backends.
+ */
+export interface LegalAcceptance {
+  version: string;
+  documentIds: string[];
+  context: 'registration' | 'booking' | 'job-post' | 'provider-confirm';
+  jobId?: string;
+  acceptedAt: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export interface UserDetailsResponse extends User {
+  legalAcceptances?: LegalAcceptance[];
+}
 
 export interface UserActionRequest {
   reason?: string;

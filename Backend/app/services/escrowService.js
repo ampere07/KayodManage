@@ -42,8 +42,19 @@ function getReleaseHoursForJob(job) {
  * sub-48h windows, where rounding to the next 9am could nearly double a hold
  * the client was promised as "24 hours".
  */
-function calculateReleaseDate(completionDate = new Date(), job = null) {
-  const hours = job ? getReleaseHoursForJob(job) : DEFAULT_RELEASE_HOURS;
+function calculateReleaseDate(completionDate = new Date(), job = null, overrideHours = null) {
+  // An explicit override wins over the job's own snapshot. Used by the no-show
+  // payout, whose hold length is its own admin setting: a reserved-time payout
+  // on an `immediate`-class job would otherwise land in the provider's balance
+  // the instant an admin clicked, with no window in which the ruling could be
+  // walked back. A real 0 is a legitimate override, so the guard is a type
+  // check rather than a truthiness test.
+  const hours =
+    typeof overrideHours === 'number' && Number.isFinite(overrideHours) && overrideHours >= 0
+      ? overrideHours
+      : job
+        ? getReleaseHoursForJob(job)
+        : DEFAULT_RELEASE_HOURS;
   const releaseDate = new Date(new Date(completionDate).getTime() + hours * 60 * 60 * 1000);
   // 9am normalisation only for multi-day holds. A zero or sub-48h window must
   // land exactly where it was calculated — rounding an instant release forward
@@ -67,7 +78,7 @@ async function calculatePlatformFee(amount, providerId = null) {
   return Math.round(amount * feeRate);
 }
 
-async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session = null) {
+async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session = null, options = {}) {
   const Job = require('../models/Job');
 
   const job = await Job.findById(jobId).session(session || null);
@@ -86,7 +97,11 @@ async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session
     throw new Error('Escrow already processed');
   }
 
-  const releaseDate = calculateReleaseDate(jobCompletedAt, job);
+  const releaseDate = calculateReleaseDate(
+    jobCompletedAt,
+    job,
+    options.overrideReleaseHours ?? null,
+  );
   const platformFee = await calculatePlatformFee(job.escrowAmount, providerId);
   const netAmount = job.escrowAmount - platformFee;
 
