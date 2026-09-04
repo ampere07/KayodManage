@@ -7,7 +7,7 @@ import type {
   UpdateJobStatusRequest,
   UpdateJobStatusResponse,
   Application,
-  ResolveDisputeResponse
+  ResolveDisputeResponse,
   DisputeFinding,
 } from '../types/jobs.types';
 
