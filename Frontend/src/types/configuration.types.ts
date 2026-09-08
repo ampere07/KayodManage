@@ -60,6 +60,12 @@ export interface JobPostingSettings {
   clientCancellationFeeThreshold: number;
   clientCancellationDayOfFeePercentage: number;
   clientCancellationDayOfFeeMinimum: number;
+  providerCancellationFeePercentage: number;
+  providerCancellationFeeMinimum: number;
+  providerCancellationFeeThreshold: number;
+  providerCancellationDayOfFeePercentage: number;
+  providerCancellationDayOfFeeMinimum: number;
+  providerCancellationFeeClientSharePercentage: number;
   providerStrikeLimit: number;
   providerStrikeRatingPenalty: number;
   noShowReviewWindowHours: number;

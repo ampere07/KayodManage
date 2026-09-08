@@ -18,28 +18,38 @@
 // by hand here because the two apps share one database but not one package —
 // the same arrangement as serviceClasses.js and JobCategory.js.
 
-const DEFAULT_PAYOUT_PERCENTAGE = 20;
-const DEFAULT_PAYOUT_MINIMUM = 300;
+// No defaults. The rate lives in this app's JobPostingSettings schema and
+// getNoShowConfig always seeds it; a caller reaching here without one is a bug,
+// and guessing a rate would move real money at a price nobody chose. Mirrors
+// kayod/server/src/utils/cancellationFee.js, which throws for the same reason.
+class MissingPayoutRateError extends Error {
+  constructor(detail) {
+    super(`Cannot price this cancellation: ${detail}.`);
+    this.name = 'MissingPayoutRateError';
+    this.code = 'missing_cancellation_policy';
+  }
+}
 
 /**
  * @param {number} agreedPrice - the held amount for the booking
- * @param {object} [config] - job-posting settings (noShowPayoutPercentage /
- *   noShowPayoutMinimum). Falls back to the defaults above.
+ * @param {object} config - job-posting settings (noShowPayoutPercentage /
+ *   noShowPayoutMinimum). Required; there is no fallback.
  * @returns {{ payout: number, refundAmount: number }} payout goes to the
  *   provider after the hold; refundAmount returns to the client immediately.
  */
-function calculateNoShowPayout(agreedPrice, config = {}) {
+function calculateNoShowPayout(agreedPrice, config) {
   const amount = Number(agreedPrice);
   if (!Number.isFinite(amount) || amount <= 0) {
     return { payout: 0, refundAmount: 0 };
   }
 
-  const percentage = Number.isFinite(Number(config.noShowPayoutPercentage))
-    ? Number(config.noShowPayoutPercentage)
-    : DEFAULT_PAYOUT_PERCENTAGE;
-  const minimum = Number.isFinite(Number(config.noShowPayoutMinimum))
-    ? Number(config.noShowPayoutMinimum)
-    : DEFAULT_PAYOUT_MINIMUM;
+  const percentage = config?.noShowPayoutPercentage;
+  const minimum = config?.noShowPayoutMinimum;
+  if (typeof percentage !== 'number' || typeof minimum !== 'number') {
+    throw new MissingPayoutRateError(
+      'calculateNoShowPayout requires noShowPayoutPercentage and noShowPayoutMinimum'
+    );
+  }
 
   const percentagePayout = Math.round((amount * percentage) / 100);
   // A true floor, unlike the cancellation fee's threshold model: the minimum is
@@ -52,7 +62,6 @@ function calculateNoShowPayout(agreedPrice, config = {}) {
 }
 
 module.exports = {
-  DEFAULT_PAYOUT_PERCENTAGE,
-  DEFAULT_PAYOUT_MINIMUM,
+  MissingPayoutRateError,
   calculateNoShowPayout,
 };

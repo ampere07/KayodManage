@@ -1091,6 +1091,12 @@ exports.updateJobPostingSettings = async (req, res) => {
       'clientCancellationFeeThreshold',
       'clientCancellationDayOfFeePercentage',
       'clientCancellationDayOfFeeMinimum',
+      'providerCancellationFeePercentage',
+      'providerCancellationFeeMinimum',
+      'providerCancellationFeeThreshold',
+      'providerCancellationDayOfFeePercentage',
+      'providerCancellationDayOfFeeMinimum',
+      'providerCancellationFeeClientSharePercentage',
       'providerStrikeLimit',
       'providerStrikeRatingPenalty',
       'noShowReviewWindowHours',
@@ -1155,6 +1161,27 @@ exports.updateJobPostingSettings = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'clientCancellationDayOfFeePercentage cannot exceed 100',
+      });
+    }
+
+    if (settings.providerCancellationFeePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'providerCancellationFeePercentage cannot exceed 100',
+      });
+    }
+
+    if (settings.providerCancellationDayOfFeePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'providerCancellationDayOfFeePercentage cannot exceed 100',
+      });
+    }
+
+    if (settings.providerCancellationFeeClientSharePercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'providerCancellationFeeClientSharePercentage cannot exceed 100',
       });
     }
 

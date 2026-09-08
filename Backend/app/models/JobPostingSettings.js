@@ -108,6 +108,44 @@ const jobPostingSettingsSchema = new mongoose.Schema({
     min: 0,
     max: 5,
   },
+  // Provider cancellation fee: same two-tier shape as the client fee, baseline
+  // 2x. Charged in addition to the strike ladder, not instead of it.
+  providerCancellationFeePercentage: {
+    type: Number,
+    default: 20,
+    min: 0,
+    max: 100,
+  },
+  providerCancellationFeeMinimum: {
+    type: Number,
+    default: 300,
+    min: 0,
+  },
+  // 0 => use the active tier's own minimum, same rule as the client side.
+  providerCancellationFeeThreshold: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  providerCancellationDayOfFeePercentage: {
+    type: Number,
+    default: 40,
+    min: 0,
+    max: 100,
+  },
+  providerCancellationDayOfFeeMinimum: {
+    type: Number,
+    default: 600,
+    min: 0,
+  },
+  // Share of the provider fee credited to the client on top of their refund;
+  // the remainder goes to the platform.
+  providerCancellationFeeClientSharePercentage: {
+    type: Number,
+    default: 50,
+    min: 0,
+    max: 100,
+  },
   // --- No-show review ---
   // A booking whose day passes with neither party confirming completion enters
   // a review window: both sides are notified and both can raise an issue. If

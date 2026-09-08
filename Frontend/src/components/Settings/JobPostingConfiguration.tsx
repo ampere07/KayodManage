@@ -32,6 +32,12 @@ const normalize = (s: Partial<JobPostingSettings>): FormState => ({
   clientCancellationFeeThreshold: s.clientCancellationFeeThreshold ?? 0,
   clientCancellationDayOfFeePercentage: s.clientCancellationDayOfFeePercentage ?? 20,
   clientCancellationDayOfFeeMinimum: s.clientCancellationDayOfFeeMinimum ?? 300,
+  providerCancellationFeePercentage: s.providerCancellationFeePercentage ?? 20,
+  providerCancellationFeeMinimum: s.providerCancellationFeeMinimum ?? 300,
+  providerCancellationFeeThreshold: s.providerCancellationFeeThreshold ?? 0,
+  providerCancellationDayOfFeePercentage: s.providerCancellationDayOfFeePercentage ?? 40,
+  providerCancellationDayOfFeeMinimum: s.providerCancellationDayOfFeeMinimum ?? 600,
+  providerCancellationFeeClientSharePercentage: s.providerCancellationFeeClientSharePercentage ?? 50,
   providerStrikeLimit: s.providerStrikeLimit ?? 4,
   providerStrikeRatingPenalty: s.providerStrikeRatingPenalty ?? 0,
   noShowReviewWindowHours: s.noShowReviewWindowHours ?? 48,
@@ -86,6 +92,9 @@ const JobPostingConfiguration: React.FC = () => {
     if (form.bookingFeePercentage < 0 || form.bookingFeePercentage > 100) return 'Booking fee percentage must be between 0 and 100.';
     if (form.clientCancellationFeePercentage < 0 || form.clientCancellationFeePercentage > 100) return 'Client cancellation fee percentage must be between 0 and 100.';
     if (form.clientCancellationDayOfFeePercentage < 0 || form.clientCancellationDayOfFeePercentage > 100) return 'Day-of cancellation fee percentage must be between 0 and 100.';
+    if (form.providerCancellationFeePercentage < 0 || form.providerCancellationFeePercentage > 100) return 'Provider cancellation fee percentage must be between 0 and 100.';
+    if (form.providerCancellationDayOfFeePercentage < 0 || form.providerCancellationDayOfFeePercentage > 100) return 'Provider day-of cancellation fee percentage must be between 0 and 100.';
+    if (form.providerCancellationFeeClientSharePercentage < 0 || form.providerCancellationFeeClientSharePercentage > 100) return 'Client share of the provider cancellation fee must be between 0 and 100.';
     if (form.providerStrikeLimit < 1) return 'Provider strike limit must be at least 1.';
     if (form.noShowPayoutPercentage < 0 || form.noShowPayoutPercentage > 100) return 'No-show payout percentage must be between 0 and 100.';
     if (form.noShowReviewWindowHours < 1) return 'The no-show review window must be at least 1 hour.';
@@ -230,8 +239,9 @@ const JobPostingConfiguration: React.FC = () => {
               </div>
               <p className="text-xs text-gray-400 mb-5 pl-6">
                 Two tiers, by when the client cancels: cancelling in advance frees a slot the
-                provider can refill, cancelling on the day costs them the day. Plus the provider
-                cancellation strike effect.
+                provider can refill, cancelling on the day costs them the day. Providers pay the
+                same two-tier shape at double the baseline, split between the client and the
+                platform, on top of the strike effect.
               </p>
               <div className="divide-y divide-gray-100">
                 <Row label="Advance cancellation fee" desc="Percentage of the agreed price charged when a client cancels BEFORE the booking day.">
@@ -249,6 +259,24 @@ const JobPostingConfiguration: React.FC = () => {
                 <Row label="Percentage trigger (threshold)" desc="Agreed price above this amount pays the percentage; at or below it pays that tier's flat fee. 0 uses each tier's own flat fee as the trigger.">
                   <NumInput value={form.clientCancellationFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('clientCancellationFeeThreshold', v)} />
                 </Row>
+                <Row label="Provider advance fee" desc="Percentage charged to a PROVIDER who cancels before the booking day. Baseline is double the client rate.">
+                  <NumInput value={form.providerCancellationFeePercentage} min={0} suffix="%" onChange={(v) => setField('providerCancellationFeePercentage', v)} />
+                </Row>
+                <Row label="Provider advance flat fee" desc="Charged instead of the provider percentage at or below the trigger.">
+                  <NumInput value={form.providerCancellationFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('providerCancellationFeeMinimum', v)} />
+                </Row>
+                <Row label="Provider day-of fee" desc="Percentage charged to a provider who cancels on or after the booking day.">
+                  <NumInput value={form.providerCancellationDayOfFeePercentage} min={0} suffix="%" onChange={(v) => setField('providerCancellationDayOfFeePercentage', v)} />
+                </Row>
+                <Row label="Provider day-of flat fee" desc="Charged instead of the provider day-of percentage at or below the trigger.">
+                  <NumInput value={form.providerCancellationDayOfFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('providerCancellationDayOfFeeMinimum', v)} />
+                </Row>
+                <Row label="Provider percentage trigger" desc="Agreed price above this pays the provider percentage; at or below it pays that tier's flat fee. 0 uses each tier's own flat fee.">
+                  <NumInput value={form.providerCancellationFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('providerCancellationFeeThreshold', v)} />
+                </Row>
+                <Row label="Client share of provider fee" desc="Portion of the provider's fee credited to the client on top of their full refund. The remainder goes to the platform.">
+                  <NumInput value={form.providerCancellationFeeClientSharePercentage} min={0} max={100} suffix="%" onChange={(v) => setField('providerCancellationFeeClientSharePercentage', v)} />
+                </Row>
                 <Row label="Provider strike limit" desc="Cancellation strikes before a provider is restricted from accepting jobs.">
                   <NumInput value={form.providerStrikeLimit} min={1} onChange={(v) => setField('providerStrikeLimit', v)} />
                 </Row>
@@ -262,6 +290,14 @@ const JobPostingConfiguration: React.FC = () => {
                 on the day: {form.clientCancellationDayOfFeePercentage}% or ₱{form.clientCancellationDayOfFeeMinimum.toLocaleString()} flat.
                 A ₱1,000 day-of cancellation therefore pays {form.clientCancellationDayOfFeePercentage}% — which can be
                 LESS than the flat fee. That is deliberate; the flat fee is not a floor.
+              </p>
+              <p className="text-xs text-gray-400 italic mt-2">
+                A provider cancelling pays {form.providerCancellationFeePercentage}% in advance ·
+                {' '}{form.providerCancellationDayOfFeePercentage}% on the day, of which
+                {' '}{form.providerCancellationFeeClientSharePercentage}% goes to the client as
+                compensation and {100 - form.providerCancellationFeeClientSharePercentage}% to the
+                platform. Anything their wallet cannot cover becomes an unpaid fee that blocks new
+                bookings until settled.
               </p>
             </div>
 
