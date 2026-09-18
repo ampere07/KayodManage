@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { creditTopUp } = require('../utils/creditTopUp');
 const Transaction = require('../models/Transaction');
 const FeeRecord = require('../models/FeeRecord');
 const User = require('../models/User');
@@ -451,10 +452,10 @@ const updateTransactionStatus = async (req, res) => {
         // Update user wallet
         const User = require('../models/User');
         if (fromUserData && fromUserData._id) {
-          await User.findByIdAndUpdate(
-            fromUserData._id,
-            { $inc: { 'wallet.balance': updatedTransaction.amount } }
-          );
+          const credited = await creditTopUp(fromUserData._id, updatedTransaction.amount);
+          if (!credited) {
+            console.error('[approveTransaction] no wallet for', String(fromUserData._id), '- transaction completed but uncredited');
+          }
         }
       }
       

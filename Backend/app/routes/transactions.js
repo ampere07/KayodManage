@@ -1,4 +1,5 @@
 const express = require('express');
+const { creditTopUp } = require('../utils/creditTopUp');
 const { 
   getTransactions, 
   getTransactionDetails, 
@@ -7,7 +8,7 @@ const {
   approveRefund,
   declineRefund
 } = require('../controllers/transactionController');
-const { adminAuth } = require('../middleware/auth');
+const { adminAuth, requirePermission } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { logActivity } = require('../utils/activityLogger');
@@ -15,7 +16,7 @@ const { logActivity } = require('../utils/activityLogger');
 const router = express.Router();
 
 // Auto-approve all pending top-up transactions
-router.post('/approve-topups', adminAuth, async (req, res) => {
+router.post('/approve-topups', adminAuth, requirePermission('transactions'), async (req, res) => {
   try {
     // Find all pending top-up transactions
     const pendingTopups = await Transaction.find({
@@ -44,10 +45,10 @@ router.post('/approve-topups', adminAuth, async (req, res) => {
       // Update user wallet balance
       const userId = transaction.fromUser?._id || transaction.fromUserId?._id;
       if (userId) {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { 'wallet.balance': transaction.amount } }
-        );
+        const credited = await creditTopUp(userId, transaction.amount);
+        if (!credited) {
+          console.error('[topup] no wallet for', String(userId), '- transaction completed but uncredited');
+        }
       }
 
       approvedTransactions.push({
@@ -97,21 +98,21 @@ router.post('/approve-topups', adminAuth, async (req, res) => {
 
 
 // Get transactions with pagination, search, and filtering
-router.get('/', adminAuth, getTransactions);
+router.get('/', adminAuth, requirePermission('transactions'), getTransactions);
 
 // Get transaction statistics
-router.get('/stats', adminAuth, getTransactionStats);
+router.get('/stats', adminAuth, requirePermission('transactions'), getTransactionStats);
 
 // Get specific transaction details
-router.get('/:transactionId', adminAuth, getTransactionDetails);
+router.get('/:transactionId', adminAuth, requirePermission('transactions'), getTransactionDetails);
 
 // Approve refund
-router.post('/:transactionId/approve-refund', adminAuth, approveRefund);
+router.post('/:transactionId/approve-refund', adminAuth, requirePermission('transactions'), approveRefund);
 
 // Decline refund
-router.post('/:transactionId/decline-refund', adminAuth, declineRefund);
+router.post('/:transactionId/decline-refund', adminAuth, requirePermission('transactions'), declineRefund);
 
 // Update transaction status
-router.patch('/:transactionId/status', adminAuth, updateTransactionStatus);
+router.patch('/:transactionId/status', adminAuth, requirePermission('transactions'), updateTransactionStatus);
 
 module.exports = router;

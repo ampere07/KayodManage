@@ -1,4 +1,5 @@
 const Transaction = require('../models/Transaction');
+const { creditTopUp } = require('./creditTopUp');
 const User = require('../models/User');
 const { logActivity } = require('./activityLogger');
 
@@ -35,10 +36,10 @@ const autoApproveTopups = async () => {
         // Update user wallet balance
         const userId = transaction.fromUser?._id || transaction.fromUserId?._id;
         if (userId) {
-          await User.findByIdAndUpdate(
-            userId,
-            { $inc: { 'wallet.balance': transaction.amount } }
-          );
+          const credited = await creditTopUp(userId, transaction.amount);
+          if (!credited) {
+            console.error('[topup] no wallet for', String(userId), '- transaction completed but uncredited');
+          }
         }
 
         approvedTransactions.push({

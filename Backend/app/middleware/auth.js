@@ -22,7 +22,7 @@ const adminAuth = async (req, res, next) => {
   if (req.session && req.session.isAuthenticated && (req.session.role === 'admin' || req.session.role === 'superadmin')) {
     try {
       // Fetch admin user from database to get full details
-      const adminUser = await User.findById(req.session.userId || req.session.adminId).select('name email userType');
+      const adminUser = await User.findById(req.session.userId || req.session.adminId).select('name email userType permissions');
       
       // Attach admin user data to request object
       req.user = {
@@ -37,7 +37,8 @@ const adminAuth = async (req, res, next) => {
         id: adminUser?._id.toString() || req.session.userId || req.session.adminId,
         name: adminUser?.name || 'Admin',
         email: adminUser?.email || req.session.email,
-        userType: adminUser?.userType || req.session.role
+        userType: adminUser?.userType || req.session.role,
+        permissions: adminUser?.permissions || null
       };
       
       return next();
@@ -67,4 +68,46 @@ const adminAuth = async (req, res, next) => {
   });
 };
 
-module.exports = { authMiddleware, adminAuth };
+const SECTIONS = [
+  'dashboard',
+  'users',
+  'jobs',
+  'transactions',
+  'verifications',
+  'support',
+  'activity',
+  'flagged',
+  'settings'
+];
+
+const requirePermission = (section) => {
+  if (!SECTIONS.includes(section)) {
+    throw new Error(`requirePermission: '${section}' is not an administrative section`);
+  }
+
+  return (req, res, next) => {
+    if (req.user?.role === 'superadmin') {
+      return next();
+    }
+
+    const granted = req.admin?.permissions;
+
+    if (!granted) {
+      return res.status(403).json({
+        success: false,
+        error: `This account's permissions could not be read, so '${section}' is refused rather than assumed.`
+      });
+    }
+
+    if (granted[section] === true) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: `This administrator does not hold the '${section}' permission.`
+    });
+  };
+};
+
+module.exports = { authMiddleware, adminAuth, requirePermission, SECTIONS };

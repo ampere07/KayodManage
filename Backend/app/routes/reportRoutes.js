@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const reportController = require("../controllers/reportController");
-const { authMiddleware, adminAuth } = require("../middleware/auth");
+const { authMiddleware, adminAuth, requirePermission } = require("../middleware/auth");
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
@@ -10,19 +10,19 @@ router.use(authMiddleware);
 router.post("/", reportController.createReport);
 
 // GET /api/reports/admin/all - Get all reports (admin only)
-router.get("/admin/all", adminAuth, reportController.getAllReports);
+router.get("/admin/all", adminAuth, requirePermission('flagged'), reportController.getAllReports);
 
 // GET /api/reported-posts/admin/all - Get all reported posts (legacy collection)
-router.get("/reported-posts/admin/all", adminAuth, reportController.getAllReportedPosts);
+router.get("/reported-posts/admin/all", adminAuth, requirePermission('flagged'), reportController.getAllReportedPosts);
 
 // PUT /api/reported-posts/:reportId/status - Update reported post status (admin)
-router.put("/reported-posts/:reportId/status", adminAuth, reportController.updateReportedPostStatus);
+router.put("/reported-posts/:reportId/status", adminAuth, requirePermission('flagged'), reportController.updateReportedPostStatus);
 
 // GET /api/reports/admin/stats - Get report statistics (admin only)
-router.get("/admin/stats", adminAuth, reportController.getReportStats);
+router.get("/admin/stats", adminAuth, requirePermission('flagged'), reportController.getReportStats);
 
 // PUT /api/reports/:reportId/status - Update report status (admin only)
-router.put("/:reportId/status", adminAuth, reportController.updateReportStatus);
+router.put("/:reportId/status", adminAuth, requirePermission('flagged'), reportController.updateReportStatus);
 
 // GET /api/reports/my - Get current user's reports
 router.get("/my", reportController.getUserReports);
@@ -34,6 +34,6 @@ router.get("/:reportId/details", reportController.getReportDetails);
 router.get("/:reportType/:relatedId/check", reportController.checkUserReported);
 
 // DELETE /api/reports/:reportId - Delete a report (admin only)
-router.delete("/:reportId", adminAuth, reportController.deleteReport);
+router.delete("/:reportId", adminAuth, requirePermission('flagged'), reportController.deleteReport);
 
 module.exports = router;

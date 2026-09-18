@@ -12,7 +12,7 @@ const {
   addInternalNote,
   broadcastMobileMessage
 } = require('../controllers/supportController');
-const { authMiddleware, adminAuth } = require('../middleware/auth');
+const { authMiddleware, adminAuth, requirePermission } = require('../middleware/auth');
 const { supportServiceAuth } = require('../middleware/supportServiceAuth');
 
 const router = express.Router();
@@ -122,7 +122,7 @@ router.post('/notify-new-message', supportServiceAuth, async (req, res) => {
 
 // Admin routes (require an authenticated admin session).
 router.use(authMiddleware);
-router.use(adminAuth);
+router.use(adminAuth, requirePermission('support'));
 
 router.get('/stats', getSupportStats);
 
