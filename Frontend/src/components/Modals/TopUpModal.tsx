@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X as XIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -13,7 +13,22 @@ interface TopUpModalProps {
 }
 
 const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, onStatusUpdate }) => {
+  const [approving, setApproving] = useState(false);
+
   if (!transaction) return null;
+
+  const canApprove = transaction.status === 'pending' && Boolean(onStatusUpdate);
+
+  const handleApprove = async () => {
+    if (!onStatusUpdate) return;
+    setApproving(true);
+    try {
+      await onStatusUpdate(transaction._id, 'completed', transaction.type);
+      onClose();
+    } finally {
+      setApproving(false);
+    }
+  };
 
   const formatCurrency = (amount: number) => {
     return formatPHPCurrency(amount, {
@@ -153,7 +168,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, transaction, o
             </div>
           </div>
 
-          <div className="p-6 border-t border-gray-200 bg-gray-50">
+          <div className="p-6 border-t border-gray-200 bg-gray-50 space-y-3">
+            {canApprove && (
+              <button
+                data-testid="topup-approve-btn"
+                onClick={handleApprove}
+                disabled={approving}
+                className="w-full px-4 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approving ? 'Approving...' : 'Approve Top-up'}
+              </button>
+            )}
             <button
               onClick={onClose}
               className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"

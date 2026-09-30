@@ -13,14 +13,12 @@ interface TransactionDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
-  onStatusUpdate?: (transactionId: string, status: string, type?: string) => Promise<void>;
 }
 
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   isOpen,
   onClose,
-  transaction,
-  onStatusUpdate
+  transaction
 }) => {
   const { setIsHeaderHidden } = React.useContext(SidebarContext);
 
@@ -48,10 +46,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       toast.success('Refund approved');
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       onClose();
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error || err?.message || 'Failed to approve refund';
-      toast.error(msg);
     }
   });
 
@@ -61,10 +55,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       toast.success('Refund request declined');
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       onClose();
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.error || err?.message || 'Failed to decline refund';
-      toast.error(msg);
     }
   });
 
@@ -111,15 +101,58 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       provider;
   }
 
-  const getName = (user: any) =>
-    (user && typeof user === 'object' && (user.name || user.fullName || user.username || user.email || user._id)) ||
-    (typeof user === 'string' ? user : undefined);
-  const getEmail = (user: any) => (user && typeof user === 'object' && user.email) || undefined;
-  const getPhone = (user: any) => (user && typeof user === 'object' && (user.phone || user.contactNumber)) || undefined;
-  const getLocation = (user: any) =>
-    (user && typeof user === 'object' && (user.location || user.address || user.addressLine)) || undefined;
-  const getId = (user: any) =>
-    (user && typeof user === 'object' && user._id) || (typeof user === 'string' ? user : undefined);
+  const canDecideRefund = isPendingRefund;
+  const refundBusy = approveMutation.isPending || declineMutation.isPending;
+  const refundFailure = (approveMutation.error || declineMutation.error) as any;
+  const refundErrorMessage = refundFailure
+    ? refundFailure?.response?.data?.error || refundFailure?.message || 'Refund decision failed'
+    : null;
+
+  const modalFooter = (
+    <div className="p-6 border-t border-gray-200 bg-gray-50">
+      {canDecideRefund && refundErrorMessage && (
+        <p
+          data-testid="refund-error"
+          className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+        >
+          {refundErrorMessage}
+        </p>
+      )}
+      <div className={canDecideRefund ? 'flex items-center justify-between gap-3' : ''}>
+        <button
+          data-testid="transaction-close-btn"
+          onClick={onClose}
+          className={canDecideRefund
+            ? 'px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors'
+            : 'w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors'}
+        >
+          Close
+        </button>
+        {canDecideRefund && (
+          <div className="flex gap-2">
+            <button
+              data-testid="refund-decline-btn"
+              onClick={() => declineMutation.mutate()}
+              disabled={refundBusy}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <XCircle className="h-4 w-4" />
+              {declineMutation.isPending ? 'Declining...' : 'Decline'}
+            </button>
+            <button
+              data-testid="refund-approve-btn"
+              onClick={() => approveMutation.mutate()}
+              disabled={refundBusy}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <CheckCircle className="h-4 w-4" />
+              {approveMutation.isPending ? 'Approving...' : 'Approve & Refund'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   // Render fee record layout
   if (isFeeRecord) {
@@ -362,43 +395,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
-              {isRefundRequest ? (
-                <>
-                  <button
-                    onClick={onClose}
-                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-                  >
-                    Close
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => declineMutation.mutate()}
-                      disabled={declineMutation.isPending || approveMutation.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      Decline
-                    </button>
-                    <button
-                      onClick={() => approveMutation.mutate()}
-                      disabled={approveMutation.isPending || declineMutation.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                      Approve & Refund
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button
-                  onClick={onClose}
-                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  Close
-                </button>
-              )}
-            </div>
+            {modalFooter}
           </div>
         </div>
       </>,
@@ -541,43 +538,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               </div>
             </div>
 
-            <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
-              {isRefundRequest ? (
-                <>
-                  <button
-                    onClick={onClose}
-                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-                  >
-                    Close
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => declineMutation.mutate()}
-                      disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      Decline
-                    </button>
-                    <button
-                      onClick={() => approveMutation.mutate()}
-                      disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                      Approve & Refund
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button
-                  onClick={onClose}
-                  className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  Close
-                </button>
-              )}
-            </div>
+            {modalFooter}
           </div>
         </div>
       </>,
@@ -759,43 +720,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </div>
           </div>
 
-          <div className={`p-6 border-t border-gray-200 bg-gray-50 ${isRefundRequest ? 'flex items-center justify-between gap-3' : ''}`}>
-            {isRefundRequest ? (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-                >
-                  Close
-                </button>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => declineMutation.mutate()}
-                    disabled={declineMutation.isPending || approveMutation.isPending || !isPendingRefund}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
-                  >
-                    <XCircle className="h-4 w-4" />
-                    Decline
-                  </button>
-                  <button
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending || declineMutation.isPending || !isPendingRefund}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    Approve & Refund
-                  </button>
-                </div>
-              </>
-            ) : (
-              <button
-                onClick={onClose}
-                className="w-full px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Close
-              </button>
-            )}
-          </div>
+          {modalFooter}
         </div>
       </div>
     </>,
