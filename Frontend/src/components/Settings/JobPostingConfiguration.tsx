@@ -375,13 +375,14 @@ interface NumInputProps {
   value: number;
   onChange: (v: number) => void;
   min?: number;
+  max?: number;
   step?: number | 'any';
   prefix?: string;
   suffix?: string;
   disabled?: boolean;
 }
 
-const NumInput: React.FC<NumInputProps> = ({ value, onChange, min = 0, step, prefix, suffix, disabled }) => (
+const NumInput: React.FC<NumInputProps> = ({ value, onChange, min = 0, max, step, prefix, suffix, disabled }) => (
   <div className="relative flex items-center">
     {prefix && (
       <span className="absolute left-3 text-sm text-gray-400 pointer-events-none select-none">{prefix}</span>
@@ -389,6 +390,7 @@ const NumInput: React.FC<NumInputProps> = ({ value, onChange, min = 0, step, pre
     <input
       type="number"
       min={min}
+      max={max}
       step={step}
       value={Number.isFinite(value) ? value : ''}
       disabled={disabled}

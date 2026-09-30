@@ -149,7 +149,7 @@ export interface UpdateJobStatusResponse {
 
 export type JobStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type ServiceTier = 'basic' | 'standard' | 'premium';
-export type PaymentMethod = 'wallet' | 'xendit';
+export type { PaymentMethod } from './transactions.types';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 export type ApplicationStatus = 'pending' | 'accepted' | 'rejected';
 

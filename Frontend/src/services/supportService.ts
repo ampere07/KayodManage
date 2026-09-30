@@ -1,6 +1,5 @@
 import apiClient from '../utils/apiClient';
 import type {
-  ChatSupport,
   ChatSupportsResponse,
   ChatSupportDetailsResponse,
   SendMessageRequest,

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Image as ImageIcon } from 'lucide-react';
+import { X, Upload } from 'lucide-react';
 import { settingsService } from '../../services';
 import { getProfessionIconByName, generateProfessionIconFilename } from '../../constants/categoryIcons';
 

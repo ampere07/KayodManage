@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { X, Plus, Trash2, ImageIcon, Search, ArrowRightLeft, Upload } from 'lucide-react';
 import { settingsService } from '../../services';
-import { getDefaultIconForCategory, getIconByName, getProfessionIconByName, getProfessionIconFromName, generateProfessionIconFilename, getAllIcons } from '../../constants/categoryIcons';
+import { getDefaultIconForCategory, getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
 import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
 import { useQueryClient } from '@tanstack/react-query';
@@ -54,7 +54,7 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   profession: initialProfession,
 }) => {
   const [categoryName, setCategoryName] = useState(category.name);
-  const [categoryIcon, setCategoryIcon] = useState(category.icon || getDefaultIconForCategory(category.name));
+  const [categoryIcon] = useState(category.icon || getDefaultIconForCategory(category.name));
   const [categoryServiceClass, setCategoryServiceClass] = useState<ServiceClassId>(
     normalizeServiceClass(category.serviceClass),
   );
@@ -62,25 +62,21 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
   const [editingProfessionServiceClass, setEditingProfessionServiceClass] =
     useState<ServiceClassId | null>(initialProfession?.serviceClass ?? null);
   const [iconTimestamp, setIconTimestamp] = useState(Date.now());
-  const [showIconPicker, setShowIconPicker] = useState(false);
-  const [uploadingIcon, setUploadingIcon] = useState(false);
   const [professions, setProfessions] = useState<Profession[]>(category.professions);
   const [editingProfession, setEditingProfession] = useState<Profession | null>(initialProfession || null);
   const [editingProfessionName, setEditingProfessionName] = useState(initialProfession?.name || '');
   const [editingProfessionIcon, setEditingProfessionIcon] = useState<string | undefined>(initialProfession?.icon || undefined);
   const [uploadingProfessionIcon, setUploadingProfessionIcon] = useState<string | null>(null);
   const [professionIconTimestamps, setProfessionIconTimestamps] = useState<Record<string, number>>({});
-  const [newProfessionName, setNewProfessionName] = useState('');
+  const [, setNewProfessionName] = useState('');
   const [professionSearchQuery, setProfessionSearchQuery] = useState('');
   const [isAddingProfession, setIsAddingProfession] = useState(false);
   const [isEditingProfession, setIsEditingProfession] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const professionFileInputRef = React.useRef<HTMLInputElement>(null);
   const uploadAbortRef = React.useRef<AbortController | null>(null);
-  const [currentProfessionForUpload, setCurrentProfessionForUpload] = useState<string | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferProfession, setTransferProfession] = useState<Profession | null>(null);
   const [isDraggingIcon, setIsDraggingIcon] = useState(false);
@@ -299,62 +295,6 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     }
   };
 
-  const handleAddProfession = async () => {
-    if (!newProfessionName.trim()) {
-      toast.error('Profession name cannot be empty');
-      return;
-    }
-
-    try {
-      const response = await settingsService.createProfession({
-        name: newProfessionName.trim(),
-        categoryId: category._id,
-      });
-      
-      setProfessions(prev => [...prev, response.profession]);
-      setNewProfessionName('');
-      setIsAddingProfession(false);
-      toast.success('Profession added successfully');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to add profession');
-    }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file');
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size must be less than 5MB');
-      return;
-    }
-
-    try {
-      setUploadingIcon(true);
-      const response = await settingsService.uploadCategoryIcon(
-        file, 
-        categoryName || category.name,
-        category.icon
-      );
-      setCategoryIcon(response.iconName);
-      setIconTimestamp(Date.now());
-      setShowIconPicker(false);
-      toast.success('Icon uploaded successfully');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to upload icon');
-    } finally {
-      setUploadingIcon(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
   // Stage a chosen image LOCALLY. It is not uploaded until the user clicks Save Changes,
   // so cancelling or closing the editor never touches ImageKit or the saved icon.
   const stageProfessionIcon = useCallback((file: File) => {
@@ -422,7 +362,6 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
     } finally {
       uploadAbortRef.current = null;
       setUploadingProfessionIcon(null);
-      setCurrentProfessionForUpload(null);
       if (professionFileInputRef.current) {
         professionFileInputRef.current.value = '';
       }
@@ -444,7 +383,6 @@ const EditCategoryDrawer: React.FC<EditCategoryDrawerProps> = ({
 
   const triggerProfessionIconUpload = () => {
     if (editingProfession) {
-      setCurrentProfessionForUpload(editingProfession._id);
       professionFileInputRef.current?.click();
     }
   };

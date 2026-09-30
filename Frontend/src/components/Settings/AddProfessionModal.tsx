@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import SideModal from '../SideModal';
 import { settingsService } from '../../services';
 import { generateProfessionIconFilename } from '../../constants/categoryIcons';

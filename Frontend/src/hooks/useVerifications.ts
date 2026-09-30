@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { verificationsService } from '../services';
-import type { Verification } from '../types';
 
 const VERIFICATIONS_QUERY_KEY = 'verifications';
 

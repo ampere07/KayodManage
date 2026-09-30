@@ -6,7 +6,7 @@ import AddCategoryModal from './AddCategoryModal';
 import EditCategoryDrawer from './EditCategoryDrawer';
 import QuickAccessManager from './QuickAccessManager';
 import { ServiceClassBadge } from './ServiceClassPicker';
-import { getIconByName, getDefaultIconForCategory, getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
+import { getProfessionIconByName, getProfessionIconFromName } from '../../constants/categoryIcons';
 import { useJobCategories } from '../../hooks/useJobs';
 import { useSocket } from '../../context/SocketContext';
 
@@ -171,8 +171,6 @@ const JobCategoryConfiguration: React.FC = () => {
           <div className="divide-y divide-gray-200">
             {filteredCategories.map((category) => {
               const isExpanded = expandedCategories.has(category._id);
-              const iconName = category.icon || getDefaultIconForCategory(category.name);
-              const categoryIcon = getIconByName(iconName);
 
               return (
                 <div key={category._id} className="border-b border-gray-200">

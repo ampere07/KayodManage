@@ -8,7 +8,6 @@ import {
   Image as ImageIcon,
   Video,
   Ban,
-  Users,
   Shield,
   Clock,
   AlertCircle

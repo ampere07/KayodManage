@@ -1,4 +1,3 @@
-import { iconCacheService } from '../services/iconCacheService';
 
 export interface CategoryIcon {
   name: string;
@@ -158,7 +157,7 @@ export const getProfessionIconByName = (iconName: string, categoryIcon?: string)
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };
 
-export const getProfessionIconFromName = (professionName: string, categoryIcon?: string): CategoryIcon => {
+export const getProfessionIconFromName = (_professionName: string, categoryIcon?: string): CategoryIcon => {
   // Fall back to default category icon - only ImageKit icons are supported
   return categoryIcon ? getIconByName(categoryIcon) : getIconByName('professional-services');
 };

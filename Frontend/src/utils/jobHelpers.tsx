@@ -1,4 +1,3 @@
-import React from 'react';
 import { CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
 
 /**

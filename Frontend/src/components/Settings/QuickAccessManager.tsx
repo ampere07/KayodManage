@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, GripVertical, Star, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Star, ChevronDown, ChevronRight } from 'lucide-react';
 import { settingsService } from '../../services';
 import { getProfessionIconByName } from '../../constants/categoryIcons';
 

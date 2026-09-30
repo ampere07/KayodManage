@@ -3,7 +3,6 @@ import SideModal from '../SideModal';
 import { settingsService } from '../../services';
 import { Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useSocket } from '../../context/SocketContext';
 import ServiceClassPicker from './ServiceClassPicker';
 import {
   DEFAULT_SERVICE_CLASS,
@@ -32,23 +31,8 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ isOpen, onClose, on
   const [isAddingProfession, setIsAddingProfession] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { socket } = useSocket();
 
   // Listen for real-time profession icon updates
-  React.useEffect(() => {
-    if (!socket) return;
-
-    const handleConfigurationUpdate = (data: any) => {
-      // Handle profession icon updates if needed
-    };
-
-    socket.on('configuration:updated', handleConfigurationUpdate);
-
-    return () => {
-      socket.off('configuration:updated', handleConfigurationUpdate);
-    };
-  }, [socket]);
-
   const handleEditProfession = (profession: Profession) => {
     setEditingProfession(profession);
     setEditingProfessionName(profession.name);
