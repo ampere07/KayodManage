@@ -1,20 +1,9 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Users,
-  Briefcase,
-  CreditCard,
-  Activity,
-  AlertTriangle,
-  Settings,
-  LogOut,
-  Shield,
-  MessageSquare,
-  ChevronDown,
-  ChevronRight
-} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import SidebarNav from './SidebarNav';
+import type { NavGroupKey } from './navigationModel';
 
 export const SidebarContext = React.createContext<{
   setSidebarOpen: (open: boolean) => void,
@@ -26,82 +15,32 @@ interface LayoutProps {
   title: string;
 }
 
+const GROUP_PREFIXES: Record<NavGroupKey, string> = { jobs: '/jobs', users: '/users', transactions: '/transactions', settings: '/settings' };
+
 const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
-  const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
-  const [isUsersOpen, setIsUsersOpen] = useState(false);
-  const [isJobsOpen, setIsJobsOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<NavGroupKey, boolean>>({ jobs: false, users: false, transactions: false, settings: false });
   const location = useLocation();
   const { logout, user } = useAuth();
 
-  const hasPermission = (permission: string) => {
-    if (user?.role === 'superadmin') return true;
-    if (!user?.permissions) return true;
-    return user.permissions[permission as keyof typeof user.permissions] || false;
-  };
-
-  const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard' }
-  ];
-
-  const userItems = [
-    { name: 'All Users', href: '/users' },
-    { name: 'Customers', href: '/users/customers' },
-    { name: 'Service Providers', href: '/users/providers' },
-    { name: 'Flagged & Suspended', href: '/users/flagged' },
-    { name: 'Deleted Users', href: '/users/deleted' }
-  ];
-
-  const jobItems = [
-    { name: 'All Jobs', href: '/jobs' },
-    { name: 'Archived', href: '/jobs/archived' }
-  ];
-
-  const transactionItems = [
-    { name: 'Fee Records', href: '/transactions/fee-records' },
-    { name: 'Top-up', href: '/transactions/top-up' },
-    { name: 'Cashout', href: '/transactions/cashout' },
-    { name: 'Refund', href: '/transactions/refund' }
-  ];
-
-  const settingsItems = [
-    { name: 'Management', href: '/settings/management' },
-    { name: 'Configuration', href: '/settings/configuration' }
-  ];
-
-  const bottomNavigation = [
-    { name: 'Verifications', href: '/verifications', icon: Shield, permission: 'verifications' },
-    { name: 'Support', href: '/support', icon: MessageSquare, permission: 'support' },
-    { name: 'Activity', href: '/activity', icon: Activity, permission: 'activity' },
-    { name: 'Flagged', href: '/flagged', icon: AlertTriangle, permission: 'flagged' }
-  ];
-
   React.useEffect(() => {
-    if (location.pathname.startsWith('/transactions')) {
-      setIsTransactionsOpen(true);
-    }
-    if (location.pathname.startsWith('/users')) {
-      setIsUsersOpen(true);
-    }
-    if (location.pathname.startsWith('/jobs')) {
-      setIsJobsOpen(true);
-    }
-    if (location.pathname.startsWith('/settings')) {
-      setIsSettingsOpen(true);
-    }
+    setOpenGroups((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(GROUP_PREFIXES) as NavGroupKey[]) {
+        if (location.pathname.startsWith(GROUP_PREFIXES[key])) next[key] = true;
+      }
+      return next;
+    });
   }, [location.pathname]);
+
+  const toggleGroup = (key: NavGroupKey) => setOpenGroups((current) => ({ ...current, [key]: !current[key] }));
 
   const handleLogout = () => {
     logout();
   };
 
-  const isTransactionPage = location.pathname.startsWith('/transactions');
-  const isUserPage = location.pathname.startsWith('/users');
-  const isJobPage = location.pathname.startsWith('/jobs');
-  const isSettingsPage = location.pathname.startsWith('/settings');
 
   return (
     <SidebarContext.Provider value={{ setSidebarOpen, setIsHeaderHidden }}>
@@ -118,248 +57,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                 <span className="ml-2 text-xl font-bold text-gray-900">Admin Panel</span>
               </div>
               <nav className="mt-5 px-2 space-y-1">
-                {navigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  const allowed = hasPermission(item.permission);
-                  return (
-                    <Link
-                      key={item.name}
-                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                      to={item.href}
-                      onClick={(e) => {
-                        if (!allowed) {
-                          e.preventDefault();
-                        } else {
-                          setSidebarOpen(false);
-                        }
-                      }}
-                      className={`group flex items-center px-3 py-3 text-base font-medium rounded-md transition-colors ${!allowed
-                        ? 'opacity-40 cursor-not-allowed text-gray-400'
-                        : isActive
-                          ? 'bg-blue-100 text-blue-900'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                    >
-                      <item.icon className={`mr-4 h-6 w-6 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-
-
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => hasPermission('jobs') && setIsJobsOpen(!isJobsOpen)}
-                    disabled={!hasPermission('jobs')}
-                    className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${!hasPermission('jobs')
-                      ? 'opacity-40 cursor-not-allowed text-gray-400'
-                      : isJobPage
-                        ? 'bg-blue-100 text-blue-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Briefcase className={`mr-4 h-6 w-6 ${!hasPermission('jobs') ? 'text-gray-300' : isJobPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Jobs</span>
-                    </div>
-                    {isJobsOpen ? (
-                      <ChevronDown className="h-5 w-5" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5" />
-                    )}
-                  </button>
-
-                  {isJobsOpen && hasPermission('jobs') && (
-                    <div className="ml-11 mt-1 space-y-1">
-                      {jobItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                            onClick={() => setSidebarOpen(false)}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    data-testid="admin-nav-users-group"
-                    onClick={() => hasPermission('users') && setIsUsersOpen(!isUsersOpen)}
-                    disabled={!hasPermission('users')}
-                    className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${!hasPermission('users')
-                      ? 'opacity-40 cursor-not-allowed text-gray-400'
-                      : isUserPage
-                        ? 'bg-blue-100 text-blue-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Users className={`mr-4 h-6 w-6 ${!hasPermission('users') ? 'text-gray-300' : isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Users</span>
-                    </div>
-                    {isUsersOpen ? (
-                      <ChevronDown className="h-5 w-5" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5" />
-                    )}
-                  </button>
-
-                  {isUsersOpen && hasPermission('users') && (
-                    <div className="ml-11 mt-1 space-y-1">
-                      {userItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                            onClick={() => setSidebarOpen(false)}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => hasPermission('transactions') && setIsTransactionsOpen(!isTransactionsOpen)}
-                    disabled={!hasPermission('transactions')}
-                    className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${!hasPermission('transactions')
-                      ? 'opacity-40 cursor-not-allowed text-gray-400'
-                      : isTransactionPage
-                        ? 'bg-blue-100 text-blue-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <CreditCard className={`mr-4 h-6 w-6 ${!hasPermission('transactions') ? 'text-gray-300' : isTransactionPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Transactions</span>
-                    </div>
-                    {isTransactionsOpen ? (
-                      <ChevronDown className="h-5 w-5" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5" />
-                    )}
-                  </button>
-
-                  {isTransactionsOpen && hasPermission('transactions') && (
-                    <div className="ml-11 mt-1 space-y-1">
-                      {transactionItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                            onClick={() => setSidebarOpen(false)}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {bottomNavigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  const allowed = hasPermission(item.permission);
-                  return (
-                    <Link
-                      key={item.name}
-                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                      to={item.href}
-                      onClick={(e) => {
-                        if (!allowed) {
-                          e.preventDefault();
-                        } else {
-                          setSidebarOpen(false);
-                        }
-                      }}
-                      className={`group flex items-center px-3 py-3 text-base font-medium rounded-md transition-colors ${!allowed
-                        ? 'opacity-40 cursor-not-allowed text-gray-400'
-                        : isActive
-                          ? 'bg-blue-100 text-blue-900'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                    >
-                      <item.icon className={`mr-4 h-6 w-6 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => hasPermission('settings') && setIsSettingsOpen(!isSettingsOpen)}
-                    disabled={!hasPermission('settings')}
-                    className={`w-full group flex items-center justify-between px-3 py-3 text-base font-medium rounded-md transition-colors ${!hasPermission('settings')
-                      ? 'opacity-40 cursor-not-allowed text-gray-400'
-                      : isSettingsPage
-                        ? 'bg-blue-100 text-blue-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Settings className={`mr-4 h-6 w-6 ${!hasPermission('settings') ? 'text-gray-300' : isSettingsPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Settings</span>
-                    </div>
-                    {isSettingsOpen ? (
-                      <ChevronDown className="h-5 w-5" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5" />
-                    )}
-                  </button>
-
-                  {isSettingsOpen && hasPermission('settings') && (
-                    <div className="ml-11 mt-1 space-y-1">
-                      {settingsItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                            onClick={() => setSidebarOpen(false)}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <SidebarNav variant="mobile" user={user} openGroups={openGroups} onToggleGroup={toggleGroup} onNavigate={() => setSidebarOpen(false)} />
               </nav>
             </div>
 
@@ -390,218 +88,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                 <span className="ml-2 text-xl font-bold text-gray-900">Kayod</span>
               </div>
               <nav className="mt-5 flex-1 px-2 bg-white space-y-1">
-                {navigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  return (
-                    <Link
-                      key={item.name}
-                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                      to={item.href}
-                      className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
-                        ? 'bg-blue-100 text-blue-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                    >
-                      <item.icon className={`mr-3 h-5 w-5 ${isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setIsJobsOpen(!isJobsOpen)}
-                    className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${isJobPage
-                      ? 'bg-blue-100 text-blue-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Briefcase className={`mr-3 h-5 w-5 ${isJobPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Jobs</span>
-                    </div>
-                    {isJobsOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
-
-                  {isJobsOpen && (
-                    <div className="ml-10 mt-1 space-y-1">
-                      {jobItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    data-testid="admin-nav-users-group"
-                    onClick={() => setIsUsersOpen(!isUsersOpen)}
-                    className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${isUserPage
-                      ? 'bg-blue-100 text-blue-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Users className={`mr-3 h-5 w-5 ${isUserPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Users</span>
-                    </div>
-                    {isUsersOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
-
-                  {isUsersOpen && (
-                    <div className="ml-10 mt-1 space-y-1">
-                      {userItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setIsTransactionsOpen(!isTransactionsOpen)}
-                    className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${isTransactionPage
-                      ? 'bg-blue-100 text-blue-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <CreditCard className={`mr-3 h-5 w-5 ${isTransactionPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Transactions</span>
-                    </div>
-                    {isTransactionsOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
-
-                  {isTransactionsOpen && (
-                    <div className="ml-10 mt-1 space-y-1">
-                      {transactionItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {bottomNavigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  const allowed = hasPermission(item.permission);
-                  return (
-                    <Link
-                      key={item.name}
-                      data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                      to={item.href}
-                      onClick={(e) => {
-                        if (!allowed) {
-                          e.preventDefault();
-                        }
-                      }}
-                      className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${!allowed
-                        ? 'opacity-40 cursor-not-allowed text-gray-400'
-                        : isActive
-                          ? 'bg-blue-100 text-blue-900'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                    >
-                      <item.icon className={`mr-3 h-5 w-5 ${!allowed ? 'text-gray-300' : isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                    className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors ${isSettingsPage
-                      ? 'bg-blue-100 text-blue-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <Settings className={`mr-3 h-5 w-5 ${isSettingsPage ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-                      <span>Settings</span>
-                    </div>
-                    {isSettingsOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
-
-                  {isSettingsOpen && (
-                    <div className="ml-10 mt-1 space-y-1">
-                      {settingsItems.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                          <Link
-                            key={item.name}
-                            data-testid={`admin-nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                            to={item.href}
-                            className={`block px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                          >
-                            {item.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <SidebarNav variant="desktop" user={user} openGroups={openGroups} onToggleGroup={toggleGroup} />
               </nav>
             </div>
 
