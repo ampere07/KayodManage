@@ -1,6 +1,7 @@
 const verificationService = require('../services/verificationService');
 const { logActivity } = require('../utils/activityLogger');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 const getAllVerifications = async (req, res) => {
   try {
@@ -17,7 +18,7 @@ const getAllVerifications = async (req, res) => {
       data: verifications
     });
   } catch (error) {
-    console.error('Error fetching verifications:', error);
+    logger.error('Error fetching verifications', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch verifications',
@@ -44,7 +45,7 @@ const getVerificationById = async (req, res) => {
       data: verification
     });
   } catch (error) {
-    console.error('Error fetching verification:', error);
+    logger.error('Error fetching verification', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch verification details',
@@ -58,16 +59,9 @@ const updateVerificationStatus = async (req, res) => {
     const { verificationId } = req.params;
     const { status, adminNotes, rejectionReason, banUser } = req.body;
 
-    console.log('----------------------------------------');
-    console.log('📦 UPDATE VERIFICATION STATUS REQUEST');
-    console.log('ID:', verificationId);
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-    console.log('User ID:', req.user?.id);
-    console.log('----------------------------------------');
-
     const mongoose = require('mongoose');
     if (!mongoose.Types.ObjectId.isValid(verificationId)) {
-      console.error('❌ Invalid ObjectId:', verificationId);
+      logger.warn('Verification status update rejected: invalid id', { verificationId: String(verificationId) });
       return res.status(400).json({
         success: false,
         message: 'Invalid verification ID format'
@@ -80,7 +74,7 @@ const updateVerificationStatus = async (req, res) => {
       req.user?.id
     );
 
-    console.log('✅ Verification status updated successfully');
+    logger.info('Verification status updated', { verificationId, status });
 
     if (status === 'approved' || status === 'rejected') {
       const actionType = status === 'approved' ? 'verification_approved' : 'verification_rejected';
@@ -124,12 +118,10 @@ const updateVerificationStatus = async (req, res) => {
             updateType: status === 'approved' ? 'verified' : 'unverified',
             timestamp: new Date()
           });
-
-          console.log(`📡 Emitted user:updated for ${userWithData.name} to admin namespace`);
         }
       }
     } catch (socketError) {
-      console.error('Error emitting user update socket:', socketError);
+      logger.error('Error emitting user update socket', { err: socketError });
     }
 
     res.json({
@@ -138,12 +130,7 @@ const updateVerificationStatus = async (req, res) => {
       data: verification
     });
   } catch (error) {
-    console.error('========================================');
-    console.error('❌ ERROR UPDATING VERIFICATION STATUS');
-    console.error('========================================');
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('========================================');
+    logger.error('Failed to update verification status', { verificationId: req.params.verificationId, err: error });
 
     let statusCode = 500;
     if (error.name === 'ValidationError' || error.name === 'CastError' || error.message.includes('Invalid') || error.message.includes('required')) {
@@ -168,7 +155,7 @@ const getVerificationStats = async (req, res) => {
       data: stats
     });
   } catch (error) {
-    console.error('Error fetching verification stats:', error);
+    logger.error('Error fetching verification stats', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch verification stats',
@@ -203,7 +190,7 @@ const getUserImages = async (req, res) => {
       data
     });
   } catch (error) {
-    console.error('Error fetching user images:', error);
+    logger.error('Error fetching user images', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user images',
@@ -223,7 +210,7 @@ const getVerificationByUserId = async (req, res) => {
       data: verification || null
     });
   } catch (error) {
-    console.error('Error fetching user verification:', error);
+    logger.error('Error fetching user verification', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user verification details',

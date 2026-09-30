@@ -1,5 +1,6 @@
 const Alert = require('../models/Alert');
 const DismissedAlert = require('../models/DismissedAlert');
+const { logger } = require('../utils/logger');
 
 exports.resetAlerts = async (req, res) => {
   try {
@@ -15,7 +16,7 @@ exports.resetAlerts = async (req, res) => {
       message: 'All alerts reset successfully'
     });
   } catch (error) {
-    console.error('Error resetting alerts:', error);
+    logger.error('Error resetting alerts', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to reset alerts',
@@ -71,7 +72,7 @@ exports.dismissAlert = async (req, res) => {
       message: 'Alert dismissed successfully'
     });
   } catch (error) {
-    console.error('Error dismissing alert:', error);
+    logger.error('Error dismissing alert', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to dismiss alert',
@@ -93,7 +94,7 @@ exports.cleanupOldAlertFields = async (req, res) => {
       modifiedCount: result.modifiedCount
     });
   } catch (error) {
-    console.error('Error cleaning up old alert fields:', error);
+    logger.error('Error cleaning up old alert fields', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to cleanup old alert fields',

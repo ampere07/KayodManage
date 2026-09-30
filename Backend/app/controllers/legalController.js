@@ -1,5 +1,6 @@
 const LegalDocument = require('../models/LegalDocument');
 const { LEGAL_DOCUMENTS_BY_ID, LEGAL_VERSION } = require('../config/legal');
+const { logger } = require('../utils/logger');
 
 /**
  * legalController — admin CRUD over the five Kayod legal documents.
@@ -146,7 +147,7 @@ exports.getLegalDocuments = async (req, res) => {
       sourceVersion: LEGAL_VERSION,
     });
   } catch (error) {
-    console.error('Error fetching legal documents:', error);
+    logger.error('Error fetching legal documents', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch legal documents',
@@ -236,7 +237,7 @@ exports.updateLegalDocument = async (req, res) => {
       document: await LegalDocument.findOne({ documentId }).lean(),
     });
   } catch (error) {
-    console.error('Error updating legal document:', error);
+    logger.error('Error updating legal document', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update legal document',
@@ -272,7 +273,7 @@ exports.resetLegalDocument = async (req, res) => {
 
     res.status(200).json({ success: true, document });
   } catch (error) {
-    console.error('Error resetting legal document:', error);
+    logger.error('Error resetting legal document', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to reset legal document',

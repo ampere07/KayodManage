@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const { getMongoUri } = require('./mongoUri');
+const { logger } = require('../utils/logger');
 
 dotenv.config();
 
@@ -22,9 +23,9 @@ const connectDatabase = async () => {
     });
 
 
-    console.log('✅ MongoDB connected to database:', mongoose.connection.name);
+    logger.info('MongoDB connected', { database: mongoose.connection.name });
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    logger.error('MongoDB connection failed', { err: error });
     process.exit(1);
   }
 };
@@ -33,21 +34,21 @@ const disconnectDatabase = async () => {
   try {
     await mongoose.disconnect();
   } catch (error) {
-    console.error('❌ Error disconnecting from MongoDB:', error.message);
+    logger.error('MongoDB disconnect failed', { err: error });
   }
 };
 
 // Handle connection events
 mongoose.connection.on('error', (error) => {
-  console.error('❌ Mongoose error:', error.message);
+  logger.error('MongoDB connection error', { err: error });
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('⚠️  MongoDB disconnected');
+  logger.warn('MongoDB disconnected');
 });
 
 mongoose.connection.on('reconnected', () => {
-  console.log('✅ MongoDB reconnected');
+  logger.info('MongoDB reconnected');
 });
 
 module.exports = { connectDatabase, disconnectDatabase };

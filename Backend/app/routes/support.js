@@ -14,6 +14,7 @@ const {
 } = require('../controllers/supportController');
 const { authMiddleware, adminAuth, requirePermission } = require('../middleware/auth');
 const { supportServiceAuth } = require('../middleware/supportServiceAuth');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -52,7 +53,7 @@ router.post('/notify-new-ticket', supportServiceAuth, async (req, res) => {
     );
     return res.json({ success: true });
   } catch (err) {
-    console.error('Error handling notify-new-ticket:', err);
+    logger.error('Error handling notify-new-ticket', { err: err });
     // Still return 200 so the mobile side doesn't retry indefinitely
     return res.json({ success: false, message: err.message });
   }
@@ -112,7 +113,7 @@ router.post('/notify-new-message', supportServiceAuth, async (req, res) => {
     );
     return res.json({ success: true });
   } catch (error) {
-    console.error('Error handling support notification:', error);
+    logger.error('Error handling support notification', { err: error });
     return res.status(500).json({
       success: false,
       message: 'Failed to process support notification'

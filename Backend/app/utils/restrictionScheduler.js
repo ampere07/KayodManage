@@ -1,5 +1,7 @@
 const cron = require('node-cron');
 const User = require('../models/User');
+const { logger } = require('./logger');
+const { runWithNewRequestId } = require('./requestContext');
 
 /**
  * Scheduler to automatically remove expired restrictions
@@ -7,10 +9,8 @@ const User = require('../models/User');
  */
 const startRestrictionScheduler = () => {
   // Run every hour
-  cron.schedule('0 * * * *', async () => {
+  cron.schedule('0 * * * *', () => runWithNewRequestId(async () => {
     try {
-      console.log('[Restriction Scheduler] Checking for expired restrictions...');
-      
       const now = new Date();
       
       // Find users with expired restrictions
@@ -18,8 +18,6 @@ const startRestrictionScheduler = () => {
         isRestricted: true,
         'restrictionDetails.expiresAt': { $lte: now }
       });
-      
-      console.log(`[Restriction Scheduler] Found ${expiredUsers.length} users with expired restrictions`);
       
       for (const user of expiredUsers) {
         try {
@@ -33,21 +31,17 @@ const startRestrictionScheduler = () => {
             }
           );
           
-          console.log(`[Restriction Scheduler] Removed expired restriction for user: ${user.name} (${user._id})`);
+          logger.info('Expired restriction removed', { userId: String(user._id) });
         } catch (error) {
-          console.error(`[Restriction Scheduler] Error removing restriction for user ${user._id}:`, error);
+          logger.error('Failed to remove expired restriction', { userId: String(user._id), err: error });
         }
       }
-      
-      if (expiredUsers.length > 0) {
-        console.log('[Restriction Scheduler] Completed processing expired restrictions');
-      }
     } catch (error) {
-      console.error('[Restriction Scheduler] Error in restriction scheduler:', error);
+      logger.error('Restriction expiry run failed', { err: error });
     }
-  });
-  
-  console.log('[Restriction Scheduler] Scheduler started - Running every hour');
+  }));
+
+  logger.info('Restriction expiry scheduler started', { schedule: '0 * * * *' });
 };
 
 module.exports = { startRestrictionScheduler };

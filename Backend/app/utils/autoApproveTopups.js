@@ -3,6 +3,8 @@ const { creditTopUp } = require('./creditTopUp');
 const User = require('../models/User');
 const { logActivity } = require('./activityLogger');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('./logger');
+const { runWithNewRequestId } = require('./requestContext');
 
 /**
  * Automatically approve all pending top-up transactions
@@ -22,8 +24,6 @@ const autoApproveTopups = async () => {
       return { success: true, approved: 0, message: 'No pending top-ups to approve' };
     }
 
-    console.log(`[AUTO-APPROVE] Processing ${pendingTopups.length} pending top-up(s)`);
-    
     const approvedTransactions = [];
     const failedTransactions = [];
     
@@ -39,7 +39,7 @@ const autoApproveTopups = async () => {
         if (userId) {
           const credited = await creditTopUp(userId, transaction.amount);
           if (!credited) {
-            console.error('[topup] no wallet for', String(userId), '- transaction completed but uncredited');
+            logger.error('Top-up completed but not credited: wallet missing', { userId: String(userId), transactionId: String(transaction._id) });
           }
         }
 
@@ -51,7 +51,7 @@ const autoApproveTopups = async () => {
           userName: transaction.fromUser?.name || transaction.fromUserId?.name || 'Unknown'
         });
       } catch (error) {
-        console.error(`[AUTO-APPROVE] Failed transaction ${transaction._id}:`, error.message);
+        logger.error('Top-up auto-approval failed', { transactionId: String(transaction._id), err: error });
         failedTransactions.push({
           id: transaction._id,
           error: error.message
@@ -60,7 +60,7 @@ const autoApproveTopups = async () => {
     }
 
     if (approvedTransactions.length > 0 || failedTransactions.length > 0) {
-      console.log(`[AUTO-APPROVE] ✓ ${approvedTransactions.length} approved, ✗ ${failedTransactions.length} failed`);
+      logger.info('Top-up auto-approval finished', { approved: approvedTransactions.length, failed: failedTransactions.length });
     }
 
     // Emit socket event if server is available
@@ -86,7 +86,7 @@ const autoApproveTopups = async () => {
       message: `Automatically approved ${approvedTransactions.length} top-up transaction(s)`
     };
   } catch (error) {
-    console.error('[AUTO-APPROVE] Error:', error.message);
+    logger.error('Top-up auto-approval run failed', { err: error });
     return {
       success: false,
       approved: 0,
@@ -108,14 +108,14 @@ const startAutoApprovalScheduler = (intervalMinutes = 5) => {
   }
 
   const intervalMs = intervalMinutes * 60 * 1000;
-  console.log(`[AUTO-APPROVE] Scheduler started (${intervalMinutes} min intervals)`);
-  
+  logger.info('Top-up auto-approval scheduler started', { intervalMinutes });
+
   // Run immediately on start
-  autoApproveTopups();
-  
+  runWithNewRequestId(autoApproveTopups);
+
   // Then run at intervals
   autoApprovalInterval = setInterval(async () => {
-    await autoApproveTopups();
+    await runWithNewRequestId(autoApproveTopups);
   }, intervalMs);
 };
 

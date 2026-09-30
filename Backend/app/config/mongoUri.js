@@ -1,3 +1,5 @@
+const { logger } = require("../utils/logger");
+
 function getMongoUri() {
   let uri = process.env.MONGODB_URI;
 
@@ -27,7 +29,7 @@ function getMongoUri() {
     ? `${originalParams}&authSource=admin&tls=true`
     : "authSource=admin&tls=true";
 
-  console.log("[MongoDB] Using direct hosts to bypass SRV DNS lookup");
+  logger.info("MongoDB using direct shard hosts instead of SRV lookup");
   return `mongodb://${user}:${pass}@${hosts}/?${queryParams}`;
 }
 

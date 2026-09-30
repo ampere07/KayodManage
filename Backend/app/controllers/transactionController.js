@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Job = require('../models/Job');
 const { logActivity } = require('../utils/activityLogger');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 const getTransactions = async (req, res) => {
   try {
@@ -265,7 +266,7 @@ const getTransactions = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching transactions:', error);
+    logger.error('Error fetching transactions', { err: error });
     res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 };
@@ -392,7 +393,7 @@ const getTransactionDetails = async (req, res) => {
     
     res.json(transactionData);
   } catch (error) {
-    console.error('Error fetching transaction details:', error);
+    logger.error('Error fetching transaction details', { err: error });
     res.status(500).json({ error: 'Failed to fetch transaction details' });
   }
 };
@@ -455,7 +456,7 @@ const updateTransactionStatus = async (req, res) => {
         if (fromUserData && fromUserData._id) {
           const credited = await creditTopUp(fromUserData._id, updatedTransaction.amount);
           if (!credited) {
-            console.error('[approveTransaction] no wallet for', String(fromUserData._id), '- transaction completed but uncredited');
+            logger.error('Transaction completed but not credited: wallet missing', { userId: String(fromUserData._id), transactionId: String(updatedTransaction._id) });
           }
         }
       }
@@ -568,7 +569,7 @@ const updateTransactionStatus = async (req, res) => {
     
     res.json(updatedTransaction);
   } catch (error) {
-    console.error('Error updating transaction status:', error);
+    logger.error('Error updating transaction status', { err: error });
     res.status(500).json({ error: 'Failed to update transaction status' });
   }
 };
@@ -615,7 +616,7 @@ const getTransactionStats = async (req, res) => {
       combinedRevenue: totalRevenue + totalFeeRevenue
     });
   } catch (error) {
-    console.error('Error fetching transaction stats:', error);
+    logger.error('Error fetching transaction stats', { err: error });
     res.status(500).json({ error: 'Failed to fetch transaction stats' });
   }
 };
@@ -666,9 +667,6 @@ const approveRefund = async (req, res) => {
       clientId = fromUser._id;
     }
     
-    console.log('[approveRefund] Processing wallet for DB:', mongoose.connection.name);
-    console.log('[approveRefund] Target Client:', clientId, 'Amount:', refundAmount);
-
     if (clientId && refundAmount > 0) {
       try {
         // Ensure we use ObjectId for the query
@@ -683,25 +681,20 @@ const approveRefund = async (req, res) => {
           { returnDocument: 'after' }
         );
         
-        if (clientResult && (clientResult.value || clientResult._id)) {
-           console.log('[approveRefund] SUCCESS: Wallet updated. New Avail Balance:', 
-             (clientResult.value ? clientResult.value.availableBalance : 'Updated'));
-        } else {
-           console.log('[approveRefund] WARNING: No wallet found with userId:', queryId);
+        if (!(clientResult && (clientResult.value || clientResult._id))) {
+           logger.warn('Refund wallet not found by ObjectId, retrying with string id', { clientId: String(clientId) });
            // Fallback to searching by string just in case
            const fallbackResult = await mongoose.connection.db.collection('wallets').findOneAndUpdate(
              { userId: queryId.toString() },
              { $inc: { availableBalance: refundAmount } },
              { returnDocument: 'after' }
            );
-           if (fallbackResult && (fallbackResult.value || fallbackResult._id)) {
-             console.log('[approveRefund] SUCCESS: Wallet updated via String ID fallback.');
-           } else {
-             console.log('[approveRefund] ERROR: Failed to find wallet after fallback.');
+           if (!(fallbackResult && (fallbackResult.value || fallbackResult._id))) {
+             logger.error('Refund not credited: client wallet not found', { clientId: String(clientId), transactionId: String(transaction._id), refundAmount });
            }
         }
       } catch (e) {
-        console.error('[approveRefund] Wallet update error:', e.message);
+        logger.error('approveRefund: Wallet update error', { err: e });
       }
     }
     
@@ -714,7 +707,7 @@ const approveRefund = async (req, res) => {
 
        // Resolve any associated ReportedPosts
        const ReportedPost = require('../models/ReportedPost');
-       const reportUpdateResult = await ReportedPost.updateMany(
+       await ReportedPost.updateMany(
          { jobId: transaction.jobId, status: 'pending' },
          { 
            status: 'resolved',
@@ -723,7 +716,6 @@ const approveRefund = async (req, res) => {
            adminNotes: `Refund approved for ${refundAmount} PHP. Status auto-resolved.`
          }
        );
-       console.log('[approveRefund] ReportedPost resolution result:', reportUpdateResult.modifiedCount, 'reports updated');
        
        // If the job has a provider assigned to it, deduct their incoming funds
        const providerId = job.assignedToId || job.acceptedProvider;
@@ -734,7 +726,7 @@ const approveRefund = async (req, res) => {
             { $inc: { balance: -refundAmount } },
             { returnDocument: 'after' }
           );
-          console.log('[approveRefund] Provider wallet update result:', providerResult ? 'found & updated' : 'NOT FOUND', 'providerId:', providerId);
+          if (!providerResult) logger.warn('Refund provider wallet not found', { providerId: String(providerId), jobId: String(transaction.jobId) });
          
          // Additionally, mark any pending escrow_payment transactions to this provider for this job as cancelled
          await Transaction.updateMany(
@@ -775,7 +767,7 @@ const approveRefund = async (req, res) => {
     
     res.json({ success: true, message: 'Refund approved successfully', transaction });
   } catch (error) {
-    console.error('Error approving refund:', error);
+    logger.error('Error approving refund', { err: error });
     res.status(500).json({ error: 'Failed to approve refund' });
   }
 };
@@ -845,7 +837,7 @@ const declineRefund = async (req, res) => {
     
     res.json({ success: true, message: 'Refund declined successfully', transaction });
   } catch (error) {
-    console.error('Error declining refund:', error);
+    logger.error('Error declining refund', { err: error });
     res.status(500).json({ error: 'Failed to decline refund' });
   }
 };

@@ -1,6 +1,7 @@
 const ActivityLog = require('../models/ActivityLog');
 const User = require('../models/User');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 exports.getActivityLogs = async (req, res) => {
   try {
@@ -17,7 +18,7 @@ exports.getActivityLogs = async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(targetId)) {
         query.targetId = new mongoose.Types.ObjectId(targetId);
       } else {
-        console.error('Invalid targetId:', targetId);
+        logger.warn('Activity log query rejected: invalid targetId', { targetId: String(targetId) });
         return res.status(400).json({
           success: false,
           message: 'Invalid targetId format'
@@ -45,7 +46,7 @@ exports.getActivityLogs = async (req, res) => {
       hasMore: total > parseInt(skip) + parseInt(limit)
     });
   } catch (error) {
-    console.error('Error fetching activity logs:', error);
+    logger.error('Error fetching activity logs', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch activity logs',
@@ -83,12 +84,12 @@ exports.createActivityLog = async (adminId, actionType, description, options = {
         adminNamespace.emit('activity:new', eventData);
       }
     } catch (socketError) {
-      console.error('Error emitting socket event:', socketError);
+      logger.error('Error emitting socket event', { err: socketError });
     }
     
     return log;
   } catch (error) {
-    console.error('Error creating activity log:', error);
+    logger.error('Error creating activity log', { err: error });
     return null;
   }
 };

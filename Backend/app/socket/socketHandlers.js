@@ -8,6 +8,8 @@ const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const FeeRecord = require('../models/FeeRecord');
 const mongoose = require('mongoose');
+const { logger } = require('../utils/logger');
+const { withSocketContext, socketLogger } = require('./socketContext');
 
 let adminNamespace = null;
 let chatSupportChangeStream = null;
@@ -58,14 +60,14 @@ const setupSocketHandlers = (io) => {
       socket.data.adminRole = admin.userType;
       return next();
     } catch (error) {
-      console.error('Admin socket authentication failed:', error.message);
+      socketLogger(socket).error('Admin socket authentication failed', { err: error });
       return next(new Error('Unauthorized'));
     }
   });
 
   setupChatSupportChangeStream();
 
-  adminNamespace.on('connection', async (socket) => {
+  adminNamespace.on('connection', withSocketContext(async (socket) => {
     const { adminId, adminRole } = socket.data;
     socket.join('admin');
     socket.emit('connection:status', 'connected');
@@ -111,7 +113,7 @@ const setupSocketHandlers = (io) => {
         socket.join(`support:${chatSupportId}`);
         socket.emit('support:joined_chat', { chatSupportId });
       } catch (error) {
-        console.error('Error joining support chat:', error.message);
+        socketLogger(socket).error('Failed to join support chat', { chatSupportId, err: error });
         socket.emit('support:join_error', {
           error: 'Failed to join support chat',
           chatSupportId
@@ -132,7 +134,7 @@ const setupSocketHandlers = (io) => {
         activeIntervals.delete(socket.id);
       }
     });
-  });
+  }));
 
   return adminNamespace;
 };
@@ -624,26 +626,24 @@ const setupChatSupportChangeStream = () => {
           }
         }
       } catch (error) {
-        console.error('Error processing chat support change:', error);
+        logger.error('Failed to process chat support change', { operationType: change.operationType, err: error });
       }
     });
 
     changeStream.on('error', (error) => {
       if (error.codeName === 'Location40573') {
-        console.warn('⚠️  MongoDB change streams require replica set. Falling back to direct socket emits.');
-        console.log('💡 To enable change streams, configure MongoDB as a replica set: https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/');
+        logger.warn('Chat support change stream unavailable: MongoDB is not a replica set; using direct socket emits');
       } else {
-        console.error('Chat support change stream error:', error);
+        logger.error('Chat support change stream error', { err: error });
       }
     });
 
     chatSupportChangeStream = changeStream;
   } catch (error) {
     if (error.codeName === 'Location40573') {
-      console.warn('⚠️  MongoDB change streams require replica set. Chat will work without real-time updates.');
-      console.log('💡 To enable change streams, configure MongoDB as a replica set: https://docs.mongodb.com/manual/tutorial/convert-standalone-to-replica-set/');
+      logger.warn('Chat support change stream unavailable: MongoDB is not a replica set; chat runs without real-time updates');
     } else {
-      console.error('Failed to setup chat support change stream:', error);
+      logger.error('Failed to start chat support change stream', { err: error });
     }
   }
 };
@@ -654,7 +654,7 @@ const closeChatSupportChangeStream = () => {
       chatSupportChangeStream.close();
       chatSupportChangeStream = null;
     } catch (error) {
-      console.error('Error closing chat support change stream:', error);
+      logger.error('Failed to close chat support change stream', { err: error });
     }
   }
 

@@ -13,6 +13,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { logActivity } = require('../utils/activityLogger');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -48,7 +49,7 @@ router.post('/approve-topups', adminAuth, requirePermission('transactions'), asy
       if (userId) {
         const credited = await creditTopUp(userId, transaction.amount);
         if (!credited) {
-          console.error('[topup] no wallet for', String(userId), '- transaction completed but uncredited');
+          logger.error('Top-up completed but not credited: wallet missing', { userId: String(userId), transactionId: String(transaction._id) });
         }
       }
 
@@ -88,7 +89,7 @@ router.post('/approve-topups', adminAuth, requirePermission('transactions'), asy
       transactions: approvedTransactions
     });
   } catch (error) {
-    console.error('Error auto-approving top-ups:', error);
+    logger.error('Error auto-approving top-ups', { err: error });
     res.status(500).json({ 
       success: false,
       error: 'Failed to auto-approve top-ups',

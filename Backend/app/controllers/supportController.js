@@ -4,9 +4,7 @@ const mongoose = require('mongoose');
 const axios = require('axios');
 const { emitChatSupportUpdate } = require('../socket/socketHandlers');
 const { logActivity } = require('../utils/activityLogger');
-
-const SUPPORT_QUERY_LOGS_ENABLED =
-  process.env.NODE_ENV !== 'production' || process.env.SUPPORT_QUERY_LOGS === '1';
+const { logger } = require('../utils/logger');
 
 const getAdminObjectId = (req) => {
   const adminId = req.user?.id;
@@ -108,7 +106,7 @@ const getSupportStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching support stats:', error);
+    logger.error('Error fetching support stats', { err: error });
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -116,12 +114,7 @@ const getSupportStats = async (req, res) => {
 // Get all chat supports
 const getAllChatSupports = async (req, res) => {
   const requestStartedAt = Date.now();
-  const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  const logQuery = (stage, details) => {
-    if (SUPPORT_QUERY_LOGS_ENABLED) {
-      console.log(`[support:list:${requestId}] ${stage}`, details);
-    }
-  };
+  const logQuery = (stage, details) => logger.debug('Support list query', { stage, ...details });
 
   try {
     const {
@@ -251,10 +244,7 @@ const getAllChatSupports = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(
-      `[support:list:${requestId}] failed after ${Date.now() - requestStartedAt}ms`,
-      error
-    );
+    logger.error('Support list query failed', { durationMs: Date.now() - requestStartedAt, err: error });
     return res.status(500).json({
       success: false,
       message: 'Server error',
@@ -310,7 +300,7 @@ const getChatSupport = async (req, res) => {
 
     res.json({ success: true, chatSupport: chatSupportWithUserData });
   } catch (error) {
-    console.error('Error fetching chat support:', error);
+    logger.error('Error fetching chat support', { err: error });
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -413,7 +403,7 @@ const acceptChatSupport = async (req, res) => {
         }
       );
     } catch (activityError) {
-      console.error('Error logging support acceptance:', activityError);
+      logger.error('Error logging support acceptance', { err: activityError });
     }
 
     emitChatSupportUpdate(chatSupport._id, {
@@ -438,7 +428,7 @@ const acceptChatSupport = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error accepting chat support:', error);
+    logger.error('Error accepting chat support', { err: error });
     return res.status(500).json({
       success: false,
       message: 'Server error'
@@ -529,23 +519,21 @@ const closeChatSupport = async (req, res) => {
       { runValidators: false }
     );
 
-    console.log(`✅ Ticket ${chatSupportId} closed`);
+    logger.info('Support ticket closed', { chatSupportId: String(chatSupportId) });
 
     if (adminObjectId) {
       try {
         await User.findByIdAndUpdate(adminObjectId, { $inc: { ticketsResolved: 1 } }, { new: true });
-        console.log(`✅ Incremented ticketsResolved for admin ${adminObjectId}`);
       } catch (updateError) {
-        console.error('❌ Error updating admin ticketsResolved:', updateError);
+        logger.error('Error updating admin ticketsResolved', { err: updateError });
       }
     }
 
     if (chatSupport.userId) {
       try {
         await User.findByIdAndUpdate(chatSupport.userId, { $inc: { ticketsSubmittedResolved: 1 } }, { new: true });
-        console.log(`✅ Incremented ticketsSubmittedResolved for user ${chatSupport.userId}`);
       } catch (updateError) {
-        console.error('❌ Error updating user ticketsSubmittedResolved:', updateError);
+        logger.error('Error updating user ticketsSubmittedResolved', { err: updateError });
       }
     }
 
@@ -562,16 +550,14 @@ const closeChatSupport = async (req, res) => {
           ipAddress: req.ip
         }
       );
-      console.log('✅ Activity logged: Ticket closed');
     } catch (activityError) {
-      console.error('❌ Error logging activity:', activityError);
+      logger.error('Error logging activity', { err: activityError });
     }
 
     const freshChatSupport = await ChatSupport.findById(chatSupportId)
       .populate('userId', 'userType profileImage')
       .lean();
 
-    console.log('Emitting socket update with status:', freshChatSupport.status);
     emitChatSupportUpdate(freshChatSupport, {
       status: freshChatSupport.status,
       closedAt: freshChatSupport.closedAt,
@@ -605,16 +591,15 @@ const closeChatSupport = async (req, res) => {
           },
           { headers: { 'x-api-key': kayodApiKey } }
         );
-        console.log('✅ Notified Kayod server to broadcast close message to mobile');
       }
     } catch (notifyError) {
       // Non-critical — mobile will still receive via change stream
-      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+      logger.warn('Failed to notify Kayod server (non-critical)', { err: notifyError });
     }
 
     res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
-    console.error('Error closing chat:', error);
+    logger.error('Error closing chat', { err: error });
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };
@@ -674,7 +659,7 @@ const reopenChatSupport = async (req, res) => {
     });
 
     await chatSupport.save();
-    console.log(`✅ Ticket ${chatSupportId} reopened - status: ${chatSupport.status}`);
+    logger.info('Support ticket reopened', { chatSupportId: String(chatSupportId), status: chatSupport.status });
 
     try {
       await logActivity(
@@ -689,16 +674,14 @@ const reopenChatSupport = async (req, res) => {
           ipAddress: req.ip
         }
       );
-      console.log('✅ Activity logged: Ticket reopened');
     } catch (activityError) {
-      console.error('❌ Error logging activity:', activityError);
+      logger.error('Error logging activity', { err: activityError });
     }
 
     const freshChatSupport = await ChatSupport.findById(chatSupportId)
       .populate('userId', 'userType profileImage')
       .lean();
 
-    console.log('Emitting socket update with status:', freshChatSupport.status);
     emitChatSupportUpdate(freshChatSupport, {
       status: freshChatSupport.status,
       closedAt: freshChatSupport.closedAt,
@@ -730,15 +713,14 @@ const reopenChatSupport = async (req, res) => {
           },
           { headers: { 'x-api-key': kayodApiKey } }
         );
-        console.log('✅ Notified Kayod server to broadcast reopen message to mobile');
       }
     } catch (notifyError) {
-      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+      logger.warn('Failed to notify Kayod server (non-critical)', { err: notifyError });
     }
 
     res.json({ success: true, chatSupport: freshChatSupport });
   } catch (error) {
-    console.error('Error reopening chat:', error);
+    logger.error('Error reopening chat', { err: error });
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };
@@ -817,14 +799,13 @@ const addChatSupportMessage = async (req, res) => {
         },
         { headers: { 'x-api-key': kayodApiKey } }
       );
-      console.log('✅ Notified Kayod server to broadcast admin message to mobile');
     } catch (notifyError) {
-      console.warn('⚠️ Failed to notify Kayod server (non-critical):', notifyError.message);
+      logger.warn('Failed to notify Kayod server (non-critical)', { err: notifyError });
     }
 
     res.json({ success: true, message: savedMessage, chatSupport });
   } catch (error) {
-    console.error('Error adding message:', error);
+    logger.error('Error adding message', { err: error });
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };
@@ -877,7 +858,7 @@ const addInternalNote = async (req, res) => {
 
     res.json({ success: true, chatSupport });
   } catch (error) {
-    console.error('Error adding internal note:', error);
+    logger.error('Error adding internal note', { err: error });
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };
@@ -893,8 +874,6 @@ const broadcastMobileMessage = async (req, res) => {
       });
     }
 
-    console.log('📨 Received mobile message for broadcast:', { chatSupportId, message });
-
     const { emitChatSupportMessage } = require('../socket/socketHandlers');
     emitChatSupportMessage(chatSupportId, message);
 
@@ -903,7 +882,7 @@ const broadcastMobileMessage = async (req, res) => {
       message: 'Message broadcasted to admin panel'
     });
   } catch (error) {
-    console.error('Error broadcasting mobile message:', error);
+    logger.error('Error broadcasting mobile message', { err: error });
     res.status(500).json({ success: false, message: 'Server error: ' + error.message });
   }
 };

@@ -1,4 +1,5 @@
 const ImageKit = require("imagekit");
+const { logger } = require("../utils/logger");
 
 // Initialize ImageKit
 const imagekit = new ImageKit({
@@ -19,7 +20,7 @@ const imageKitService = {
 			});
 			return result;
 		} catch (error) {
-			console.error("[ImageKit Backend] listFiles failed:", error);
+			logger.error("ImageKit listFiles failed", { err: error });
 			throw error;
 		}
 	},
@@ -32,7 +33,7 @@ const imageKitService = {
 			const result = await imagekit.getFileDetails(fileId);
 			return result;
 		} catch (error) {
-			console.error("[ImageKit Backend] getFileDetails failed:", error);
+			logger.error("ImageKit getFileDetails failed", { err: error });
 			throw error;
 		}
 	},
@@ -47,7 +48,7 @@ const imageKitService = {
 			});
 			return result;
 		} catch (error) {
-			console.error("[ImageKit Backend] searchFiles failed:", error);
+			logger.error("ImageKit searchFiles failed", { err: error });
 			throw error;
 		}
 	},
@@ -69,7 +70,7 @@ const imageKitService = {
 			});
 			return result;
 		} catch (error) {
-			console.error("[ImageKit Backend] uploadFile failed:", error);
+			logger.error("ImageKit uploadFile failed", { err: error });
 			throw error;
 		}
 	},
@@ -93,7 +94,7 @@ const imageKitService = {
 			});
 			return result;
 		} catch (error) {
-			console.error('[ImageKit Backend] uploadBanner failed:', error);
+			logger.error("ImageKit uploadBanner failed", { err: error });
 			throw error;
 		}
 	},
@@ -106,7 +107,7 @@ const imageKitService = {
 			await imagekit.deleteFile(fileId);
 			return true;
 		} catch (error) {
-			console.error("[ImageKit Backend] deleteFile failed:", error);
+			logger.error("ImageKit deleteFile failed", { err: error });
 			return false;
 		}
 	},
@@ -126,7 +127,7 @@ const imageKitService = {
 			});
 			return result;
 		} catch (error) {
-			console.error("[ImageKit Backend] renameFile failed:", error);
+			logger.error("ImageKit renameFile failed", { err: error });
 			throw error;
 		}
 	},

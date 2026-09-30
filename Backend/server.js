@@ -9,6 +9,10 @@ const { setupSocketHandlers } = require('./app/socket/socketHandlers');
 const { setIO } = require('./app/realtime/ioRegistry');
 const { startAutoApprovalScheduler, stopAutoApprovalScheduler } = require('./app/utils/autoApproveTopups');
 const { startRestrictionScheduler } = require('./app/utils/restrictionScheduler');
+const { logger } = require('./app/utils/logger');
+const { requestId } = require('./app/middleware/requestId');
+const { accessLog } = require('./app/middleware/accessLog');
+const { errorHandler } = require('./app/middleware/errorHandler');
 
 // Routes
 const authRoutes = require('./app/routes/auth');
@@ -73,6 +77,9 @@ const io = new Server(server, {
   }
 });
 
+app.use(requestId);
+app.use(accessLog);
+
 // Middleware
 app.use(cors({
   origin: verifyOrigin,
@@ -104,29 +111,6 @@ app.use('/api/configurations', configurationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin/configurations', configurationRoutes);
 
-// Log registered routes for debugging
-console.log('\n📡 Registered report routes:');
-const reportRouter = require('./app/routes/reportRoutes');
-if (reportRouter && reportRouter.stack) {
-  reportRouter.stack.forEach((layer) => {
-    if (layer.route) {
-      const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
-      console.log(`  ${methods} /api/reports${layer.route.path}`);
-    }
-  });
-}
-
-console.log('\n📡 Registered support routes:');
-const supportRouter = require('./app/routes/support');
-if (supportRouter && supportRouter.stack) {
-  supportRouter.stack.forEach((layer) => {
-    if (layer.route) {
-      const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
-      console.log(`  ${methods} /api/support${layer.route.path}`);
-    }
-  });
-}
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const mongoose = require('mongoose');
@@ -138,15 +122,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.use(errorHandler);
+
 const PORT = process.env.PORT || 5000;
 
 const serverInstance = server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Socket.IO server ready`);
-  console.log(`🌐 Admin panel: http://localhost:5173`);
+  logger.info('Server listening', { port: Number(PORT) });
 
   if (process.env.E2E_DISABLE_SCHEDULERS === "1") {
-    console.log("[Server] Background schedulers disabled by E2E_DISABLE_SCHEDULERS=1");
+    logger.info('Background schedulers disabled', { reason: 'E2E_DISABLE_SCHEDULERS=1' });
   } else {
     // Start automatic top-up approval (runs every 5 minutes)
     startAutoApprovalScheduler(5);
@@ -157,7 +141,7 @@ const serverInstance = server.listen(PORT, () => {
 });
 
 const gracefulShutdown = async () => {
-  console.log('\n🛑 Shutting down...');
+  logger.info('Shutting down');
 
   try {
     stopAutoApprovalScheduler();
@@ -171,10 +155,10 @@ const gracefulShutdown = async () => {
     const { disconnectDatabase } = require('./app/config/database');
     await disconnectDatabase();
 
-    console.log('✅ Shutdown complete');
+    logger.info('Shutdown complete');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Shutdown error:', error.message);
+    logger.error('Shutdown failed', { err: error });
     process.exit(1);
   }
 };

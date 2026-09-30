@@ -23,6 +23,7 @@ const { recordFaultFindings, restrictForConfirmedFault } = require('../utils/con
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 // Helper function to strip random suffix from icon paths
 const cleanIconPath = (iconPath) => {
@@ -127,7 +128,7 @@ const getJobs = async (req, res) => {
           locationDisplay = job.location;
         }
       } catch (err) {
-        console.error('Error parsing location for job:', job._id, err);
+        logger.warn('Failed to derive job location display', { jobId: String(job._id), err });
         locationDisplay = 'Location not specified';
       }
       
@@ -166,8 +167,7 @@ const getJobs = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching jobs:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error fetching jobs', { err: error });
     res.status(500).json({ error: 'Failed to fetch jobs', message: error.message });
   }
 };
@@ -199,7 +199,7 @@ const getJobDetails = async (req, res) => {
         locationDisplay = job.location;
       }
     } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
+      logger.warn('Failed to derive job location display', { jobId: String(jobId), err });
     }
     
     const jobWithData = {
@@ -214,8 +214,7 @@ const getJobDetails = async (req, res) => {
     
     res.json(jobWithData);
   } catch (error) {
-    console.error('Error fetching job details:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error fetching job details', { err: error });
     res.status(500).json({ error: 'Failed to fetch job details', message: error.message });
   }
 };
@@ -263,7 +262,7 @@ const updateJobStatus = async (req, res) => {
         locationDisplay = job.location;
       }
     } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
+      logger.warn('Failed to derive job location display', { jobId: String(jobId), err });
     }
     
     const jobWithData = {
@@ -282,8 +281,7 @@ const updateJobStatus = async (req, res) => {
     
     res.json(jobWithData);
   } catch (error) {
-    console.error('Error updating job status:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error updating job status', { err: error });
     res.status(500).json({ error: 'Failed to update job status', message: error.message });
   }
 };
@@ -458,7 +456,7 @@ const forceCancelJob = async (req, res) => {
         await Notification.insertMany(notifications);
       }
     } catch (notifyErr) {
-      console.error('[forceCancelJob] Notification error:', notifyErr);
+      logger.error('forceCancelJob: Notification error', { err: notifyErr });
     }
 
     // Force-cancel resolves any active dispute as client_refunded (see step 5
@@ -484,7 +482,7 @@ const forceCancelJob = async (req, res) => {
         metadata: { reason: reason || null, refundedAmount }
       });
     } catch (activityErr) {
-      console.error('[forceCancelJob] Activity log error:', activityErr);
+      logger.error('forceCancelJob: Activity log error', { err: activityErr });
     }
 
     const updatedJob = await Job.findById(jobId)
@@ -505,7 +503,7 @@ const forceCancelJob = async (req, res) => {
     res.json({ success: true, job: updatedJob, refundedAmount });
   } catch (error) {
     await session.abortTransaction();
-    console.error('Error force-cancelling job:', error);
+    logger.error('Error force-cancelling job', { err: error });
     res.status(500).json({ error: 'Failed to cancel job', message: error.message });
   } finally {
     session.endSession();
@@ -590,7 +588,7 @@ const closeDisputeThreadsForJob = async (job, { outcome, adminObjectId, adminNam
       });
     }
   } catch (threadErr) {
-    console.error('[closeDisputeThreadsForJob] Dispute thread update error:', threadErr);
+    logger.error('closeDisputeThreadsForJob: Dispute thread update error', { err: threadErr });
   }
 };
 
@@ -1164,7 +1162,7 @@ const resolveDispute = async (req, res) => {
           data: { jobId: job._id.toString(), reason: 'dispute_abuse' },
         });
       } catch (notifyErr) {
-        console.error('[resolveDispute] Dispute-abuse restriction notification failed:', notifyErr);
+        logger.error('resolveDispute: Dispute-abuse restriction notification failed', { err: notifyErr });
       }
     }
 
@@ -1191,7 +1189,7 @@ const resolveDispute = async (req, res) => {
           },
         });
       } catch (notifyErr) {
-        console.error('[resolveDispute] Confirmed-fault restriction notification failed:', notifyErr);
+        logger.error('resolveDispute: Confirmed-fault restriction notification failed', { err: notifyErr });
       }
     }
 
@@ -1213,7 +1211,7 @@ const resolveDispute = async (req, res) => {
         },
       });
     } catch (activityErr) {
-      console.error('[resolveDispute] Activity log error:', activityErr);
+      logger.error('resolveDispute: Activity log error', { err: activityErr });
     }
 
     // State the actual release date rather than a nominal hold length: a
@@ -1292,7 +1290,7 @@ const resolveDispute = async (req, res) => {
         await Notification.insertMany(notifications);
       }
     } catch (notifyErr) {
-      console.error('[resolveDispute] Notification error:', notifyErr);
+      logger.error('resolveDispute: Notification error', { err: notifyErr });
     }
 
     // Post a summary into each party's own dispute support thread and close
@@ -1340,7 +1338,7 @@ const resolveDispute = async (req, res) => {
     });
   } catch (error) {
     await session.abortTransaction();
-    console.error('Error resolving dispute:', error);
+    logger.error('Error resolving dispute', { err: error });
     res.status(500).json({ error: 'Failed to resolve dispute', message: error.message });
   } finally {
     session.endSession();
@@ -1388,7 +1386,7 @@ const assignJobToProvider = async (req, res) => {
         locationDisplay = job.location;
       }
     } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
+      logger.warn('Failed to derive job location display', { jobId: String(jobId), err });
     }
     
     const jobWithData = {
@@ -1407,8 +1405,7 @@ const assignJobToProvider = async (req, res) => {
     
     res.json(jobWithData);
   } catch (error) {
-    console.error('Error assigning job:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error assigning job', { err: error });
     res.status(500).json({ error: 'Failed to assign job', message: error.message });
   }
 };
@@ -1434,7 +1431,7 @@ const getJobStats = async (req, res) => {
       pendingApplications
     });
   } catch (error) {
-    console.error('Error fetching job stats:', error);
+    logger.error('Error fetching job stats', { err: error });
     res.status(500).json({ error: 'Failed to fetch job stats' });
   }
 };
@@ -1445,8 +1442,6 @@ const hideJob = async (req, res) => {
     const { reason } = req.body;
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🔒 Hide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
     
     const job = await Job.findByIdAndUpdate(
       jobId,
@@ -1487,8 +1482,7 @@ const hideJob = async (req, res) => {
     });
     
     if (adminId) {
-      console.log('📝 Creating activity log for job_hidden');
-      const activityLog = await createActivityLog(
+      await createActivityLog(
         adminId,
         'job_hidden',
         `Hidden job "${job.title}" posted by ${job.userId.name}${reason ? `. Reason: ${reason}` : ''}`,
@@ -1504,9 +1498,8 @@ const hideJob = async (req, res) => {
           }
         }
       );
-      console.log('✅ Activity log created:', activityLog?._id);
     } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
+      logger.warn('Activity log not created: admin id missing', { action: 'job_hidden', jobId: String(jobId) });
     }
     
     const applicationCount = await Application.countDocuments({ job: jobId });
@@ -1519,7 +1512,7 @@ const hideJob = async (req, res) => {
         locationDisplay = job.location;
       }
     } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
+      logger.warn('Failed to derive job location display', { jobId: String(jobId), err });
     }
     
     const jobWithData = {
@@ -1538,8 +1531,7 @@ const hideJob = async (req, res) => {
     
     res.json(jobWithData);
   } catch (error) {
-    console.error('Error hiding job:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error hiding job', { err: error });
     res.status(500).json({ error: 'Failed to hide job', message: error.message });
   }
 };
@@ -1549,8 +1541,6 @@ const unhideJob = async (req, res) => {
     const { jobId } = req.params;
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🔓 Unhide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
     
     const job = await Job.findByIdAndUpdate(
       jobId,
@@ -1586,8 +1576,7 @@ const unhideJob = async (req, res) => {
     });
     
     if (adminId) {
-      console.log('📝 Creating activity log for job_unhidden');
-      const activityLog = await createActivityLog(
+      await createActivityLog(
         adminId,
         'job_unhidden',
         `Restored job "${job.title}" posted by ${job.userId.name}`,
@@ -1602,9 +1591,8 @@ const unhideJob = async (req, res) => {
           }
         }
       );
-      console.log('✅ Activity log created:', activityLog?._id);
     } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
+      logger.warn('Activity log not created: admin id missing', { action: 'job_unhidden', jobId: String(jobId) });
     }
     
     const applicationCount = await Application.countDocuments({ job: jobId });
@@ -1617,7 +1605,7 @@ const unhideJob = async (req, res) => {
         locationDisplay = job.location;
       }
     } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
+      logger.warn('Failed to derive job location display', { jobId: String(jobId), err });
     }
     
     const jobWithData = {
@@ -1636,8 +1624,7 @@ const unhideJob = async (req, res) => {
     
     res.json(jobWithData);
   } catch (error) {
-    console.error('Error unhiding job:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error unhiding job', { err: error });
     res.status(500).json({ error: 'Failed to unhide job', message: error.message });
   }
 };
@@ -1647,8 +1634,6 @@ const deleteJob = async (req, res) => {
     const { jobId } = req.params;
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🗑️ Delete Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
     
     const job = await Job.findByIdAndUpdate(
       jobId,
@@ -1684,8 +1669,7 @@ const deleteJob = async (req, res) => {
     });
     
     if (adminId) {
-      console.log('📝 Creating activity log for job_deleted');
-      const activityLog = await createActivityLog(
+      await createActivityLog(
         adminId,
         'job_deleted',
         `Deleted job "${job.title}" posted by ${job.userId.name}`,
@@ -1700,9 +1684,8 @@ const deleteJob = async (req, res) => {
           }
         }
       );
-      console.log('✅ Activity log created:', activityLog?._id);
     } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
+      logger.warn('Activity log not created: admin id missing', { action: 'job_deleted', jobId: String(jobId) });
     }
     
     const io = getIO();
@@ -1713,8 +1696,7 @@ const deleteJob = async (req, res) => {
     
     res.json({ success: true, message: 'Job deleted successfully' });
   } catch (error) {
-    console.error('Error deleting job:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error deleting job', { err: error });
     res.status(500).json({ error: 'Failed to delete job', message: error.message });
   }
 };
@@ -1724,8 +1706,6 @@ const restoreJob = async (req, res) => {
     const { jobId } = req.params;
     const adminId = req.admin?.id;
     const adminName = req.admin?.name || 'Admin';
-    
-    console.log('♻️ Restore Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
     
     const job = await Job.findByIdAndUpdate(
       jobId,
@@ -1764,8 +1744,7 @@ const restoreJob = async (req, res) => {
     });
     
     if (adminId) {
-      console.log('📝 Creating activity log for job_restored');
-      const activityLog = await createActivityLog(
+      await createActivityLog(
         adminId,
         'job_restored',
         `Restored job "${job.title}" posted by ${job.userId.name}`,
@@ -1780,9 +1759,8 @@ const restoreJob = async (req, res) => {
           }
         }
       );
-      console.log('✅ Activity log created:', activityLog?._id);
     } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
+      logger.warn('Activity log not created: admin id missing', { action: 'job_restored', jobId: String(jobId) });
     }
     
     const io = getIO();
@@ -1793,8 +1771,7 @@ const restoreJob = async (req, res) => {
     
     res.json({ success: true, message: 'Job restored successfully' });
   } catch (error) {
-    console.error('Error restoring job:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('Error restoring job', { err: error });
     res.status(500).json({ error: 'Failed to restore job', message: error.message });
   }
 };

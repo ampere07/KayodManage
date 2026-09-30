@@ -33,6 +33,7 @@ const {
 } = require('../controllers/alertController');
 const { adminAuth, authMiddleware } = require('../middleware/auth');
 const { autoApproveTopups } = require('../utils/autoApproveTopups');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -81,7 +82,7 @@ router.post('/approve-topups-now', adminAuth, async (req, res) => {
     const result = await autoApproveTopups();
     res.json(result);
   } catch (error) {
-    console.error('Error manually triggering top-up approval:', error);
+    logger.error('Error manually triggering top-up approval', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to approve top-ups',

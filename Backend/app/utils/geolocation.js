@@ -1,4 +1,5 @@
 const geoip = require('geoip-lite');
+const { logger } = require('./logger');
 
 /**
  * Get location information from IP address
@@ -35,7 +36,7 @@ const getLocationFromIP = (ip) => {
       return 'Unknown';
     }
   } catch (error) {
-    console.error('Error getting location from IP:', error);
+    logger.error('Error getting location from IP', { err: error });
     return 'Unknown';
   }
 };
@@ -85,7 +86,7 @@ const getDetailedLocationFromIP = (ip) => {
       isLocal: false
     };
   } catch (error) {
-    console.error('Error getting detailed location from IP:', error);
+    logger.error('Error getting detailed location from IP', { err: error });
     return {
       city: null,
       country: null,

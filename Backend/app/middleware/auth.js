@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { logger } = require('../utils/logger');
 
 const authMiddleware = (req, res, next) => {
   if (req.session && req.session.isAuthenticated) {
@@ -43,7 +44,7 @@ const adminAuth = async (req, res, next) => {
       
       return next();
     } catch (error) {
-      console.error('Error fetching admin user:', error);
+      logger.error('Error fetching admin user', { err: error });
       // Fallback to session data if DB fetch fails
       req.user = {
         id: req.session.userId || req.session.adminId || 'admin',

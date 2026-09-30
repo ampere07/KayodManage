@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const imageKitService = require('../services/imageKitService');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
 const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
@@ -39,7 +40,7 @@ exports.getJobCategories = async (req, res) => {
       categories,
     });
   } catch (error) {
-    console.error('Error fetching job categories:', error);
+    logger.error('Error fetching job categories', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch job categories',
@@ -117,7 +118,7 @@ exports.createJobCategory = async (req, res) => {
       category,
     });
   } catch (error) {
-    console.error('Error creating job category:', error);
+    logger.error('Error creating job category', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to create job category',
@@ -187,7 +188,7 @@ exports.updateJobCategory = async (req, res) => {
       category,
     });
   } catch (error) {
-    console.error('Error updating job category:', error);
+    logger.error('Error updating job category', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update job category',
@@ -216,7 +217,7 @@ exports.deleteJobCategory = async (req, res) => {
       message: 'Category and associated professions deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting job category:', error);
+    logger.error('Error deleting job category', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to delete job category',
@@ -287,7 +288,7 @@ exports.createProfession = async (req, res) => {
       profession: newProfession,
     });
   } catch (error) {
-    console.error('Error creating profession:', error);
+    logger.error('Error creating profession', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to create profession',
@@ -403,11 +404,11 @@ exports.updateProfession = async (req, res) => {
           // Compensating action: if the DB write below fails, rename the file back so the
           // stored icon path and the actual ImageKit file never drift apart.
           ikRollback = () => imageKitService.renameFile(`${folderPath}/${newFileName}`, oldFileName, true);
-          console.log(`[Configurations] ImageKit profession icon renamed: "${oldFileName}" → "${newFileName}"`);
+          logger.info('Profession icon renamed on ImageKit', { from: oldFileName, to: newFileName });
         } catch (ikErr) {
           // e.g. a file with the new name already exists, or a transient API error.
           // Keep the existing icon reference so the profession still shows its icon.
-          console.warn(`[Configurations] Could not rename ImageKit profession icon: ${ikErr.message}`);
+          logger.warn('Could not rename profession icon on ImageKit', { err: ikErr });
         }
       }
     }
@@ -422,9 +423,9 @@ exports.updateProfession = async (req, res) => {
       if (ikRollback) {
         try {
           await ikRollback();
-          console.warn('[Configurations] Rolled back ImageKit rename after profession save failure');
+          logger.warn('Rolled back ImageKit profession icon rename after save failure');
         } catch (rbErr) {
-          console.error(`[Configurations] ImageKit rename rollback FAILED: ${rbErr.message}`);
+          logger.error('ImageKit profession icon rename rollback failed', { err: rbErr });
         }
       }
       throw saveErr;
@@ -467,10 +468,9 @@ exports.updateProfession = async (req, res) => {
             const newPath = path.join(KAYOD_PROFESSIONS_DIR, newFileName);
             if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
               fs.copyFileSync(oldPath, newPath);
-              console.log(`[Configurations] Icon file copied: "${oldFileName}" → "${newFileName}" in kayod client`);
             }
           } catch (fileErr) {
-            console.warn(`[Configurations] Could not copy icon file in kayod client: ${fileErr.message}`);
+            logger.warn('Could not copy profession icon file in kayod client', { err: fileErr });
           }
 
           // RENAME in KayodManage (no static imports, safe to rename)
@@ -479,10 +479,9 @@ exports.updateProfession = async (req, res) => {
             const newPath = path.join(MANAGE_PROFESSIONS_DIR, newFileName);
             if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
               fs.renameSync(oldPath, newPath);
-              console.log(`[Configurations] Icon file renamed: "${oldFileName}" → "${newFileName}" in KayodManage`);
             }
           } catch (fileErr) {
-            console.warn(`[Configurations] Could not rename icon file in KayodManage: ${fileErr.message}`);
+            logger.warn('Could not rename profession icon file in KayodManage', { err: fileErr });
           }
         }
       }
@@ -490,10 +489,9 @@ exports.updateProfession = async (req, res) => {
       // Update Jobs with old profession name
       const jobQuery = { professionName: oldName };
       try {
-        const jobResult = await Job.updateMany(jobQuery, { $set: update });
-        console.log(`[Configurations] Updated ${jobResult.modifiedCount} jobs.`);
+        await Job.updateMany(jobQuery, { $set: update });
       } catch (jobErr) {
-        console.warn(`[Configurations] Could not update jobs: ${jobErr.message}`);
+        logger.warn('Could not update jobs for renamed profession', { err: jobErr });
         // Surface the partial cascade so the admin knows existing jobs may still point at
         // the old icon path (which no longer exists after the ImageKit rename).
         warnings.push(`Failed to update some jobs to the renamed icon: ${jobErr.message}`);
@@ -502,19 +500,16 @@ exports.updateProfession = async (req, res) => {
       // Update Drafts with old profession name (no Draft model, use raw collection)
       try {
         const draftsCollection = mongoose.connection.collection('drafts');
-        const draftResult = await draftsCollection.updateMany(
+        await draftsCollection.updateMany(
           { professionName: oldName },
           { $set: update }
         );
-        console.log(`[Configurations] Updated ${draftResult.modifiedCount} drafts.`);
       } catch (draftErr) {
-        console.warn(`[Configurations] Could not update drafts: ${draftErr.message}`);
+        logger.warn('Could not update drafts for renamed profession', { err: draftErr });
         warnings.push(`Failed to update some drafts to the renamed icon: ${draftErr.message}`);
       }
 
-      console.log(
-        `[Configurations] Profession renamed: "${oldName}" → "${name ? name.trim() : oldName}". `
-      );
+      logger.info('Profession renamed', { from: oldName, to: name ? name.trim() : oldName });
     }
 
     // Emit socket event for real-time update
@@ -529,7 +524,7 @@ exports.updateProfession = async (req, res) => {
           profession,
         });
       } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
+        logger.error('Error emitting socket event', { err: socketErr });
       }
     }
 
@@ -539,7 +534,7 @@ exports.updateProfession = async (req, res) => {
       ...(warnings.length ? { warnings } : {}),
     });
   } catch (error) {
-    console.error('Error updating profession:', error);
+    logger.error('Error updating profession', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update profession',
@@ -577,7 +572,7 @@ exports.deleteProfession = async (req, res) => {
           professionId,
         });
       } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
+        logger.error('Error emitting socket event', { err: socketErr });
       }
     }
 
@@ -586,7 +581,7 @@ exports.deleteProfession = async (req, res) => {
       message: 'Profession deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting profession:', error);
+    logger.error('Error deleting profession', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to delete profession',
@@ -682,34 +677,26 @@ exports.transferProfession = async (req, res) => {
 
     // Update any existing jobs that reference this profession's categoryId
     try {
-      const jobResult = await Job.updateMany(
+      await Job.updateMany(
         { professionName: profession.name, 'jobCategory': sourceCategory._id },
         { $set: { 'jobCategory': targetCategory._id } }
       );
-      if (jobResult.modifiedCount > 0) {
-        console.log(`[Configurations] Transferred ${jobResult.modifiedCount} jobs to new category.`);
-      }
     } catch (jobErr) {
-      console.warn(`[Configurations] Could not update jobs during transfer: ${jobErr.message}`);
+      logger.warn('Could not update jobs during profession transfer', { err: jobErr });
     }
 
     // Update drafts
     try {
       const draftsCollection = mongoose.connection.collection('drafts');
-      const draftResult = await draftsCollection.updateMany(
+      await draftsCollection.updateMany(
         { professionName: profession.name, 'jobCategory': sourceCategory._id },
         { $set: { 'jobCategory': targetCategory._id } }
       );
-      if (draftResult.modifiedCount > 0) {
-        console.log(`[Configurations] Transferred ${draftResult.modifiedCount} drafts to new category.`);
-      }
     } catch (draftErr) {
-      console.warn(`[Configurations] Could not update drafts during transfer: ${draftErr.message}`);
+      logger.warn('Could not update drafts during profession transfer', { err: draftErr });
     }
 
-    console.log(
-      `[Configurations] Profession "${profession.name}" transferred from "${sourceCategory.name}" to "${targetCategory.name}".`
-    );
+    logger.info('Profession transferred', { profession: profession.name, fromCategory: sourceCategory.name, toCategory: targetCategory.name });
 
     res.status(200).json({
       success: true,
@@ -719,7 +706,7 @@ exports.transferProfession = async (req, res) => {
       targetCategoryId: targetCategory._id,
     });
   } catch (error) {
-    console.error('Error transferring profession:', error);
+    logger.error('Error transferring profession', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to transfer profession',
@@ -790,7 +777,7 @@ exports.uploadCategoryIcon = async (req, res) => {
           fs.unlinkSync(oldKayodPath);
         }
       } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
+        logger.warn('Failed to delete old profession icon', { path: oldKayodPath, err });
       }
 
       try {
@@ -798,7 +785,7 @@ exports.uploadCategoryIcon = async (req, res) => {
           fs.unlinkSync(oldKayodManagePath);
         }
       } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
+        logger.warn('Failed to delete old profession icon', { path: oldKayodManagePath, err });
       }
     });
 
@@ -812,7 +799,7 @@ exports.uploadCategoryIcon = async (req, res) => {
       message: 'Icon uploaded successfully',
     });
   } catch (error) {
-    console.error('Error uploading category icon:', error);
+    logger.error('Error uploading category icon', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to upload icon',
@@ -835,8 +822,6 @@ exports.uploadProfessionIcon = async (req, res) => {
   let tempFileId = null;
 
   try {
-    console.log(`[Configurations] Starting profession icon upload for ${req.body.professionName}`);
-
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -861,7 +846,6 @@ exports.uploadProfessionIcon = async (req, res) => {
     const tempName = `tmp-${sanitizedName}-${Date.now()}-${Math.round(Math.random() * 1e6)}.webp`;
 
     // 1) Upload the new image to the TEMP name. This is the slow part and is safe to cancel.
-    console.log(`[Configurations] Staging profession icon on ImageKit: ${tempName}`);
     const tempResult = await imageKitService.uploadFile(
       buffer,
       tempName,
@@ -876,7 +860,7 @@ exports.uploadProfessionIcon = async (req, res) => {
     if (clientAborted) {
       await imageKitService.deleteFile(tempFileId);
       tempFileId = null;
-      console.log(`[Configurations] Upload cancelled by client; staged file discarded, icon unchanged for "${professionName}"`);
+      logger.info('Profession icon upload cancelled by client; staged file discarded', { professionName });
       return; // connection already closed — nothing to respond
     }
 
@@ -888,7 +872,7 @@ exports.uploadProfessionIcon = async (req, res) => {
         const match = files && files.find(f => f.name === name);
         if (match) await imageKitService.deleteFile(match.fileId);
       } catch (e) {
-        console.warn(`[Configurations] Could not delete ImageKit file ${name}: ${e.message}`);
+        logger.warn('Could not delete ImageKit file', { file: name, err: e });
       }
     };
 
@@ -923,10 +907,9 @@ exports.uploadProfessionIcon = async (req, res) => {
       profession.icon = ikPath;
       profession.updatedAt = new Date();
       await category.save();
-      console.log(`[Configurations] Updated profession icon in database: ${professionName} -> ${ikPath}`);
     }
 
-    console.log(`[Configurations] Profession icon upload complete: ${professionName}`);
+    logger.info('Profession icon updated', { professionName, path: ikPath });
     res.status(200).json({
       success: true,
       iconName: ikPath,
@@ -949,7 +932,7 @@ exports.uploadProfessionIcon = async (req, res) => {
           timestamp: new Date()
         });
       } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
+        logger.error('Error emitting socket event', { err: socketErr });
       }
     }
   } catch (error) {
@@ -957,7 +940,7 @@ exports.uploadProfessionIcon = async (req, res) => {
     if (tempFileId) {
       try { await imageKitService.deleteFile(tempFileId); } catch (e) { /* best effort */ }
     }
-    console.error('Error uploading profession icon:', error);
+    logger.error('Error uploading profession icon', { err: error });
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
@@ -971,8 +954,6 @@ exports.uploadProfessionIcon = async (req, res) => {
 exports.updateQuickAccessProfessions = async (req, res) => {
   try {
     const { professions } = req.body;
-
-    console.log('Received quick access update request:', professions);
 
     if (!Array.isArray(professions)) {
       return res.status(400).json({
@@ -991,7 +972,6 @@ exports.updateQuickAccessProfessions = async (req, res) => {
     const mongoose = require('mongoose');
 
     // Step 1 & 2 Combined: Reset all and set selected professions
-    console.log('\ud83d� Updating professions...');
     const allCategories = await JobCategory.find();
 
     for (const category of allCategories) {
@@ -1011,19 +991,16 @@ exports.updateQuickAccessProfessions = async (req, res) => {
           profession.isQuickAccess = true;
           profession.quickAccessOrder = selectedIndex + 1;
           modified = true;
-          console.log(`  ✅ ${profession.name} (order: ${selectedIndex + 1})`);
         }
       });
 
       if (modified || category.professions.length > 0) {
         category.markModified('professions');
         await category.save({ validateModifiedOnly: false });
-        console.log(`  💾 Saved category: ${category.name}`);
       }
     }
 
     // Step 3: Verify the changes
-    console.log('\n🔍 Verifying saved data...');
     const verifyCategories = await JobCategory.find().lean();
     let verifiedCount = 0;
 
@@ -1031,12 +1008,11 @@ exports.updateQuickAccessProfessions = async (req, res) => {
       cat.professions.forEach(prof => {
         if (prof.isQuickAccess) {
           verifiedCount++;
-          console.log(`  ✓ ${prof.name} (order: ${prof.quickAccessOrder}, category: ${cat.name})`);
         }
       });
     });
 
-    console.log(`\nTotal verified quick access professions: ${verifiedCount}\n`);
+    logger.info('Quick access professions updated', { verifiedCount });
 
     res.status(200).json({
       success: true,
@@ -1044,7 +1020,7 @@ exports.updateQuickAccessProfessions = async (req, res) => {
       verifiedCount,
     });
   } catch (error) {
-    console.error('❌ Error updating quick access professions:', error);
+    logger.error('Error updating quick access professions', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update quick access professions',
@@ -1063,7 +1039,7 @@ exports.getJobPostingSettings = async (req, res) => {
       settings,
     });
   } catch (error) {
-    console.error('Error fetching job posting settings:', error);
+    logger.error('Error fetching job posting settings', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch job posting settings',
@@ -1252,7 +1228,7 @@ exports.updateJobPostingSettings = async (req, res) => {
           settings,
         });
       } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
+        logger.error('Error emitting socket event', { err: socketErr });
       }
     }
 
@@ -1261,7 +1237,7 @@ exports.updateJobPostingSettings = async (req, res) => {
       settings,
     });
   } catch (error) {
-    console.error('Error updating job posting settings:', error);
+    logger.error('Error updating job posting settings', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update job posting settings',

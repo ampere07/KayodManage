@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Advertisement = require('../models/Advertisement');
 const imageKitService = require('../services/imageKitService');
+const { logger } = require('../utils/logger');
 
 // Fields an admin may set/update on an advertisement.
 const EDITABLE_FIELDS = [
@@ -94,7 +95,7 @@ exports.getAdvertisements = async (req, res) => {
       advertisements: advertisements.map((ad) => ({ ...ad, status: statusOf(ad) })),
     });
   } catch (error) {
-    console.error('Error fetching advertisements:', error);
+    logger.error('Error fetching advertisements', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch advertisements',
@@ -116,7 +117,7 @@ exports.getPublicAdvertisements = async (req, res) => {
       .lean();
     res.status(200).json({ success: true, advertisements });
   } catch (error) {
-    console.error('Error fetching public advertisements:', error);
+    logger.error('Error fetching public advertisements', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch advertisements',
@@ -156,7 +157,7 @@ exports.createAdvertisement = async (req, res) => {
     const advertisement = await Advertisement.create(data);
     res.status(201).json({ success: true, advertisement });
   } catch (error) {
-    console.error('Error creating advertisement:', error);
+    logger.error('Error creating advertisement', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to create advertisement',
@@ -204,7 +205,7 @@ exports.updateAdvertisement = async (req, res) => {
 
     res.status(200).json({ success: true, advertisement });
   } catch (error) {
-    console.error('Error updating advertisement:', error);
+    logger.error('Error updating advertisement', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to update advertisement',
@@ -256,7 +257,7 @@ exports.reorderAdvertisements = async (req, res) => {
 
     res.status(200).json({ success: true, advertisements });
   } catch (error) {
-    console.error('Error reordering advertisements:', error);
+    logger.error('Error reordering advertisements', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to reorder advertisements',
@@ -281,7 +282,7 @@ exports.deleteAdvertisement = async (req, res) => {
     await advertisement.deleteOne();
     res.status(200).json({ success: true, message: 'Advertisement deleted' });
   } catch (error) {
-    console.error('Error deleting advertisement:', error);
+    logger.error('Error deleting advertisement', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to delete advertisement',
@@ -319,7 +320,7 @@ exports.uploadAdvertisementImage = async (req, res) => {
       fileId: result.fileId,
     });
   } catch (error) {
-    console.error('Error uploading advertisement image:', error);
+    logger.error('Error uploading advertisement image', { err: error });
     res.status(500).json({
       success: false,
       message: 'Failed to upload image',

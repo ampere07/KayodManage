@@ -1,12 +1,11 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const { getLocationFromIP } = require('../utils/geolocation');
+const { logger } = require('../utils/logger');
 
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    console.log('[Auth] Login attempt for:', username);
 
     // +password: the field is `select: false` on the schema so it never rides
     // along on an unprojected query. Login is the one place that needs it.
@@ -14,8 +13,6 @@ const login = async (req, res) => {
       email: username,
       userType: { $in: ['admin', 'superadmin'] }
     }).select('+password');
-    
-    console.log('[Auth] Admin found:', admin ? 'YES' : 'NO', admin ? `(type: ${admin.userType})` : '');
     
     if (!admin) {
       return res.status(401).json({
@@ -25,16 +22,14 @@ const login = async (req, res) => {
     }
 
     if (!admin.password) {
-      console.log('[Auth] No password set for admin user');
+      logger.warn('Admin login rejected: account has no password set', { adminId: String(admin._id) });
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
       });
     }
 
-    console.log('[Auth] Comparing password...');
     const isValidPassword = await bcrypt.compare(password, admin.password);
-    console.log('[Auth] Password valid:', isValidPassword);
     
     if (!isValidPassword) {
       return res.status(401).json({
@@ -85,7 +80,7 @@ const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', { err: error });
     res.status(500).json({
       success: false,
       error: 'Internal server error'
@@ -152,7 +147,7 @@ const checkAuth = async (req, res) => {
         }
       });
     } catch (error) {
-      console.error('Error fetching user permissions:', error);
+      logger.error('Error fetching user permissions', { err: error });
       res.json({
         success: true,
         isAuthenticated: true,

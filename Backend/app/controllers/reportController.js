@@ -1,6 +1,7 @@
 const Report = require("../models/Report");
 const ReportedPost = require("../models/ReportedPost");
 const User = require("../models/User");
+const { logger } = require("../utils/logger");
 
 // Create a new report
 exports.createReport = async (req, res) => {
@@ -67,7 +68,7 @@ exports.createReport = async (req, res) => {
       data: report
     });
   } catch (error) {
-    console.error("Error creating report:", error);
+    logger.error("Error creating report", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to submit report",
@@ -115,7 +116,7 @@ exports.updateReportedPostStatus = async (req, res) => {
 
     return res.json({ success: true, data: updated });
   } catch (error) {
-    console.error("updateReportedPostStatus error", error);
+    logger.error("updateReportedPostStatus error", { err: error });
     return res.status(500).json({ success: false, message: "Failed to update reported post" });
   }
 };
@@ -199,7 +200,7 @@ exports.getAllReportedPosts = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error fetching reported posts:", error);
+    logger.error("Error fetching reported posts", { err: error });
     return res.status(500).json({ success: false, message: "Failed to fetch reported posts" });
   }
 };
@@ -262,7 +263,7 @@ exports.getAllReports = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error fetching reports:", error);
+    logger.error("Error fetching reports", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to fetch reports",
@@ -311,7 +312,7 @@ exports.getReportStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error fetching report stats:", error);
+    logger.error("Error fetching report stats", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to fetch report statistics",
@@ -369,7 +370,7 @@ exports.updateReportStatus = async (req, res) => {
       data: report
     });
   } catch (error) {
-    console.error("Error updating report:", error);
+    logger.error("Error updating report", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to update report",
@@ -391,7 +392,7 @@ exports.checkUserReported = async (req, res) => {
       hasReported
     });
   } catch (error) {
-    console.error("Error checking user report:", error);
+    logger.error("Error checking user report", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to check report status",
@@ -432,7 +433,7 @@ exports.getUserReports = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Error fetching user reports:", error);
+    logger.error("Error fetching user reports", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to fetch reports",
@@ -459,7 +460,7 @@ exports.deleteReport = async (req, res) => {
       message: "Report deleted successfully"
     });
   } catch (error) {
-    console.error("Error deleting report:", error);
+    logger.error("Error deleting report", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to delete report",
@@ -490,7 +491,7 @@ exports.getReportDetails = async (req, res) => {
       data: report
     });
   } catch (error) {
-    console.error("Error fetching report details:", error);
+    logger.error("Error fetching report details", { err: error });
     res.status(500).json({
       success: false,
       message: "Failed to fetch report details",

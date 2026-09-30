@@ -9,6 +9,7 @@ const DismissedAlert = require('../models/DismissedAlert');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const ChatSupport = require('../models/ChatSupport');
+const { logger } = require('../utils/logger');
 
 const getStats = async (req, res) => {
   try {
@@ -96,7 +97,7 @@ const getStats = async (req, res) => {
 
     res.json(stats);
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
+    logger.error('Error fetching dashboard stats', { err: error });
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });
   }
 };
@@ -121,7 +122,7 @@ const getActivity = async (req, res) => {
 
     res.json(activities);
   } catch (error) {
-    console.error('Error fetching activity feed:', error);
+    logger.error('Error fetching activity feed', { err: error });
     res.status(500).json({ error: 'Failed to fetch activity feed' });
   }
 };
@@ -207,7 +208,7 @@ const generateActivitiesFromData = async () => {
 
     return generatedActivities.slice(0, 50);
   } catch (error) {
-    console.error('Error generating activities from data:', error);
+    logger.error('Error generating activities from data', { err: error });
     return [];
   }
 };
@@ -240,7 +241,7 @@ const getAlerts = async (req, res) => {
 
     res.json(alerts);
   } catch (error) {
-    console.error('Error fetching alerts:', error);
+    logger.error('Error fetching alerts', { err: error });
     res.status(500).json({ error: 'Failed to fetch alerts' });
   }
 };
@@ -335,7 +336,7 @@ const generateAlertsFromData = async () => {
 
     return generatedAlerts.slice(0, 20);
   } catch (error) {
-    console.error('Error generating alerts from data:', error);
+    logger.error('Error generating alerts from data', { err: error });
     return [];
   }
 };
@@ -348,7 +349,7 @@ const markAlertAsRead = async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
-    console.error('Error marking alert as read:', error);
+    logger.error('Error marking alert as read', { err: error });
     res.status(500).json({ error: 'Failed to mark alert as read' });
   }
 };
@@ -424,7 +425,7 @@ const getRevenueChart = async (req, res) => {
 
     res.json(chartData);
   } catch (error) {
-    console.error('Error fetching revenue chart data:', error);
+    logger.error('Error fetching revenue chart data', { err: error });
     res.status(500).json({ error: 'Failed to fetch revenue chart data' });
   }
 };
@@ -517,7 +518,7 @@ const getStatsComparison = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching stats comparison:', error);
+    logger.error('Error fetching stats comparison', { err: error });
     res.status(500).json({ error: 'Failed to fetch stats comparison' });
   }
 };
@@ -593,7 +594,7 @@ const getPopularJobs = async (req, res) => {
 
     res.json(formattedData);
   } catch (error) {
-    console.error('Error fetching popular jobs:', error);
+    logger.error('Error fetching popular jobs', { err: error });
     res.status(500).json({ error: 'Failed to fetch popular jobs data' });
   }
 };

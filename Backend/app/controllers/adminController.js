@@ -5,6 +5,7 @@ const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const { formatPHPCurrency, formatBudgetResponse } = require('../utils/currency');
 const mongoose = require('mongoose');
+const { logger } = require('../utils/logger');
 
 // Get all reported posts with filtering and pagination
 const getReportedPosts = async (req, res) => {
@@ -130,7 +131,7 @@ const getReportedPosts = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching reported posts:', error);
+    logger.error('Error fetching reported posts', { err: error });
     res.status(500).json({ 
       success: false, 
       error: 'Failed to fetch reported posts',
@@ -220,7 +221,7 @@ const getReportedPostById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching reported post:', error);
+    logger.error('Error fetching reported post', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch reported post',
@@ -235,8 +236,6 @@ const reviewReportedPost = async (req, res) => {
     const { reportId } = req.params;
     const { action, adminNotes = '' } = req.body; // Change back to adminNotes
     const adminUsername = req.session.username || 'admin';
-
-    console.log('Reviewing reported post:', { reportId, action, adminUsername, adminNotes });
 
     if (!['approve', 'dismiss', 'delete'].includes(action)) {
       return res.status(400).json({
@@ -256,11 +255,9 @@ const reviewReportedPost = async (req, res) => {
       });
     }
 
-    console.log('Original report comment:', reportedPost.comment);
-
     // Quick fix for legacy records with empty comment fields
     if (!reportedPost.comment || reportedPost.comment.trim() === '') {
-      console.log(`Fixing empty comment for legacy report ${reportId}`);
+      logger.warn('Reported post had empty comment; backfilling placeholder', { reportId });
       await ReportedPost.findByIdAndUpdate(reportId, { 
         comment: 'Legacy report - original comment missing' 
       });
@@ -312,7 +309,7 @@ const reviewReportedPost = async (req, res) => {
       }
     );
 
-    console.log(`Successfully reviewed report ${reportId} with action ${action}`);
+    logger.info('Reported post reviewed', { reportId, action });
 
     // Fetch updated data for response
     const updatedPost = await ReportedPost.findById(reportId)
@@ -326,7 +323,7 @@ const reviewReportedPost = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error reviewing reported post:', error);
+    logger.error('Error reviewing reported post', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to review reported post',
@@ -386,7 +383,7 @@ const createReport = async (req, res) => {
 
     await reportedPost.save();
 
-    console.log(`New report created: ${reportedPost._id} for job ${jobId}`);
+    logger.info('Reported post created', { reportId: String(reportedPost._id), jobId: String(jobId) });
 
     res.status(201).json({
       success: true,
@@ -395,7 +392,7 @@ const createReport = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error creating report:', error);
+    logger.error('Error creating report', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to submit report',
@@ -431,7 +428,7 @@ const getReportsSummary = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching reports summary:', error);
+    logger.error('Error fetching reports summary', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch reports summary',
@@ -516,7 +513,7 @@ const bulkUpdateReports = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error bulk updating reports:', error);
+    logger.error('Error bulk updating reports', { err: error });
     res.status(500).json({
       success: false,
       error: 'Failed to update reports',
@@ -555,7 +552,7 @@ const getAdminStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching admin stats:', error);
+    logger.error('Error fetching admin stats', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -598,7 +595,7 @@ const getAllAdmins = async (req, res) => {
       admins: formattedAdmins
     });
   } catch (error) {
-    console.error('Error fetching admins:', error);
+    logger.error('Error fetching admins', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -642,7 +639,7 @@ const updateAdminPermissions = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error updating admin permissions:', error);
+    logger.error('Error updating admin permissions', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -717,7 +714,7 @@ const createAdmin = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error creating admin:', error);
+    logger.error('Error creating admin', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -757,7 +754,7 @@ const getAdminById = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching admin:', error);
+    logger.error('Error fetching admin', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -833,7 +830,7 @@ const updateAdmin = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error updating admin:', error);
+    logger.error('Error updating admin', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -912,7 +909,7 @@ const getAdminActivity = async (req, res) => {
       activities: formattedActivities
     });
   } catch (error) {
-    console.error('Error fetching admin activity:', error);
+    logger.error('Error fetching admin activity', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
@@ -941,8 +938,6 @@ const getAdminSessions = async (req, res) => {
     // Since sessions are stored as JSON strings, we need to fetch all and filter manually
     const allSessions = await sessionsCollection.find({}).toArray();
     
-    console.log(`Total sessions in DB: ${allSessions.length}`);
-    
     // Filter sessions by parsing the JSON string
     const sessions = allSessions.filter(session => {
       let sessionData;
@@ -961,21 +956,6 @@ const getAdminSessions = async (req, res) => {
       }
     });
 
-    console.log(`Found ${sessions.length} sessions for admin ${adminId}`);
-    
-    // Debug: Log first session if found
-    if (sessions.length > 0) {
-      let firstSessionData;
-      try {
-        firstSessionData = typeof sessions[0].session === 'string' 
-          ? JSON.parse(sessions[0].session) 
-          : sessions[0].session;
-        console.log('Session data:', JSON.stringify(firstSessionData, null, 2));
-      } catch (e) {
-        console.log('Could not parse session data');
-      }
-    }
-
     const activeSessions = sessions.map(session => {
       let sessionData = session.session || {};
       
@@ -984,7 +964,7 @@ const getAdminSessions = async (req, res) => {
         try {
           sessionData = JSON.parse(sessionData);
         } catch (e) {
-          console.error('Failed to parse session data:', e);
+          logger.error('Failed to parse session data', { err: e });
           sessionData = {};
         }
       }
@@ -1066,7 +1046,7 @@ const getAdminSessions = async (req, res) => {
       sessions: activeSessions
     });
   } catch (error) {
-    console.error('Error fetching admin sessions:', error);
+    logger.error('Error fetching admin sessions', { err: error });
     res.status(500).json({
       success: false,
       message: 'Server error: ' + error.message
