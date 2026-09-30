@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+FEDUP=""
+if command -v fedup >/dev/null 2>&1; then
+  FEDUP=fedup
+else
+  dir=$(pwd)
+  while [ -n "$dir" ]; do
+    for candidate in "$dir/bin/fedup" "$dir/bin/fedup.exe"; do
+      if [ -x "$candidate" ]; then FEDUP="$candidate"; break; fi
+    done
+    [ -n "$FEDUP" ] && break
+    parent=$(dirname "$dir")
+    [ "$parent" = "$dir" ] && break
+    dir=$parent
+  done
+fi
+if [ -z "$FEDUP" ]; then
+  echo "[fedup:pre-commit] fedup is not on PATH and no bin/fedup was found in this directory or any above it, so the architecture guards did not run. Refusing rather than letting an unchecked change through." >&2
+  exit 1
+fi
+exec "$FEDUP" check --skip-stages
