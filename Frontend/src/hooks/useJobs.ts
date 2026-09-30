@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { jobsService, settingsService } from '../services';
 import toast from 'react-hot-toast';
 import { useMemo } from 'react';
@@ -167,11 +167,13 @@ export const useJobMutations = () => {
   };
 };
 
+export const jobCategoriesQuery = () => queryOptions({
+  queryKey: ['job-categories'],
+  queryFn: () => settingsService.getJobCategories(),
+});
+
 export const useJobCategories = () => {
-  const { data: jobCategoriesData, isLoading } = useQuery({
-    queryKey: ['job-categories'],
-    queryFn: () => settingsService.getJobCategories(),
-  });
+  const { data: jobCategoriesData, isLoading } = useQuery(jobCategoriesQuery());
   const categories = useMemo(() => jobCategoriesData?.categories || [], [jobCategoriesData]);
   const professionsList = useMemo(() => {
     const allProfessions = categories.flatMap(cat => cat.professions || []).map(prof => prof.name);

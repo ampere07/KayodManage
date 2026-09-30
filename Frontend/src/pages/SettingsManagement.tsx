@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { settingsService } from '../services';
+import { adminsQuery } from '../hooks/useAdmins';
 import CreateAdminModal from '../components/Settings/CreateAdminModal';
 import EditAdminModal from '../components/Settings/EditAdminModal';
 import StatsCard from '../components/Dashboard/StatsCard';
@@ -29,13 +29,7 @@ import type { AdminAccount, AdminPermissions } from '../types/configuration.type
 const SettingsManagement: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { data: admins = [], isLoading: loading, error: queryError } = useQuery({
-    queryKey: ['admins'],
-    queryFn: async () => {
-      const response = await settingsService.getAllAdmins();
-      return response.admins || [];
-    },
-  });
+  const { data: admins = [], isLoading: loading, error: queryError } = useQuery(adminsQuery());
   const error = queryError ? (queryError as any)?.message || 'Failed to fetch admins' : null;
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);

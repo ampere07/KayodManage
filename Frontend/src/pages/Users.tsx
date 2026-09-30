@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { UserDetailsModal } from '../components/Modals';
-import { settingsService } from '../services/settingsService';
 import { useQuery } from '@tanstack/react-query';
+import { jobCategoriesQuery } from '../hooks/useJobs';
 import { resolveIconForProfession } from '../utils/professionUtils';
 import { useUsers, useUserCounts, useStatusCounts, useFlaggedUserCounts, useDeletedUserCounts, useUserMutations } from '../hooks/useUsers';
 import StatsCard from '../components/Dashboard/StatsCard';
@@ -119,10 +119,7 @@ const Users: React.FC = () => {
   );
   const { data: flaggedUserCounts = { total: 0, suspended: 0, restricted: 0, banned: 0, providers: 0, customers: 0 } } = useFlaggedUserCounts();
   const { data: deletedUserCounts = { total: 0, customers: 0, providers: 0 } } = useDeletedUserCounts();
-  const { data: jobCategoriesData } = useQuery({
-    queryKey: ['job-categories'],
-    queryFn: () => settingsService.getJobCategories()
-  });
+  const { data: jobCategoriesData } = useQuery(jobCategoriesQuery());
 
   const categories = useMemo(() => jobCategoriesData?.categories || [], [jobCategoriesData]);
 

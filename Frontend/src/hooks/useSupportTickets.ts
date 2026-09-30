@@ -1,9 +1,17 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supportService } from '../services';
 import type { ChatSupport } from '../types';
 
 const SUPPORT_QUERY_KEY = 'support';
+
+export const supportTicketsQuery = () => queryOptions({
+  queryKey: [SUPPORT_QUERY_KEY],
+  queryFn: async () => {
+    const data = await supportService.getChatSupports();
+    return data.chatSupports || [];
+  },
+});
 
 interface Filters {
   searchQuery: string;
@@ -28,11 +36,7 @@ export const useSupportTickets = () => {
   });
 
   const { data: tickets = [], isLoading: loading } = useQuery({
-    queryKey: [SUPPORT_QUERY_KEY],
-    queryFn: async () => {
-      const data = await supportService.getChatSupports();
-      return data.chatSupports || [];
-    },
+    ...supportTicketsQuery(),
     placeholderData: (previousData) => previousData,
   });
 
