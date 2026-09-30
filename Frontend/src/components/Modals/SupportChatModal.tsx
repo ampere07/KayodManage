@@ -202,68 +202,19 @@ const JobDetailsCard: React.FC<{ entries: Array<{label: string, value: string}>,
   </div>
 );
 
-const SystemSummaryCard: React.FC<{ entries: Array<{label: string, value: string}> }> = ({ entries }) => (
-  <div
-    style={{
-      marginHorizontal: 16,
-      marginVertical: 8,
-      borderRadius: 16,
-      overflow: 'hidden',
-      border: '1px solid #D1FAE5',
-      backgroundColor: '#F0FDF4',
-    }}
-  >
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        backgroundColor: '#DCFCE7',
-        borderBottom: '1px solid #D1FAE5',
-      }}
-    >
-      <CheckCircle size={16} color="#16A34A" />
-      <span
-        style={{
-          marginLeft: 8,
-          fontSize: 13,
-          fontWeight: '700',
-          color: '#15803D',
-          letterSpacing: 0.3,
-        }}
-      >
-        PREVIOUS TICKET RESOLVED
-      </span>
-    </div>
-    <div style={{ paddingVertical: 4 }}>
-      {entries.map((entry, idx) => {
-        const IconComponent = DETAIL_ICONS[entry.label] || Info;
-        return (
-          <div
-            key={`${entry.label}-${idx}`}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              paddingHorizontal: 14,
-              paddingVertical: 6,
-            }}
-          >
-            <IconComponent
-              size={14}
-              color="#6B7280"
-              style={{ marginTop: 2, marginRight: 10, flexShrink: 0 }}
-            />
-            <span style={{ fontSize: 13, color: '#374151', flex: 1 }}>
-              <span style={{ fontWeight: '600', color: '#6B7280' }}>{entry.label}: </span>
-              {entry.value}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-);
+const getDateLabel = (date: Date): string => {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+};
 
 const getInitials = (name: string): string => {
   const nameParts = name
@@ -777,10 +728,36 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               selectedChat.messages.map((msg, index) => {
                 const isAdmin = msg.senderType === "Admin";
                 const currentDate = new Date(msg.timestamp);
-                const previousDate =
-                  index > 0
-                    ? new Date(selectedChat.messages![index - 1].timestamp)
-                    : null;
+                const previousMsg =
+                  index > 0 ? selectedChat.messages![index - 1] : null;
+                const previousDate = previousMsg
+                  ? new Date(previousMsg.timestamp)
+                  : null;
+                const showDateSeparator =
+                  !previousDate ||
+                  currentDate.toDateString() !== previousDate.toDateString();
+
+                const dateSeparator = showDateSeparator ? (
+                  <div
+                    data-testid="chat-date-separator"
+                    className="flex items-center justify-center my-4"
+                  >
+                    <span className="text-xs font-semibold text-gray-500 bg-gray-200 rounded-full px-3 py-1">
+                      {getDateLabel(currentDate)}
+                    </span>
+                  </div>
+                ) : null;
+
+                const isGroupedWithPrevious =
+                  !!previousMsg &&
+                  previousMsg.senderType === msg.senderType &&
+                  currentDate.getTime() -
+                    new Date(previousMsg.timestamp).getTime() <
+                    5 * 60 * 1000 &&
+                  currentDate.toDateString() ===
+                    new Date(previousMsg.timestamp).toDateString();
+
+                const showSenderName = !isGroupedWithPrevious;
 
                 // Check if this is a system message
                 const isTicketSummary =
@@ -797,17 +774,14 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                     messageText.includes("ticket reopened") ||
                     messageText.includes("chat reopened"));
 
-                const showDateSeparator =
-                  !previousDate ||
-                  currentDate.toDateString() !== previousDate.toDateString();
-
                 // Internal admin-only notes (dispute mediation reasoning, SLA
                 // escalation flags) — never shown to the customer, so only an
                 // admin viewing this same thread ever sees this branch render.
                 if (msg.isInternal) {
                   return (
+                    <React.Fragment key={msg._id || index}>
+                    {dateSeparator}
                     <div
-                      key={msg._id || index}
                       ref={(el) => {
                         messageRefs.current[msg._id || `msg-${index}`] = el;
                       }}
@@ -829,42 +803,14 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                         })}
                       </p>
                     </div>
+                    </React.Fragment>
                   );
                 }
 
-                const getDateLabel = (date: Date) => {
-                  const today = new Date();
-                  const yesterday = new Date(today);
-                  yesterday.setDate(yesterday.getDate() - 1);
-
-                  if (date.toDateString() === today.toDateString()) {
-                    return "Today";
-                  } else if (date.toDateString() === yesterday.toDateString()) {
-                    return "Yesterday";
-                  } else {
-                    return date.toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    });
-                  }
-                };
-
-                const previousMsg =
-                  index > 0 ? selectedChat.messages![index - 1] : null;
                 const nextMsg =
                   index < selectedChat.messages!.length - 1
                     ? selectedChat.messages![index + 1]
                     : null;
-
-                const isGroupedWithPrevious =
-                  previousMsg &&
-                  previousMsg.senderType === msg.senderType &&
-                  currentDate.getTime() -
-                    new Date(previousMsg.timestamp).getTime() <
-                    5 * 60 * 1000 &&
-                  currentDate.toDateString() ===
-                    new Date(previousMsg.timestamp).toDateString();
 
                 const isGroupedWithNext =
                   nextMsg &&
@@ -875,7 +821,6 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                   currentDate.toDateString() ===
                     new Date(nextMsg.timestamp).toDateString();
 
-                const showSenderName = !isGroupedWithPrevious;
                 const showTimestamp = !isGroupedWithNext;
 
                 // Determine if this is a special message (resolved, reopened, accepted)
@@ -916,6 +861,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                   return (
                     <React.Fragment key={msg._id || index}>
+                      {dateSeparator}
                       <div className="flex justify-center my-8 px-4">
                         <div className="w-full max-w-xs">
 
@@ -1065,6 +1011,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                     // Display as a centered message like image 2
                     return (
                       <React.Fragment key={msg._id || index}>
+                        {dateSeparator}
                         <div className="flex items-center justify-center my-3">
                           <div className="flex flex-col items-center">
                             <div
@@ -1094,6 +1041,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                   // For other system messages (reopened, etc)
                   return (
                     <React.Fragment key={msg._id || index}>
+                      {dateSeparator}
                       <div className="flex items-center justify-center my-3">
                         <div className="flex flex-col items-center">
                           <div
@@ -1138,6 +1086,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
                 return (
                   <React.Fragment key={msg._id || index}>
+                    {dateSeparator}
                     <div
                       className={`flex min-w-0 ${isAdmin ? "justify-end" : "justify-start"} ${isGroupedWithNext ? "mb-1" : "mb-3"}`}
                     >
@@ -1160,6 +1109,18 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                           isAdmin ? "text-right" : "text-left"
                         }`}
                       >
+                        {showSenderName && (
+                          <p
+                            data-testid="chat-sender-name"
+                            className={`text-xs font-semibold text-gray-600 mb-1 px-1 ${
+                              isAdmin ? "text-right" : "text-left"
+                            }`}
+                          >
+                            {isAdmin
+                              ? msg.senderName || "Admin"
+                              : selectedChat.userName || "User"}
+                          </p>
+                        )}
                         <div
                           ref={(el) => {
                             messageRefs.current[messageId] = el;
@@ -1462,7 +1423,14 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
               </h3>
               <div className="space-y-4 max-h-80 overflow-y-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                 {(() => {
-                  const events = [];
+                  const events: Array<{
+                    type: string;
+                    title: string;
+                    date: string;
+                    timestamp: number;
+                    messageId: string | null;
+                    reason?: string;
+                  }> = [];
 
                   // 1. Ticket Submitted
                   const firstUserMessage = selectedChat.messages?.[0];
