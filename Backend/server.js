@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const { connectDatabase } = require('./app/config/database');
 const { sessionConfig } = require('./app/config/session');
 const { setupSocketHandlers } = require('./app/socket/socketHandlers');
+const { setIO } = require('./app/realtime/ioRegistry');
 const { startAutoApprovalScheduler, stopAutoApprovalScheduler } = require('./app/utils/autoApproveTopups');
 const { startRestrictionScheduler } = require('./app/utils/restrictionScheduler');
 
@@ -81,6 +82,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionConfig);
+setIO(io);
+
 io.engine.use(sessionConfig);
 
 // Connect to MongoDB
@@ -177,10 +180,5 @@ const gracefulShutdown = async () => {
 };
 
 process.on('SIGTERM', gracefulShutdown);
-
-module.exports = { 
-  io,
-  getIO: () => io 
-};
 
 process.on('SIGINT', gracefulShutdown);

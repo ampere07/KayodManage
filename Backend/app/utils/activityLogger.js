@@ -1,5 +1,6 @@
 const ActivityLog = require('../models/ActivityLog');
 const mongoose = require('mongoose');
+const { getIO } = require('../realtime/ioRegistry');
 
 const logActivity = async (adminId, actionType, description, options = {}) => {
   try {
@@ -30,8 +31,7 @@ const logActivity = async (adminId, actionType, description, options = {}) => {
     
     // Emit socket event for real-time updates
     try {
-      const server = require('../../server');
-      const io = server.io;
+      const io = getIO();
       
       if (io) {
         const eventData = {

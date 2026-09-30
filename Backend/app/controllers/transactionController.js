@@ -5,6 +5,7 @@ const FeeRecord = require('../models/FeeRecord');
 const User = require('../models/User');
 const Job = require('../models/Job');
 const { logActivity } = require('../utils/activityLogger');
+const { getIO } = require('../realtime/ioRegistry');
 
 const getTransactions = async (req, res) => {
   try {
@@ -475,7 +476,7 @@ const updateTransactionStatus = async (req, res) => {
       }
       
       // Emit socket event for real-time update
-      const { io } = require('../../server');
+      const io = getIO();
       io.to('admin').emit('transaction:updated', {
         transaction: updatedTransaction,
         updateType: 'auto-approved top-up'
@@ -559,7 +560,7 @@ const updateTransactionStatus = async (req, res) => {
     }
     
     // Emit socket event for real-time update
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('transaction:updated', {
       transaction: updatedTransaction,
       updateType: `status changed to ${status}`
@@ -766,7 +767,7 @@ const approveRefund = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('transaction:updated', {
       transaction: transaction,
       updateType: 'approved refund'
@@ -836,7 +837,7 @@ const declineRefund = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('transaction:updated', {
       transaction: transaction,
       updateType: 'declined refund'

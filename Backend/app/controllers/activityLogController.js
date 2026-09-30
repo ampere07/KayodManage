@@ -1,5 +1,6 @@
 const ActivityLog = require('../models/ActivityLog');
 const User = require('../models/User');
+const { getIO } = require('../realtime/ioRegistry');
 
 exports.getActivityLogs = async (req, res) => {
   try {
@@ -69,8 +70,7 @@ exports.createActivityLog = async (adminId, actionType, description, options = {
     await log.save();
     
     try {
-      const server = require('../../server');
-      const io = server.io;
+      const io = getIO();
       
       if (io) {
         const eventData = {

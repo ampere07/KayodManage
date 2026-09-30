@@ -1,5 +1,6 @@
 const verificationService = require('../services/verificationService');
 const { logActivity } = require('../utils/activityLogger');
+const { getIO } = require('../realtime/ioRegistry');
 
 const getAllVerifications = async (req, res) => {
   try {
@@ -114,7 +115,7 @@ const updateVerificationStatus = async (req, res) => {
         const userWithData = await userService.getUserById(targetUserIdForSocket);
 
         if (userWithData) {
-          const { io } = require('../../server');
+          const io = getIO();
 
           // Target the admin namespace specifically
           const adminNamespace = io.of('/admin');

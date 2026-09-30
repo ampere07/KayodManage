@@ -12,6 +12,7 @@ const { adminAuth, requirePermission } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { logActivity } = require('../utils/activityLogger');
+const { getIO } = require('../realtime/ioRegistry');
 
 const router = express.Router();
 
@@ -74,7 +75,7 @@ router.post('/approve-topups', adminAuth, requirePermission('transactions'), asy
     }
 
     // Emit socket event
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('transactions:bulk-approved', {
       count: approvedTransactions.length,
       transactions: approvedTransactions

@@ -1,5 +1,6 @@
 const userService = require('../services/userService');
 const { logActivity } = require('../utils/activityLogger');
+const { getIO } = require('../realtime/ioRegistry');
 
 const getUsers = async (req, res) => {
   try {
@@ -88,7 +89,7 @@ const restrictUser = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: restricted ? 'restricted' : 'unrestricted'
@@ -133,7 +134,7 @@ const banUser = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: 'banned'
@@ -182,7 +183,7 @@ const suspendUser = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: 'suspended'
@@ -221,7 +222,7 @@ const unrestrictUser = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: 'unrestricted'
@@ -247,7 +248,7 @@ const verifyUser = async (req, res) => {
 
     const userWithData = await userService.getUserById(userId);
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: verified ? 'verified' : 'unverified'
@@ -292,7 +293,7 @@ const softDeleteUser = async (req, res) => {
       );
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
       updateType: 'deleted'

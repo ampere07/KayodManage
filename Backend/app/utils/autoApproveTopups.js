@@ -2,6 +2,7 @@ const Transaction = require('../models/Transaction');
 const { creditTopUp } = require('./creditTopUp');
 const User = require('../models/User');
 const { logActivity } = require('./activityLogger');
+const { getIO } = require('../realtime/ioRegistry');
 
 /**
  * Automatically approve all pending top-up transactions
@@ -64,7 +65,7 @@ const autoApproveTopups = async () => {
 
     // Emit socket event if server is available
     try {
-      const { io } = require('../../server');
+      const io = getIO();
       if (io) {
         io.to('admin').emit('transactions:auto-approved', {
           count: approvedTransactions.length,

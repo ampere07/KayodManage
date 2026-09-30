@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const imageKitService = require('../services/imageKitService');
+const { getIO } = require('../realtime/ioRegistry');
 
 const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
 const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
@@ -26,14 +27,6 @@ const generateIconSlug = (professionName) => {
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-');
-};
-
-const getIO = () => {
-  try {
-    return require('../../server').getIO();
-  } catch (err) {
-    return null;
-  }
 };
 
 // Job Categories

@@ -22,6 +22,7 @@ const { normalizeFinding, describeFinding } = require('../utils/faultFinding');
 const { recordFaultFindings, restrictForConfirmedFault } = require('../utils/confirmedFault');
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
+const { getIO } = require('../realtime/ioRegistry');
 
 // Helper function to strip random suffix from icon paths
 const cleanIconPath = (iconPath) => {
@@ -273,7 +274,7 @@ const updateJobStatus = async (req, res) => {
       locationDisplay
     };
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: jobWithData,
       updateType: `status changed to ${status}`
@@ -492,7 +493,7 @@ const forceCancelJob = async (req, res) => {
       .lean();
 
     try {
-      const { io } = require('../../server');
+      const io = getIO();
       io.to('admin').emit('job:updated', {
         job: updatedJob,
         updateType: 'force-cancelled'
@@ -1312,7 +1313,7 @@ const resolveDispute = async (req, res) => {
       .lean();
 
     try {
-      const { io } = require('../../server');
+      const io = getIO();
       io.to('admin').emit('job:updated', { job: updatedJob, updateType: 'dispute-resolved' });
     } catch (socketErr) {
       // best-effort
@@ -1398,7 +1399,7 @@ const assignJobToProvider = async (req, res) => {
       locationDisplay
     };
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: jobWithData,
       updateType: 'assigned to provider'
@@ -1529,7 +1530,7 @@ const hideJob = async (req, res) => {
       locationDisplay
     };
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: jobWithData,
       updateType: 'hidden'
@@ -1627,7 +1628,7 @@ const unhideJob = async (req, res) => {
       locationDisplay
     };
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: jobWithData,
       updateType: 'unhidden'
@@ -1704,7 +1705,7 @@ const deleteJob = async (req, res) => {
       console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: { _id: job._id },
       updateType: 'deleted'
@@ -1784,7 +1785,7 @@ const restoreJob = async (req, res) => {
       console.warn('⚠️ No adminId found, activity log NOT created');
     }
     
-    const { io } = require('../../server');
+    const io = getIO();
     io.to('admin').emit('job:updated', {
       job: { _id: job._id },
       updateType: 'restored'
