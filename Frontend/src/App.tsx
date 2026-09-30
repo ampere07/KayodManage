@@ -90,7 +90,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <SocketProvider>
-          <Router>
+          <Router basename={import.meta.env.BASE_URL}>
             <div className="min-h-screen bg-gray-50">
               <ErrorBoundary>
                 <AppRoutes />
