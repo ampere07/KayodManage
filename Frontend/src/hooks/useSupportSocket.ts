@@ -1,13 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { ADMIN_SOCKET_ORIGIN } from '../config/adminApi';
 
-const configuredSocketUrl =
-  import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL;
-const socketBaseUrl = configuredSocketUrl
-  ? configuredSocketUrl.replace(/\/api\/?$/, '').replace(/\/$/, '')
-  : import.meta.env.DEV
-    ? 'http://localhost:5000'
-    : window.location.origin;
+const socketBaseUrl = ADMIN_SOCKET_ORIGIN;
 
 interface UseSupportSocketReturn {
   socket: Socket | null;

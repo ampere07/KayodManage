@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
+import { ADMIN_SOCKET_ORIGIN } from '../config/adminApi';
 
 interface Alert {
   _id: string;
@@ -101,7 +102,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     console.log('[Socket] Connecting with admin ID:', adminId);
     console.log('[Socket] User object:', user);
 
-    const newSocket = io('http://localhost:5000/admin', {
+    const newSocket = io(`${ADMIN_SOCKET_ORIGIN}/admin`, {
       withCredentials: true,
       transports: ['websocket', 'polling'],
       timeout: 10000,

@@ -1,12 +1,10 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
-
-// Get base URL from environment or fallback
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { ADMIN_API_ORIGIN } from '../config/adminApi';
 
 // Create axios instance with default config
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: ADMIN_API_ORIGIN,
   withCredentials: true,
   timeout: 30000,
 });
@@ -84,7 +82,7 @@ apiClient.interceptors.response.use(
     
     // Handle other client errors (400-499)
     if (error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 401 && !isSilent404) {
-      const message = error.response?.data?.message || 'Request failed';
+      const message = error.response?.data?.message || error.response?.data?.error || 'Request failed';
       if (!error.config?.url?.includes('/api/auth/check')) {
         toast.error(message);
       }

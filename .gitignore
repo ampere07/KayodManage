@@ -33,3 +33,4 @@ dist-ssr
 Frontend/test-results/
 Frontend/playwright-report/
 Frontend/e2e/evidence/
+*.tsbuildinfo

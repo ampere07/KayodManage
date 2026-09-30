@@ -14,7 +14,9 @@ import { useDashboardComparison, useDashboardRevenueChart, useDashboardPopularJo
 import { useTransactionCounts } from '../hooks/useTransactions';
 import { useJobCounts, useJobCategories } from '../hooks/useJobs';
 import { getProfessionIconByName } from '../constants/categoryIcons';
+import type { JobCategory } from '../types/configuration.types';
 import { alertsService } from '../services';
+import apiClient from '../utils/apiClient';
 
 function Header() {
   const { user } = useAuth();
@@ -107,7 +109,7 @@ function StatCards() {
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
-      {statCards.map((stat, index) => (
+      {statCards.map((stat) => (
         <div
           key={stat.title}
           onClick={stat.onClick}
@@ -123,7 +125,6 @@ function StatCards() {
 function RevenueChart() {
   const [period, setPeriod] = useState<'week' | 'month' | 'year' | 'overall'>('week');
   const { data: rawChartData = [], isLoading: loading } = useDashboardRevenueChart(period);
-  const { dashboardStats } = useSocket();
 
   const chartData = useMemo(() => {
     return rawChartData.map((d: any) => ({
@@ -267,12 +268,7 @@ function ActiveAlerts() {
     setIsResetting(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/admin/alerts/reset', {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      const data = await response.json();
+      const { data } = await apiClient.post('/api/admin/alerts/reset');
 
       if (data.success) {
         localStorage.removeItem(dismissedAlertsKey);
@@ -747,7 +743,7 @@ function PopularJobsChart() {
 
 export default function Dashboard() {
   return (
-    <div className="h-full flex flex-col px-4 md:px-8 py-2 md:py-5 bg-[#f8fafc] overflow-y-auto md:overflow-hidden">
+    <div data-testid="admin-dashboard-screen" className="h-full flex flex-col px-4 md:px-8 py-2 md:py-5 bg-[#f8fafc] overflow-y-auto md:overflow-hidden">
       <Header />
       <StatCards />
 
