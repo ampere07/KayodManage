@@ -218,7 +218,7 @@ export const getCategoryTitle = (category: string): string => {
       return 'Top-up Transactions';
     case 'withdrawal':
       return 'Cashout Transactions';
-    case 'refund':
+    case 'refund_request':
       return 'Refund Transactions';
     default:
       return 'Transactions';
