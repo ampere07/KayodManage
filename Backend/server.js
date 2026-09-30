@@ -17,7 +17,6 @@ const jobRoutes = require('./app/routes/jobs');
 const transactionRoutes = require('./app/routes/transactions');
 const adminRoutes = require('./app/routes/admin');
 const supportRoutes = require('./app/routes/support');
-const debugRoutes = require('./app/routes/debug');
 const configurationRoutes = require('./app/routes/configurations');
 const reportRoutes = require('./app/routes/reportRoutes');
 
@@ -98,7 +97,6 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportRoutes);
-app.use('/api/debug', debugRoutes);
 app.use('/api/configurations', configurationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin/configurations', configurationRoutes);
@@ -144,11 +142,15 @@ const serverInstance = server.listen(PORT, () => {
   console.log(`📡 Socket.IO server ready`);
   console.log(`🌐 Admin panel: http://localhost:5173`);
 
-  // Start automatic top-up approval (runs every 5 minutes)
-  startAutoApprovalScheduler(5);
+  if (process.env.E2E_DISABLE_SCHEDULERS === "1") {
+    console.log("[Server] Background schedulers disabled by E2E_DISABLE_SCHEDULERS=1");
+  } else {
+    // Start automatic top-up approval (runs every 5 minutes)
+    startAutoApprovalScheduler(5);
 
-  // Start restriction expiration scheduler (runs every hour)
-  startRestrictionScheduler();
+    // Start restriction expiration scheduler (runs every hour)
+    startRestrictionScheduler();
+  }
 });
 
 const gracefulShutdown = async () => {

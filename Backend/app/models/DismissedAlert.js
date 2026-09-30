@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const DismissedAlertSchema = new Schema({
   adminId: {
     type: Schema.Types.ObjectId,
-    ref: 'Admin',
+    ref: 'User',
     required: true
   },
   alertId: {

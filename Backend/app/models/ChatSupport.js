@@ -68,7 +68,7 @@ const chatSupportSchema = new mongoose.Schema({
     },
     resolvedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin'
+      ref: 'User'
     },
     messageCount: {
       type: Number,
@@ -77,7 +77,7 @@ const chatSupportSchema = new mongoose.Schema({
   }],
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Admin',
+    ref: 'User',
     default: null
   },
   assignedToName: {
@@ -86,7 +86,7 @@ const chatSupportSchema = new mongoose.Schema({
   },
   acceptedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Admin',
+    ref: 'User',
     default: null
   },
   acceptedByName: {
@@ -109,7 +109,7 @@ const chatSupportSchema = new mongoose.Schema({
     },
     performedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin'
+      ref: 'User'
     },
     performedByName: {
       type: String

@@ -33,7 +33,6 @@ const {
 } = require('../controllers/alertController');
 const { adminAuth, authMiddleware } = require('../middleware/auth');
 const { autoApproveTopups } = require('../utils/autoApproveTopups');
-const DismissedAlert = require('../models/DismissedAlert');
 
 const router = express.Router();
 
@@ -88,43 +87,6 @@ router.post('/approve-topups-now', adminAuth, async (req, res) => {
       error: 'Failed to approve top-ups',
       details: error.message
     });
-  }
-});
-
-// Debug routes
-router.get('/debug/my-id', adminAuth, (req, res) => {
-  res.json({
-    adminId: req.admin?.id || req.user?.id,
-    adminEmail: req.admin?.email || req.user?.email,
-    adminName: req.admin?.name || req.user?.name,
-    fullAdmin: req.admin,
-    fullUser: req.user
-  });
-});
-
-router.get('/debug/my-dismissed-alerts', adminAuth, async (req, res) => {
-  try {
-    const adminId = req.admin?.id || req.user?.id;
-    const dismissed = await DismissedAlert.find({ adminId });
-    res.json({
-      adminId,
-      count: dismissed.length,
-      dismissed
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/debug/all-dismissed-alerts', adminAuth, async (req, res) => {
-  try {
-    const dismissed = await DismissedAlert.find({});
-    res.json({
-      count: dismissed.length,
-      dismissed
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
 });
 
