@@ -29,8 +29,26 @@ import type { ReportFilterStatus } from '../types/alerts.types';
 import type { Report } from '../services/flaggedService';
 import type { Transaction } from '../types';
 
+type ReportStatusFilter = {
+  key: ReportFilterStatus;
+  label: string;
+  shortLabel: string;
+  icon: typeof Flag;
+  color: 'blue' | 'green' | 'purple' | 'red' | 'indigo' | 'orange';
+  pillActive: string;
+};
+
+const REPORT_STATUS_FILTERS: ReportStatusFilter[] = [
+  { key: 'all', label: 'Total Reports', shortLabel: 'All', icon: Flag, color: 'blue', pillActive: 'bg-blue-500 border-blue-500' },
+  { key: 'open', label: 'Open', shortLabel: 'Open', icon: Clock, color: 'orange', pillActive: 'bg-orange-500 border-orange-500' },
+  { key: 'under_review', label: 'Under Review', shortLabel: 'In Review', icon: Eye, color: 'purple', pillActive: 'bg-purple-500 border-purple-500' },
+  { key: 'action_taken', label: 'Action Taken', shortLabel: 'Actioned', icon: CheckCircle, color: 'green', pillActive: 'bg-emerald-500 border-emerald-500' },
+  { key: 'dismissed', label: 'Dismissed', shortLabel: 'Dismissed', icon: XCircle, color: 'indigo', pillActive: 'bg-indigo-500 border-indigo-500' },
+  { key: 'escalated', label: 'Escalated', shortLabel: 'Escalated', icon: AlertTriangle, color: 'red', pillActive: 'bg-red-500 border-red-500' },
+];
+
 const Flagged: React.FC = () => {
-  const { data: reportsData, isLoading, refetch } = useReports();
+  const { data: reportsData, isLoading } = useReports();
   const updateReportMutation = useUpdateReport();
   const mutations = useUserMutations();
   
@@ -74,7 +92,6 @@ const Flagged: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [isFetchingTransaction, setIsFetchingTransaction] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
@@ -163,7 +180,6 @@ const Flagged: React.FC = () => {
     const isPotentialRefund = reportType === 'payment' || reportType === 'refund_request' || reason.includes('refund');
 
     if (isPotentialRefund && report.relatedId) {
-      setIsFetchingTransaction(true);
       try {
         let transaction = null;
         // Not every relatedId is a transaction id; fall through to the job lookup.
@@ -177,7 +193,7 @@ const Flagged: React.FC = () => {
           setIsTransactionModalOpen(true);
           return;
         }
-      } catch { /* fall through to the plain report modal */ } finally { setIsFetchingTransaction(false); }
+      } catch { /* fall through to the plain report modal */ }
     }
     setSelectedReport(report);
     setIsModalOpen(true);
@@ -235,7 +251,7 @@ const Flagged: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div data-testid="admin-flagged-screen" className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
@@ -264,79 +280,42 @@ const Flagged: React.FC = () => {
                 <p className="text-base font-black text-blue-600 leading-tight">{statusCounts.all.toLocaleString()}</p>
               </div>
               <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Pending</p>
-                <p className="text-base font-black text-amber-600 leading-tight">{statusCounts.pending.toLocaleString()}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Open</p>
+                <p className="text-base font-black text-amber-600 leading-tight">{statusCounts.open.toLocaleString()}</p>
               </div>
             </div>
             {/* Filter pills */}
-            <div className="flex gap-2">
-              {([
-                { label: 'All',       value: statusCounts.all,          filterVal: 'all',          activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'Open',      value: statusCounts.open,         filterVal: 'open',         activeBg: 'bg-amber-500',   border: 'border-amber-500'   },
-                { label: 'In Review', value: statusCounts.under_review, filterVal: 'under_review', activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
-                { label: 'Actioned',  value: statusCounts.action_taken, filterVal: 'action_taken', activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-                { label: 'Escalated', value: statusCounts.escalated,    filterVal: 'escalated',    activeBg: 'bg-orange-500',  border: 'border-orange-500'  },
-              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
-                const active = filter === filterVal;
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {REPORT_STATUS_FILTERS.map(({ key, shortLabel, pillActive }) => {
+                const active = filter === key;
                 return (
                   <button
-                    key={filterVal}
-                    onClick={() => setFilter(filterVal as ReportFilterStatus)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                    key={key}
+                    onClick={() => setFilter(key)}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-full border transition-all active:scale-95 whitespace-nowrap ${active ? `${pillActive} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
                   >
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                    <span className="text-[11px] font-black">{statusCounts[key].toLocaleString()}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{shortLabel}</span>
                   </button>
                 );
               })}
             </div>
           </div>
           {/* Stats Cards Grid */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="cursor-pointer" onClick={() => setFilter('all')}>
-              <StatsCard
-                title="Total Reports"
-                value={statusCounts.all.toLocaleString()}
-                icon={Flag}
-                color="blue"
-                variant="tinted"
-                isActive={filter === 'all'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setFilter('pending')}>
-              <StatsCard
-                title="Pending"
-                value={statusCounts.pending.toLocaleString()}
-                icon={Clock}
-                color="orange"
-                variant="tinted"
-                isActive={filter === 'pending'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setFilter('resolved')}>
-              <StatsCard
-                title="Resolved"
-                value={statusCounts.resolved.toLocaleString()}
-                icon={CheckCircle}
-                color="green"
-                variant="tinted"
-                isActive={filter === 'resolved'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setFilter('dismissed')}>
-              <StatsCard
-                title="Dismissed"
-                value={statusCounts.dismissed.toLocaleString()}
-                icon={XCircle}
-                color="indigo"
-                variant="tinted"
-                isActive={filter === 'dismissed'}
-                smallIcon={true}
-              />
-            </div>
+          <div className="hidden md:grid md:grid-cols-3 xl:grid-cols-6 gap-4">
+            {REPORT_STATUS_FILTERS.map(({ key, label, icon, color }) => (
+              <div key={key} className="cursor-pointer" onClick={() => setFilter(key)}>
+                <StatsCard
+                  title={label}
+                  value={statusCounts[key].toLocaleString()}
+                  icon={icon}
+                  color={color}
+                  variant="tinted"
+                  isActive={filter === key}
+                  smallIcon={true}
+                />
+              </div>
+            ))}
           </div>
         </div>
 

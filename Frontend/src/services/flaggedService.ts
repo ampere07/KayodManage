@@ -7,7 +7,13 @@ import type {
   ReportsSummary
 } from '../types/flagged.types';
 
-// New types for the unified reports collection
+export type ReportStatus =
+  | 'open'
+  | 'under_review'
+  | 'action_taken'
+  | 'dismissed'
+  | 'escalated';
+
 export interface Report {
   _id: string;
   reportType: 'job' | 'user' | 'message' | 'conversation' | 'review' | 'payment' | 'other';
@@ -26,7 +32,7 @@ export interface Report {
   };
   reason: string;
   comment: string;
-  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  status: ReportStatus;
   reviewedBy?: {
     _id: string;
     name: string;
@@ -48,13 +54,7 @@ export interface ReportsResponse {
   success: boolean;
   data: {
     reports: Report[];
-    stats: {
-      total: number;
-      pending: number;
-      reviewed: number;
-      resolved: number;
-      dismissed: number;
-    };
+    stats: Record<ReportStatus | 'total' | 'open_total', number>;
     pagination?: {
       current: number;
       total: number;
