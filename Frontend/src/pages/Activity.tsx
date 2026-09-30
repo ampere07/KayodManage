@@ -896,7 +896,7 @@ const Activity: React.FC = () => {
             toast.error('Failed to update verification');
           }
         }}
-        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number) => {
+        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number, reason?: string) => {
           try {
             switch (actionType) {
               case 'ban':
@@ -906,7 +906,7 @@ const Activity: React.FC = () => {
                 await usersService.suspendUser(user._id, 'Suspended by admin', duration || 7);
                 break;
               case 'restrict':
-                await usersService.restrictUser(user._id, duration);
+                await usersService.restrictUser(user._id, duration, reason);
                 break;
               case 'unrestrict':
                 await usersService.unrestrictUser(user._id);

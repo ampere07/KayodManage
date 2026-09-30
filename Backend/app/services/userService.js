@@ -86,7 +86,7 @@ class UserService {
   async restrictUser(userId, restrictedBy, duration, reason) {
     const restrictionDetails = {
       type: 'restricted',
-      reason: reason && reason.trim() ? reason.trim() : 'Account restricted by admin',
+      reason: reason.trim(),
       restrictedAt: new Date(),
       appealAllowed: true
     };
@@ -218,17 +218,6 @@ class UserService {
         isRestricted: true,
         restrictionDetails
       },
-      { new: true }
-    );
-  }
-
-  /**
-   * Update user verification status
-   */
-  async verifyUser(userId, verified) {
-    return await User.findByIdAndUpdate(
-      userId,
-      { isVerified: verified },
       { new: true }
     );
   }

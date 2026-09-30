@@ -1,6 +1,8 @@
 const userService = require('../services/userService');
+const { setUserVerified } = require('../services/userVerification');
 const { logActivity } = require('../utils/activityLogger');
 const { getIO } = require('../realtime/ioRegistry');
+const { logger } = require('../utils/logger');
 
 const getUsers = async (req, res) => {
   try {
@@ -34,7 +36,7 @@ const getUsers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    logger.error('Error fetching users', { err: error });
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
@@ -51,7 +53,7 @@ const getUserDetails = async (req, res) => {
     
     res.json(user);
   } catch (error) {
-    console.error('Error fetching user details:', error);
+    logger.error('Error fetching user details', { err: error });
     res.status(500).json({ error: 'Failed to fetch user details' });
   }
 };
@@ -60,14 +62,19 @@ const restrictUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const { restricted, duration, reason } = req.body;
-    
-    let user;
-    if (restricted) {
-      user = await userService.restrictUser(userId, req.session.adminId, duration, reason);
-    } else {
-      user = await userService.unrestrictUser(userId);
+
+    if (restricted !== true) {
+      return res.status(400).json({ error: 'restricted must be true; lift a restriction through PATCH /api/users/:userId/unrestrict' });
     }
-    
+    if (typeof reason !== 'string' || reason.trim().length === 0) {
+      return res.status(400).json({ error: 'Restriction reason is required' });
+    }
+    if (duration !== undefined && !(typeof duration === 'number' && duration > 0)) {
+      return res.status(400).json({ error: 'Restriction duration must be a positive number of days' });
+    }
+
+    const user = await userService.restrictUser(userId, req.session.adminId, duration, reason);
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -77,13 +84,13 @@ const restrictUser = async (req, res) => {
     if (req.user && req.user.id) {
       await logActivity(
         req.user.id,
-        restricted ? 'user_restricted' : 'user_unrestricted',
-        restricted ? `Restricted user ${user.name}` : `Removed restrictions from ${user.name}`,
+        'user_restricted',
+        `Restricted user ${user.name}`,
         {
           targetType: 'user',
           targetId: userId,
           targetModel: 'User',
-          metadata: reason ? { reason } : undefined,
+          metadata: { reason },
           ipAddress: req.ip
         }
       );
@@ -92,12 +99,12 @@ const restrictUser = async (req, res) => {
     const io = getIO();
     io.to('admin').emit('user:updated', {
       user: userWithData,
-      updateType: restricted ? 'restricted' : 'unrestricted'
+      updateType: 'restricted'
     });
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error updating user restriction:', error);
+    logger.error('Error updating user restriction', { err: error });
     res.status(500).json({ error: 'Failed to update user restriction' });
   }
 };
@@ -142,7 +149,7 @@ const banUser = async (req, res) => {
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error banning user:', error);
+    logger.error('Error banning user', { err: error });
     res.status(500).json({ error: 'Failed to ban user' });
   }
 };
@@ -191,7 +198,7 @@ const suspendUser = async (req, res) => {
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error suspending user:', error);
+    logger.error('Error suspending user', { err: error });
     res.status(500).json({ error: 'Failed to suspend user' });
   }
 };
@@ -230,7 +237,7 @@ const unrestrictUser = async (req, res) => {
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error unrestricting user:', error);
+    logger.error('Error unrestricting user', { err: error });
     res.status(500).json({ error: 'Failed to unrestrict user' });
   }
 };
@@ -239,8 +246,12 @@ const verifyUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const { verified } = req.body;
-    
-    const user = await userService.verifyUser(userId, verified);
+
+    if (typeof verified !== 'boolean') {
+      return res.status(400).json({ error: 'verified must be true or false' });
+    }
+
+    const user = await setUserVerified(userId, verified, req.session.adminId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -256,7 +267,7 @@ const verifyUser = async (req, res) => {
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error updating user verification:', error);
+    logger.error('Error updating user verification', { err: error });
     res.status(500).json({ error: 'Failed to update user verification' });
   }
 };
@@ -301,7 +312,7 @@ const softDeleteUser = async (req, res) => {
     
     res.json(userWithData);
   } catch (error) {
-    console.error('Error soft deleting user:', error);
+    logger.error('Error soft deleting user', { err: error });
     res.status(500).json({ error: 'Failed to soft delete user' });
   }
 };
@@ -310,10 +321,10 @@ const checkSuspendedUsers = async () => {
   try {
     const count = await userService.checkSuspendedUsers();
     if (count > 0) {
-      console.log(`Auto-unsuspended ${count} users`);
+      logger.info('Suspended users auto-unsuspended', { count });
     }
   } catch (error) {
-    console.error('Error checking suspended users:', error);
+    logger.error('Error checking suspended users', { err: error });
   }
 };
 
