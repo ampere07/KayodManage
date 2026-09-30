@@ -7,7 +7,8 @@ import {
   Ban,
   UserX,
   AlertCircle,
-  Trash2
+  Trash2,
+  BadgeCheck
 } from 'lucide-react';
 import { usersService } from '../../services';
 import { getProfessionIconByName } from '../../constants/categoryIcons';
@@ -685,7 +686,16 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => onVerify(user._id, !user.isVerified)}
+                data-testid="user-action-verify"
+                className={`w-full h-11 flex items-center justify-center gap-2 text-sm font-bold rounded-lg border ${user.isVerified ? 'text-gray-600 bg-gray-50 border-gray-200 hover:bg-gray-100' : 'text-green-700 bg-green-50 border-green-100 hover:bg-green-100'}`}
+              >
+                <BadgeCheck className="w-5 h-5" />
+                {user.isVerified ? 'Remove Verified Badge' : 'Mark as Verified'}
+              </button>
+              <div className="flex gap-2">
               {!isRestricted ? (
                 <>
                   <button
@@ -731,6 +741,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   Restore Account Access
                 </button>
               )}
+              </div>
             </div>
           )}
         </div>
