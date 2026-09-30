@@ -3,6 +3,7 @@ const CredentialVerification = require('../models/CredentialVerification');
 const User = require('../models/User');
 const cloudinary = require('cloudinary').v2;
 const imageKitService = require('./imageKitService');
+const { logger } = require('../utils/logger');
 
 // Configure Cloudinary once (expects env vars)
 if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -164,42 +165,28 @@ class VerificationService {
    */
   async getAllVerifications(filters = {}) {
     const { status, limit = 50, skip = 0 } = filters;
+    const query = status && status !== 'all' ? { status } : {};
 
-    const query = {};
-    if (status && status !== 'all') {
-      query.status = status;
-    }
-
-    // Get all verifications with basic populate
-    const verifications = await CredentialVerification.find(query)
+    const page = await CredentialVerification.find(query)
+      .sort({ submittedAt: -1 })
+      .skip(parseInt(skip))
+      .limit(parseInt(limit))
       .populate('userId', 'name email userType profileImage createdAt')
       .populate('reviewedBy', 'name email')
-      .sort({ submittedAt: -1 })
       .lean();
 
-    // Group by user and count attempts
-    const userAttempts = {};
-    verifications.forEach(v => {
-      const userId = v.userId?._id?.toString() || v.userId?.toString();
-      if (userId) {
-        userAttempts[userId] = (userAttempts[userId] || 0) + 1;
-      }
-    });
+    const ownerOf = (verification) => String(verification.userId?._id ?? verification.userId);
+    const owners = [...new Set(page.map(ownerOf))].map((id) => new mongoose.Types.ObjectId(id));
+    const attempts = await CredentialVerification.aggregate([
+      { $match: { userId: { $in: owners } } },
+      { $group: { _id: '$userId', count: { $sum: 1 } } }
+    ]);
+    const attemptsByOwner = new Map(attempts.map((row) => [String(row._id), row.count]));
 
-    // Add verificationAttempts to each verification
-    const verificationsWithAttempts = verifications.map(v => {
-      const userId = v.userId?._id?.toString() || v.userId?.toString();
-      return {
-        ...v,
-        verificationAttempts: userAttempts[userId] || 1
-      };
-    });
-
-    // Apply pagination after processing
-    const paginatedResults = verificationsWithAttempts
-      .slice(parseInt(skip), parseInt(skip) + parseInt(limit));
-
-    return paginatedResults;
+    return page.map((verification) => ({
+      ...verification,
+      verificationAttempts: attemptsByOwner.get(ownerOf(verification)) || 1
+    }));
   }
 
   /**
@@ -235,8 +222,6 @@ class VerificationService {
     const { status, adminNotes, rejectionReason, banUser } = statusData;
 
     const validStatuses = ['pending', 'approved', 'rejected', 'under_review', 'resubmission_requested', 'flagged'];
-    console.log('📥 RECEIVED RAW STATUS:', JSON.stringify(status));
-
     // Normalize status
     let normalizedStatus = status?.trim()?.toLowerCase();
 
@@ -258,7 +243,7 @@ class VerificationService {
     const finalStatus = normalizedStatus;
 
     if (!validStatuses.includes(finalStatus)) {
-      console.error(`❌ INVALID STATUS REJECTED: "${finalStatus}" (Original: "${status}")`);
+      logger.warn('Verification status rejected: invalid value', { status: finalStatus });
       throw new Error(`Invalid status value: ${finalStatus}`);
     }
 
@@ -275,8 +260,6 @@ class VerificationService {
       reviewedAt: new Date(),
       reviewedBy: mongoose.Types.ObjectId.isValid(reviewerId) ? reviewerId : null
     };
-
-    console.log('📝 LOG: updateData to be applied:', JSON.stringify(updateData, null, 2));
 
     if (statusToUse === 'rejected' || statusToUse === 'resubmission_requested' || statusToUse === 'flagged') {
       updateData.rejectionReason = rejectionReason;
@@ -321,15 +304,12 @@ class VerificationService {
       }
 
       try {
-        console.log('👤 LOG: Updating user status with:', JSON.stringify(userUpdate, null, 2));
-        const userUpdateResult = await User.updateOne(
+        await User.updateOne(
           { _id: updatedVerification.userId._id || updatedVerification.userId },
           { $set: userUpdate }
         );
-        console.log('✅ User update result:', JSON.stringify(userUpdateResult, null, 2));
       } catch (userError) {
-        console.error('❌ User Sync Error:', userError.message);
-        console.error('User Update Data:', JSON.stringify(userUpdate, null, 2));
+        logger.error('Failed to sync user after verification status change', { err: userError });
         // We don't necessarily want to fail the whole verification update if the user sync fails,
         // but it's good to know. However, for debugging 400, we should probably know if it's hitting here.
         throw userError;
@@ -446,17 +426,9 @@ class VerificationService {
       const prefix = `verificationUpload/${folder}/Attempt${attemptSuffix}`;
 
       try {
-        console.log('[VerificationImages] Fetching from ImageKit', {
-          userId,
-          userName: user.name,
-          attempt: attemptSuffix,
-          prefix
-        });
-        
         const resources = await imageKitService.listFiles(prefix);
 
         if (resources && resources.length > 0) {
-          console.log('[VerificationImages] ImageKit resources found', resources.length);
           return {
             userId,
             attemptNumber: attemptSuffix,
@@ -465,9 +437,9 @@ class VerificationService {
             images: mapImageKitAssetsToDocuments(resources)
           };
         }
-        console.log('[VerificationImages] No ImageKit resources found, trying Cloudinary...');
+        logger.debug('No ImageKit verification images, trying Cloudinary', { userId: String(userId), attempt: attemptSuffix });
       } catch (err) {
-        console.error('ImageKit fetch failed, trying Cloudinary:', err.message);
+        logger.error('ImageKit fetch failed, trying Cloudinary', { err: err });
       }
 
       // Try Cloudinary if credentials exist
@@ -476,12 +448,6 @@ class VerificationService {
         const prefix = `verificationUpload/${folder}/Attempt${attemptSuffix}`;
 
         try {
-          console.log('[VerificationImages] Fetching from Cloudinary', {
-            userId,
-            userName: user.name,
-            attempt: attemptSuffix,
-            prefix
-          });
           const { resources } = await cloudinary.search
             .expression(`folder:${prefix}`)
             .sort_by('public_id', 'asc')
@@ -489,7 +455,6 @@ class VerificationService {
             .execute();
 
           if (resources && resources.length > 0) {
-            console.log('[VerificationImages] Cloudinary resources found', resources.length, resources.map((r) => r.public_id));
             return {
               userId,
               attemptNumber: attemptSuffix,
@@ -498,15 +463,15 @@ class VerificationService {
               images: mapCloudinaryAssetsToDocuments(resources)
             };
           }
-          console.log('[VerificationImages] No Cloudinary resources found, falling back to DB');
+          logger.debug('No Cloudinary verification images, using stored documents', { userId: String(userId), attempt: attemptSuffix });
         } catch (err) {
-          console.error('Cloudinary fetch failed, falling back to DB:', err.message);
+          logger.error('Cloudinary fetch failed, falling back to DB', { err: err });
         }
       }
     }
 
     // Fallback: fetch stored verification documents
-    console.log('[VerificationImages] Using DB fallback for user', { userId, attempt: attemptNum });
+    logger.debug('Serving verification images from stored documents', { userId: String(userId), attempt: attemptNum });
 
     const verification = verifications[attemptIndex];
 
