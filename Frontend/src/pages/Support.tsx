@@ -300,7 +300,7 @@ const Support: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
+    <div data-testid="admin-support-screen" className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">

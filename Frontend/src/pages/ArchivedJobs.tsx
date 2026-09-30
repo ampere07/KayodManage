@@ -211,7 +211,7 @@ const ArchivedJobs: React.FC = () => {
   };
 
   return (
-    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
+    <div data-testid="admin-archived-jobs-screen" className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-3 md:px-6 md:py-5">

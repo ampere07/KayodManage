@@ -5,14 +5,12 @@ import JobPostingConfiguration from '../components/Settings/JobPostingConfigurat
 import AdvertisementManager from '../components/Settings/AdvertisementManager';
 import LegalDocumentConfiguration from '../components/Settings/LegalDocumentConfiguration';
 import { SidebarContext } from '../components/Layout/Layout';
-import { useAuth } from '../context/AuthContext';
 
 const SettingsConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     'job-category' | 'job-posting' | 'advertisement' | 'legal'
   >('job-category');
   const { setSidebarOpen } = useContext(SidebarContext);
-  const { user } = useAuth();
 
   const getDescription = () => {
     if (activeTab === 'job-category') {
@@ -35,7 +33,7 @@ const SettingsConfiguration: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-screen -mx-2 sm:-mx-4 md:-mx-6 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 bg-gray-50">
+    <div data-testid="admin-settings-configuration-screen" className="flex flex-col h-screen -mx-2 sm:-mx-4 md:-mx-6 lg:-mx-8 -my-2 sm:-my-3 md:-my-4 bg-gray-50">
       {/* Custom Header combining Page Header + Mobile sidebar toggle */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-4 sticky top-0 z-40">
         <div className="flex items-start justify-between">

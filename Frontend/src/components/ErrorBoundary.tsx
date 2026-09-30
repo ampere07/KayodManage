@@ -18,14 +18,14 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    this.setState({ error, componentStack: info.componentStack });
+    this.setState({ error, componentStack: info.componentStack ?? null });
     console.error('[ErrorBoundary] Caught render error:', error, info.componentStack);
   }
 
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: 24, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <div data-testid="admin-error-boundary-screen" style={{ padding: 24, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
           <h2 style={{ color: '#b91c1c' }}>Something went wrong rendering this page</h2>
           <p>{this.state.error.message}</p>
           <pre>{this.state.componentStack}</pre>

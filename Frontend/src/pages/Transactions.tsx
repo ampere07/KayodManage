@@ -205,7 +205,7 @@ const Transactions: React.FC = () => {
   };
 
   return (
-    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
+    <div data-testid="admin-transactions-screen" className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200 z-30 shadow-sm relative">
         {/* Page Title & Refresh - Desktop only (mobile layout already shows title) */}
@@ -732,7 +732,6 @@ const Transactions: React.FC = () => {
             isOpen={transactionModal.isOpen}
             onClose={closeTransactionModal}
             transaction={selectedTransaction}
-            onStatusUpdate={updateTransactionStatus}
           />
           <TopUpModal
             isOpen={topUpModal.isOpen}

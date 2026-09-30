@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Search,
-  Filter,
   RefreshCw,
   ChevronRight,
   ShieldCheck,
@@ -100,7 +99,7 @@ const UserAvatar: React.FC<{ user: UserInfo; size?: "sm" | "md" | "lg" }> = ({
 };
 
 const Verifications: React.FC = () => {
-  const { data: verifications = [], isLoading: loading, refetch } = useVerifications();
+  const { data: verifications = [], isLoading: loading } = useVerifications();
   const updateStatusMutation = useUpdateVerificationStatus();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -273,7 +272,7 @@ const Verifications: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div data-testid="admin-verifications-screen" className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">

@@ -108,7 +108,7 @@ const Users: React.FC = () => {
     return params;
   }, [pagination.page, pagination.limit, searchTerm, userType, userSubTypeFilter, statusFilter, professionFilter]);
 
-  const { data: usersData, isLoading, refetch } = useUsers(queryParams);
+  const { data: usersData, isLoading } = useUsers(queryParams);
   const { data: globalUserCounts = { total: 0, customers: 0, providers: 0 } } = useUserCounts();
   const { data: statusCounts = { all: 0, verified: 0, unverified: 0 } } = useStatusCounts(
     userType === 'customers' ? { userType: 'client' } :
@@ -301,7 +301,7 @@ const Users: React.FC = () => {
   };
 
   return (
-    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
+    <div data-testid="admin-users-screen" className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
