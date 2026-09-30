@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
@@ -16,7 +16,6 @@ import Verifications from './pages/Verifications';
 import Activity from './pages/Activity';
 import Flagged from './pages/Flagged';
 import Support from './pages/Support';
-import Settings from './pages/Settings';
 import SettingsManagement from './pages/SettingsManagement';
 import SettingsConfiguration from './pages/SettingsConfiguration';
 import LoadingSpinner from './components/UI/LoadingSpinner';
