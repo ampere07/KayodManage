@@ -28,13 +28,13 @@ const generateIconSlug = (professionName) => {
     .replace(/-+/g, '-');
 };
 
-// Get socket.io instance
-let io;
-try {
-  io = require('../../server').getIO();
-} catch (err) {
-  console.warn('Socket.io not available for real-time updates');
-}
+const getIO = () => {
+  try {
+    return require('../../server').getIO();
+  } catch (err) {
+    return null;
+  }
+};
 
 // Job Categories
 exports.getJobCategories = async (req, res) => {
@@ -525,6 +525,7 @@ exports.updateProfession = async (req, res) => {
     }
 
     // Emit socket event for real-time update
+    const io = getIO();
     if (io) {
       try {
         const adminNamespace = io.of('/admin');
@@ -573,6 +574,7 @@ exports.deleteProfession = async (req, res) => {
     await category.save();
 
     // Emit socket event for real-time update
+    const io = getIO();
     if (io) {
       try {
         const adminNamespace = io.of('/admin');
@@ -941,6 +943,7 @@ exports.uploadProfessionIcon = async (req, res) => {
     });
 
     // Emit socket event for real-time update
+    const io = getIO();
     if (io) {
       try {
         const adminNamespace = io.of('/admin');
@@ -1246,6 +1249,7 @@ exports.updateJobPostingSettings = async (req, res) => {
     await settings.save();
 
     // Emit socket event for real-time update
+    const io = getIO();
     if (io) {
       try {
         const adminNamespace = io.of('/admin');
