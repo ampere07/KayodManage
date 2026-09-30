@@ -567,7 +567,7 @@ const getAllAdmins = async (req, res) => {
   try {
     const admins = await User.find({
       userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
-    }).select('name email userType accountStatus createdAt lastLogin permissions');
+    }).select('name email userType accountStatus createdAt lastLogin permissions profileImage isOnline');
 
     const formattedAdmins = admins.map(admin => ({
       _id: admin._id,
@@ -588,7 +588,9 @@ const getAllAdmins = async (req, res) => {
       },
       accountStatus: admin.accountStatus,
       createdAt: admin.createdAt,
-      lastLogin: admin.lastLogin
+      lastLogin: admin.lastLogin,
+      profileImage: admin.profileImage || null,
+      isOnline: Boolean(admin.isOnline)
     }));
 
     res.json({
@@ -674,6 +676,7 @@ const createAdmin = async (req, res) => {
       email,
       password: hashedPassword,
       phone,
+      phoneNumber: phone,
       userType: userType || 'admin',
       location,
       accountStatus: accountStatus || 'active',

@@ -118,17 +118,25 @@ const checkAuth = async (req, res) => {
       const User = require('../models/User');
       const user = await User.findById(req.session.userId).select('permissions userType name email');
       
-      const permissions = user?.permissions || {
-        dashboard: true,
-        users: true,
-        jobs: true,
-        transactions: true,
-        verifications: true,
-        support: true,
-        activity: true,
-        flagged: true,
-        settings: user?.userType === 'superadmin'
-      };
+      const isSuperAdmin = user?.userType === 'superadmin' || req.session.role === 'superadmin';
+      const storedPermissions = user?.permissions
+        ? (typeof user.permissions.toObject === 'function'
+          ? user.permissions.toObject()
+          : { ...user.permissions })
+        : {
+          dashboard: true,
+          users: true,
+          jobs: true,
+          transactions: true,
+          verifications: true,
+          support: true,
+          activity: true,
+          flagged: true,
+          settings: false
+        };
+      const permissions = isSuperAdmin
+        ? { ...storedPermissions, settings: true }
+        : storedPermissions;
 
       res.json({
         success: true,

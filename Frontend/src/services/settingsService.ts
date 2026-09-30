@@ -1,5 +1,7 @@
 import apiClient from '../utils/apiClient';
 import type {
+  AdminAccount,
+  JobCategory,
   CreateJobCategoryRequest,
   CreateProfessionRequest,
   UpdateJobCategoryRequest,
@@ -10,7 +12,9 @@ import type {
 
 export const settingsService = {
   getAllAdmins: async () => {
-    const response = await apiClient.get('/api/admin/admins');
+    const response = await apiClient.get<{ success: boolean; admins: AdminAccount[] }>(
+      '/api/admin/admins'
+    );
     return response.data;
   },
   
@@ -48,7 +52,9 @@ export const settingsService = {
 
   // Job Categories
   getJobCategories: async () => {
-    const response = await apiClient.get('/api/admin/configurations/job-categories');
+    const response = await apiClient.get<{ success: boolean; categories: JobCategory[] }>(
+      '/api/admin/configurations/job-categories'
+    );
     return response.data;
   },
 

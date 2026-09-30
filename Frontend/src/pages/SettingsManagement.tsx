@@ -24,31 +24,7 @@ import CreateAdminModal from '../components/Settings/CreateAdminModal';
 import EditAdminModal from '../components/Settings/EditAdminModal';
 import StatsCard from '../components/Dashboard/StatsCard';
 import { getInitials } from '../utils';
-
-interface Permission {
-  dashboard: boolean;
-  users: boolean;
-  jobs: boolean;
-  transactions: boolean;
-  verifications: boolean;
-  support: boolean;
-  activity: boolean;
-  flagged: boolean;
-  settings: boolean;
-}
-
-interface Admin {
-  _id: string;
-  uid: string;
-  fullName: string;
-  email: string;
-  role: string;
-  permissions: Permission;
-  accountStatus?: string;
-  isOnline?: boolean;
-  lastLogin?: string;
-  profileImage?: string;
-}
+import type { AdminAccount, AdminPermissions } from '../types/configuration.types';
 
 const SettingsManagement: React.FC = () => {
   const { user } = useAuth();
@@ -63,7 +39,7 @@ const SettingsManagement: React.FC = () => {
   const error = queryError ? (queryError as any)?.message || 'Failed to fetch admins' : null;
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
+  const [selectedAdmin, setSelectedAdmin] = useState<AdminAccount | null>(null);
   const [filter, setFilter] = useState<'all' | 'superadmin' | 'admin' | 'finance' | 'support'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -104,7 +80,7 @@ const SettingsManagement: React.FC = () => {
     return { label: 'Unknown', color: 'bg-gray-50 text-gray-700 border-gray-100', icon: <Shield className="w-3 h-3" /> };
   };
 
-  const formatLastLogin = (lastLogin?: string): string => {
+  const formatLastLogin = (lastLogin?: string | null): string => {
     if (!lastLogin) return 'Never';
     const date = new Date(lastLogin);
     const now = new Date();
@@ -125,7 +101,7 @@ const SettingsManagement: React.FC = () => {
     });
   };
 
-  const getPermissionTemplate = (permissions: Permission): { name: string; color: string } => {
+  const getPermissionTemplate = (permissions: AdminPermissions): { name: string; color: string } => {
     if (Object.values(permissions).every(val => val === true)) {
       return { name: 'Full Access', color: 'bg-green-50 text-green-700 border-green-100' };
     }
@@ -178,7 +154,7 @@ const SettingsManagement: React.FC = () => {
     return { name: 'Customized', color: 'bg-slate-50 text-slate-700 border-slate-100' };
   };
 
-  const handleEdit = (admin: Admin) => {
+  const handleEdit = (admin: AdminAccount) => {
     setSelectedAdmin(admin);
     setIsEditModalOpen(true);
   };
@@ -266,7 +242,7 @@ const SettingsManagement: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
+    <div data-testid="admin-settings-management-screen" className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
       <CreateAdminModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}

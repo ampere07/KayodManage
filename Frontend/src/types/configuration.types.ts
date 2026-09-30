@@ -1,3 +1,29 @@
+export interface AdminPermissions {
+  dashboard: boolean;
+  users: boolean;
+  jobs: boolean;
+  transactions: boolean;
+  verifications: boolean;
+  support: boolean;
+  activity: boolean;
+  flagged: boolean;
+  settings: boolean;
+}
+
+export interface AdminAccount {
+  _id: string;
+  uid: string;
+  fullName: string;
+  email: string;
+  role: string;
+  permissions: AdminPermissions;
+  accountStatus?: string;
+  createdAt: string;
+  lastLogin?: string | null;
+  profileImage?: string | null;
+  isOnline?: boolean;
+}
+
 import type { ServiceClassId } from '../constants/serviceClasses';
 
 export interface Profession {
@@ -28,6 +54,11 @@ export interface CreateJobCategoryRequest {
   name: string;
   icon?: string;
   serviceClass?: ServiceClassId;
+  professions?: Array<{
+    name: string;
+    icon?: string;
+    serviceClass?: ServiceClassId | null;
+  }>;
 }
 
 export interface CreateProfessionRequest {
