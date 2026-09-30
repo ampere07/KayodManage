@@ -88,9 +88,8 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
   const [updating, setUpdating] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<number>(1);
   const [attemptImages, setAttemptImages] = useState<any>(null);
-  const [attemptCache, setAttemptCache] = useState<Record<number, { images: any; submittedAt: string | null }>>({});
+  const [attemptCache, setAttemptCache] = useState<Record<number, { images: any; submittedAt: string | Date | null }>>({});
   const [attemptTimestamps, setAttemptTimestamps] = useState<{ attempt: number; submittedAt: string | Date | null }[] | null>(null);
-  const [currentAttemptSubmittedAt, setCurrentAttemptSubmittedAt] = useState<string | Date | null>(null);
   const { setIsHeaderHidden } = React.useContext(SidebarContext);
 
   useEffect(() => {
@@ -157,7 +156,6 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
         } else {
           setAttemptTimestamps(null);
         }
-        setCurrentAttemptSubmittedAt(verification.submittedAt || null);
         prevVerificationId.current = verification._id;
       }
     }
@@ -170,7 +168,6 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
     // Serve from cache if already fetched
     if (attemptCache[attemptNumber]) {
       setAttemptImages(attemptCache[attemptNumber].images);
-      setCurrentAttemptSubmittedAt(attemptCache[attemptNumber].submittedAt || null);
       return;
     }
 
@@ -208,7 +205,6 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
         }
       }));
       setAttemptTimestamps(data.attemptTimestamps || null);
-      setCurrentAttemptSubmittedAt(data.attemptSubmittedAt || null);
     } catch (error) {
       console.error('Failed to fetch attempt images:', error);
       toast.error('Failed to load images for this attempt');
@@ -221,10 +217,8 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
     const cached = attemptCache[attemptNumber];
     if (cached) {
       setAttemptImages(cached.images);
-      setCurrentAttemptSubmittedAt(cached.submittedAt || null);
     } else {
       setAttemptImages(null); // clear only if not cached
-      setCurrentAttemptSubmittedAt(null);
     }
     fetchAttemptImages(attemptNumber);
   };
@@ -350,9 +344,6 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
   // Attempt-level helpers
   const attemptsFromVerification = (verification as any)?.attempts;
-  const latestAttemptNumber = attemptsFromVerification?.length
-    ? attemptsFromVerification[attemptsFromVerification.length - 1].attemptNumber
-    : verification.verificationAttempts || 1;
   const displayAttemptCount = attemptsFromVerification?.length || verification.verificationAttempts || 1;
 
   const selectedAttemptData = attemptsFromVerification?.find((a: any) => a?.attemptNumber === selectedAttempt)

@@ -81,8 +81,16 @@ export interface UpdateVerificationStatusResponse {
   data: Verification;
 }
 
+export interface AttemptTimestamp {
+  attempt: number;
+  submittedAt: string | Date | null;
+}
+
 export interface UserImages {
   userId: string;
+  attemptNumber?: number;
+  attemptSubmittedAt?: string | Date | null;
+  attemptTimestamps?: AttemptTimestamp[] | null;
   images: {
     faceVerification: VerificationDocument[] | VerificationDocument;
     validId: (VerificationDocument & { type: string })[] | (VerificationDocument & { type: string });
