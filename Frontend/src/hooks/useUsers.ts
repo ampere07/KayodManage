@@ -6,11 +6,12 @@ interface UseUsersParams {
   page: number;
   limit: number;
   search?: string;
-  userType?: 'client' | 'provider';
+  userType?: string;
   isVerified?: string;
   status?: string;
   restricted?: string;
   accountStatus?: string;
+  profession?: string;
 }
 
 const USERS_QUERY_KEY = 'users';
@@ -23,112 +24,106 @@ export const useUsers = (params: UseUsersParams) => {
   });
 };
 
-export const useUserCounts = (params?: any) => {
+/**
+ * One user's merged activity timeline. Only fetched while the detail panel has
+ * the tab open — `enabled` keeps the nine-collection merge off the critical
+ * path of simply opening a user.
+ */
+export const useUserActivity = (
+  userId: string | undefined,
+  params: { page?: number; limit?: number; types?: string } = {},
+  enabled = true
+) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'counts', params, 'v3'],
-    queryFn: async () => {
-      const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData, deletedData, verifiedData, unverifiedData] = await Promise.all([
-        usersService.getUsers({ ...params, limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, userType: 'provider', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'suspended', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'restricted', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'banned', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, accountStatus: 'deleted', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, isVerified: 'true', limit: 1, page: 1 }),
-        usersService.getUsers({ ...params, isVerified: 'false', limit: 1, page: 1 })
-      ]);
-
-      return {
-        total: totalData.pagination?.total || 0,
-        customers: customersData.pagination?.total || 0,
-        providers: providersData.pagination?.total || 0,
-        suspended: suspendedData.pagination?.total || 0,
-        restricted: restrictedData.pagination?.total || 0,
-        banned: bannedData.pagination?.total || 0,
-        deleted: deletedData.pagination?.total || 0,
-        verified: verifiedData.pagination?.total || 0,
-        unverified: unverifiedData.pagination?.total || 0
-      };
-    },
+    queryKey: [USERS_QUERY_KEY, 'activity', userId, params],
+    queryFn: () => usersService.getUserActivity(userId!, params),
+    enabled: Boolean(userId) && enabled,
     placeholderData: (previousData) => previousData,
   });
 };
 
-export const useStatusCounts = (baseParams: any) => {
+/**
+ * The full user record (wallet, restriction, professions, verification audit).
+ * No placeholderData: when the panel moves to another user it must show a
+ * loading state, never the previous user's details under the new name.
+ */
+export const useUserDetails = (userId: string | undefined, enabled = true) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'statusCounts', baseParams],
-    queryFn: async () => {
-      const [allData, verifiedData, unverifiedData] = await Promise.all([
-        usersService.getUsers({ ...baseParams, limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, isVerified: 'true', limit: 1, page: 1 }),
-        usersService.getUsers({ ...baseParams, isVerified: 'false', limit: 1, page: 1 })
-      ]);
+    queryKey: [USERS_QUERY_KEY, 'details', userId],
+    queryFn: () => usersService.getUserById(userId!),
+    enabled: Boolean(userId) && enabled,
+  });
+};
 
-      return {
-        all: allData.pagination?.total || 0,
-        verified: verifiedData.pagination?.total || 0,
-        unverified: unverifiedData.pagination?.total || 0
-      };
-    },
+export const useUserJobs = (
+  userId: string | undefined,
+  params: { page?: number; limit?: number; role?: 'all' | 'posted' | 'worked' } = {},
+  enabled = true
+) => {
+  return useQuery({
+    queryKey: [USERS_QUERY_KEY, 'jobs', userId, params],
+    queryFn: () => usersService.getUserJobs(userId!, params),
+    enabled: Boolean(userId) && enabled,
     placeholderData: (previousData) => previousData,
   });
 };
 
-export const useFlaggedUserCounts = () => {
+/**
+ * A provider's reviews. Paging within one provider keeps the previous page on
+ * screen; switching to another user never shows the last user's reviews.
+ */
+export const useUserReviews = (
+  userId: string | undefined,
+  params: { page?: number; limit?: number; rating?: number } = {},
+  enabled = true
+) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'flaggedCounts', 'v4'],
-    queryFn: async () => {
-      console.log('Fetching flagged user counts...');
-      const [
-        flaggedTotalData,
-        flaggedCustomersData,
-        flaggedProvidersData,
-        flaggedSuspendedData,
-        flaggedRestrictedData,
-        flaggedBannedData
-      ] = await Promise.all([
-        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'restricted,suspended,banned', userType: 'provider', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'suspended', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'restricted', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'banned', limit: 1, page: 1 })
-      ]);
-
-      console.log('Flagged restricted count:', flaggedRestrictedData.pagination?.total || 0);
-      console.log('Query params for restricted count:', { accountStatus: 'restricted' });
-      console.log('Flagged total count:', flaggedTotalData.pagination?.total || 0);
-      console.log('Query params for total flagged count:', { accountStatus: 'restricted,suspended,banned' });
-
-      return {
-        total: flaggedTotalData.pagination?.total || 0,
-        customers: flaggedCustomersData.pagination?.total || 0,
-        providers: flaggedProvidersData.pagination?.total || 0,
-        suspended: flaggedSuspendedData.pagination?.total || 0,
-        restricted: flaggedRestrictedData.pagination?.total || 0,
-        banned: flaggedBannedData.pagination?.total || 0
-      };
-    },
+    queryKey: [USERS_QUERY_KEY, 'reviews', userId, params],
+    queryFn: () => usersService.getUserReviews(userId!, params),
+    enabled: Boolean(userId) && enabled,
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[2] === userId ? previousData : undefined,
   });
 };
 
-export const useDeletedUserCounts = () => {
+/** Reports and support counts for one user. No placeholder: never another user's numbers. */
+export const useUserStanding = (userId: string | undefined, enabled = true) => {
   return useQuery({
-    queryKey: [USERS_QUERY_KEY, 'deletedCounts', 'v1'],
-    queryFn: async () => {
-      const [allData, customersData, providersData] = await Promise.all([
-        usersService.getUsers({ accountStatus: 'deleted', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'deleted', userType: 'client', limit: 1, page: 1 }),
-        usersService.getUsers({ accountStatus: 'deleted', userType: 'provider', limit: 1, page: 1 })
-      ]);
+    queryKey: [USERS_QUERY_KEY, 'standing', userId],
+    queryFn: () => usersService.getUserStanding(userId!),
+    enabled: Boolean(userId) && enabled,
+  });
+};
 
-      return {
-        total: allData.pagination?.total || 0,
-        customers: customersData.pagination?.total || 0,
-        providers: providersData.pagination?.total || 0
-      };
-    },
+/** How many penalties (restrict/suspend/ban) the user has had, and the latest. */
+export const useUserPenalties = (userId: string | undefined, enabled = true) => {
+  return useQuery({
+    queryKey: [USERS_QUERY_KEY, 'penalties', userId],
+    queryFn: () => usersService.getPenaltyData(userId!),
+    enabled: Boolean(userId) && enabled,
+  });
+};
+
+export const useUserFinancials = (userId: string | undefined, enabled = true) => {
+  return useQuery({
+    queryKey: [USERS_QUERY_KEY, 'financials', userId],
+    queryFn: () => usersService.getUserFinancials(userId!),
+    enabled: Boolean(userId) && enabled,
+    placeholderData: (previousData) => previousData,
+  });
+};
+
+/**
+ * Every number on the Users page — stat cards and verification tabs — is a sum
+ * over these cells (type × account status × verification), computed under the
+ * same search/profession as the list. One request instead of ~20 limit=1 probes,
+ * and the numbers cannot disagree with each other or with the list.
+ */
+export const useUserCountCells = (params: { search?: string; profession?: string }) => {
+  return useQuery({
+    queryKey: [USERS_QUERY_KEY, 'countCells', params],
+    queryFn: async () => (await usersService.getUserCounts(params)).cells,
+    placeholderData: (previousData) => previousData,
   });
 };
 

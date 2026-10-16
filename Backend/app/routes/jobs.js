@@ -5,6 +5,7 @@ const {
   updateJobStatus,
   forceCancelJob,
   resolveDispute,
+  submitRebookVerdict,
   assignJobToProvider,
   getJobStats,
   hideJob,
@@ -13,6 +14,7 @@ const {
   restoreJob
 } = require('../controllers/jobController');
 const { adminAuth } = require('../middleware/auth');
+const { supportServiceAuth } = require('../middleware/supportServiceAuth');
 
 const router = express.Router();
 
@@ -33,6 +35,12 @@ router.post('/:jobId/force-cancel', adminAuth, forceCancelJob);
 
 // Resolve an active dispute: { outcome: 'pay_provider' | 'refund_client' | 'rebook', note? }
 router.post('/:jobId/resolve-dispute', adminAuth, resolveDispute);
+
+// The reporter's answer to "did the other party do their part?" on a rebooked
+// job: { satisfied: boolean, reporterId: string, reason?: string }. Service-key
+// authenticated, not adminAuth — kayod/server calls this on behalf of the
+// reporting user, who has no admin session.
+router.post('/:jobId/rebook-verdict', supportServiceAuth, submitRebookVerdict);
 
 // Hide job
 router.patch('/:jobId/hide', adminAuth, hideJob);

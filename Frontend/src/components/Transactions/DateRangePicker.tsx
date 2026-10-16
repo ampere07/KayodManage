@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight, X as XIcon } from 'lucide-react';
 
 interface DateRangePickerProps {
@@ -184,7 +185,10 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
         )}
       </button>
 
-      {isOpen && (
+      {/* Portaled to <body>: the page header is a z-30 stacking context and the
+          table's sticky z-30 <thead> paints after it, so rendered in place the
+          dropdown's top row (the quick picks) sat underneath the table header. */}
+      {isOpen && createPortal(
         <div
           ref={dropdownRef}
           className="bg-white border border-gray-200 rounded-xl shadow-xl z-[9999] p-4"
@@ -266,7 +270,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
           <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-600 text-center">
             {selectingStart ? 'Select start date' : 'Select end date'}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

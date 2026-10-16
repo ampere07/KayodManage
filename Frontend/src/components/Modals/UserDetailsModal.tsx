@@ -7,26 +7,108 @@ import {
   Ban,
   UserX,
   AlertCircle,
-  Trash2
+  Trash2,
+  Star,
+  Scale,
+  FileText
 } from 'lucide-react';
-import { usersService } from '../../services';
-import { getProfessionIconByName } from '../../constants/categoryIcons';
+import { useQuery } from '@tanstack/react-query';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { usersService, jobsService, transactionsService, supportService } from '../../services';
+import { settingsService } from '../../services/settingsService';
+import { useUserJobs, useUserReviews } from '../../hooks/useUsers';
+import { UserReviewsTab } from '../Users/ProviderReviews';
+import UserProfileDetails from '../Users/UserProfileDetails';
+import {
+  UserActivityTab,
+  UserJobsTab,
+  UserMoneyTab
+} from '../Users/UserHistoryTabs';
+import type { HistoryTarget } from '../Users/UserHistoryTabs';
+import RestrictionDurationPicker, {
+  EMPTY_DURATION,
+  durationInDays
+} from '../Users/RestrictionDurationPicker';
+import type { DurationChoice } from '../Users/RestrictionDurationPicker';
+import JobDetailsModal from './JobDetailsModal';
+import TransactionDetailsModal from './TransactionDetailsModal';
+import SupportConversationModal from './SupportConversationModal';
 import type {
   User,
   Verification,
   PenaltyData,
-  LegalAcceptance
+  LegalAcceptance,
+  RestrictionType,
+  JobCategory
 } from '../../types';
 import UserTypeBadge from '../UI/UserTypeBadge';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import toast from 'react-hot-toast';
 import { SidebarContext } from '../Layout/Layout';
 
+// Matches the colour of each action's footer button, so the confirm step reads
+// as the same action the admin picked.
+const ACTION_STYLE = {
+  restrict: { text: 'text-orange-600', button: 'bg-orange-600 hover:bg-orange-700', pastTense: 'restricted' },
+  suspend: { text: 'text-yellow-600', button: 'bg-yellow-600 hover:bg-yellow-700', pastTense: 'suspended' },
+  ban: { text: 'text-red-600', button: 'bg-red-600 hover:bg-red-700', pastTense: 'banned' },
+} as const;
+
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
   if (nameParts.length === 0) return '?';
   return nameParts[0][0].toUpperCase();
 };
+
+/**
+ * How each kind of sanction is presented. Keyed by restrictionDetails.type,
+ * which the server sets alongside accountStatus, so a ban never reads with the
+ * softer wording of a temporary restriction.
+ */
+const RESTRICTION_PRESENTATION: Record<
+  RestrictionType,
+  { label: string; panel: string; accent: string; body: string }
+> = {
+  restricted: {
+    label: 'Account Restricted',
+    panel: 'bg-amber-50 border-amber-200',
+    accent: 'text-amber-700',
+    body: 'text-amber-900'
+  },
+  suspended: {
+    label: 'Account Suspended',
+    panel: 'bg-orange-50 border-orange-200',
+    accent: 'text-orange-700',
+    body: 'text-orange-900'
+  },
+  banned: {
+    label: 'Account Banned',
+    panel: 'bg-red-50 border-red-200',
+    accent: 'text-red-700',
+    body: 'text-red-900'
+  },
+  deleted: {
+    label: 'Account Deleted',
+    panel: 'bg-gray-100 border-gray-300',
+    accent: 'text-gray-700',
+    body: 'text-gray-900'
+  }
+};
+
+/**
+ * The panel answers four separate questions, and an admin usually arrives with
+ * only one of them. Splitting them into tabs keeps the profile readable and,
+ * more importantly, keeps the history queries from running on every open.
+ */
+type DetailTab = 'profile' | 'reviews' | 'activity' | 'jobs' | 'money';
+
+const DETAIL_TABS: { key: DetailTab; label: string; providersOnly?: boolean }[] = [
+  { key: 'profile', label: 'Profile' },
+  { key: 'reviews', label: 'Reviews', providersOnly: true },
+  { key: 'activity', label: 'Activity' },
+  { key: 'jobs', label: 'Jobs' },
+  { key: 'money', label: 'Money' }
+];
 
 interface UserDetailsModalProps {
   isOpen: boolean;
@@ -43,15 +125,23 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   onVerify,
   onAction
 }) => {
+  const [activeTab, setActiveTab] = useState<DetailTab>('profile');
+  // The job or transaction an activity row points at, opened on top of this
+  // panel so the admin keeps their place in the user's history.
+  const [openTarget, setOpenTarget] = useState<
+    | { type: 'job'; data: any }
+    | { type: 'transaction'; data: any }
+    | { type: 'support'; data: any }
+    | null
+  >(null);
+  const [loadingTarget, setLoadingTarget] = useState(false);
   const [verificationDetails, setVerificationDetails] = useState<Verification | null>(null);
   // What this user has affirmed, and to which version of the agreements.
   // The one thing support needs when a user disputes a clause.
   const [legalAcceptances, setLegalAcceptances] = useState<LegalAcceptance[]>([]);
   const [loadingVerification, setLoadingVerification] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete' | null>(null);
-  const [durationDays, setDurationDays] = useState<number>(0);
-  const [durationHours, setDurationHours] = useState<number>(0);
-  const [durationMinutes, setDurationMinutes] = useState<number>(0);
+  const [duration, setDuration] = useState<DurationChoice>(EMPTY_DURATION);
   const [reason, setReason] = useState<string>('');
   const [penaltyData, setPenaltyData] = useState<PenaltyData>({
     totalPenalties: 0,
@@ -60,10 +150,28 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   });
   const [loadingPenalties, setLoadingPenalties] = useState(false);
   const [restrictionTimer, setRestrictionTimer] = useState<string | null>(null);
-  const [_restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
-  const [_loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
+  const [restrictedByAdmin, setRestrictedByAdmin] = useState<{ _id: string; name: string } | null>(null);
+  const [loadingRestrictedBy, setLoadingRestrictedBy] = useState(false);
   const { setIsHeaderHidden } = React.useContext(SidebarContext);
 
+  // Profile "at a glance" data. The Rating tile only needs the review summary,
+  // so one review is enough; jobs counts are only fetched while Profile is open.
+  const isProviderUser = user?.userType === 'provider';
+  const glanceJobs = useUserJobs(user?._id, { page: 1, limit: 1, role: 'all' }, isOpen && activeTab === 'profile');
+  const glanceReviews = useUserReviews(user?._id, { page: 1, limit: 1 }, isOpen && isProviderUser);
+  const { data: categoriesData } = useQuery({
+    queryKey: ['job-categories'],
+    queryFn: () => settingsService.getJobCategories(),
+    enabled: isOpen,
+  });
+  const jobCategories: JobCategory[] = categoriesData?.categories || [];
+
+  useEffect(() => {
+    if (activeTab === 'reviews' && !isProviderUser) setActiveTab('profile');
+  }, [activeTab, isProviderUser]);
+
+  // Re-runs when a nested detail closes: that modal resets the flag on unmount,
+  // and this panel is still open and still wants the header hidden.
   useEffect(() => {
     if (setIsHeaderHidden) {
       setIsHeaderHidden(isOpen);
@@ -73,7 +181,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         setIsHeaderHidden(false);
       }
     };
-  }, [isOpen, setIsHeaderHidden]);
+  }, [isOpen, openTarget, setIsHeaderHidden]);
 
   // Calculate remaining restriction time
   useEffect(() => {
@@ -130,10 +238,10 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       }
     }
     if (!isOpen) {
+      setActiveTab('profile');
+      setOpenTarget(null);
       setConfirmingAction(null);
-      setDurationDays(0);
-      setDurationHours(0);
-      setDurationMinutes(0);
+      setDuration(EMPTY_DURATION);
       setReason('');
       setRestrictedByAdmin(null);
     }
@@ -199,16 +307,70 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     }
   };
 
+  /**
+   * Open what an activity row points at. The row carries only an id, so the
+   * full record is fetched on demand — the timeline deliberately does not
+   * embed whole jobs and transactions it would mostly never need.
+   */
+  const handleOpenTarget = async (target: HistoryTarget) => {
+    if (loadingTarget) return;
+
+    setLoadingTarget(true);
+    try {
+      if (target.type === 'job') {
+        const response: any = await jobsService.getJobById(target.id);
+        const job = response?.job || response;
+        if (!job?._id) {
+          toast.error('That job no longer exists');
+          return;
+        }
+        setOpenTarget({ type: 'job', data: job });
+      } else if (target.type === 'support') {
+        const response: any = await supportService.getChatSupportById(target.id);
+        const ticket = response?.chatSupport || response;
+        if (!ticket?._id) {
+          toast.error('That support ticket no longer exists');
+          return;
+        }
+        setOpenTarget({ type: 'support', data: ticket });
+      } else {
+        const transaction = await transactionsService.getTransactionById(target.id);
+        if (!transaction) {
+          toast.error('That transaction no longer exists');
+          return;
+        }
+        setOpenTarget({ type: 'transaction', data: transaction });
+      }
+    } catch (error: any) {
+      console.error('Error opening activity target:', error);
+      // The server answers 404 for a ticket this admin may not read, so ticket
+      // ids cannot be probed across support agents. Say what that means rather
+      // than reporting it as a generic failure.
+      if (target.type === 'support' && error?.response?.status === 404) {
+        toast.error('You do not have access to this ticket');
+      } else {
+        toast.error('Failed to load details');
+      }
+    } finally {
+      setLoadingTarget(false);
+    }
+  };
+
   const handleActionClick = (actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete') => {
     setConfirmingAction(actionType);
   };
 
+  const needsDuration = confirmingAction === 'restrict' || confirmingAction === 'suspend' || confirmingAction === 'ban';
+  // undefined = open-ended (permanent ban / restriction until lifted); null = not chosen yet.
+  const durationDaysValue = needsDuration ? durationInDays(duration) : undefined;
+  const canConfirm =
+    confirmingAction === 'unrestrict' ||
+    (reason.trim().length > 0 && (!needsDuration || durationDaysValue !== null));
+
   const handleConfirmYes = () => {
     if (confirmingAction && user) {
-      const totalDays = durationDays + (durationHours / 24) + (durationMinutes / (24 * 60));
-
-      if (confirmingAction !== 'unrestrict' && confirmingAction !== 'delete' && totalDays <= 0) {
-        toast.error('Please enter a duration for the restriction');
+      if (needsDuration && durationDaysValue === null) {
+        toast.error('Please choose how long the restriction lasts');
         return;
       }
 
@@ -220,13 +382,11 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       onAction(
         user,
         confirmingAction,
-        confirmingAction === 'unrestrict' ? undefined : totalDays,
+        needsDuration ? durationDaysValue ?? undefined : undefined,
         confirmingAction === 'unrestrict' ? undefined : reason
       );
       setConfirmingAction(null);
-      setDurationDays(0);
-      setDurationHours(0);
-      setDurationMinutes(0);
+      setDuration(EMPTY_DURATION);
       setReason('');
       setTimeout(() => {
         fetchPenaltyData();
@@ -236,9 +396,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const handleConfirmNo = () => {
     setConfirmingAction(null);
-    setDurationDays(0);
-    setDurationHours(0);
-    setDurationMinutes(0);
+    setDuration(EMPTY_DURATION);
     setReason('');
   };
 
@@ -256,6 +414,34 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   const isRestricted = user.accountStatus ? user.accountStatus !== 'active' : user.isRestricted;
 
+  // What the sanction was, why, and who imposed it. The type on
+  // restrictionDetails is authoritative; accountStatus is the fallback for
+  // older records written before the subdocument carried one.
+  const restriction = user.restrictionDetails;
+  const restrictionType: RestrictionType | null =
+    (restriction?.type as RestrictionType | undefined) ||
+    (user.accountStatus && user.accountStatus !== 'active'
+      ? (user.accountStatus as RestrictionType)
+      : null);
+  const presentation =
+    (restrictionType && RESTRICTION_PRESENTATION[restrictionType]) ||
+    RESTRICTION_PRESENTATION.restricted;
+  // Populated by the server on some responses, fetched by id on the rest.
+  const restrictedByName =
+    restriction?.restrictedBy && typeof restriction.restrictedBy === 'object'
+      ? restriction.restrictedBy.name
+      : restrictedByAdmin?.name;
+  const formatStamp = (value?: Date | string) =>
+    value
+      ? new Date(value).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        })
+      : null;
+
   const formatKYDNumber = (id: string) => {
     return `KYD: ${id}`;
   };
@@ -268,26 +454,87 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     });
   };
 
-  const parseFullName = (fullName: string) => {
-    const nameParts = fullName.trim().split(' ');
-    if (nameParts.length === 1) {
-      return { firstName: nameParts[0], lastName: nameParts[0] };
+  // "At a glance". The jobs hook keeps the previous query's data as a
+  // placeholder, which must never show under this user's name.
+  const jobsSummary = glanceJobs.data && !glanceJobs.isPlaceholderData ? glanceJobs.data.summary : null;
+  const reviewSummary = glanceReviews.data?.summary;
+  const glanceTiles: { label: string; value: React.ReactNode; sub?: string; onClick?: () => void; testId: string }[] = [
+    isProviderUser
+      ? {
+          label: 'Rating',
+          testId: 'glance-rating',
+          value: reviewSummary?.count ? (
+            <span className="inline-flex items-center gap-1">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+              {reviewSummary.average.toFixed(1)}
+            </span>
+          ) : reviewSummary ? 'No reviews' : '…',
+          sub: reviewSummary?.count ? `${reviewSummary.count} review${reviewSummary.count === 1 ? '' : 's'} · see all` : undefined,
+          onClick: reviewSummary?.count ? () => setActiveTab('reviews') : undefined
+        }
+      : {
+          label: 'Jobs posted',
+          testId: 'glance-posted',
+          value: jobsSummary ? jobsSummary.posted : '…',
+          sub: jobsSummary ? `${jobsSummary.byStatus?.completed || 0} completed` : undefined
+        },
+    isProviderUser
+      ? {
+          label: 'Jobs worked',
+          testId: 'glance-worked',
+          value: jobsSummary ? jobsSummary.worked : '…',
+          sub: user.completedJobs != null ? `${user.completedJobs} completed` : undefined
+        }
+      : { label: 'Wallet', testId: 'glance-wallet', value: `₱${(user.wallet?.balance || 0).toLocaleString()}` },
+    {
+      label: 'Member for',
+      testId: 'glance-member',
+      value: user.createdAt ? formatDistanceToNowStrict(new Date(user.createdAt)) : '—',
+      sub: user.createdAt
+        ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : undefined
+    },
+    {
+      // lastLogin is stamped by kayod/server only on an actual sign-in (password,
+      // Google, Facebook) — reopening the app on a saved session doesn't move it,
+      // so this is "last login", not "last seen". isOnline isn't shown: neither
+      // app ever sets it to true.
+      label: 'Last login',
+      testId: 'glance-last-login',
+      value: user.lastLogin
+        ? formatDistanceToNowStrict(new Date(user.lastLogin), { addSuffix: true })
+        : 'Never',
+      sub: user.lastLogin
+        ? new Date(user.lastLogin).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : undefined
     }
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ');
-    return { firstName, lastName };
-  };
+  ];
 
-  const { firstName, lastName } = parseFullName(user.name);
+  const FINDING_REASON: Record<string, string> = {
+    no_show: 'No-show',
+    late_cancel: 'Late cancellation',
+    access_failure: 'Could not access the site',
+    emergency: 'Emergency',
+    other: 'Other'
+  };
+  const faultFindings = (user.faultFindings || []).filter(finding => finding.faultParty);
+
+  // Both detail modals portal to the body at a fixed z-index of their own
+  // (job 90/100, transaction 100/101). Rather than raise theirs — which would
+  // reach every other page that opens them — this panel steps below while one
+  // is stacked on top of it, so their backdrop dims it the way it should.
+  const layer = openTarget
+    ? { overlay: 'z-[88]', panel: 'z-[89]' }
+    : { overlay: 'z-[100]', panel: 'z-[101]' };
 
   return createPortal(
     <>
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[100] transition-opacity"
+        className={`fixed inset-0 bg-black bg-opacity-50 ${layer.overlay} transition-opacity`}
         onClick={onClose}
       />
 
-      <div className="fixed right-0 top-0 h-full w-full md:w-[500px] bg-white z-[101] shadow-2xl flex flex-col overflow-hidden">
+      <div className={`fixed right-0 top-0 h-full w-full md:w-[500px] bg-white ${layer.panel} shadow-2xl flex flex-col overflow-hidden`}>
         {/* Header */}
         <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 md:px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">User Information</h2>
@@ -335,181 +582,95 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="sticky top-[61px] z-20 bg-white border-b border-gray-200 px-4 md:px-6">
+          <div className="flex gap-1">
+            {DETAIL_TABS.filter(tab => !tab.providersOnly || isProviderUser).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                data-testid={`user-tab-${tab.key}`}
+                className={`px-3 py-2.5 text-xs font-bold border-b-2 transition-colors ${
+                  activeTab === tab.key
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 md:px-6 py-6 space-y-8">
-            {/* Personal Information */}
-            <section>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Personal Details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">First Name</p>
-                  <p className="text-sm font-medium text-gray-900">{firstName}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Last Name</p>
-                  <p className="text-sm font-medium text-gray-900">{lastName}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-gray-500 mb-1">Date of Birth</p>
-                  <p className="text-sm font-medium text-gray-900">
-                    {user.dateOfBirth ? (
-                      new Date(user.dateOfBirth).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })
-                    ) : (
-                      'Not provided'
-                    )}
+            {activeTab === 'activity' && (
+              <UserActivityTab userId={user._id} onOpenTarget={handleOpenTarget} />
+            )}
+            {activeTab === 'jobs' && (
+              <UserJobsTab userId={user._id} onOpenTarget={handleOpenTarget} />
+            )}
+            {activeTab === 'money' && <UserMoneyTab userId={user._id} />}
+            {activeTab === 'reviews' && isProviderUser && (
+              <UserReviewsTab userId={user._id} storedRating={user.ratings} onOpenTarget={handleOpenTarget} />
+            )}
+
+            {activeTab === 'profile' && (
+            <div className="space-y-4">
+            {/* The account's standing first — the full panel is in Security Audit below. */}
+            {isRestricted && (
+              <div className={`flex items-start gap-2 p-3 border rounded-lg ${presentation.panel}`} data-testid="user-status-banner">
+                <Ban className={`w-4 h-4 mt-0.5 flex-shrink-0 ${presentation.accent}`} />
+                <div className="min-w-0 text-xs">
+                  <p className={`font-bold ${presentation.accent}`}>
+                    {presentation.label}
+                    {(restriction?.suspendedUntil || restriction?.expiresAt)
+                      ? ` until ${formatStamp(restriction.suspendedUntil || restriction.expiresAt)}`
+                      : restrictionType !== 'deleted' ? ' · no end date' : ''}
                   </p>
+                  {restriction?.reason && <p className={`mt-0.5 ${presentation.body}`}>“{restriction.reason}”</p>}
                 </div>
               </div>
+            )}
+
+            {/* At a glance */}
+            {/* Wide, short tiles: two per row, value and its detail on one line. */}
+            <section className="grid grid-cols-2 gap-2" data-testid="user-at-a-glance">
+              {glanceTiles.map(tile => {
+                const Tile = tile.onClick ? 'button' : 'div';
+                return (
+                  <Tile
+                    key={tile.testId}
+                    {...(tile.onClick ? { type: 'button' as const, onClick: tile.onClick } : {})}
+                    data-testid={tile.testId}
+                    className={`min-w-0 text-left rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 ${tile.onClick ? 'hover:border-amber-200 hover:bg-amber-50/50 transition-colors' : ''}`}
+                  >
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{tile.label}</p>
+                    <p className="flex items-baseline gap-1.5 mt-0.5 min-w-0 whitespace-nowrap">
+                      <span className="text-sm font-black text-gray-900">{tile.value}</span>
+                      {tile.sub && <span className="text-[11px] text-gray-500 truncate">· {tile.sub}</span>}
+                    </p>
+                  </Tile>
+                );
+              })}
             </section>
 
-            <div className="border-t border-gray-100" />
 
-            {/* Contact Details */}
-            <section>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Contact Information</h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Contact Number</p>
-                  <p className="text-sm font-medium text-gray-900">{user.phoneNumber || user.phone || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Current Location</p>
-                  <p className="text-sm font-medium text-gray-900">{user.location || 'N/A'}</p>
-                </div>
-              </div>
-            </section>
+            <UserProfileDetails
+              user={user}
+              jobCategories={jobCategories}
+              verification={{
+                reviewedBy: (verificationDetails?.reviewedBy as { name?: string } | undefined)?.name || null,
+                reviewedAt: verificationDetails?.reviewedAt || null,
+                loading: loadingVerification
+              }}
+            />
 
-            {/* Other Information */}
-            <section>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Other Information</h3>
-              <div className="space-y-6">
-                {/* Account Timestamps */}
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Account Created</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      }) : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Last Login</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      }) : 'Never'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-100" />
-
-                {/* Verification Summary */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-500">Verification Status</p>
-                    <p className={`text-xs font-bold ${user.isVerified ? 'text-green-600' : 'text-orange-500'}`}>
-                      {user.isVerified ? 'VERIFIED' : 'PENDING'}
-                    </p>
-                  </div>
-                  {user.isVerified && (
-                    <>
-                      <div className="flex justify-between items-center">
-                        <p className="text-xs text-gray-500">Verified By</p>
-                        <p className="text-xs font-medium text-gray-900">
-                          {loadingVerification ? '...' : (verificationDetails?.reviewedBy as any)?.name || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <p className="text-xs text-gray-500">Verification Date</p>
-                        <p className="text-xs font-medium text-gray-900">
-                          {loadingVerification ? '...' : verificationDetails?.reviewedAt ? new Date(verificationDetails.reviewedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="border-t border-gray-100" />
-
-                {/* Wallet - Keep Container */}
-                <div className="bg-blue-50/50 rounded-lg p-4 border border-blue-100">
-                  <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Wallet Overview</p>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-xs text-blue-700">Available Balance</p>
-                      <p className="text-xl font-black text-blue-900">₱{user.wallet?.availableBalance?.toLocaleString() || '0'}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] text-blue-600">Held: ₱{user.wallet?.heldBalance?.toLocaleString() || '0'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {user.userType === 'provider' && (() => {
-                  const getProfessions = (u: User): string[] => {
-                    const all: string[] = [];
-                    if (u.jobCategories) {
-                      if (Array.isArray(u.jobCategories)) {
-                        u.jobCategories.forEach(c => { if (c && !all.includes(c)) all.push(c); });
-                      } else if (typeof u.jobCategories === 'string' && u.jobCategories.trim().length > 0) {
-                        const cats = u.jobCategories.split(',').map(c => c.trim()).filter(Boolean);
-                        cats.forEach(c => { if (!all.includes(c)) all.push(c); });
-                      }
-                    }
-                    if (u.categories && u.categories.length > 0) {
-                      u.categories.forEach(c => { if (c && !all.includes(c)) all.push(c); });
-                    }
-                    if (u.jobVerificationStatus && u.jobVerificationStatus.length > 0) {
-                      u.jobVerificationStatus.forEach(v => {
-                        if (v.category && !all.includes(v.category)) all.push(v.category);
-                      });
-                    }
-                    if (u.category && !all.includes(u.category)) all.push(u.category);
-                    return all;
-                  };
-
-                  const professions = getProfessions(user);
-                  if (professions.length === 0) return null;
-
-                  return (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-2 font-bold uppercase tracking-wider opacity-60">Professional Identity</p>
-                      <div className="flex flex-wrap gap-2">
-                        {professions.map((prof, idx) => {
-                          const iconData = getProfessionIconByName(prof);
-                          const label = (iconData?.label && iconData.label !== 'Professional Services')
-                            ? iconData.label
-                            : prof.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().toUpperCase();
-                          
-                          return (
-                            <span key={idx} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded border border-indigo-100 uppercase tracking-widest shadow-sm">
-                              {label}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </section>
-
-            <div className="border-t border-gray-100" />
 
             {/* Penalty Tracker */}
-            <section className="pb-4">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Security Audit</h3>
+            <section className="rounded-xl border border-gray-100 bg-gray-50/60 p-4" data-testid="user-security-audit">
+              <h3 className="flex items-center gap-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3"><Shield className="w-3.5 h-3.5 text-gray-400" />Security Audit</h3>
               {loadingPenalties ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto"></div>
@@ -517,36 +678,115 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 text-center">
+                    <div className="bg-white rounded-lg p-3 border border-gray-100 text-center">
                       <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Total Bans</p>
                       <p className="text-lg font-bold text-red-600">{penaltyData.totalPenalties}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 text-center">
+                    <div className="bg-white rounded-lg p-3 border border-gray-100 text-center">
                       <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Warnings</p>
                       <p className="text-lg font-bold text-yellow-600">{penaltyData.activeWarnings}</p>
                     </div>
                   </div>
 
-                  {isRestricted && restrictionTimer && (
-                    <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Ban className="w-4 h-4 text-red-600" />
-                        <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Active Restriction</p>
+                  {/* Why this account is sanctioned. Shown for every non-active
+                      status, not only the ones with a countdown: a permanent ban
+                      has no expiry, and its reason is exactly what support opens
+                      this modal to read. */}
+                  {isRestricted && (
+                    <div
+                      className={`p-4 border rounded-lg ${presentation.panel}`}
+                      data-testid="user-restriction-details"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <Ban className={`w-4 h-4 ${presentation.accent}`} />
+                        <p className={`text-xs font-bold uppercase tracking-wider ${presentation.accent}`}>
+                          {presentation.label}
+                        </p>
                       </div>
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-2xl font-bold text-red-600">{restrictionTimer}</p>
-                        <p className="text-[10px] text-red-700 font-medium uppercase">Remaining</p>
-                      </div>
-                      {user.restrictionDetails?.reason && (
-                        <p className="mt-2 text-xs text-red-800 italic">"{user.restrictionDetails.reason}"</p>
+
+                      <p className={`text-[10px] font-bold uppercase tracking-wider opacity-70 ${presentation.accent}`}>
+                        Reason
+                      </p>
+                      {restriction?.reason ? (
+                        <p
+                          className={`mt-1 text-sm font-medium ${presentation.body}`}
+                          data-testid="user-restriction-reason"
+                        >
+                          "{restriction.reason}"
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-gray-500 italic">
+                          No reason recorded for this account.
+                        </p>
                       )}
+
+                      <div className={`mt-3 pt-3 border-t border-black/10 grid grid-cols-2 gap-3 ${presentation.body}`}>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">
+                            {restrictionTimer ? 'Time Remaining' : 'Duration'}
+                          </p>
+                          <p className="text-sm font-bold">
+                            {restrictionTimer || 'Permanent'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Issued</p>
+                          <p className="text-sm font-medium">
+                            {formatStamp(restriction?.restrictedAt) || '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Issued By</p>
+                          <p className="text-sm font-medium">
+                            {loadingRestrictedBy ? '...' : restrictedByName || 'System'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">
+                            {restriction?.suspendedUntil ? 'Suspended Until' : 'Appeal'}
+                          </p>
+                          <p className="text-sm font-medium">
+                            {restriction?.suspendedUntil
+                              ? formatStamp(restriction.suspendedUntil)
+                              : restriction?.appealAllowed === false
+                                ? 'Not allowed'
+                                : 'Allowed'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* What admins found when ruling on this user's disputes. */}
+                  {faultFindings.length > 0 && (
+                    <div className="rounded-lg border border-gray-200 p-3" data-testid="user-fault-findings">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5" /> Dispute findings against this user ({faultFindings.length})
+                      </p>
+                      <ul className="space-y-2">
+                        {faultFindings.map((finding, index) => (
+                          <li key={`${finding.jobId}-${index}`} className="text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-gray-900">
+                                {FINDING_REASON[finding.findingReason || 'other'] || finding.findingReason}
+                                {finding.role && <span className="font-normal text-gray-500"> · as {finding.role}</span>}
+                                {finding.faultParty === 'both' && <span className="font-normal text-gray-500"> · shared fault</span>}
+                              </span>
+                              <span className="text-gray-400 flex-shrink-0">
+                                {finding.decidedAt ? new Date(finding.decidedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                              </span>
+                            </div>
+                            {finding.sanctioned && <span className="text-[10px] font-bold text-red-600 uppercase">Sanctioned</span>}
+                            {finding.notes && <p className="text-gray-600 mt-0.5">{finding.notes}</p>}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
               )}
             </section>
 
-            <div className="border-t border-gray-100" />
 
             {/* Legal Acceptances.
                 Appended by the Kayod server whenever this user affirms the
@@ -555,8 +795,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 nothing. Empty for accounts created before acceptances were
                 recorded, which is meaningful in itself and so is said plainly
                 rather than rendered as a blank list. */}
-            <section className="pb-4">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Legal Agreements</h3>
+            <section className="rounded-xl border border-gray-100 bg-gray-50/60 p-4" data-testid="user-legal">
+              <h3 className="flex items-center gap-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3"><FileText className="w-3.5 h-3.5 text-gray-400" />Legal Agreements</h3>
               {legalAcceptances.length === 0 ? (
                 <p className="text-xs text-gray-400 italic">
                   No recorded acceptances. Accounts created before agreement
@@ -600,6 +840,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 </div>
               )}
             </section>
+            </div>
+            )}
           </div>
         </div>
 
@@ -607,43 +849,24 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         <div className="sticky bottom-0 z-30 bg-white border-t border-gray-200 px-4 md:px-6 py-4">
           {confirmingAction ? (
             <div className="space-y-4">
-              {confirmingAction !== 'unrestrict' && confirmingAction !== 'delete' && (
+              {(confirmingAction === 'restrict' || confirmingAction === 'suspend' || confirmingAction === 'ban') && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase">Days</p>
-                      <input
-                        type="number"
-                        data-testid="user-action-duration-days"
-                        value={durationDays}
-                        onChange={(e) => setDurationDays(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase">Hours</p>
-                      <input
-                        type="number"
-                        value={durationHours}
-                        onChange={(e) => setDurationHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
-                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase">Mins</p>
-                      <input
-                        type="number"
-                        value={durationMinutes}
-                        onChange={(e) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                        className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
+                  <div className={`flex items-center gap-2 text-sm font-bold ${ACTION_STYLE[confirmingAction].text}`}>
+                    {confirmingAction === 'restrict' && <Shield className="w-4 h-4" />}
+                    {confirmingAction === 'suspend' && <Clock className="w-4 h-4" />}
+                    {confirmingAction === 'ban' && <Ban className="w-4 h-4" />}
+                    {getActionLabel()} {user.name}
                   </div>
+                  <RestrictionDurationPicker
+                    action={confirmingAction}
+                    value={duration}
+                    onChange={setDuration}
+                  />
                   <textarea
                     data-testid="user-action-reason"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="Enter reason for restriction..."
+                    placeholder={`Why is this account being ${ACTION_STYLE[confirmingAction].pastTense}?`}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
                   />
                 </div>
@@ -678,7 +901,12 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 <button
                   onClick={handleConfirmYes}
                   data-testid="user-action-confirm"
-                  className="flex-1 h-11 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
+                  disabled={!canConfirm}
+                  className={`flex-1 h-11 text-sm font-bold text-white rounded-lg shadow-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                    confirmingAction === 'restrict' || confirmingAction === 'suspend' || confirmingAction === 'ban'
+                      ? ACTION_STYLE[confirmingAction].button
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
                   Confirm {getActionLabel()}
                 </button>
@@ -735,6 +963,24 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* What an activity row pointed at, stacked over this panel. Closing it
+          returns to the history exactly where it was left. */}
+      <JobDetailsModal
+        isOpen={openTarget?.type === 'job'}
+        onClose={() => setOpenTarget(null)}
+        job={openTarget?.type === 'job' ? openTarget.data : null}
+      />
+      <TransactionDetailsModal
+        isOpen={openTarget?.type === 'transaction'}
+        onClose={() => setOpenTarget(null)}
+        transaction={openTarget?.type === 'transaction' ? openTarget.data : null}
+      />
+      <SupportConversationModal
+        isOpen={openTarget?.type === 'support'}
+        onClose={() => setOpenTarget(null)}
+        ticket={openTarget?.type === 'support' ? openTarget.data : null}
+      />
     </>,
     document.body
   );

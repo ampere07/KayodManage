@@ -1,7 +1,8 @@
 const express = require('express');
-const { 
-  getTransactions, 
-  getTransactionDetails, 
+const {
+  getTransactions,
+  getTransactionCounts,
+  getTransactionDetails,
   updateTransactionStatus,
   getTransactionStats,
   approveRefund,
@@ -98,8 +99,9 @@ router.post('/approve-topups', adminAuth, async (req, res) => {
 });
 
 
-// Diagnostic endpoint to check fee records (NO AUTH for testing)
-router.get('/debug/fee-records', async (req, res) => {
+// Diagnostic endpoint to check fee records. Admin-only: it lists every
+// provider's fees by name, and used to answer anyone.
+router.get('/debug/fee-records', adminAuth, async (req, res) => {
   try {
     console.log('Debug endpoint called!');
     
@@ -138,6 +140,10 @@ router.get('/', adminAuth, getTransactions);
 
 // Get transaction statistics
 router.get('/stats', adminAuth, getTransactionStats);
+
+// Status tallies for the list header. Must stay above '/:transactionId', or
+// Express matches "counts" as a transaction id and answers 404.
+router.get('/counts', adminAuth, getTransactionCounts);
 
 // Get specific transaction details
 router.get('/:transactionId', adminAuth, getTransactionDetails);

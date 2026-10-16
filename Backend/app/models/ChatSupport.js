@@ -169,37 +169,68 @@ const chatSupportSchema = new mongoose.Schema({
   timestamps: true
 });
 
-function generateTicketId() {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const numbers = '0123456789';
+const TICKET_ID_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const TICKET_ID_DIGITS = '0123456789';
 
+/**
+ * A ticket id: five letters and five digits shuffled together, e.g. "K3QP7A19ZM".
+ *
+ * Shuffling matters — emitting the letters and digits in blocks would make the
+ * shape of every id identical and the "random" half obvious at a glance.
+ *
+ * This file is duplicated across the two deployments that share the
+ * 'chatsupports' collection:
+ *   - kayod/server/src/models/ChatSupport.js         (users file tickets here)
+ *   - KayodManage/Backend/app/models/ChatSupport.js  (admins read and close them)
+ * Both MUST generate the same format. Edit one, copy to the other.
+ */
+function generateTicketId() {
   const chars = [];
 
   for (let i = 0; i < 5; i++) {
-    chars.push(letters.charAt(Math.floor(Math.random() * letters.length)));
+    chars.push(
+      TICKET_ID_LETTERS.charAt(Math.floor(Math.random() * TICKET_ID_LETTERS.length))
+    );
   }
 
   for (let i = 0; i < 5; i++) {
-    chars.push(numbers.charAt(Math.floor(Math.random() * numbers.length)));
+    chars.push(
+      TICKET_ID_DIGITS.charAt(Math.floor(Math.random() * TICKET_ID_DIGITS.length))
+    );
   }
 
+  // Fisher-Yates.
   for (let i = chars.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [chars[i], chars[j]] = [chars[j], chars[i]];
   }
 
-  const part1 = chars.slice(0, 5).join('');
-  const part2 = chars.slice(5, 10).join('');
-
-  return `${part1}-${part2}`;
+  return chars.join('');
 }
 
-chatSupportSchema.pre('save', function (next) {
+/**
+ * ticketId carries a unique index. The previous TKT-<timestamp>-<random> format
+ * could not realistically collide because of the timestamp; this one is pure
+ * randomness, so a duplicate is checked for before saving.
+ *
+ * The keyspace is C(10,5) * 26^5 * 10^5 ~= 3.0e14, so a retry should effectively
+ * never happen — but a collision would surface as a failed ticket submission for
+ * a user, which is not a failure worth leaving to chance.
+ */
+async function generateUniqueTicketId(Model, attempts = 5) {
+  for (let i = 0; i < attempts; i++) {
+    const candidate = generateTicketId();
+    if (!(await Model.exists({ ticketId: candidate }))) return candidate;
+  }
+  throw new Error(`no unused ticketId found after ${attempts} attempts`);
+}
+
+chatSupportSchema.pre('save', async function () {
   if (this.isNew && !this.ticketId) {
     try {
-      this.ticketId = generateTicketId();
+      this.ticketId = await generateUniqueTicketId(this.constructor);
     } catch (error) {
-      return next(new Error('Failed to generate ticketId: ' + error.message));
+      throw new Error('Failed to generate ticketId: ' + error.message);
     }
   }
 
@@ -210,7 +241,6 @@ chatSupportSchema.pre('save', function (next) {
       timestamp: lastMsg.timestamp
     };
   }
-  next();
 });
 
 chatSupportSchema.index({ userId: 1, createdAt: -1 });

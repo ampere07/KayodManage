@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SideModal from '../SideModal';
 import { settingsService } from '../../services';
+import AdminActivityPanel from '../Audit/AdminActivityPanel';
 import { User, Shield, Lock, Activity as ActivityIcon, ChevronDown, BarChart3, DollarSign, Settings } from 'lucide-react';
 
 interface EditAdminModalProps {
@@ -123,9 +124,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
-  const [activities, setActivities] = useState<any[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(false);
-  const [displayCount, setDisplayCount] = useState(15);
   const [adminUid, setAdminUid] = useState<string>('');
   const [sessions, setSessions] = useState<any[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -133,7 +131,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
   useEffect(() => {
     if (admin && isOpen) {
       fetchAdminDetails(admin._id);
-      fetchAdminActivity(admin._id);
       setAdminUid(admin._id ? `KYD-${admin._id.toString().slice(-6).toUpperCase()}` : '');
       setActiveTab('basic');
     }
@@ -142,12 +139,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
   useEffect(() => {
     if (activeTab === 'security' && admin?._id && isOpen) {
       fetchAdminSessions(admin._id);
-    }
-  }, [activeTab, admin?._id, isOpen]);
-
-  useEffect(() => {
-    if (activeTab === 'activity' && admin?._id && isOpen) {
-      setDisplayCount(15);
     }
   }, [activeTab, admin?._id, isOpen]);
 
@@ -188,19 +179,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
     }
   };
 
-  const fetchAdminActivity = async (adminId: string) => {
-    try {
-      setLoadingActivities(true);
-      const response = await settingsService.getAdminActivity(adminId, 1000, 0);
-      setActivities(response.activities || []);
-    } catch (err: any) {
-      console.error('Error fetching admin activity:', err);
-      setActivities([]);
-    } finally {
-      setLoadingActivities(false);
-    }
-  };
-
   const fetchAdminSessions = async (adminId: string) => {
     try {
       setLoadingSessions(true);
@@ -211,24 +189,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
       setSessions([]);
     } finally {
       setLoadingSessions(false);
-    }
-  };
-
-  const handleLoadMore = () => {
-    setDisplayCount(prev => prev + 15);
-  };
-
-  const handleActivityClick = (activity: any) => {
-    // Close the modal first
-    onClose();
-
-    // Navigate to the Activity page with the specific activity log ID
-    const activityId = activity._id;
-
-    if (activityId) {
-      navigate(`/activity?id=${activityId}`);
-    } else {
-      navigate('/activity');
     }
   };
 
@@ -714,7 +674,7 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
                           </div>
                           <span className="text-sm font-semibold text-gray-900">Finance</span>
                         </div>
-                        <p className="text-xs text-gray-600">Dashboard, Transactions, Support, Activity</p>
+                        <p className="text-xs text-gray-600">Dashboard, Transactions, Support</p>
                       </button>
 
                       <button
@@ -800,7 +760,6 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
                     title="Administrative"
                     icon={Settings}
                     permissions={[
-                      { key: 'activity', label: 'Activity Logs' },
                       { key: 'settings', label: 'Settings' }
                     ]}
                     formData={formData}
@@ -937,91 +896,18 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({ isOpen, onClose, onSucc
               )}
 
               {/* Activity Tab */}
-              {activeTab === 'activity' && (
-                <div className="space-y-6">
-                  {/* Activity Notice */}
-                  <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="ml-3">
-                        <p className="text-sm text-blue-800">
-                          <span className="font-semibold">Activity Log:</span> Showing recent actions performed by this admin.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Activity Timeline */}
-                  {loadingActivities ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      <span className="ml-3 text-gray-600">Loading activities...</span>
-                    </div>
-                  ) : activities.length === 0 ? (
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-                      <ActivityIcon className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-sm text-gray-600">No recent activities found</p>
-                      <p className="text-xs text-gray-500 mt-1">Activity will appear here once this admin performs actions</p>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      {/* Timeline container */}
-                      <div className="space-y-0">
-                        {activities.slice(0, displayCount).map((activity, index) => (
-                          <div key={activity._id || index} className="relative flex gap-4">
-                            {/* Timeline dot and line */}
-                            <div className="flex flex-col items-center pt-2">
-                              <div className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0"></div>
-                              {index < Math.min(displayCount, activities.length) - 1 && (
-                                <div className="w-0.5 flex-1 bg-gray-200 mt-1"></div>
-                              )}
-                            </div>
-
-                            {/* Activity content */}
-                            <button
-                              onClick={() => handleActivityClick(activity)}
-                              className="flex-1 text-left hover:bg-gray-100 rounded-lg transition-colors p-4 mb-4"
-                            >
-                              <div className="flex items-start justify-between mb-2">
-                                <h4 className="text-sm font-semibold text-gray-900">{activity.action || 'Activity'}</h4>
-                                <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{activity.timeAgo || 'Recently'}</span>
-                              </div>
-                              {activity.description && (
-                                <p className="text-sm text-gray-600 mb-1">{activity.description}</p>
-                              )}
-                              {activity.details && (
-                                <p className="text-sm text-gray-600">{activity.details}</p>
-                              )}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Load More Button */}
-                  {displayCount < activities.length && (
-                    <div className="pt-4">
-                      <button
-                        type="button"
-                        onClick={handleLoadMore}
-                        className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                      >
-                        Show More Activities ({activities.length - displayCount} remaining)
-                      </button>
-                    </div>
-                  )}
-
-                  {displayCount >= activities.length && activities.length > 15 && (
-                    <div className="pt-4 text-center text-sm text-gray-500">
-                      Showing all {activities.length} activities
-                    </div>
-                  )}
-                </div>
+              {activeTab === 'activity' && admin?._id && (
+                <AdminActivityPanel
+                  adminId={admin._id}
+                  onOpenAuditLog={() => {
+                    onClose();
+                    navigate(`/activity?admin=${admin._id}&range=all`);
+                  }}
+                  onOpenEntry={(entryId) => {
+                    onClose();
+                    navigate(`/activity?admin=${admin._id}&range=all&entry=${entryId}`);
+                  }}
+                />
               )}
             </div>
 

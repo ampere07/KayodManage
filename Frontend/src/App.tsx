@@ -49,6 +49,20 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Superadmin-only pages (audit log, admin management). The server refuses their
+// API calls for anyone else; this keeps other admins from landing on an empty page.
+const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  if (user?.role !== 'superadmin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
+
+// /settings opens Admin Management for superadmins, Configuration for everyone else.
+const SettingsHome: React.FC = () => {
+  const { user } = useAuth();
+  return <Navigate to={user?.role === 'superadmin' ? '/settings/management' : '/settings/configuration'} replace />;
+};
+
 const DataPrefetcher: React.FC = () => {
   usePrefetchData();
   return null;
@@ -74,11 +88,11 @@ const AppRoutes: React.FC = () => {
         <Route path="/transactions/cashout" element={<ProtectedRoute><Layout title="Cashout Transactions"><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/transactions/refund" element={<ProtectedRoute><Layout title="Refund Transactions"><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/verifications" element={<ProtectedRoute><Layout title="User Verifications"><Verifications /></Layout></ProtectedRoute>} />
-        <Route path="/activity" element={<ProtectedRoute><Layout title="Activity Feed"><Activity /></Layout></ProtectedRoute>} />
+        <Route path="/activity" element={<ProtectedRoute><SuperAdminRoute><Layout title="Audit Log"><Activity /></Layout></SuperAdminRoute></ProtectedRoute>} />
         <Route path="/flagged" element={<ProtectedRoute><Layout title="Flagged"><Flagged /></Layout></ProtectedRoute>} />
         <Route path="/support" element={<ProtectedRoute><Layout title="Support Center"><Support /></Layout></ProtectedRoute>} />
-        <Route path="/settings" element={<Navigate to="/settings/management" replace />} />
-        <Route path="/settings/management" element={<ProtectedRoute><Layout title="Admin Management"><SettingsManagement /></Layout></ProtectedRoute>} />
+        <Route path="/settings" element={<SettingsHome />} />
+        <Route path="/settings/management" element={<ProtectedRoute><SuperAdminRoute><Layout title="Admin Management"><SettingsManagement /></Layout></SuperAdminRoute></ProtectedRoute>} />
         <Route path="/settings/configuration" element={<ProtectedRoute><Layout title="System Configuration"><SettingsConfiguration /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

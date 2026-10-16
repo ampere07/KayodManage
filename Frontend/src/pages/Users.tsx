@@ -1,24 +1,58 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Search,
   Briefcase,
   User as UserIcon,
   CheckCircle,
-  XCircle,
   Users as UsersIcon,
   Shield,
   Clock,
-  Ban
+  Ban,
+  type LucideIcon
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { UserDetailsModal } from '../components/Modals';
 import { settingsService } from '../services/settingsService';
 import { useQuery } from '@tanstack/react-query';
 import { resolveIconForProfession } from '../utils/professionUtils';
-import { useUsers, useUserCounts, useStatusCounts, useFlaggedUserCounts, useDeletedUserCounts, useUserMutations } from '../hooks/useUsers';
+import { useUsers, useUserCountCells, useUserMutations } from '../hooks/useUsers';
 import StatsCard from '../components/Dashboard/StatsCard';
 import type { User } from '../types';
+
+type UserKind = 'client' | 'provider';
+type TypeFilter = 'all' | UserKind;
+type AccountFilter = 'all' | 'suspended' | 'restricted' | 'banned';
+type VerifiedFilter = 'all' | 'verified' | 'unverified';
+type CardColor = 'blue' | 'purple' | 'indigo' | 'orange' | 'red';
+
+interface FilterCard {
+  key: string;
+  title: string;
+  /** Shorter label for the mobile pills. */
+  pillTitle: string;
+  count: number;
+  icon: LucideIcon;
+  color: CardColor;
+  active: boolean;
+  onClick: () => void;
+}
+
+const PILL_ACTIVE: Record<CardColor, string> = {
+  blue: 'bg-blue-500 border-blue-500',
+  purple: 'bg-purple-500 border-purple-500',
+  indigo: 'bg-indigo-500 border-indigo-500',
+  orange: 'bg-orange-500 border-orange-500',
+  red: 'bg-red-500 border-red-500',
+};
+
+// Card groups share the desktop row in proportion to their card count, so every
+// card is the same width. Literal class names so Tailwind generates them.
+const GROUP_FLEX: Record<number, string> = {
+  1: 'lg:flex-[1]',
+  2: 'lg:flex-[2]',
+  3: 'lg:flex-[3]',
+};
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
@@ -28,13 +62,16 @@ const getInitials = (name: string): string => {
 
 const Users: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'unverified' | 'suspended' | 'restricted' | 'banned' | 'deleted'>('all');
+  // Three independent filters that combine: the stat cards set account type and
+  // account status, the tabs set verification. Each route fixes a base scope
+  // first (see `scope` below).
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>('all');
+  const [verifiedFilter, setVerifiedFilter] = useState<VerifiedFilter>('all');
   const [professionFilter, setProfessionFilter] = useState<string>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
-  const [userSubTypeFilter, setUserSubTypeFilter] = useState<'all' | 'client' | 'provider'>('all');
   const [professionsList, setProfessionsList] = useState<string[]>([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -72,53 +109,49 @@ const Users: React.FC = () => {
 
   const userType = getUserType();
 
-  const queryParams = useMemo(() => {
-    const params: any = {
-      page: pagination.page,
-      limit: pagination.limit,
-      ...(searchTerm && { search: searchTerm })
-    };
+  // What each route lists before any card or tab narrows it. Staff accounts
+  // (admin, finance, support) are never part of these lists — counting them is
+  // what made "All Users" larger than Customers + Providers.
+  const scope = useMemo((): { types: UserKind[]; statuses: string[] | null } => {
+    if (userType === 'customers') return { types: ['client'], statuses: null };
+    if (userType === 'providers') return { types: ['provider'], statuses: null };
+    if (userType === 'flagged') return { types: ['client', 'provider'], statuses: ['restricted', 'suspended', 'banned'] };
+    if (userType === 'deleted') return { types: ['client', 'provider'], statuses: ['deleted'] };
+    return { types: ['client', 'provider'], statuses: null };
+  }, [userType]);
 
-    if (userType === 'customers') params.userType = 'client';
-    if (userType === 'providers') params.userType = 'provider';
-    if (userType === 'flagged') {
-      params.accountStatus = 'restricted,suspended,banned';
-      if (userSubTypeFilter !== 'all') {
-        params.userType = userSubTypeFilter;
-      }
-    }
-    if (userType === 'deleted') {
-      params.accountStatus = 'deleted';
-      if (userSubTypeFilter !== 'all') {
-        params.userType = userSubTypeFilter === 'client' ? 'client' : 'provider';
-      }
-    }
+  const activeTypes = useMemo(() => (typeFilter === 'all' ? scope.types : [typeFilter]), [scope, typeFilter]);
+  const activeStatuses = useMemo(() => (accountFilter === 'all' ? scope.statuses : [accountFilter]), [scope, accountFilter]);
+  const professionParam = userType === 'providers' && professionFilter !== 'all' ? professionFilter : undefined;
 
-    if (statusFilter === 'verified') params.isVerified = 'true';
-    if (statusFilter === 'unverified') params.isVerified = 'false';
-    if (statusFilter === 'suspended') params.accountStatus = 'suspended';
-    if (statusFilter === 'restricted') params.accountStatus = 'restricted';
-    if (statusFilter === 'banned') params.accountStatus = 'banned';
-    if (statusFilter === 'deleted') params.accountStatus = 'deleted';
-
-    if (userType === 'providers' && professionFilter !== 'all') {
-      params.profession = professionFilter;
-    }
-
-    return params;
-  }, [pagination.page, pagination.limit, searchTerm, userType, userSubTypeFilter, statusFilter, professionFilter]);
+  const queryParams = useMemo(() => ({
+    page: pagination.page,
+    limit: pagination.limit,
+    userType: activeTypes.join(','),
+    ...(searchTerm && { search: searchTerm }),
+    ...(activeStatuses && { accountStatus: activeStatuses.join(',') }),
+    ...(verifiedFilter !== 'all' && { isVerified: String(verifiedFilter === 'verified') }),
+    ...(professionParam && { profession: professionParam }),
+  }), [pagination.page, pagination.limit, activeTypes, activeStatuses, searchTerm, verifiedFilter, professionParam]);
 
   const { data: usersData, isLoading, refetch } = useUsers(queryParams);
-  const { data: globalUserCounts = { total: 0, customers: 0, providers: 0 } } = useUserCounts();
-  const { data: statusCounts = { all: 0, verified: 0, unverified: 0 } } = useStatusCounts(
-    userType === 'customers' ? { userType: 'client' } :
-      userType === 'providers' ? { userType: 'provider' } :
-        userType === 'flagged' ? { accountStatus: 'restricted,suspended,banned' } :
-          userType === 'deleted' ? { accountStatus: 'deleted' } :
-            {}
-  );
-  const { data: flaggedUserCounts = { total: 0, suspended: 0, restricted: 0, banned: 0, providers: 0, customers: 0 } } = useFlaggedUserCounts();
-  const { data: deletedUserCounts = { total: 0, customers: 0, providers: 0 } } = useDeletedUserCounts();
+  const { data: countCells = [], isLoading: countsLoading } = useUserCountCells({
+    ...(searchTerm && { search: searchTerm }),
+    ...(professionParam && { profession: professionParam }),
+  });
+
+  // Rows matching a type/status/verification combination. Every card and tab
+  // shows the rows clicking it would leave: its own value combined with whatever
+  // the other filters are set to — so a number never disagrees with the list.
+  const countWhere = (types: UserKind[], statuses: string[] | null, verified: VerifiedFilter) =>
+    countCells.reduce((sum, cell) =>
+      types.includes(cell.userType) &&
+      (!statuses || statuses.includes(cell.accountStatus)) &&
+      (verified === 'all' || cell.isVerified === (verified === 'verified'))
+        ? sum + cell.count
+        : sum, 0);
+  // Until the first counts arrive, a dash rather than a misleading 0.
+  const shown = (n: number) => (countsLoading ? '—' : n.toLocaleString());
   const { data: jobCategoriesData } = useQuery({
     queryKey: ['job-categories'],
     queryFn: () => settingsService.getJobCategories()
@@ -211,8 +244,9 @@ const Users: React.FC = () => {
   }, [usersData]);
 
   useEffect(() => {
-    setStatusFilter('all');
-    setUserSubTypeFilter('all');
+    setTypeFilter('all');
+    setAccountFilter('all');
+    setVerifiedFilter('all');
     setPagination(prev => ({ ...prev, page: 1 }));
   }, [location.pathname]);
 
@@ -250,34 +284,67 @@ const Users: React.FC = () => {
     setTimeout(() => setSelectedUser(null), 300);
   };
 
-  const handleCounterClick = (type: string) => {
-    if (type === 'reset') {
-      navigate('/users');
-      setStatusFilter('all');
-      setUserSubTypeFilter('all');
-      setPagination(prev => ({ ...prev, page: 1 }));
-    } else if (type === 'customers') {
-      navigate('/users/customers');
-    } else if (type === 'providers') {
-      navigate('/users/providers');
-    } else if (type === 'suspended') {
-      setStatusFilter('suspended');
-    } else if (type === 'restricted') {
-      setStatusFilter('restricted');
-    } else if (type === 'banned') {
-      setStatusFilter('banned');
-    } else if (type === 'deleted') {
-      setStatusFilter('deleted');
-    } else if (type === 'verified') {
-      setStatusFilter('verified');
-    } else if (type === 'unverified') {
-      setStatusFilter('unverified');
-    }
+  const resetPage = () => setPagination(prev => ({ ...prev, page: 1 }));
+  const fixedType = userType === 'customers' || userType === 'providers';
+  const allTitle = { all: 'All Users', customers: 'All Customers', providers: 'All Providers', flagged: 'All Flagged', deleted: 'All Deleted' }[userType];
 
-    // Reset profession when clicking stats cards unless it's the providers card
-    if (type !== 'providers') {
-      setProfessionFilter('all');
-    }
+  // Account type. Every card filters this list in place. On the customers and
+  // providers pages the route fixes the type, so the group is a single total
+  // card, which clears the status filter.
+  const typeCards: FilterCard[] = fixedType
+    ? [{
+        key: 'scope',
+        title: allTitle,
+        pillTitle: 'All',
+        icon: userType === 'customers' ? UserIcon : Briefcase,
+        color: userType === 'customers' ? 'purple' : 'indigo',
+        count: countWhere(scope.types, scope.statuses, verifiedFilter),
+        active: accountFilter === 'all',
+        onClick: () => { setAccountFilter('all'); resetPage(); },
+      }]
+    : ([
+        { type: 'all', title: allTitle, pillTitle: userType === 'all' ? 'All Users' : 'All', icon: UsersIcon, color: 'blue' },
+        { type: 'client', title: 'Customers', pillTitle: 'Customers', icon: UserIcon, color: 'purple' },
+        { type: 'provider', title: 'Providers', pillTitle: 'Providers', icon: Briefcase, color: 'indigo' },
+      ] as const).map(({ type, ...card }) => ({
+        ...card,
+        key: type,
+        count: countWhere(type === 'all' ? scope.types : [type], activeStatuses, verifiedFilter),
+        active: typeFilter === type,
+        onClick: () => { setTypeFilter(type); resetPage(); },
+      }));
+
+  // Account status. Toggles: clicking the selected card again clears it.
+  const statusCards: FilterCard[] = userType === 'deleted' ? [] : ([
+    { status: 'suspended', title: 'Suspended', icon: Clock, color: 'orange' },
+    { status: 'restricted', title: 'Restricted', icon: Shield, color: 'indigo' },
+    { status: 'banned', title: 'Banned', icon: Ban, color: 'red' },
+  ] as const).map(({ status, ...card }) => ({
+    ...card,
+    key: status,
+    pillTitle: card.title,
+    count: countWhere(activeTypes, [status], verifiedFilter),
+    active: accountFilter === status,
+    onClick: () => { setAccountFilter(prev => (prev === status ? 'all' : status)); resetPage(); },
+  }));
+
+  const cardGroups = [
+    { label: fixedType ? 'Total' : 'Account type', cards: typeCards },
+    ...(statusCards.length ? [{ label: 'Account status', cards: statusCards }] : []),
+  ];
+
+  const verificationTabs = (['all', 'verified', 'unverified'] as const).map(key => ({
+    key,
+    label: { all: 'All', verified: 'Verified', unverified: 'Unverified' }[key],
+    count: countWhere(activeTypes, activeStatuses, key),
+  }));
+
+  const anyFilterActive = typeFilter !== 'all' || accountFilter !== 'all' || verifiedFilter !== 'all';
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setAccountFilter('all');
+    setVerifiedFilter('all');
+    resetPage();
   };
 
   const handleVerify = async (userId: string, isVerified: boolean) => {
@@ -321,344 +388,56 @@ const Users: React.FC = () => {
 
           </div>
 
-          {/* Mobile Header — pill filter grid */}
+          {/* Mobile — the same filter cards, as pills */}
           <div className="md:hidden">
             <div className="grid grid-cols-3 gap-2">
-              {/* All Users — only on /users */}
-              {userType !== 'customers' && userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
-                const active = location.pathname === '/users' && statusFilter === 'all';
-                return (
-                  <button key="all-users" onClick={() => handleCounterClick('reset')}
-                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                    <span className="text-[11px] font-black">{globalUserCounts.total.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All Users</span>
-                  </button>
-                );
-              })()}
-              {/* Customers */}
-              {userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
-                const active = location.pathname === '/users/customers';
-                return (
-                  <button key="customers" onClick={() => handleCounterClick('customers')}
-                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                    <span className="text-[11px] font-black">{globalUserCounts.customers.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
-                  </button>
-                );
-              })()}
-              {/* Providers */}
-              {userType !== 'customers' && userType !== 'flagged' && userType !== 'deleted' && (() => {
-                const active = location.pathname === '/users/providers';
-                return (
-                  <button key="providers" onClick={() => handleCounterClick('providers')}
-                    className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                    <span className="text-[11px] font-black">{globalUserCounts.providers.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
-                  </button>
-                );
-              })()}
-              {/* Flagged-page counters */}
-              {userType === 'flagged' && (
-                <>
-                  {(() => { const active = userSubTypeFilter === 'all' && statusFilter === 'all'; return (
-                    <button key="f-all" onClick={() => { setUserSubTypeFilter('all'); setStatusFilter('all'); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{flaggedUserCounts.total.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = userSubTypeFilter === 'client'; return (
-                    <button key="f-client" onClick={() => { setUserSubTypeFilter('client'); setStatusFilter('all'); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{flaggedUserCounts.customers.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = userSubTypeFilter === 'provider'; return (
-                    <button key="f-provider" onClick={() => { setUserSubTypeFilter('provider'); setStatusFilter('all'); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{flaggedUserCounts.providers.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
-                    </button>
-                  ); })()}
-                </>
-              )}
-              {/* Deleted-page counters */}
-              {userType === 'deleted' && (
-                <>
-                  {(() => { const active = userSubTypeFilter === 'all'; return (
-                    <button key="d-all" onClick={() => { setUserSubTypeFilter('all'); setPagination(prev => ({ ...prev, page: 1 })); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{deletedUserCounts.total.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>All</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = userSubTypeFilter === 'client'; return (
-                    <button key="d-client" onClick={() => { setUserSubTypeFilter('client'); setPagination(prev => ({ ...prev, page: 1 })); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-purple-500 border-purple-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{deletedUserCounts.customers.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Customers</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = userSubTypeFilter === 'provider'; return (
-                    <button key="d-provider" onClick={() => { setUserSubTypeFilter('provider'); setPagination(prev => ({ ...prev, page: 1 })); }}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{deletedUserCounts.providers.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Providers</span>
-                    </button>
-                  ); })()}
-                </>
-              )}
-              {/* Verified / Unverified — customers or providers sub-pages */}
-              {(userType === 'customers' || userType === 'providers') && (
-                <>
-                  {(() => { const active = statusFilter === 'verified'; return (
-                    <button key="verified" onClick={() => handleCounterClick('verified')}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{statusCounts.verified.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Verified</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = statusFilter === 'unverified'; return (
-                    <button key="unverified" onClick={() => handleCounterClick('unverified')}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{statusCounts.unverified.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Unverified</span>
-                    </button>
-                  ); })()}
-                </>
-              )}
-              {/* Suspended / Restricted / Banned — all pages except deleted */}
-              {userType !== 'deleted' && (
-                <>
-                  {(() => { const active = statusFilter === 'suspended'; return (
-                    <button key="suspended" onClick={() => handleCounterClick('suspended')}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{flaggedUserCounts.suspended.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Suspended</span>
-                    </button>
-                  ); })()}
-                  {(() => { const active = statusFilter === 'restricted'; return (
-                    <button key="restricted" onClick={() => handleCounterClick('restricted')}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                      <span className="text-[11px] font-black">{flaggedUserCounts.restricted.toLocaleString()}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Restricted</span>
-                    </button>
-                  ); })()}
-                  {(userType === 'customers' || userType === 'providers' || userType === 'all' || userType === 'flagged') && (() => {
-                    const active = statusFilter === 'banned'; return (
-                      <button key="banned" onClick={() => handleCounterClick('banned')}
-                        className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${active ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>
-                        <span className="text-[11px] font-black">{flaggedUserCounts.banned.toLocaleString()}</span>
-                        <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>Banned</span>
-                      </button>
-                    );
-                  })()}
-                </>
-              )}
+              {cardGroups.flatMap(group => group.cards).map(card => (
+                <button
+                  key={card.key}
+                  onClick={card.onClick}
+                  className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${card.active ? `${PILL_ACTIVE[card.color]} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
+                >
+                  <span className="text-[11px] font-black">{shown(card.count)}</span>
+                  <span className={`text-[9px] font-black uppercase tracking-wide ${card.active ? 'text-white/80' : 'text-gray-400'}`}>{card.pillTitle}</span>
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Stats Cards Grid */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-6 gap-4">
-            {userType !== 'customers' && userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (
-              <div className="cursor-pointer" onClick={() => handleCounterClick('reset')}>
-                <StatsCard
-                  title="All Users"
-                  value={globalUserCounts.total.toLocaleString()}
-                  icon={UsersIcon}
-                  color="blue"
-                  variant="tinted"
-                  isActive={location.pathname === '/users' && statusFilter === 'all'}
-                  smallIcon={true}
-                />
+          {/* Stat cards: account type and account status are separate filters that
+              combine, and each number is the rows clicking that card would show. */}
+          <div className="hidden md:flex md:flex-col lg:flex-row gap-4 lg:gap-6">
+            {cardGroups.map((group, index) => (
+              <div key={group.label} className={`min-w-0 ${GROUP_FLEX[group.cards.length] || 'lg:flex-1'}`}>
+                <div className="flex items-center justify-between h-4 mb-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{group.label}</span>
+                  {index === cardGroups.length - 1 && anyFilterActive && (
+                    <button
+                      onClick={clearFilters}
+                      className="text-[10px] font-black text-blue-600 hover:text-blue-700 uppercase tracking-widest"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+                <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}>
+                  {group.cards.map(card => (
+                    <div key={card.key} className="cursor-pointer" onClick={card.onClick}>
+                      <StatsCard
+                        title={card.title}
+                        value={shown(card.count)}
+                        icon={card.icon}
+                        color={card.color}
+                        variant="tinted"
+                        isActive={card.active}
+                        smallIcon={true}
+                        showActiveIcon={false}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            )}
-            
-            {userType !== 'providers' && userType !== 'flagged' && userType !== 'deleted' && (
-              <div className="cursor-pointer" onClick={() => handleCounterClick('customers')}>
-                <StatsCard
-                  title="Customers"
-                  value={globalUserCounts.customers.toLocaleString()}
-                  icon={UserIcon}
-                  color="purple"
-                  variant="tinted"
-                  isActive={location.pathname === '/users/customers'}
-                  smallIcon={true}
-                />
-              </div>
-            )}
-
-            {userType !== 'customers' && userType !== 'flagged' && userType !== 'deleted' && (
-              <div className="cursor-pointer" onClick={() => handleCounterClick('providers')}>
-                <StatsCard
-                  title="Providers"
-                  value={globalUserCounts.providers.toLocaleString()}
-                  icon={Briefcase}
-                  color="indigo"
-                  variant="tinted"
-                  isActive={location.pathname === '/users/providers'}
-                  smallIcon={true}
-                />
-              </div>
-            )}
-
-            {userType === 'flagged' ? (
-              <>
-                <div className="cursor-pointer" onClick={() => {
-                  setUserSubTypeFilter('all');
-                  setStatusFilter('all');
-                }}>
-                  <StatsCard
-                    title="All Suspended Users"
-                    value={flaggedUserCounts.total.toLocaleString()}
-                    icon={UsersIcon}
-                    color="blue"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'all' && statusFilter === 'all'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => {
-                  setUserSubTypeFilter('client');
-                  setStatusFilter('all');
-                }}>
-                  <StatsCard
-                    title="Customers"
-                    value={flaggedUserCounts.customers.toLocaleString()}
-                    icon={UserIcon}
-                    color="purple"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'client' && statusFilter === 'all'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => {
-                  setUserSubTypeFilter('provider');
-                  setStatusFilter('all');
-                }}>
-                  <StatsCard
-                    title="Providers"
-                    value={flaggedUserCounts.providers.toLocaleString()}
-                    icon={Briefcase}
-                    color="indigo"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'provider' && statusFilter === 'all'}
-                    smallIcon={true}
-                  />
-                </div>
-              </>
-            ) : userType === 'deleted' ? (
-              <>
-                <div className="cursor-pointer" onClick={() => {
-                   setUserSubTypeFilter('all');
-                   setPagination(prev => ({ ...prev, page: 1 }));
-                }}>
-                  <StatsCard
-                    title="All Deleted Users"
-                    value={deletedUserCounts.total.toLocaleString()}
-                    icon={UsersIcon}
-                    color="blue"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'all'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => {
-                   setUserSubTypeFilter('client');
-                   setPagination(prev => ({ ...prev, page: 1 }));
-                }}>
-                  <StatsCard
-                    title="Customers"
-                    value={deletedUserCounts.customers.toLocaleString()}
-                    icon={UserIcon}
-                    color="purple"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'client'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => {
-                   setUserSubTypeFilter('provider');
-                   setPagination(prev => ({ ...prev, page: 1 }));
-                }}>
-                  <StatsCard
-                    title="Providers"
-                    value={deletedUserCounts.providers.toLocaleString()}
-                    icon={Briefcase}
-                    color="indigo"
-                    variant="tinted"
-                    isActive={userSubTypeFilter === 'provider'}
-                    smallIcon={true}
-                  />
-                </div>
-              </>
-            ) : (userType === 'customers' || userType === 'providers') && (
-              <>
-                <div className="cursor-pointer" onClick={() => handleCounterClick('verified')}>
-                  <StatsCard
-                    title="Verified"
-                    value={statusCounts.verified.toLocaleString()}
-                    icon={CheckCircle}
-                    color="green"
-                    variant="tinted"
-                    isActive={statusFilter === 'verified'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => handleCounterClick('unverified')}>
-                  <StatsCard
-                    title="Unverified"
-                    value={statusCounts.unverified.toLocaleString()}
-                    icon={XCircle}
-                    color="purple"
-                    variant="tinted"
-                    isActive={statusFilter === 'unverified'}
-                    smallIcon={true}
-                  />
-                </div>
-              </>
-            )}
-
-            {userType !== 'deleted' && (
-              <>
-                <div className="cursor-pointer" onClick={() => handleCounterClick('suspended')}>
-                  <StatsCard
-                    title="Suspended"
-                    value={flaggedUserCounts.suspended.toLocaleString()}
-                    icon={Clock}
-                    color="orange"
-                    variant="tinted"
-                    isActive={statusFilter === 'suspended'}
-                    smallIcon={true}
-                  />
-                </div>
-                <div className="cursor-pointer" onClick={() => handleCounterClick('restricted')}>
-                   <StatsCard
-                    title="Restricted"
-                    value={flaggedUserCounts.restricted.toLocaleString()}
-                    icon={Shield}
-                    color="indigo"
-                    variant="tinted"
-                    isActive={statusFilter === 'restricted'}
-                    smallIcon={true}
-                  />
-                </div>
-                {(userType === 'customers' || userType === 'providers' || userType === 'all' || userType === 'flagged') && (
-                  <div className="cursor-pointer" onClick={() => handleCounterClick('banned')}>
-                    <StatsCard
-                      title="Banned"
-                      value={flaggedUserCounts.banned.toLocaleString()}
-                      icon={Ban}
-                      color="red"
-                      variant="tinted"
-                      isActive={statusFilter === 'banned'}
-                      smallIcon={true}
-                    />
-                  </div>
-                )}
-              </>
-            )}
+            ))}
           </div>
         </div>
 
@@ -690,97 +469,72 @@ const Users: React.FC = () => {
             </select>
           </div>
 
-          {/* Row 2 on Mobile: Filter dropdowns in a 2-col grid */}
-          <div className="grid grid-cols-2 gap-2 md:hidden">
-            {userType === 'providers' ? (
+          {/* Row 2 below lg: verification (and profession on the providers page) */}
+          <div className="grid grid-cols-2 gap-2 lg:hidden">
+            <select
+              value={verifiedFilter}
+              onChange={(e) => {
+                setVerifiedFilter(e.target.value as VerifiedFilter);
+                resetPage();
+              }}
+              className={`bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 ${userType === 'providers' ? '' : 'col-span-2'}`}
+            >
+              {verificationTabs.map(tab => (
+                <option key={tab.key} value={tab.key}>{tab.label} ({shown(tab.count)})</option>
+              ))}
+            </select>
+            {userType === 'providers' && (
               <select
                 value={professionFilter}
                 onChange={(e) => {
                   setProfessionFilter(e.target.value);
-                  setPagination(prev => ({ ...prev, page: 1 }));
+                  resetPage();
                 }}
-                className="col-span-2 bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 truncate"
+                className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 truncate"
               >
                 <option value="all">All Professions</option>
                 {professionsList.map(prof => (
                   <option key={prof} value={prof} className="capitalize">{prof}</option>
                 ))}
               </select>
-            ) : (
-              <>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value as any);
-                    setPagination(prev => ({ ...prev, page: 1 }));
-                  }}
-                  className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5"
-                >
-                  <option value="all">All ({statusCounts.all})</option>
-                  <option value="verified">Verified ({statusCounts.verified})</option>
-                  <option value="unverified">Unverified ({statusCounts.unverified})</option>
-                </select>
-                {(userType === 'flagged' || userType === 'all') && (
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value as any);
-                      setPagination(prev => ({ ...prev, page: 1 }));
-                    }}
-                    className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="restricted">Restricted</option>
-                    <option value="banned">Banned</option>
-                  </select>
-                )}
-              </>
             )}
           </div>
 
           {/* Desktop filter row */}
           <div className="hidden lg:flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
-            <div className={`flex-1 flex items-center gap-1 lg:flex-initial lg:justify-end ${userType === 'providers' ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar pb-0.5'}`}>
-              {userType === 'providers' ? (
-                <div className="flex-1 lg:flex-initial flex items-center gap-1.5">
-                  <select
-                    value={professionFilter}
-                    onChange={(e) => {
-                      setProfessionFilter(e.target.value);
-                      setPagination(prev => ({ ...prev, page: 1 }));
-                    }}
-                    className="flex-1 lg:flex-initial bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] lg:max-w-[160px] truncate"
-                  >
-                    <option value="all">Professions</option>
-                    {professionsList.map(prof => (
-                      <option key={prof} value={prof} className="capitalize">{prof}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 min-w-max">
-                  {[
-                    { key: 'all', label: 'All', count: statusCounts.all },
-                    { key: 'verified', label: 'Verified', count: statusCounts.verified },
-                    { key: 'unverified', label: 'Unverified', count: statusCounts.unverified }
-                  ].map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => {
-                        setStatusFilter(tab.key as any);
-                        setPagination(prev => ({ ...prev, page: 1 }));
-                      }}
-                      className={`px-2.5 py-2 text-[10px] font-black rounded-xl transition-all border uppercase tracking-widest ${statusFilter === tab.key
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                        : 'bg-white text-gray-600 border-gray-200'
-                        }`}
-                    >
-                      {tab.label} ({tab.count})
-                    </button>
+            <div className="flex-1 flex items-center gap-1.5 lg:flex-initial lg:justify-end overflow-x-auto no-scrollbar pb-0.5">
+              {userType === 'providers' && (
+                <select
+                  value={professionFilter}
+                  onChange={(e) => {
+                    setProfessionFilter(e.target.value);
+                    resetPage();
+                  }}
+                  className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] lg:max-w-[160px] truncate"
+                >
+                  <option value="all">Professions</option>
+                  {professionsList.map(prof => (
+                    <option key={prof} value={prof} className="capitalize">{prof}</option>
                   ))}
-                </div>
+                </select>
               )}
+              <div className="flex items-center gap-1 min-w-max">
+                {verificationTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => {
+                      setVerifiedFilter(tab.key);
+                      resetPage();
+                    }}
+                    className={`px-2.5 py-2 text-[10px] font-black rounded-xl transition-all border uppercase tracking-widest ${verifiedFilter === tab.key
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-gray-600 border-gray-200'
+                      }`}
+                  >
+                    {tab.label} ({shown(tab.count)})
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Pagination Limit for Desktop */}
@@ -822,13 +576,13 @@ const Users: React.FC = () => {
                 <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr className="border-b border-gray-200">
-                      <th className="w-[28%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[24%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         User Profile
                       </th>
-                      <th className="w-[12%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Account Type
                       </th>
-                      <th className="w-[25%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[19%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Profession
                       </th>
                       <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
@@ -837,7 +591,10 @@ const Users: React.FC = () => {
                       <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Wallet Balance
                       </th>
-                      <th className="w-[15%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Top-up / Cash-out
+                      </th>
+                      <th className="w-[12%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Joined Date
                       </th>
                     </tr>
@@ -850,7 +607,7 @@ const Users: React.FC = () => {
                         onClick={() => openDetailsModal(user)}
                         className="group h-20 transition-all duration-150 cursor-pointer"
                       >
-                        <td className="w-[28%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                        <td className="w-[24%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex items-center gap-3">
                             <div className="relative flex-shrink-0">
                               {user.profileImage ? (
@@ -878,7 +635,7 @@ const Users: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="w-[12%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                        <td className="w-[10%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex justify-center">
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${user.userType === 'provider'
                               ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
@@ -889,7 +646,7 @@ const Users: React.FC = () => {
                             </span>
                           </div>
                         </td>
-                        <td className="w-[25%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                        <td className="w-[19%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex flex-wrap justify-center gap-x-8 gap-y-4 mx-auto py-0.5">
                             {user.userType === 'provider' && (
                               (() => {
@@ -949,7 +706,25 @@ const Users: React.FC = () => {
                             {formatCurrency(user.wallet?.balance || 0)}
                           </p>
                         </td>
-                        <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
+                        <td className="w-[15%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
+                          {/* Lifetime money in and out of this account. Settled
+                              amounts only; anything still in flight is called
+                              out underneath rather than folded into the total. */}
+                          <div className="flex flex-col items-center gap-0.5">
+                            <p className="text-xs font-black text-emerald-600" data-testid={`user-topup-${user._id}`}>
+                              ↓ {formatCurrency(user.financials?.topUpTotal || 0)}
+                            </p>
+                            <p className="text-xs font-black text-rose-600" data-testid={`user-cashout-${user._id}`}>
+                              ↑ {formatCurrency(user.financials?.cashOutTotal || 0)}
+                            </p>
+                            {((user.financials?.topUpPending || 0) + (user.financials?.cashOutPending || 0)) > 0 && (
+                              <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">
+                                {formatCurrency((user.financials?.topUpPending || 0) + (user.financials?.cashOutPending || 0))} pending
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="w-[12%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
                           <div className="flex flex-col">
                             <p className="text-xs font-bold text-gray-900">
                               {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
@@ -1014,6 +789,10 @@ const Users: React.FC = () => {
                       {/* Footer strip */}
                       <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
                         <p className="text-[10px] font-bold text-gray-500 truncate flex-1 min-w-0">{user.email || user.phone}</p>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="text-[10px] font-black text-emerald-600">↓{formatCurrency(user.financials?.topUpTotal || 0)}</span>
+                          <span className="text-[10px] font-black text-rose-600">↑{formatCurrency(user.financials?.cashOutTotal || 0)}</span>
+                        </div>
                         <p className="text-sm font-black text-gray-900 flex-shrink-0">{formatCurrency(user.wallet?.balance || 0)}</p>
                         <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
                           <Clock className="h-2.5 w-2.5" />

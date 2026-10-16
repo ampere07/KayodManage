@@ -37,8 +37,10 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const location = useLocation();
   const { logout, user } = useAuth();
 
+  const isSuperAdmin = user?.role === 'superadmin';
+
   const hasPermission = (permission: string) => {
-    if (user?.role === 'superadmin') return true;
+    if (isSuperAdmin) return true;
     if (!user?.permissions) return true;
     return user.permissions[permission as keyof typeof user.permissions] || false;
   };
@@ -67,15 +69,18 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     { name: 'Refund', href: '/transactions/refund' }
   ];
 
+  // Admin management and the audit log are superadmin-only (enforced by the
+  // server too), so they're left out of the nav for everyone else rather than
+  // shown disabled.
   const settingsItems = [
-    { name: 'Management', href: '/settings/management' },
+    ...(isSuperAdmin ? [{ name: 'Management', href: '/settings/management' }] : []),
     { name: 'Configuration', href: '/settings/configuration' }
   ];
 
   const bottomNavigation = [
     { name: 'Verifications', href: '/verifications', icon: Shield, permission: 'verifications' },
     { name: 'Support', href: '/support', icon: MessageSquare, permission: 'support' },
-    { name: 'Activity', href: '/activity', icon: Activity, permission: 'activity' },
+    ...(isSuperAdmin ? [{ name: 'Audit Log', href: '/activity', icon: Activity, permission: 'activity' }] : []),
     { name: 'Flagged', href: '/flagged', icon: AlertTriangle, permission: 'flagged' }
   ];
 
@@ -668,7 +673,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                       case 'Cashout Transactions':
                       case 'Refund Transactions': return 'Monitor financial records and payments';
                       case 'User Verifications': return 'Review identity verification requests';
-                      case 'Activity Feed': return 'System-wide audit logs and user actions';
+                      case 'Audit Log': return 'What every admin did, to whom, and when';
                       case 'Flagged': return 'Review flagged content and users';
                       case 'Support Center': return 'Manage support tickets and inquiries';
                       case 'Admin Management': return 'Manage admin accounts and permissions';

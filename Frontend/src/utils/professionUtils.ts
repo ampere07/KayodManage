@@ -117,3 +117,34 @@ export const resolveIconForProfession = (
 
   return getProfessionIconByName(iconStr, categoryIconStr);
 };
+
+/**
+ * Letters and digits only, lower-cased: "autoMechanic", "Auto Mechanic" and
+ * "auto_mechanic" all become "automechanic". Users store professions as keys
+ * like "autoMechanic"; this is how a key is matched to its configured name.
+ */
+export const professionKey = (value: string): string =>
+  String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * The display name an admin configured for a stored profession value, e.g.
+ * "autoMechanic" -> "Auto Mechanic" as set in Settings > Job Category. Falls back
+ * to a readable form of the raw value when no configured profession (or
+ * category) matches — renamed or removed ones.
+ */
+export const getProfessionDisplayName = (raw: string, categories: JobCategory[] = []): string => {
+  const key = professionKey(raw);
+  for (const category of categories) {
+    const match = category.professions?.find((profession) => professionKey(profession.name) === key);
+    if (match) return match.name;
+  }
+  const categoryMatch = categories.find((category) => professionKey(category.name) === key);
+  if (categoryMatch) return categoryMatch.name;
+
+  return String(raw || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};

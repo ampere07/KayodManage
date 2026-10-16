@@ -1,876 +1,896 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Search,
-  Shield,
-  UserCheck,
-  UserX,
-  Ban,
-  Clock,
-  CheckCircle,
-  XCircle,
-  MessageSquare,
-  Calendar,
   Activity as ActivityIcon,
+  Calendar,
+  ChevronRight,
+  Download,
+  LogIn,
   MousePointerClick,
-  Briefcase,
-  Filter as FilterIcon
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  X,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
-import { usersService, transactionsService } from '../services';
+import { auditService, usersService, transactionsService } from '../services';
 import { UserDetailsModal, TransactionDetailsModal } from '../components/Modals';
-import { getInitials } from '../utils';
-import { useActivityLogs } from '../hooks';
+import { AUDIT_QUERY_KEY, useAuditCatalog, useAuditLogs, useAuditTeam } from '../hooks/useAudit';
 import { useSocket } from '../context/SocketContext';
 import StatsCard from '../components/Dashboard/StatsCard';
-import type { User, Transaction } from '../types';
+import AuditAdminPicker from '../components/Audit/AuditAdminPicker';
+import AuditAdminsTable, {
+  ADMIN_ACTIVITY_FILTERS,
+  type AdminActivityFilter,
+  type AdminSortKey,
+} from '../components/Audit/AuditAdminsTable';
+import AuditActionBadge from '../components/Audit/AuditActionBadge';
+import AuditEntryPanel from '../components/Audit/AuditEntryPanel';
+import {
+  CONFIG_TARGET_TYPES,
+  OPENABLE_TARGET_TYPES,
+  exactTime,
+  initials,
+  lookupAction,
+  roleLabel,
+  shortTime,
+  timeAgo,
+} from '../components/Audit/auditStyle';
+import type { AuditFilters, AuditLogEntry, Transaction, User } from '../types';
 
-interface AdminInfo {
-  _id: string;
-  name: string;
-  email: string;
-  userType?: string;
-}
+const DAY = 24 * 60 * 60 * 1000;
+const RANGES: { key: string; label: string; ms?: number }[] = [
+  { key: '24h', label: 'Last 24 hours', ms: DAY },
+  { key: '7d', label: 'Last 7 days', ms: 7 * DAY },
+  { key: '30d', label: 'Last 30 days', ms: 30 * DAY },
+  { key: '90d', label: 'Last 90 days', ms: 90 * DAY },
+  { key: 'all', label: 'All time' },
+  { key: 'custom', label: 'Custom range' },
+];
+const DEFAULT_RANGE = '30d';
+const PAGE_SIZES = [10, 20, 50];
+const DEFAULT_PAGE_SIZE = 20;
 
-interface TargetInfo {
-  _id: string;
-  name?: string;
-  email?: string;
-  title?: string;
-  subject?: string;
-  description?: string;
-  type?: string;
-}
+// Shared control styles — the same as the filter bars on Jobs and Verifications.
+const SELECT =
+  'w-full md:w-auto bg-white px-2 md:px-3 h-8 md:h-auto md:py-2 border border-gray-200 rounded-lg md:rounded-xl shadow-sm text-[11px] md:text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer truncate';
+const SEARCH =
+  'w-full pl-8 md:pl-10 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm';
+const TH = 'px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200';
+const TD = 'px-6 py-4 border-b border-gray-300';
 
-interface ActivityLog {
-  _id: string;
-  adminId: AdminInfo;
-  actionType: 'verification_approved' | 'verification_rejected' | 'user_restricted' | 'user_suspended' | 'user_banned' | 'user_unrestricted' | 'transaction_completed' | 'transaction_failed' | 'support_closed' | 'support_reopened' | 'admin_login' | 'job_hidden' | 'job_unhidden' | 'job_deleted' | 'job_restored';
-  description: string;
-  targetType?: 'user' | 'transaction' | 'support' | 'verification' | 'job';
-  targetId?: TargetInfo;
-  metadata?: any;
-  ipAddress?: string;
-  createdAt: Date;
-}
+const targetIdOf = (log: AuditLogEntry) =>
+  log.targetId && typeof log.targetId === 'object' ? log.targetId._id : log.targetId || null;
 
-const ACTION_ICONS: Record<string, React.ReactNode> = {
-  verification_approved: <UserCheck className="h-4 w-4" />,
-  verification_rejected: <UserX className="h-4 w-4" />,
-  user_restricted: <Shield className="h-4 w-4" />,
-  user_suspended: <Clock className="h-4 w-4" />,
-  user_banned: <Ban className="h-4 w-4" />,
-  user_unrestricted: <UserCheck className="h-4 w-4" />,
-  transaction_completed: <CheckCircle className="h-4 w-4" />,
-  transaction_failed: <XCircle className="h-4 w-4" />,
-  support_closed: <MessageSquare className="h-4 w-4" />,
-  support_reopened: <MessageSquare className="h-4 w-4" />,
-  admin_login: <Shield className="h-4 w-4" />,
-  job_hidden: <XCircle className="h-4 w-4" />,
-  job_unhidden: <CheckCircle className="h-4 w-4" />,
-  job_deleted: <XCircle className="h-4 w-4" />,
-  job_restored: <CheckCircle className="h-4 w-4" />
+const targetLabel = (log: AuditLogEntry) => {
+  const target = log.targetId && typeof log.targetId === 'object' ? log.targetId : null;
+  return (
+    target?.name ||
+    target?.title ||
+    target?.subject ||
+    log.metadata?.targetName ||
+    (log.targetType === 'transaction' ? 'Transaction' : null)
+  );
 };
 
-const ACTION_COLORS: Record<string, string> = {
-  verification_approved: 'bg-green-100 text-green-700',
-  verification_rejected: 'bg-red-100 text-red-700',
-  user_restricted: 'bg-orange-100 text-orange-700',
-  user_suspended: 'bg-yellow-100 text-yellow-700',
-  user_banned: 'bg-red-100 text-red-700',
-  user_unrestricted: 'bg-green-100 text-green-700',
-  transaction_completed: 'bg-green-100 text-green-700',
-  transaction_failed: 'bg-red-100 text-red-700',
-  support_closed: 'bg-gray-100 text-gray-700',
-  support_reopened: 'bg-blue-100 text-blue-700',
-  admin_login: 'bg-purple-100 text-purple-700',
-  job_hidden: 'bg-orange-100 text-orange-700',
-  job_unhidden: 'bg-green-100 text-green-700',
-  job_deleted: 'bg-red-100 text-red-700',
-  job_restored: 'bg-green-100 text-green-700'
+const TargetLink: React.FC<{ log: AuditLogEntry; onOpen: (log: AuditLogEntry) => void }> = ({ log, onOpen }) => {
+  const label = targetLabel(log);
+  // A sign-in targets the admin themselves; the Admin column already says who.
+  if (!label || (log.adminId && targetIdOf(log) === log.adminId._id)) return null;
+  const clickable = Boolean(log.targetType && OPENABLE_TARGET_TYPES.has(log.targetType));
+  return clickable ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(log);
+      }}
+      className="mt-1 inline-flex items-center gap-1.5 max-w-full text-xs font-medium text-blue-600 hover:text-blue-800"
+    >
+      <span className="truncate">{label}</span>
+      <MousePointerClick className="h-3 w-3 flex-shrink-0" />
+    </button>
+  ) : (
+    <p className="mt-1 text-xs font-medium text-gray-500 truncate">{label}</p>
+  );
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  verification_approved: 'Verification Approved',
-  verification_rejected: 'Verification Rejected',
-  user_restricted: 'User Restricted',
-  user_suspended: 'User Suspended',
-  user_banned: 'User Banned',
-  user_unrestricted: 'User Unrestricted',
-  transaction_completed: 'Transaction Completed',
-  transaction_failed: 'Transaction Failed',
-  support_closed: 'Support Closed',
-  support_reopened: 'Support Reopened',
-  admin_login: 'Admin Login',
-  job_hidden: 'Job Hidden',
-  job_unhidden: 'Job Restored',
-  job_deleted: 'Job Deleted',
-  job_restored: 'Job Restored'
-};
+const AdminAvatar: React.FC<{ name?: string | null; size?: 'sm' | 'md' }> = ({ name, size = 'md' }) => (
+  <div
+    className={`${size === 'md' ? 'w-10 h-10 text-sm' : 'w-9 h-9 text-xs'} rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100`}
+  >
+    <span className="font-bold text-blue-600 uppercase">{initials(name)}</span>
+  </div>
+);
 
-const USER_ACTIONS = [
-  'verification_approved',
-  'verification_rejected',
-  'user_restricted',
-  'user_suspended',
-  'user_banned',
-  'user_unrestricted'
-];
+const SuperAdminTag = () => (
+  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 flex-shrink-0">
+    Super Admin
+  </span>
+);
 
-const JOB_ACTIONS = [
-  'job_hidden',
-  'job_unhidden',
-  'job_deleted',
-  'job_restored'
-];
-
-const SYSTEM_ACTIONS = [
-  'transaction_completed',
-  'transaction_failed',
-  'support_closed',
-  'support_reopened',
-  'admin_login'
-];
-
+/**
+ * Audit Log — every admin action: who did it, what it touched, and when.
+ * Superadmin-only (server-enforced; the route and nav item are hidden too).
+ * Laid out like the other list pages: stat cards that filter, a filter bar, a
+ * table (cards on phones) and a pager. Log filters live in the URL so a view can
+ * be linked; the Edit Admin panel opens it as /activity?admin=<id>.
+ */
 const Activity: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { data: activities = [], isLoading: loading, refetch } = useActivityLogs();
   const { socket } = useSocket();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [actionFilter, setActionFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'user' | 'job' | 'system'>('all');
-  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null);
-  const activityRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20
-  });
+  const [params, setParams] = useSearchParams();
+
+  const view = params.get('tab') === 'admins' ? 'admins' : 'log';
+  const adminId = params.get('admin') || undefined;
+  const group = params.get('group') || undefined;
+  const actionType = params.get('action') || undefined;
+  const sensitive = params.get('sensitive') === '1';
+  const rangeKey = params.get('range') || DEFAULT_RANGE;
+  const customFrom = params.get('from') || '';
+  const customTo = params.get('to') || '';
+  const search = params.get('q') || '';
+  const page = Math.max(Number(params.get('page')) || 1, 1);
+  const limit = PAGE_SIZES.includes(Number(params.get('size'))) ? Number(params.get('size')) : DEFAULT_PAGE_SIZE;
+  const signInsOnly = actionType === 'admin_login';
+  const entryId = params.get('entry') || undefined;
+  const targetId = params.get('target') || undefined;
+  const targetName = params.get('tname') || '';
+
+  const [searchInput, setSearchInput] = useState(search);
+  const [anchor, setAnchor] = useState(() => Date.now());
+
+  // Admins view: its own search, filter, sort and paging (server-side).
+  const [adminsInput, setAdminsInput] = useState('');
+  const [adminsSearch, setAdminsSearch] = useState('');
+  const [adminsActivity, setAdminsActivity] = useState<AdminActivityFilter>('');
+  const [adminsSort, setAdminsSort] = useState<AdminSortKey>('actions');
+  const [adminsOrder, setAdminsOrder] = useState<'asc' | 'desc'>('desc');
+  const [adminsPage, setAdminsPage] = useState(1);
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
-  // Real-time socket listener for new activity logs
-  useEffect(() => {
-    console.log('🔍 Activity page mounted, checking socket:', {
-      socketExists: !!socket,
-      socketConnected: socket?.connected,
-      socketId: socket?.id
-    });
-
-    if (!socket) {
-      console.log('⚠️ Socket not available in Activity page');
-      return;
-    }
-
-    console.log('✅ Setting up activity:new listener, socket connected:', socket.connected);
-
-    const handleNewActivity = (data: any) => {
-      console.log('🔔 ========================================');
-      console.log('🔔 NEW ACTIVITY LOG RECEIVED!');
-      console.log('🔔 Data:', data);
-      console.log('🔔 ========================================');
-
-      // Log before invalidation
-      console.log('📤 About to invalidate queries...');
-
-      // Invalidate and immediately refetch
-      queryClient.invalidateQueries({
-        queryKey: ['activity'],
-        refetchType: 'active'
-      });
-
-      console.log('✅ Queries invalidated');
-
-      // Also trigger manual refetch
-      console.log('📤 About to manually refetch...');
-      refetch().then(() => {
-        console.log('✅ Manual refetch completed');
-      }).catch((err) => {
-        console.error('❌ Manual refetch failed:', err);
-      });
-
-      toast.success('New activity log', {
-        duration: 2000,
-        icon: '📝'
-      });
-    };
-
-    socket.on('activity:new', handleNewActivity);
-    console.log('📡 Listener registered for activity:new event');
-
-    // Test the socket connection
-    socket.emit('test:ping', { page: 'activity' });
-
-    // Listen for test response
-    socket.on('test:pong', (data) => {
-      console.log('🏓 Received test:pong:', data);
-    });
-
-    return () => {
-      console.log('🧹 Cleaning up activity:new listener');
-      socket.off('activity:new', handleNewActivity);
-      socket.off('test:pong');
-    };
-  }, [socket, queryClient, refetch]);
-
-  const formatDescriptionWithDuration = (activity: ActivityLog) => {
-    const { description, actionType, metadata } = activity;
-
-    if (
-      (actionType === 'user_restricted' ||
-        actionType === 'user_suspended' ||
-        actionType === 'user_banned') &&
-      metadata?.duration
-    ) {
-      const duration = metadata.duration;
-      let durationText = '';
-
-      if (duration === -1) {
-        durationText = 'indefinitely';
-      } else if (duration === 1) {
-        durationText = 'for 1 day';
-      } else {
-        durationText = `for ${duration} days`;
-      }
-
-      return `${description} ${durationText}`;
-    }
-
-    return description;
-  };
-
-  const handleActivityClick = useCallback(async (activity: ActivityLog) => {
-    // Determine target from either targetId or metadata/description if targetId is missing
-    let targetType = activity.targetType;
-    let targetId = typeof activity.targetId === 'object' ? activity.targetId?._id : activity.targetId;
-
-    // Fallback detection for refund/transaction actions if targetType is missing
-    if (!targetType && (activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed')) {
-      targetType = 'transaction';
-      // Try to extract ID from description if targetId is missing
-      if (!targetId) {
-        const idMatch = activity.description.match(/[a-f\d]{24}/i);
-        if (idMatch) targetId = idMatch[0];
-      }
-    }
-
-    if (!targetId || !targetType) return;
-
-    try {
-      switch (targetType) {
-        case 'user': {
-          const user = await usersService.getUserById(targetId);
-          if (user) {
-            setSelectedUser(user);
-            setUserModalOpen(true);
+  /** Set URL filters; any filter change goes back to page 1. */
+  const update = useCallback(
+    (changes: Record<string, string | undefined>) => {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(changes)) {
+            if (value === undefined || value === '') next.delete(key);
+            else next.set(key, value);
           }
-          break;
-        }
-
-        case 'transaction': {
-          const transaction = await transactionsService.getTransactionById(targetId);
-          if (transaction) {
-            setSelectedTransaction(transaction as any);
-            setTransactionModalOpen(true);
-          }
-          break;
-        }
-
-        case 'support':
-          navigate('/support');
-          break;
-
-        case 'verification':
-          navigate('/verifications');
-          break;
-
-        case 'job':
-          navigate('/jobs');
-          break;
-      }
-    } catch (error) {
-      console.error('Error fetching activity target:', error);
-      toast.error('Failed to load details');
-    }
-  }, [navigate]);
-
-  const filteredActivities = useMemo(() => {
-    return activities.filter((activity: ActivityLog) => {
-      const matchesSearch =
-        (activity.adminId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-        activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (activity.adminId?.email?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-        (activity.targetId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-        (activity.targetId?.email?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
-
-      const matchesAction = actionFilter === 'all' || activity.actionType === actionFilter;
-
-      const matchesType =
-        typeFilter === 'all' ||
-        (typeFilter === 'user' && USER_ACTIONS.includes(activity.actionType)) ||
-        (typeFilter === 'job' && JOB_ACTIONS.includes(activity.actionType)) ||
-        (typeFilter === 'system' && SYSTEM_ACTIONS.includes(activity.actionType));
-
-      return matchesSearch && matchesAction && matchesType;
-    });
-  }, [activities, searchTerm, actionFilter, typeFilter]);
-
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, actionFilter, typeFilter]);
-
-  const paginatedActivities = filteredActivities.slice(
-    (pagination.page - 1) * pagination.limit,
-    pagination.page * pagination.limit
+          if (!('page' in changes)) next.delete('page');
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setParams]
   );
 
-  const totalPages = Math.ceil(filteredActivities.length / pagination.limit);
-
-  const totalActivityLogs = activities.length;
-  const userActivityLogs = activities.filter((activity: ActivityLog) => USER_ACTIONS.includes(activity.actionType)).length;
-  const systemActivityLogs = activities.filter((activity: ActivityLog) => SYSTEM_ACTIONS.includes(activity.actionType)).length;
-
-  // Handle activity ID from URL parameter
+  // Debounced searches.
   useEffect(() => {
-    const activityId = searchParams.get('id');
-    if (activityId && activities.length > 0 && !highlightedActivityId) {
-      console.log('Processing activity ID from URL:', activityId);
-      // Find the activity
-      const activity = activities.find((a: ActivityLog) => a._id === activityId);
-      if (activity) {
-        console.log('Activity found:', activity);
-        // Set as highlighted
-        setHighlightedActivityId(activityId);
-
-        // Find which page this activity is on
-        const activityIndex = filteredActivities.findIndex((a: ActivityLog) => a._id === activityId);
-        console.log('Activity index in filtered list:', activityIndex);
-        if (activityIndex !== -1) {
-          const targetPage = Math.floor(activityIndex / pagination.limit) + 1;
-          console.log('Setting page to:', targetPage);
-          setPagination(prev => ({ ...prev, page: targetPage }));
-        }
-      } else {
-        console.log('Activity not found in activities list');
-        // Activity not found, clear the URL param
-        setSearchParams({});
-      }
-    }
-  }, [searchParams, activities, filteredActivities, pagination.limit, highlightedActivityId, setSearchParams]);
-
-  // Separate effect for scrolling after pagination updates and opening modal
+    if (searchInput.trim() === search) return;
+    const timer = setTimeout(() => update({ q: searchInput.trim() || undefined }), 350);
+    return () => clearTimeout(timer);
+  }, [searchInput, search, update]);
   useEffect(() => {
-    const activityId = searchParams.get('id');
-    if (activityId && highlightedActivityId === activityId && activities.length > 0) {
-      // Wait for pagination to render
-      const scrollTimer = setTimeout(() => {
-        const element = activityRefs.current[activityId];
+    const timer = setTimeout(() => {
+      setAdminsSearch(adminsInput.trim());
+      setAdminsPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [adminsInput]);
 
-        if (element) {
-          console.log('Scrolling to activity:', activityId);
-          console.log('Element found:', element);
-
-          // Use scrollIntoView which is more reliable
-          element.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-            inline: 'nearest'
-          });
-
-          // After scrolling, open the modal for this activity
-          setTimeout(() => {
-            const activity = activities.find((a: ActivityLog) => a._id === activityId);
-            if (activity) {
-              console.log('Opening modal for activity:', activity);
-              handleActivityClick(activity);
-            }
-          }, 800);
-        } else {
-          console.log('Element not found for activity:', activityId);
-          console.log('Available refs:', Object.keys(activityRefs.current));
-        }
-      }, 500);
-
-      // Remove highlight after 6 seconds
-      const highlightTimer = setTimeout(() => {
-        setHighlightedActivityId(null);
-        setSearchParams({});
-      }, 6000);
-
-      return () => {
-        clearTimeout(scrollTimer);
-        clearTimeout(highlightTimer);
+  // A preset range is measured back from when it was chosen, so the query key
+  // stays put instead of moving with the clock on every render.
+  const range = useMemo(() => {
+    if (rangeKey === 'custom') {
+      return {
+        from: customFrom ? new Date(`${customFrom}T00:00:00`).toISOString() : undefined,
+        to: customTo ? new Date(`${customTo}T23:59:59.999`).toISOString() : undefined,
       };
     }
-  }, [pagination.page, highlightedActivityId, searchParams, setSearchParams, activities, handleActivityClick]);
+    const preset = RANGES.find((r) => r.key === rangeKey);
+    return preset?.ms ? { from: new Date(anchor - preset.ms).toISOString() } : {};
+  }, [rangeKey, customFrom, customTo, anchor]);
+
+  const rangeLabel = useMemo(() => {
+    if (rangeKey === 'custom') return customFrom || customTo ? `${customFrom || '…'} to ${customTo || 'now'}` : 'custom range';
+    return (RANGES.find((r) => r.key === rangeKey)?.label || 'Last 30 days').toLowerCase();
+  }, [rangeKey, customFrom, customTo]);
+
+  const filters: AuditFilters = useMemo(
+    () => ({ adminId, targetId, group, actionType, sensitive, ...range, search: search || undefined, page, limit }),
+    [adminId, targetId, group, actionType, sensitive, range, search, page, limit]
+  );
+
+  const { data: catalog } = useAuditCatalog();
+  // Card totals (every admin in the period) and, when filtering by one admin, their row.
+  const { data: summary } = useAuditTeam({ ...range, limit: 1 });
+  const { data: selected } = useAuditTeam({ ...range, adminId, limit: 1 }, Boolean(adminId));
+  const selectedAdmin = adminId ? selected?.team[0] : undefined;
+  const { data, isLoading, isError } = useAuditLogs(filters);
+  const { data: adminsData, isLoading: adminsLoading } = useAuditTeam(
+    {
+      ...range,
+      search: adminsSearch || undefined,
+      activity: adminsActivity || undefined,
+      sort: adminsSort,
+      order: adminsOrder,
+      page: adminsPage,
+      limit,
+    },
+    view === 'admins'
+  );
+  const logs = data?.logs || [];
+  const totals = summary?.totals;
+
+  const groupActions = useMemo(
+    () => (catalog?.actions || []).filter((a) => !group || a.group === group),
+    [catalog, group]
+  );
+
+  // New rows arrive over the socket (superadmins only); refresh what's on screen.
+  useEffect(() => {
+    if (!socket) return;
+    const onNew = () =>
+      queryClient.invalidateQueries({ queryKey: [AUDIT_QUERY_KEY], predicate: (q) => q.queryKey[1] !== 'catalog' });
+    socket.on('activity:new', onNew);
+    return () => {
+      socket.off('activity:new', onNew);
+    };
+  }, [socket, queryClient]);
+
+  // CSV of exactly what the log is showing (every page, newest first, up to 5,000).
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const { page: _page, limit: _limit, ...current } = filters;
+      const { blob, filename, count, total } = await auditService.exportCsv(current);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(
+        total > count
+          ? `Exported the newest ${count.toLocaleString()} of ${total.toLocaleString()} entries`
+          : `Exported ${count.toLocaleString()} entr${count === 1 ? 'y' : 'ies'}`
+      );
+    } catch {
+      toast.error("Couldn't export the audit log");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const refresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [AUDIT_QUERY_KEY], predicate: (q) => q.queryKey[1] !== 'catalog' });
+  }, [queryClient]);
+
+  const openTarget = useCallback(
+    async (log: AuditLogEntry) => {
+      const id = targetIdOf(log);
+      try {
+        switch (log.targetType) {
+          case 'user': {
+            if (!id) return;
+            const user = await usersService.getUserById(id);
+            if (user) {
+              setSelectedUser(user);
+              setUserModalOpen(true);
+            }
+            return;
+          }
+          case 'transaction': {
+            if (!id) return;
+            const transaction = await transactionsService.getTransactionById(id);
+            if (transaction) {
+              setSelectedTransaction(transaction as Transaction);
+              setTransactionModalOpen(true);
+            }
+            return;
+          }
+          case 'job':
+            return navigate('/jobs');
+          case 'support':
+            return navigate('/support');
+          case 'verification':
+            return navigate('/verifications');
+          default:
+            if (log.targetType && CONFIG_TARGET_TYPES.has(log.targetType)) navigate('/settings/configuration');
+        }
+      } catch (error) {
+        console.error('Error opening audit target:', error);
+        toast.error('Failed to load details');
+      }
+    },
+    [navigate]
+  );
+
+  const keepLogPage = () => params.get('page') || undefined;
+  // The open entry lives in the URL (?entry=), so the panel's "Copy link" shares it.
+  const openEntry = (id: string) => update({ entry: id, page: keepLogPage() });
+  const closeEntry = () => update({ entry: undefined, page: keepLogPage() });
+  const showLog = (changes: Record<string, string | undefined> = {}) => update({ tab: undefined, ...changes });
+  /** The view toggle keeps the admins search (back to the list you left); the card starts fresh. */
+  const showAdmins = (activity: AdminActivityFilter = '', { resetSearch = false } = {}) => {
+    if (resetSearch) {
+      setAdminsInput('');
+      setAdminsSearch('');
+    }
+    setAdminsActivity(activity);
+    setAdminsPage(1);
+    update({ tab: 'admins', page: keepLogPage() });
+  };
+  const sortAdmins = (key: AdminSortKey) => {
+    if (key === adminsSort) setAdminsOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    else {
+      setAdminsSort(key);
+      setAdminsOrder(key === 'name' ? 'asc' : 'desc');
+    }
+    setAdminsPage(1);
+  };
+  const changeRange = (key: string) => {
+    setAnchor(Date.now());
+    setAdminsPage(1);
+    update({ range: key === DEFAULT_RANGE ? undefined : key, from: undefined, to: undefined });
+  };
+  const changeLimit = (size: number) => {
+    setAdminsPage(1);
+    update({ size: size === DEFAULT_PAGE_SIZE ? undefined : String(size) });
+  };
+
+  const hasLogFilters = Boolean(adminId || targetId || group || actionType || sensitive || search || rangeKey !== DEFAULT_RANGE);
+  const clearLogFilters = () => {
+    setSearchInput('');
+    setParams(new URLSearchParams(), { replace: true });
+  };
+
+  // Stat cards double as filters, as on the other list pages.
+  const cards = [
+    {
+      key: 'actions',
+      title: 'Total Actions',
+      value: totals ? totals.actions.toLocaleString() : '—',
+      icon: ActivityIcon,
+      color: 'blue' as const,
+      active: view === 'log' && !sensitive && !signInsOnly,
+      onClick: () => showLog({ sensitive: undefined, action: signInsOnly ? undefined : actionType }),
+    },
+    {
+      key: 'sensitive',
+      title: 'Sensitive Actions',
+      value: totals ? totals.sensitive.toLocaleString() : '—',
+      icon: ShieldAlert,
+      color: 'red' as const,
+      active: view === 'log' && sensitive,
+      onClick: () =>
+        showLog({ sensitive: view === 'log' && sensitive ? undefined : '1', action: signInsOnly ? undefined : actionType }),
+    },
+    {
+      key: 'logins',
+      title: 'Sign-ins',
+      value: totals ? totals.logins.toLocaleString() : '—',
+      icon: LogIn,
+      color: 'purple' as const,
+      active: view === 'log' && signInsOnly,
+      onClick: () =>
+        showLog({ sensitive: undefined, group: undefined, action: view === 'log' && signInsOnly ? undefined : 'admin_login' }),
+    },
+    {
+      key: 'admins',
+      title: 'Active Admins',
+      value: totals ? `${totals.activeAdmins} of ${totals.admins}` : '—',
+      icon: Users,
+      color: 'green' as const,
+      active: view === 'admins',
+      onClick: () => showAdmins('active', { resetSearch: true }),
+    },
+  ];
+
+  const pager =
+    view === 'log'
+      ? data && { page: data.page, pages: data.pages, total: data.total, size: data.limit, go: (p: number) => update({ page: String(p) }) }
+      : adminsData && { page: adminsData.page, pages: adminsData.pages, total: adminsData.total, size: adminsData.limit, go: (p: number) => setAdminsPage(p) };
+
+  const loading = view === 'log' ? isLoading : adminsLoading && !adminsData;
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
+    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden" data-testid="audit-log-page">
+      {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
         <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
           <div className="hidden md:flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
-                  <ActivityIcon className="h-5 w-5 text-blue-600" />
+                  <ShieldCheck className="h-5 w-5 text-blue-600" />
                 </span>
-                <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-                  Activity Center
-                </h1>
+                <h1 className="text-2xl font-black text-gray-900 tracking-tight">Audit Log</h1>
               </div>
               <p className="text-xs text-gray-500 font-medium">
-                Track and monitor all administrative actions and system events across the platform
+                Track every action taken by admins across the platform — who did it, to whom, and when
               </p>
+            </div>
+            <div className="flex items-center gap-0.5 p-1 bg-white border border-gray-200 rounded-xl shadow-sm" data-testid="audit-view-toggle">
+              {(
+                [
+                  ['log', 'Activity Log'],
+                  ['admins', `Admins${totals ? ` (${totals.admins.toLocaleString()})` : ''}`],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-testid={`audit-tab-${key}`}
+                  onClick={() => (key === 'log' ? showLog({ page: keepLogPage() }) : showAdmins())}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
+                    view === key ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Mobile Header */}
           <div className="md:hidden">
-            {/* Summary strip */}
             <div className="flex items-center gap-3 mb-3">
               <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Logs</p>
-                <p className="text-base font-black text-blue-600 leading-tight">{totalActivityLogs.toLocaleString()}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Actions</p>
+                <p className="text-base font-black text-blue-600 leading-tight">{cards[0].value}</p>
               </div>
               <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">User Actions</p>
-                <p className="text-base font-black text-gray-900 leading-tight">{userActivityLogs.toLocaleString()}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Sensitive</p>
+                <p className="text-base font-black text-red-600 leading-tight">{cards[1].value}</p>
               </div>
             </div>
-            {/* Filter pills */}
             <div className="flex gap-2">
-              {([
-                { label: 'All',    value: totalActivityLogs,  filterVal: 'all',    activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'User',   value: userActivityLogs,   filterVal: 'user',   activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
-                { label: 'System', value: systemActivityLogs, filterVal: 'system', activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
-                const active = typeFilter === filterVal;
-                return (
-                  <button
-                    key={filterVal}
-                    onClick={() => setTypeFilter(filterVal as 'all' | 'user' | 'job' | 'system')}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
+              {(
+                [
+                  { card: cards[0], label: 'All', activeBg: 'bg-blue-500 border-blue-500' },
+                  { card: cards[1], label: 'Sensitive', activeBg: 'bg-red-500 border-red-500' },
+                  { card: cards[2], label: 'Sign-ins', activeBg: 'bg-purple-500 border-purple-500' },
+                  { card: cards[3], label: 'Admins', activeBg: 'bg-emerald-500 border-emerald-500' },
+                ] as const
+              ).map(({ card, label, activeBg }) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={card.onClick}
+                  data-testid={`audit-pill-${card.key}`}
+                  className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${
+                    card.active ? `${activeBg} text-white` : 'bg-white border-gray-200 text-gray-600'
+                  }`}
+                >
+                  <span className="text-[11px] font-black">{card.key === 'admins' && totals ? totals.activeAdmins : card.value}</span>
+                  <span className={`text-[9px] font-black uppercase tracking-wide ${card.active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
+                </button>
+              ))}
             </div>
           </div>
+
           <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="cursor-pointer" onClick={() => setTypeFilter('all')}>
-              <StatsCard
-                title="Total Activity"
-                value={totalActivityLogs.toString()}
-                icon={ActivityIcon}
-                color="blue"
-                variant="tinted"
-                isActive={typeFilter === 'all'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setTypeFilter('user')}>
-              <StatsCard
-                title="User Actions"
-                value={userActivityLogs.toString()}
-                icon={UserCheck}
-                color="purple"
-                variant="tinted"
-                isActive={typeFilter === 'user'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setTypeFilter('job')}>
-              <StatsCard
-                title="Job Actions"
-                value={activities.filter((activity: ActivityLog) => JOB_ACTIONS.includes(activity.actionType)).length.toString()}
-                icon={Briefcase}
-                color="orange"
-                variant="tinted"
-                isActive={typeFilter === 'job'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setTypeFilter('system')}>
-              <StatsCard
-                title="System Actions"
-                value={systemActivityLogs.toString()}
-                icon={Shield}
-                color="green"
-                variant="tinted"
-                isActive={typeFilter === 'system'}
-                smallIcon={true}
-              />
-            </div>
+            {cards.map((card) => (
+              <div key={card.key} className="cursor-pointer" onClick={card.onClick} data-testid={`audit-card-${card.key}`}>
+                <StatsCard
+                  title={card.title}
+                  value={card.value}
+                  icon={card.icon}
+                  color={card.color}
+                  variant="tinted"
+                  isActive={card.active}
+                  smallIcon={true}
+                  showActiveIcon={false}
+                />
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <input
-              type="text"
-              placeholder="Search by admin, description, or target..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
-            />
-          </div>
-
-          {/* Mobile filter dropdowns grid */}
-          <div className="grid grid-cols-2 gap-2 md:hidden">
-            <select
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
-              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">All Actions</option>
-              <option value="verification_approved">Verification Approved</option>
-              <option value="verification_rejected">Verification Rejected</option>
-              <option value="user_restricted">User Restricted</option>
-              <option value="user_suspended">User Suspended</option>
-              <option value="user_banned">User Banned</option>
-              <option value="user_unrestricted">User Unrestricted</option>
-              <option value="transaction_completed">Transaction Completed</option>
-              <option value="transaction_failed">Transaction Failed</option>
-              <option value="support_closed">Support Closed</option>
-              <option value="support_reopened">Support Reopened</option>
-              <option value="admin_login">Admin Login</option>
-              <option value="job_hidden">Job Hidden</option>
-              <option value="job_unhidden">Job Restored</option>
-              <option value="job_deleted">Job Deleted</option>
-              <option value="job_restored">Job Restored</option>
-            </select>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'user' | 'job' | 'system')}
-              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">All Types</option>
-              <option value="user">User Actions</option>
-              <option value="job">Job Actions</option>
-              <option value="system">System Actions</option>
-            </select>
-          </div>
-
-          <div className="hidden md:flex items-center gap-2 md:gap-4 overflow-x-auto no-scrollbar pb-0.5 md:pb-0 shrink-0">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm">
-              <FilterIcon className="h-4 w-4 text-gray-400" />
-              <select
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-                className="bg-transparent border-none text-xs font-black text-gray-600 focus:outline-none focus:ring-0 cursor-pointer pr-8"
-              >
-                <option value="all">All Actions</option>
-                <option value="verification_approved">Verification Approved</option>
-                <option value="verification_rejected">Verification Rejected</option>
-                <option value="user_restricted">User Restricted</option>
-                <option value="user_suspended">User Suspended</option>
-                <option value="user_banned">User Banned</option>
-                <option value="user_unrestricted">User Unrestricted</option>
-                <option value="transaction_completed">Transaction Completed</option>
-                <option value="transaction_failed">Transaction Failed</option>
-                <option value="support_closed">Support Closed</option>
-                <option value="support_reopened">Support Reopened</option>
-                <option value="admin_login">Admin Login</option>
-                <option value="job_hidden">Job Hidden</option>
-                <option value="job_unhidden">Job Restored</option>
-                <option value="job_deleted">Job Deleted</option>
-                <option value="job_restored">Job Restored</option>
-              </select>
+        {/* Filter Bar */}
+        <div className="px-4 py-2 md:px-6 md:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-2 md:flex-1 min-w-0">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-2.5 md:left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
+              {view === 'log' ? (
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search activity..."
+                  data-testid="audit-search"
+                  className={SEARCH}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={adminsInput}
+                  onChange={(e) => setAdminsInput(e.target.value)}
+                  placeholder="Search admins by name or email..."
+                  data-testid="audit-admins-search"
+                  className={SEARCH}
+                />
+              )}
             </div>
+            {/* Page Limit - Mobile only */}
+            <select
+              value={limit}
+              onChange={(e) => changeLimit(Number(e.target.value))}
+              className="md:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+              aria-label="Page limit"
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
 
-            <div className="flex items-center gap-2 md:order-3 shrink-0">
+          <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:shrink-0">
+            {view === 'log' && (
+              <div className="col-span-2 md:col-span-1">
+                <AuditAdminPicker value={adminId} selectedLabel={selectedAdmin?.name} range={range} onChange={(id) => update({ admin: id })} />
+              </div>
+            )}
+            <select
+              value={rangeKey}
+              onChange={(e) => changeRange(e.target.value)}
+              className={`${SELECT} ${view === 'admins' ? 'col-span-2' : ''} md:max-w-[160px]`}
+              aria-label="Period"
+              data-testid="audit-range"
+            >
+              {RANGES.map((r) => (
+                <option key={r.key} value={r.key}>{r.label}</option>
+              ))}
+            </select>
+            {view === 'log' ? (
+              <>
+                <select
+                  value={group || ''}
+                  onChange={(e) => update({ group: e.target.value || undefined, action: undefined })}
+                  className={`${SELECT} md:max-w-[150px]`}
+                  aria-label="Area"
+                  data-testid="audit-group"
+                >
+                  <option value="">All Areas</option>
+                  {(catalog?.groups || []).map((g) => (
+                    <option key={g.key} value={g.key}>{g.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={actionType || ''}
+                  onChange={(e) => update({ action: e.target.value || undefined })}
+                  className={`${SELECT} col-span-2 md:col-span-1 md:max-w-[180px]`}
+                  aria-label="Action"
+                  data-testid="audit-action"
+                >
+                  <option value="">All Actions</option>
+                  {groupActions.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.label}
+                      {a.sensitive ? ' •' : ''}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <div
+                className="col-span-2 flex items-center gap-0.5 p-1 bg-white border border-gray-200 rounded-lg md:rounded-xl shadow-sm overflow-x-auto"
+                data-testid="audit-admins-activity"
+              >
+                {ADMIN_ACTIVITY_FILTERS.map((f) => (
+                  <button
+                    key={f.key || 'all'}
+                    type="button"
+                    onClick={() => {
+                      setAdminsActivity(f.key);
+                      setAdminsPage(1);
+                    }}
+                    className={`flex-1 md:flex-none px-2.5 py-1 md:py-1.5 text-[10px] font-black uppercase tracking-wider rounded-md md:rounded-lg transition-all whitespace-nowrap ${
+                      adminsActivity === f.key ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {rangeKey === 'custom' && (
+              <div className="col-span-2 flex items-center gap-1.5">
+                <input
+                  type="date"
+                  aria-label="From date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => update({ from: e.target.value || undefined })}
+                  className="flex-1 md:flex-none h-8 md:h-9 bg-white border border-gray-200 rounded-lg md:rounded-xl shadow-sm px-2 text-xs font-bold text-gray-600"
+                />
+                <span className="text-[10px] font-black text-gray-400 uppercase">to</span>
+                <input
+                  type="date"
+                  aria-label="To date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => update({ to: e.target.value || undefined })}
+                  className="flex-1 md:flex-none h-8 md:h-9 bg-white border border-gray-200 rounded-lg md:rounded-xl shadow-sm px-2 text-xs font-bold text-gray-600"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:flex items-center gap-3 shrink-0">
+            {view === 'log' && hasLogFilters && (
+              <button
+                type="button"
+                onClick={clearLogFilters}
+                className="inline-flex items-center gap-1 text-[10px] font-black text-gray-500 uppercase tracking-widest hover:text-gray-800"
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </button>
+            )}
+            <div className="flex items-center gap-2">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
               <select
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                value={limit}
+                onChange={(e) => changeLimit(Number(e.target.value))}
                 className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                aria-label="Rows per page"
               >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
+                {PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
               </select>
             </div>
+            {view === 'log' && (
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={exporting || !data?.total}
+                data-testid="audit-export"
+                title="Download every entry matching these filters as a CSV file"
+                className="inline-flex items-center gap-1.5 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Download className={`h-3.5 w-3.5 ${exporting ? 'animate-bounce' : ''}`} />
+                {exporting ? 'Exporting' : 'Export'}
+              </button>
+            )}
           </div>
         </div>
+
+        {view === 'log' && targetId && (
+          <div
+            className="px-4 md:px-6 py-2 bg-amber-50/70 border-t border-amber-100 flex flex-wrap items-center gap-x-3 gap-y-1"
+            data-testid="audit-selected-target"
+          >
+            <p className="text-sm text-gray-700 min-w-0">
+              Every action on <span className="font-bold text-gray-900">{targetName || 'this record'}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => update({ target: undefined, tname: undefined })}
+              className="ml-auto inline-flex items-center gap-1 text-[10px] font-black text-amber-800 uppercase tracking-widest hover:text-amber-950"
+            >
+              <X className="h-3.5 w-3.5" /> Show all actions
+            </button>
+          </div>
+        )}
+
+        {view === 'log' && adminId && (
+          <div
+            className="px-4 md:px-6 py-2 bg-blue-50/60 border-t border-blue-100 flex flex-wrap items-center gap-x-3 gap-y-1"
+            data-testid="audit-selected-admin"
+          >
+            <AdminAvatar name={selectedAdmin?.name} size="sm" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 truncate">{selectedAdmin?.name || 'Selected admin'}</p>
+              {selectedAdmin && (
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+                  {roleLabel(selectedAdmin.userType)}
+                  {selectedAdmin.accountStatus && selectedAdmin.accountStatus !== 'active' && (
+                    <span className="text-red-600"> · {selectedAdmin.accountStatus}</span>
+                  )}
+                  {' · '}
+                  {selectedAdmin.actions} actions
+                  {selectedAdmin.sensitive > 0 && <span className="text-red-600"> · {selectedAdmin.sensitive} sensitive</span>}
+                  {' · '}
+                  {rangeLabel} · last login {timeAgo(selectedAdmin.lastLogin)}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => update({ admin: undefined })}
+              className="ml-auto inline-flex items-center gap-1 text-[10px] font-black text-blue-700 uppercase tracking-widest hover:text-blue-900"
+            >
+              <X className="h-3.5 w-3.5" /> Show everyone
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+        <div className="flex-1 overflow-y-auto" data-testid="audit-results">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="relative">
-                <div className="h-16 w-16 rounded-full border-4 border-gray-100 border-t-blue-600 animate-spin" />
-                <ActivityIcon className="absolute inset-0 m-auto h-6 w-6 text-blue-600 animate-pulse" />
-              </div>
-              <div className="flex flex-col items-center italic">
-                <p className="text-sm font-black text-gray-900 tracking-widest uppercase">Loading Activity Logs</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] mt-1">Fetching System Events</p>
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
+                <p className="text-gray-500">{view === 'log' ? 'Loading activity...' : 'Loading admins...'}</p>
               </div>
             </div>
-          ) : filteredActivities.length === 0 ? (
+          ) : view === 'admins' ? (
+            adminsData && adminsData.team.length > 0 ? (
+              <AuditAdminsTable
+                rows={adminsData.team}
+                sort={adminsSort}
+                order={adminsOrder}
+                onSort={sortAdmins}
+                onSelectAdmin={(id) => showLog({ admin: id })}
+              />
+            ) : (
+              <div className="bg-white p-12 text-center">
+                <div className="text-gray-400 mb-4">
+                  <Search className="h-12 w-12 mx-auto" />
+                </div>
+                <p className="text-gray-600 font-medium">No admins found</p>
+                <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              </div>
+            )
+          ) : isError ? (
+            <div className="bg-white p-12 text-center">
+              <p className="text-gray-600 font-medium">Couldn't load the audit log</p>
+              <button type="button" onClick={refresh} className="text-sm text-blue-600 font-medium mt-1 hover:underline">
+                Try again
+              </button>
+            </div>
+          ) : logs.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
                 <ActivityIcon className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-medium">No activity logs found</p>
-              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              <p className="text-gray-600 font-medium">No activity found</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {hasLogFilters ? 'Try adjusting your search or filters' : 'No admin actions in this period'}
+              </p>
             </div>
           ) : (
             <>
+              {/* Desktop View */}
               <div className="hidden md:block bg-white">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-10 border-b-2 border-gray-300">
+                <table className="min-w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Admin</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Target</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                      <th className={`${TH} w-[24%]`}>Admin</th>
+                      <th className={`${TH} w-[21%]`}>Action</th>
+                      <th className={TH}>What Happened</th>
+                      <th className={`${TH} w-[15%]`}>Date</th>
+                      <th className={`${TH} w-12`} />
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {paginatedActivities.map((activity: ActivityLog) => (
-                      <tr
-                        key={activity._id}
-                        ref={(el) => {
-                          activityRefs.current[activity._id] = el as HTMLTableRowElement;
-                          // Scroll immediately when the highlighted element is rendered
-                          const activityId = searchParams.get('id');
-                          if (el && activityId === activity._id && highlightedActivityId === activityId) {
-                            console.log('Element rendered, scrolling immediately');
-                            setTimeout(() => {
-                              el.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center',
-                                inline: 'nearest'
-                              });
-                            }, 100);
-                          }
-                        }}
-                        onClick={() => handleActivityClick(activity)}
-                        className={`transition-all duration-200 ${(activity.targetId && activity.targetType) ||
-                          ((activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed') && activity.description.match(/[a-f\d]{24}/i))
-                          ? 'hover:bg-gray-100 cursor-pointer'
-                          : 'hover:bg-gray-50'
-                        } ${highlightedActivityId === activity._id
-                            ? 'bg-yellow-100 ring-2 ring-yellow-400'
-                            : ''
-                          }`}
-                      >
-                        <td className="px-6 py-2.5 whitespace-nowrap border-b border-gray-300">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                              <span className="text-sm font-bold text-blue-600 uppercase">
-                                {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
-                              </span>
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <div className="text-sm font-bold text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</div>
-                                {activity.adminId?.userType === 'superadmin' && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50">
-                                    Super Admin
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{activity.adminId?.email || 'No email'}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-current shadow-sm ${ACTION_COLORS[activity.actionType] || 'bg-gray-50 text-gray-700 border-gray-200'
-                            }`}>
-                            {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-4 w-4" />}
-                            {ACTION_LABELS[activity.actionType] || activity.actionType}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="text-sm text-gray-900 max-w-[300px]">{formatDescriptionWithDuration(activity)}</div>
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          {(() => {
-                            const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
-                            const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
-                            const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
-
-                            if (activity.targetId || showTransactionTarget) {
-                              return (
-                                <div className="text-sm">
-                                  <div className="font-medium text-gray-900 truncate max-w-[200px] flex items-center gap-2">
-                                    {typeof activity.targetId === 'object' && activity.targetId !== null ? (
-                                      activity.targetId.name ||
-                                      activity.targetId.title ||
-                                      activity.targetId.subject ||
-                                      activity.targetId.description ||
-                                      ((activity.targetType === 'transaction' || isTransactionAction) ? 'Transaction' : 'Target')
-                                    ) : (
-                                      (activity.targetType === 'transaction' || showTransactionTarget || isTransactionAction) ? 'Transaction' : 'N/A'
-                                    )}
-                                    {(activity.targetType || showTransactionTarget || isTransactionAction) && (
-                                      <MousePointerClick className="h-3 w-3 text-blue-600" />
-                                    )}
+                  <tbody className="bg-white">
+                    {logs.map((log) => {
+                      const open = entryId === log._id;
+                      const cell = TD;
+                      return (
+                        <React.Fragment key={log._id}>
+                          <tr
+                            onClick={() => openEntry(log._id)}
+                            data-testid="audit-row"
+                            className={`group align-top transition-all duration-150 cursor-pointer ${open ? 'bg-blue-50/40' : 'hover:bg-gray-50'}`}
+                          >
+                            <td className={cell}>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <AdminAvatar name={log.adminId?.name} />
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-gray-900 truncate">{log.adminId?.name || 'Unknown Admin'}</p>
+                                  <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                                    {log.adminId?.userType === 'superadmin' && <SuperAdminTag />}
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">{log.adminId?.email || 'No email'}</p>
                                   </div>
-                                  {activity.targetId?.email && (
-                                    <div className="text-xs text-gray-500 truncate max-w-[200px]">{activity.targetId.email}</div>
-                                  )}
                                 </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
-                          <div className="text-xs text-gray-500">
-                            {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(activity.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              </div>
+                            </td>
+                            <td className={cell}>
+                              <AuditActionBadge action={lookupAction(catalog, log.actionType)} />
+                            </td>
+                            <td className={cell}>
+                              <p className="text-sm text-gray-900 break-words">{log.description}</p>
+                              <TargetLink log={log} onOpen={openTarget} />
+                            </td>
+                            <td className={cell}>
+                              <p className="text-xs font-bold text-gray-900 whitespace-nowrap" title={exactTime(log.createdAt)}>
+                                {timeAgo(log.createdAt)}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-400 uppercase mt-1 whitespace-nowrap">
+                                <Calendar className="h-3 w-3" />
+                                {shortTime(log.createdAt)}
+                              </div>
+                            </td>
+                            <td className={`${cell} text-gray-300 group-hover:text-gray-500`}>
+                              <ChevronRight className="h-4 w-4" />
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
+              {/* Mobile View */}
               <div className="md:hidden px-3 py-3 space-y-2">
-                {paginatedActivities.map((activity: ActivityLog) => (
-                  <div
-                    key={activity._id}
-                    ref={(el) => {
-                      activityRefs.current[activity._id] = el;
-                      // Scroll immediately when the highlighted element is rendered
-                      const activityId = searchParams.get('id');
-                      if (el && activityId === activity._id && highlightedActivityId === activityId) {
-                        console.log('Mobile element rendered, scrolling immediately');
-                        setTimeout(() => {
-                          el.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center',
-                            inline: 'nearest'
-                          });
-                        }, 100);
-                      }
-                    }}
-                    onClick={() => handleActivityClick(activity)}
-                    className={`relative bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all ${activity.targetId && activity.targetType
-                      ? 'cursor-pointer'
-                      : ''
-                      } ${highlightedActivityId === activity._id
-                        ? 'ring-2 ring-yellow-400 bg-yellow-50'
-                        : ''
-                      }`}
-                  >
-                    {activity.adminId?.userType === 'superadmin' && (
-                      <span className="absolute top-2 right-3 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50">
-                        Super Admin
-                      </span>
-                    )}
-
-                    <div className="flex items-center gap-1.5 px-3 py-2 pr-20">
-                      <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100 shadow-sm">
-                        <span className="text-sm font-bold text-blue-600 uppercase">
-                          {activity.adminId?.name ? getInitials(activity.adminId.name) : 'N/A'}
+                {logs.map((log) => {
+                  const open = entryId === log._id;
+                  return (
+                    <div
+                      key={log._id}
+                      onClick={() => openEntry(log._id)}
+                      data-testid="audit-card"
+                      className={`bg-white rounded-xl border shadow-sm overflow-hidden active:scale-[0.98] transition-all ${open ? 'border-blue-300' : 'border-gray-300'}`}
+                    >
+                      <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
+                        <AuditActionBadge action={lookupAction(catalog, log.actionType)} size="sm" />
+                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest whitespace-nowrap">
+                          {timeAgo(log.createdAt)}
                         </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-black text-gray-900 truncate">{activity.adminId?.name || 'Unknown Admin'}</h3>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider truncate">{activity.adminId?.email || 'No email'}</p>
+                      <div className="px-3 py-2.5">
+                        <div className="flex items-start gap-3">
+                          <AdminAvatar name={log.adminId?.name} size="sm" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-black text-gray-900 leading-tight truncate">{log.adminId?.name || 'Unknown Admin'}</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate mb-1.5">{log.adminId?.email || 'No email'}</p>
+                            <p className="text-xs text-gray-900 break-words">{log.description}</p>
+                            <TargetLink log={log} onOpen={openTarget} />
+                          </div>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="px-3 py-2.5">
-                      {(() => {
-                        const isTransactionAction = activity.actionType === 'transaction_completed' || activity.actionType === 'transaction_failed';
-                        const hasInferredId = activity.description.match(/[a-f\d]{24}/i);
-                        const showTransactionTarget = isTransactionAction && hasInferredId && !activity.targetId;
-
-                        return (
-                          <>
-                            <div className="mb-2">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-current shadow-sm ${ACTION_COLORS[activity.actionType] || 'bg-gray-50 text-gray-700 border-gray-200'
-                                }`}>
-                                {ACTION_ICONS[activity.actionType] || <ActivityIcon className="h-3.5 w-3.5" />}
-                                {ACTION_LABELS[activity.actionType] || activity.actionType}
-                              </span>
-                            </div>
-
-                            <p className="text-xs text-gray-900 mb-2">{formatDescriptionWithDuration(activity)}</p>
-
-                            {(activity.targetId || showTransactionTarget) && (
-                              <div className="mb-2 pb-2 border-b border-gray-100">
-                                <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-0.5">Target</p>
-                                <p className="text-xs font-medium text-gray-900 truncate flex items-center gap-1.5">
-                                  {typeof activity.targetId === 'object' && activity.targetId !== null ? (
-                                    activity.targetId.name ||
-                                    activity.targetId.title ||
-                                    activity.targetId.subject ||
-                                    activity.targetId.description ||
-                                    ((activity.targetType === 'transaction' || isTransactionAction) ? 'Transaction' : 'Target')
-                                  ) : (
-                                    (activity.targetType === 'transaction' || showTransactionTarget || isTransactionAction) ? 'Transaction' : 'N/A'
-                                  )}
-                                  {(activity.targetType || showTransactionTarget || isTransactionAction) && (
-                                    <MousePointerClick className="h-3 w-3 text-blue-600" />
-                                  )}
-                                </p>
-                                {activity.targetId?.email && (
-                                  <p className="text-[10px] text-gray-500 truncate">{activity.targetId.email}</p>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                              <Calendar className="h-3 w-3" />
-                              <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-
             </>
           )}
         </div>
 
         {/* Pagination — outside scroll, always sticky at bottom */}
-        {totalPages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
+        {pager && pager.pages > 1 && (
+          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center" data-testid="audit-pagination">
             <div className="flex items-center justify-between w-full">
               <p className="text-xs md:text-sm text-gray-700">
-                Showing{' '}
-                <span className="font-medium">{((pagination.page - 1) * pagination.limit) + 1}</span>{' '}
-                to{' '}
-                <span className="font-medium">{Math.min(pagination.page * pagination.limit, filteredActivities.length)}</span>{' '}
-                of{' '}
-                <span className="font-medium">{filteredActivities.length}</span> results
+                Showing <span className="font-medium">{((pager.page - 1) * pager.size + 1).toLocaleString()}</span> to{' '}
+                <span className="font-medium">{Math.min(pager.page * pager.size, pager.total).toLocaleString()}</span> of{' '}
+                <span className="font-medium">{pager.total.toLocaleString()}</span> {view === 'log' ? 'results' : 'admins'}
               </p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => pager.go(pager.page - 1)}
+                  disabled={pager.page <= 1}
+                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
                 </button>
                 <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
-                  disabled={pagination.page === totalPages}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => pager.go(pager.page + 1)}
+                  disabled={pager.page >= pager.pages}
+                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
                 </button>
@@ -879,6 +899,19 @@ const Activity: React.FC = () => {
           </div>
         )}
       </div>
+
+      <AuditEntryPanel
+        entryId={entryId}
+        catalog={catalog}
+        onClose={closeEntry}
+        onOpenEntry={openEntry}
+        onShowAdmin={(id) => update({ admin: id, entry: undefined, tab: undefined })}
+        onOpenReport={(reportId) => navigate(`/flagged?reportId=${reportId}`)}
+        onShowTarget={(id, label) =>
+          update({ target: id, tname: label, entry: undefined, tab: undefined, admin: undefined, group: undefined, action: undefined, sensitive: undefined, range: 'all' })
+        }
+        onOpenTarget={openTarget}
+      />
 
       <UserDetailsModal
         isOpen={userModalOpen}
@@ -891,14 +924,14 @@ const Activity: React.FC = () => {
           try {
             await usersService.verifyUser(userId, verified);
             toast.success(`User ${verified ? 'verified' : 'unverified'} successfully`);
-            await refetch();
+            refresh();
           } catch (error) {
             toast.error('Failed to update verification');
           }
         }}
-        onAction={async (user: User, actionType: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number) => {
+        onAction={async (user: User, action: 'ban' | 'suspend' | 'restrict' | 'unrestrict' | 'delete', duration?: number) => {
           try {
-            switch (actionType) {
+            switch (action) {
               case 'ban':
                 await usersService.banUser(user._id, 'Banned by admin', duration);
                 break;
@@ -912,10 +945,10 @@ const Activity: React.FC = () => {
                 await usersService.unrestrictUser(user._id);
                 break;
             }
-            toast.success(`User ${actionType}ed successfully`);
-            await refetch();
+            toast.success(`User ${action}ed successfully`);
+            refresh();
           } catch (error) {
-            toast.error(`Failed to ${actionType} user`);
+            toast.error(`Failed to ${action} user`);
           }
         }}
       />

@@ -70,12 +70,38 @@ const canModifyChatSupport = (req, chatSupport) => {
   );
 };
 
-const rejectUnownedChatSupport = (req, res, chatSupport) => {
+const rejectUnownedChatSupport = (
+  req,
+  res,
+  chatSupport,
+  message = 'Accept this ticket before modifying it'
+) => {
   if (canModifyChatSupport(req, chatSupport)) return false;
 
   res.status(403).json({
     success: false,
-    message: 'Accept this ticket before modifying it'
+    message
+  });
+  return true;
+};
+
+/**
+ * A ticket must be accepted before it can be resolved — by anyone, superadmins
+ * included. canModifyChatSupport lets a superadmin through unconditionally,
+ * which meant a ticket nobody had picked up could still be closed; the admin UI
+ * showed an "Accept" button and a live "Resolve Ticket" button at the same time.
+ *
+ * Deliberately NOT applied to reopen: a closed ticket may legitimately have no
+ * acceptedBy (closing sets assignedTo but not acceptedBy), and Accept is only
+ * offered on open tickets — so requiring it there would leave those tickets
+ * permanently unreopenable.
+ */
+const rejectUnacceptedChatSupport = (req, res, chatSupport) => {
+  if (chatSupport?.acceptedBy) return false;
+
+  res.status(403).json({
+    success: false,
+    message: 'Accept this ticket before resolving it'
   });
   return true;
 };
@@ -315,6 +341,78 @@ const getChatSupport = async (req, res) => {
   }
 };
 
+/**
+ * A job dispute is filed as two threads — one per party — cross-linked by
+ * metadata.jobId. Accepting is a decision about the case, not about one side of
+ * it, so accepting either thread accepts the other as well. Without this the
+ * admin is asked to "Accept" again the moment they switch to the reported
+ * party's thread, and messaging there stays blocked (sendMessage checks
+ * assignedTo on that thread).
+ *
+ * Best-effort: a failure here leaves the accepted thread accepted rather than
+ * failing the request the admin actually made.
+ */
+const acceptLinkedDisputeThreads = async (chatSupport, { adminObjectId, adminName, acceptedAt }) => {
+  const jobId = chatSupport?.metadata?.jobId;
+  if (chatSupport?.metadata?.kind !== 'dispute' || !jobId) return [];
+
+  const counterparts = await ChatSupport.find({
+    _id: { $ne: chatSupport._id },
+    status: 'open',
+    acceptedBy: null,
+    'metadata.kind': 'dispute',
+    'metadata.jobId': jobId
+  }).select('_id');
+
+  const accepted = [];
+  for (const { _id } of counterparts) {
+    const updated = await ChatSupport.findOneAndUpdate(
+      { _id, status: 'open', acceptedBy: null },
+      {
+        $set: {
+          assignedTo: adminObjectId,
+          assignedToName: adminName,
+          acceptedBy: adminObjectId,
+          acceptedByName: adminName,
+          acceptedAt
+        },
+        $push: {
+          messages: {
+            senderId: adminObjectId,
+            senderName: adminName,
+            senderType: 'Admin',
+            message: 'Ticket has been accepted',
+            timestamp: acceptedAt,
+            isRead: true
+          }
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) continue;
+
+    emitChatSupportUpdate(updated._id, {
+      status: updated.status,
+      assignedTo: updated.assignedTo,
+      assignedToName: updated.assignedToName,
+      acceptedBy: updated.acceptedBy,
+      acceptedByName: updated.acceptedByName,
+      acceptedAt: updated.acceptedAt,
+      messages: updated.messages,
+      updatedAt: updated.updatedAt
+    });
+
+    accepted.push({
+      ...updated.toObject(),
+      priority: updated.priority || 'medium',
+      displayStatus: 'pending'
+    });
+  }
+
+  return accepted;
+};
+
 // Accept chat support
 const acceptChatSupport = async (req, res) => {
   try {
@@ -394,6 +492,17 @@ const acceptChatSupport = async (req, res) => {
       });
     }
 
+    let linkedChatSupports = [];
+    try {
+      linkedChatSupports = await acceptLinkedDisputeThreads(chatSupport, {
+        adminObjectId,
+        adminName,
+        acceptedAt
+      });
+    } catch (linkError) {
+      console.error('Error accepting linked dispute thread:', linkError);
+    }
+
     try {
       await logActivity(
         adminObjectId.toString(),
@@ -435,7 +544,9 @@ const acceptChatSupport = async (req, res) => {
         userType: chatSupport.userId?.userType || 'client',
         userProfileImage: chatSupport.userId?.profileImage || null,
         displayStatus: 'pending'
-      }
+      },
+      // The other side(s) of the same dispute, accepted along with this one.
+      linkedChatSupports
     });
   } catch (error) {
     console.error('Error accepting chat support:', error);
@@ -466,6 +577,7 @@ const closeChatSupport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
+    if (rejectUnacceptedChatSupport(req, res, chatSupport)) return;
     if (rejectUnownedChatSupport(req, res, chatSupport)) return;
 
     if (chatSupport.status !== 'open') {
@@ -638,7 +750,17 @@ const reopenChatSupport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Chat support not found' });
     }
 
-    if (rejectUnownedChatSupport(req, res, chatSupport)) return;
+    // "Accept this ticket" is no answer here: a closed ticket cannot be accepted.
+    if (
+      rejectUnownedChatSupport(
+        req,
+        res,
+        chatSupport,
+        chatSupport.assignedToName
+          ? `Only ${chatSupport.assignedToName}, who handled this ticket, or a superadmin can reopen it`
+          : 'Only a superadmin can reopen a ticket nobody was assigned to'
+      )
+    ) return;
 
     if (chatSupport.status !== 'closed') {
       return res.status(400).json({

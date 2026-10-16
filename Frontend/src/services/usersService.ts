@@ -3,8 +3,14 @@ import type {
   UsersResponse,
   UserDetailsResponse,
   UsersQueryParams,
+  UserCountsResponse,
   UserActionResponse,
-  PenaltyData
+  PenaltyData,
+  UserActivityResponse,
+  UserJobsResponse,
+  UserFinancialsResponse,
+  UserReviewsResponse,
+  UserStandingResponse
 } from '../types/users.types';
 
 /**
@@ -13,13 +19,21 @@ import type {
  */
 class UsersService {
   private baseUrl = '/api/users';
-  private activityUrl = '/api/admin/activity-logs';
 
   /**
    * Fetch all users with optional filtering and pagination
    */
   async getUsers(params?: UsersQueryParams): Promise<UsersResponse> {
     const response = await apiClient.get<UsersResponse>(this.baseUrl, { params });
+    return response.data;
+  }
+
+  /**
+   * Client/provider counts by type × account status × verification, under the
+   * given search/profession — the source of every number on the Users page.
+   */
+  async getUserCounts(params?: Pick<UsersQueryParams, 'search' | 'profession'>): Promise<UserCountsResponse> {
+    const response = await apiClient.get<UserCountsResponse>(`${this.baseUrl}/counts`, { params });
     return response.data;
   }
 
@@ -104,33 +118,76 @@ class UsersService {
   }
 
   /**
+   * Everything this user has done, newest first: jobs, money, quotes, reviews,
+   * verifications, support tickets, reports and admin actions taken on them.
+   */
+  async getUserActivity(
+    userId: string,
+    params?: { page?: number; limit?: number; types?: string }
+  ): Promise<UserActivityResponse> {
+    const response = await apiClient.get<UserActivityResponse>(
+      `${this.baseUrl}/${userId}/activity`,
+      { params }
+    );
+    return response.data;
+  }
+
+  /**
+   * Jobs the user posted, jobs they were assigned to, or both.
+   */
+  async getUserJobs(
+    userId: string,
+    params?: { page?: number; limit?: number; role?: 'all' | 'posted' | 'worked' }
+  ): Promise<UserJobsResponse> {
+    const response = await apiClient.get<UserJobsResponse>(
+      `${this.baseUrl}/${userId}/jobs`,
+      { params }
+    );
+    return response.data;
+  }
+
+  /**
+   * Top-ups, cash-outs, earnings and spending for one user.
+   */
+  async getUserFinancials(userId: string): Promise<UserFinancialsResponse> {
+    const response = await apiClient.get<UserFinancialsResponse>(
+      `${this.baseUrl}/${userId}/financials`
+    );
+    return response.data;
+  }
+
+  /**
+   * Reviews clients left for a provider, with average, star distribution and
+   * per-category averages. `rating` narrows the list (not the summary) to one star value.
+   */
+  async getUserReviews(
+    userId: string,
+    params?: { page?: number; limit?: number; rating?: number }
+  ): Promise<UserReviewsResponse> {
+    const response = await apiClient.get<UserReviewsResponse>(`${this.baseUrl}/${userId}/reviews`, { params });
+    return response.data;
+  }
+
+  /** Reports against/by the user and their support tickets (counts). */
+  async getUserStanding(userId: string): Promise<UserStandingResponse> {
+    const response = await apiClient.get<UserStandingResponse>(`${this.baseUrl}/${userId}/standing`);
+    return response.data;
+  }
+
+  /**
    * Get penalty data for a user
    */
   async getPenaltyData(userId: string): Promise<PenaltyData> {
     try {
-      const response = await apiClient.get<any>(
-        `${this.activityUrl}?targetId=${userId}&limit=1000`
+      // Counted on the server: the audit log itself is superadmin-only.
+      const response = await apiClient.get<{ totalPenalties: number; lastPenalty: string | null }>(
+        `${this.baseUrl}/${userId}/penalties`
       );
-
-      const logs = response.data.logs || [];
-
-      const userLogs = logs.filter((log: any) =>
-        log.targetId?._id === userId
-      );
-
-      const penaltyActions = userLogs.filter((log: any) =>
-        ['user_restricted', 'user_suspended', 'user_banned'].includes(log.actionType)
-      );
-
-      const totalPenalties = penaltyActions.length;
-      const lastPenalty = penaltyActions.length > 0
-        ? new Date(penaltyActions[0].createdAt)
-        : null;
 
       return {
-        totalPenalties,
+        totalPenalties: response.data.totalPenalties || 0,
         activeWarnings: 0,
-        lastPenalty
+        lastPenalty: response.data.lastPenalty ? new Date(response.data.lastPenalty) : null
       };
     } catch (error) {
       console.error('Error fetching penalty data:', error);

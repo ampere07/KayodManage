@@ -245,12 +245,39 @@ const JobSchema = new Schema({
       raisedBy: { type: String, enum: ['client', 'provider'], default: null },
       raisedAt: { type: Date, default: null },
       reason: { type: String, default: null },
+      // Both parties' accounts of the incident, written by kayod/server's
+      // raiseDispute. Undeclared here, the path was stripped on load, so
+      // resolveDispute read it as empty and archived every ruling with no claims.
+      claims: [{
+        party: { type: String, enum: ['client', 'provider'], required: true },
+        statement: { type: String, default: null },
+        evidence: [{ type: String }],
+        submittedAt: { type: Date, default: Date.now }
+      }],
       resolvedAt: { type: Date, default: null },
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       // Must stay in step with kayod/server's Job model — both apps write this
       // same collection, and resolveDispute lives on THIS side, so a value
       // missing here fails validation no matter what the other schema allows.
       resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', 'no_show_payout', null], default: null },
+      // What the admin found, separate from where the money went — set by
+      // resolveDispute. Strict mode silently discarded it while undeclared, so
+      // the ruling's finding never reached the job both apps read it from.
+      finding: {
+        faultParty: {
+          type: String,
+          enum: ['client', 'provider', 'both', 'none', 'uncertain'],
+          default: 'uncertain'
+        },
+        findingReason: {
+          type: String,
+          enum: ['no_show', 'late_cancel', 'access_failure', 'emergency', 'other'],
+          default: 'other'
+        },
+        notes: { type: String, default: null },
+        decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        decidedAt: { type: Date, default: null }
+      },
       escalatedAt: { type: Date, default: null },
       internalNotes: [{
         adminId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -263,6 +290,25 @@ const JobSchema = new Schema({
       raisedBy: { type: String, enum: ['client', 'provider'] },
       raisedAt: Date,
       reason: String,
+      // Mirrors kayod/server: the case is archived with each side's account and
+      // the finding, not just the outcome.
+      claims: [{
+        party: { type: String, enum: ['client', 'provider'] },
+        statement: String,
+        evidence: [{ type: String }],
+        submittedAt: Date
+      }],
+      finding: {
+        faultParty: {
+          type: String,
+          enum: ['client', 'provider', 'both', 'none', 'uncertain']
+        },
+        findingReason: {
+          type: String,
+          enum: ['no_show', 'late_cancel', 'access_failure', 'emergency', 'other']
+        },
+        notes: String
+      },
       resolvedAt: Date,
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       resolution: { type: String, enum: ['provider_paid', 'client_refunded', 'rebook', 'no_show_payout'] }
@@ -280,7 +326,22 @@ const JobSchema = new Schema({
       deadlineAt: { type: Date, default: null },
       // Set once the missed-deadline escalation has fired, so the 5-minute
       // scheduler doesn't re-notify admins on every tick.
-      escalatedAt: { type: Date, default: null }
+      escalatedAt: { type: Date, default: null },
+      // Which side raised the dispute that produced this rebook. Copied off
+      // the dispute before it is archived, because dispute.raisedBy is cleared
+      // by the ruling — and this is the side that gets asked whether the redo
+      // actually happened, so it has to outlive the dispute record.
+      reporterRole: { type: String, enum: ['client', 'provider', null], default: null },
+      // The reporter's answer to "did the other party do their part?", asked
+      // once the deadline arrives. satisfied === null means unanswered, which
+      // is what leaves the held money in limbo; false reopens the dispute for
+      // both sides to contest; true settles the rebook and lets the hold run.
+      verdict: {
+        askedAt: { type: Date, default: null },
+        respondedAt: { type: Date, default: null },
+        satisfied: { type: Boolean, default: null },
+        reason: { type: String, default: null }
+      }
     }
   },
   cancellation: {

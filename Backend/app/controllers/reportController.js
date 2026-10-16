@@ -1,6 +1,298 @@
+const mongoose = require("mongoose");
 const Report = require("../models/Report");
 const ReportedPost = require("../models/ReportedPost");
 const User = require("../models/User");
+const Job = require("../models/Job");
+const { auditLog } = require("../utils/activityLogger");
+
+// "action_taken" → "action taken", for audit descriptions.
+const statusText = (status) => String(status || "").replace(/_/g, " ");
+
+const {
+  REPORT_STATUSES,
+  OPEN_REPORT_STATUSES,
+  LEGACY_STATUS_MAP,
+  LEGACY_REASON_MAP,
+} = require("../constants/reportTaxonomy");
+
+// ---------------------------------------------------------------------------
+// Legacy vocabulary normalization
+//
+// Both collections still hold documents written under the retired
+// pending/reviewed/resolved statuses and the retired scam/fake_job reasons (see
+// constants/reportTaxonomy.js). Rather than rewrite live documents, the combined
+// admin feed maps them to the canonical vocabulary on read, so the admin UI only
+// ever sees one set of words. Writes already go out canonical, so the stored
+// data converges as reports get actioned.
+// ---------------------------------------------------------------------------
+
+const normalizeStatus = (status) =>
+  LEGACY_STATUS_MAP[status] || (REPORT_STATUSES.includes(status) ? status : "open");
+
+const normalizeReason = (reason) => LEGACY_REASON_MAP[reason] || reason || "other";
+
+/**
+ * Every raw value that normalizes to `canonical` — used to build the Mongo
+ * query, since filtering on the canonical word alone would miss legacy rows.
+ */
+const rawValuesFor = (canonical, legacyMap) => [
+  canonical,
+  ...Object.keys(legacyMap).filter((legacy) => legacyMap[legacy] === canonical),
+];
+
+// Most accounts are phone-registered and have no email field at all, so the
+// admin table falls back to the phone number as the secondary identifier.
+const shapeUser = (user) =>
+  user
+    ? {
+        _id: String(user._id),
+        name: user.name || "",
+        email: user.email || "",
+        phoneNumber: user.phoneNumberWithCountryCode || user.phoneNumber || "",
+        userType: user.userType || "",
+        // Lets the Flagged table show a banned/suspended account at a glance.
+        accountStatus: user.accountStatus || "active",
+      }
+    : null;
+
+/**
+ * Admin: one feed over both report collections.
+ *
+ * `reports` (Report) and `reportedposts` (ReportedPost) are two generations of
+ * the same idea and the admin Flagged page needs both. They are read separately,
+ * normalized to a single shape carrying a `source` discriminator, then merged.
+ * Referenced users and jobs are resolved with two batched $in lookups rather
+ * than .populate(), because the legacy job-shaped documents sitting in `reports`
+ * carry jobId/jobPosterId paths that the Report schema does not declare and
+ * populate refuses to traverse.
+ */
+exports.getAllCombinedReports = async (req, res) => {
+  try {
+    const {
+      status,
+      reason,
+      reportType,
+      source,
+      page = 1,
+      limit = 500,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query;
+
+    const reportQuery = {};
+    const postQuery = {};
+    if (status) {
+      const raws = rawValuesFor(status, LEGACY_STATUS_MAP);
+      reportQuery.status = { $in: raws };
+      postQuery.status = { $in: raws };
+    }
+    if (reason) {
+      const raws = rawValuesFor(reason, LEGACY_REASON_MAP);
+      reportQuery.reason = { $in: raws };
+      postQuery.reason = { $in: raws };
+    }
+    // Everything in ReportedPost is a report about a job posting.
+    if (reportType) reportQuery.reportType = reportType;
+    const wantReports = source !== "reported_post";
+    const wantPosts =
+      source !== "report" && (!reportType || reportType === "job");
+
+    const [rawReports, rawPosts] = await Promise.all([
+      wantReports ? Report.find(reportQuery).lean() : [],
+      wantPosts ? ReportedPost.find(postQuery).lean() : [],
+    ]);
+
+    // Batch-resolve every referenced user and job in two queries.
+    const userIds = new Set();
+    const jobIds = new Set();
+    const track = (set) => (id) => {
+      if (id) set.add(String(id));
+    };
+    const trackUser = track(userIds);
+    const trackJob = track(jobIds);
+
+    for (const r of rawReports) {
+      trackUser(r.reportedBy);
+      trackUser(r.reportedUserId);
+      trackUser(r.reviewedBy);
+      trackUser(r.jobPosterId); // legacy job-shaped rows
+      trackJob(r.jobId);
+      trackJob(r.relatedId); // a "job" report points relatedId at the job
+    }
+    for (const p of rawPosts) {
+      trackUser(p.reportedBy);
+      trackUser(p.reportedUserId);
+      trackUser(p.reviewedBy);
+      trackUser(p.jobPosterId);
+      trackJob(p.jobId);
+    }
+
+    const [users, jobs] = await Promise.all([
+      userIds.size
+        ? User.find({ _id: { $in: [...userIds] } })
+            .select("name email phoneNumber phoneNumberWithCountryCode userType accountStatus")
+            .lean()
+        : [],
+      jobIds.size
+        ? Job.find({ _id: { $in: [...jobIds] } })
+            .select(
+              "title description category budget budgetType paymentMethod location media createdAt status isDeleted isHidden"
+            )
+            .lean()
+        : [],
+    ]);
+
+    const userById = new Map(users.map((u) => [String(u._id), u]));
+    const jobById = new Map(jobs.map((j) => [String(j._id), j]));
+    const lookupUser = (id) => shapeUser(id ? userById.get(String(id)) : null);
+
+    /** Live job document when we still have one, else the embedded snapshot. */
+    const resolveJob = (jobId, snapshot) => {
+      const live = jobId ? jobById.get(String(jobId)) : null;
+      const src = live || snapshot;
+      if (!src) return null;
+      return {
+        _id: String(live ? live._id : jobId || ""),
+        title: src.title || "Untitled job",
+        description: src.description || "",
+        category: src.category || "",
+        budget: src.budget || 0,
+        budgetType: src.budgetType || "fixed",
+        paymentMethod: src.paymentMethod || "Not specified",
+        location: src.location || {},
+        media: src.media || [],
+        createdAt: src.createdAt,
+        status: src.status,
+        // A snapshot with no surviving job row means the job is gone.
+        isDeleted: live ? Boolean(live.isDeleted) : Boolean(snapshot),
+        isHidden: live ? Boolean(live.isHidden) : false,
+      };
+    };
+
+    const fromReport = (r) => {
+      // Legacy rows copied out of ReportedPost never got a reportType.
+      const type = r.reportType || (r.jobId || r.jobDetails ? "job" : "other");
+      const job = resolveJob(r.jobId || (type === "job" ? r.relatedId : null), r.jobDetails);
+      return {
+        _id: String(r._id),
+        source: "report",
+        reportType: type,
+        reportedBy:
+          lookupUser(r.reportedBy) ||
+          (r.reportedByDetails
+            ? {
+                _id: String(r.reportedByDetails.providerId || ""),
+                name: r.reportedByDetails.providerName || "Unknown",
+                email: r.reportedByDetails.providerEmail || "",
+                phoneNumber: "",
+                userType: r.reportedByDetails.providerUserType || "",
+              }
+            : null),
+        reportedUserId: lookupUser(r.reportedUserId || r.jobPosterId),
+        relatedId: String(r.relatedId || r.jobId || ""),
+        job,
+        reason: normalizeReason(r.reason),
+        rawReason: r.reason,
+        comment: r.comment || "",
+        status: normalizeStatus(r.status),
+        rawStatus: r.status,
+        reviewedBy: lookupUser(r.reviewedBy),
+        reviewedAt: r.reviewedAt || null,
+        adminNotes: r.adminNotes || "",
+        actionTaken: r.actionTaken || "none",
+        reportMetadata: r.reportMetadata || { reportSource: "web" },
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    };
+
+    const fromPost = (p) => ({
+      _id: String(p._id),
+      source: "reported_post",
+      reportType: "job",
+      reportedBy:
+        lookupUser(p.reportedBy) ||
+        (p.reportedByDetails
+          ? {
+              _id: String(p.reportedByDetails.providerId || ""),
+              name: p.reportedByDetails.providerName || "Unknown",
+              email: p.reportedByDetails.providerEmail || "",
+              phoneNumber: "",
+              userType: p.reportedByDetails.providerUserType || "",
+            }
+          : null),
+      // The reported party is whoever posted the job being reported.
+      reportedUserId: lookupUser(p.reportedUserId || p.jobPosterId),
+      relatedId: String(p.jobId || ""),
+      job: resolveJob(p.jobId, p.jobDetails),
+      reason: normalizeReason(p.reason),
+      rawReason: p.reason,
+      comment: p.comment || "",
+      status: normalizeStatus(p.status),
+      rawStatus: p.status,
+      reviewedBy: lookupUser(p.reviewedBy),
+      reviewedAt: p.reviewedAt || null,
+      // ReportedPost has no actionTaken column.
+      adminNotes: p.adminNotes || "",
+      actionTaken: "none",
+      reportMetadata: { reportSource: "web" },
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    });
+
+    const merged = [...rawReports.map(fromReport), ...rawPosts.map(fromPost)];
+
+    const dir = sortOrder === "asc" ? 1 : -1;
+    merged.sort((a, b) => {
+      const av = a[sortBy] ?? a.createdAt;
+      const bv = b[sortBy] ?? b.createdAt;
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
+
+    // Stats are counted off the normalized rows so the cards can never disagree
+    // with the table underneath them.
+    const stats = REPORT_STATUSES.reduce((acc, s) => ({ ...acc, [s]: 0 }), {
+      total: merged.length,
+    });
+    for (const item of merged) stats[item.status] = (stats[item.status] || 0) + 1;
+    stats.open_total = OPEN_REPORT_STATUSES.reduce(
+      (sum, s) => sum + (stats[s] || 0),
+      0
+    );
+    stats.bySource = {
+      report: merged.filter((m) => m.source === "report").length,
+      reported_post: merged.filter((m) => m.source === "reported_post").length,
+    };
+
+    const limitNum = Math.max(1, parseInt(limit, 10) || 500);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const skip = (pageNum - 1) * limitNum;
+    const pageItems = merged.slice(skip, skip + limitNum);
+
+    return res.json({
+      success: true,
+      data: {
+        reports: pageItems,
+        stats,
+        pagination: {
+          current: pageNum,
+          total: Math.ceil(merged.length / limitNum) || 1,
+          totalReports: merged.length,
+          hasNext: skip + pageItems.length < merged.length,
+          hasPrev: pageNum > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching combined reports:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch reports",
+      error: error.message,
+    });
+  }
+};
 
 // Create a new report
 exports.createReport = async (req, res) => {
@@ -104,7 +396,12 @@ exports.updateReportedPostStatus = async (req, res) => {
       report.adminNotes = adminNotes;
     }
 
-    await report.save();
+    // Validate only what this handler touched. save() validates every path by
+    // default, which rejected legacy rows over fields the admin never edited —
+    // documents still holding the retired reasons ("scam", "fake_job") could not
+    // be actioned at all. Those values are mapped for display on read; there is
+    // no reason a moderation decision should be blocked by them.
+    await report.save({ validateModifiedOnly: true });
 
     const updated = await ReportedPost.findById(reportId)
       .populate("jobId", "title description category budget budgetType paymentMethod location media createdAt status")
@@ -112,6 +409,14 @@ exports.updateReportedPostStatus = async (req, res) => {
       .populate("jobPosterId", "name email userType")
       .populate("reportedUserId", "name email userType")
       .lean();
+
+    const postTitle = updated?.jobId?.title;
+    await auditLog(req, "report_reviewed", `${status ? `Marked report as ${statusText(status)}` : "Updated report notes"}${postTitle ? ` on job "${postTitle}"` : ""}`, {
+      targetType: "report",
+      targetId: report._id,
+      targetModel: "ReportedPost",
+      metadata: { status: status || null, adminNotes: adminNotes ?? null, targetName: postTitle || null },
+    });
 
     return res.json({ success: true, data: updated });
   } catch (error) {
@@ -354,7 +659,10 @@ exports.updateReportStatus = async (req, res) => {
     if (adminNotes) report.adminNotes = adminNotes;
     if (actionTaken) report.actionTaken = actionTaken;
 
-    await report.save();
+    // Modified paths only — see updateReportedPostStatus. Legacy rows copied out
+    // of ReportedPost never got reportType/relatedId, and full-document
+    // validation made them permanently un-actionable.
+    await report.save({ validateModifiedOnly: true });
 
     // Populate for response
     await report.populate([
@@ -362,6 +670,14 @@ exports.updateReportStatus = async (req, res) => {
       { path: "reportedUserId", select: "name email userType" },
       { path: "reviewedBy", select: "name email userType" }
     ]);
+
+    const reportedName = report.reportedUserId?.name;
+    await auditLog(req, "report_reviewed", `Marked ${report.reportType || ""} report as ${statusText(status)}${reportedName ? ` (against ${reportedName})` : ""}${actionTaken ? `. Action: ${actionTaken}` : ""}`.replace(/\s+/g, " "), {
+      targetType: "report",
+      targetId: report._id,
+      targetModel: "Report",
+      metadata: { status, actionTaken: actionTaken || null, reportType: report.reportType, targetName: reportedName || null },
+    });
 
     res.json({
       success: true,
@@ -446,13 +762,20 @@ exports.deleteReport = async (req, res) => {
   try {
     const { reportId } = req.params;
 
-    const report = await Report.findByIdAndDelete(reportId);
+    const report = await Report.findByIdAndDelete(reportId).populate("reportedUserId", "name");
     if (!report) {
       return res.status(404).json({
         success: false,
         message: "Report not found"
       });
     }
+
+    // The report is gone, so the row keeps what it was about.
+    const reportedName = report.reportedUserId?.name;
+    await auditLog(req, "report_deleted", `Deleted a ${report.reportType || ""} report (${statusText(report.status)})${reportedName ? ` against ${reportedName}` : ""}`.replace(/\s+/g, " "), {
+      targetType: "report",
+      metadata: { reportId, reportType: report.reportType, reason: report.reason, status: report.status, targetName: reportedName || null },
+    });
 
     res.json({
       success: true,
@@ -496,5 +819,115 @@ exports.getReportDetails = async (req, res) => {
       message: "Failed to fetch report details",
       error: error.message
     });
+  }
+};
+
+// Admin: decide many reports at once, from either collection — the Flagged
+// page's bulk triage. Only reports still awaiting a decision (open, under review)
+// change; anything already closed is skipped rather than overwritten, so a stale
+// selection can't undo another admin's ruling. One audit row covers the batch.
+//
+// Set-based on purpose: per collection it is one read, one conditional
+// updateMany and one read-back, however many reports are selected — a report at
+// a time was two round trips each, minutes for a few hundred against a distant
+// database. The update's own filter re-checks the status, so a report closed by
+// someone else between the read and the write is skipped, not overwritten.
+const BULK_STATUSES = ["under_review", "action_taken", "dismissed"];
+const BULK_LIMIT = 500;
+const BULK_VERBS = { under_review: "Marked under review", action_taken: "Resolved", dismissed: "Dismissed" };
+const canonicalStatus = (status) => LEGACY_STATUS_MAP[status] || status;
+// Stored values (canonical and legacy) that still await a decision.
+const STORED_OPEN_STATUSES = [...REPORT_STATUSES, ...Object.keys(LEGACY_STATUS_MAP)].filter((s) =>
+  OPEN_REPORT_STATUSES.includes(canonicalStatus(s))
+);
+
+exports.bulkUpdateReportStatus = async (req, res) => {
+  try {
+    const { items, status, adminNotes, actionTaken } = req.body || {};
+
+    if (!BULK_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "Select at least one report" });
+    }
+    if (items.length > BULK_LIMIT) {
+      return res.status(400).json({ success: false, message: `At most ${BULK_LIMIT} reports at a time` });
+    }
+    const wellFormed = items.every(
+      (item) => item && mongoose.Types.ObjectId.isValid(item.id) && ["report", "reported_post"].includes(item.source)
+    );
+    if (!wellFormed) {
+      return res.status(400).json({ success: false, message: "Invalid report reference" });
+    }
+
+    const adminId = req.user.id;
+    const now = new Date();
+    const note = typeof adminNotes === "string" && adminNotes.trim() ? adminNotes.trim() : null;
+    // A report can move to `status` only from an open state other than `status` itself.
+    const movableFrom = STORED_OPEN_STATUSES.filter((s) => canonicalStatus(s) !== status);
+    const updated = [];
+    const skipped = [];
+    const failed = [];
+
+    for (const source of ["report", "reported_post"]) {
+      const Model = source === "report" ? Report : ReportedPost;
+      const ids = [...new Set(items.filter((item) => item.source === source).map((item) => String(item.id)))];
+      if (!ids.length) continue;
+
+      try {
+        const current = new Map(
+          (await Model.find({ _id: { $in: ids } }).select("status").lean()).map((doc) => [String(doc._id), canonicalStatus(doc.status)])
+        );
+        const candidates = [];
+        for (const id of ids) {
+          const was = current.get(id);
+          if (!was) skipped.push({ id, source, reason: "not found" });
+          else if (!OPEN_REPORT_STATUSES.includes(was) || was === status) skipped.push({ id, source, reason: `already ${statusText(was)}` });
+          else candidates.push(id);
+        }
+        if (!candidates.length) continue;
+
+        const set = { status, reviewedBy: adminId, reviewedAt: now };
+        if (note) set.adminNotes = note;
+        // ReportedPost has no actionTaken column; a decision on a Report records one.
+        if (source === "report" && status !== "under_review") {
+          set.actionTaken = actionTaken || (status === "dismissed" ? "report_dismissed" : "none");
+        }
+        await Model.updateMany({ _id: { $in: candidates }, status: { $in: movableFrom } }, { $set: set });
+
+        // Which ones this request changed: exactly those now stamped with its time.
+        const changed = new Set(
+          (await Model.find({ _id: { $in: candidates }, reviewedAt: now, status }).select("_id").lean()).map((doc) => String(doc._id))
+        );
+        for (const id of candidates) {
+          if (changed.has(id)) updated.push({ id, source });
+          else skipped.push({ id, source, reason: "changed by someone else meanwhile" });
+        }
+      } catch (error) {
+        console.error(`bulkUpdateReportStatus (${source}) error`, error);
+        for (const id of ids) {
+          if (!updated.some((u) => u.id === id) && !skipped.some((s) => s.id === id)) failed.push({ id, source, error: error.message });
+        }
+      }
+    }
+
+    if (updated.length) {
+      const n = updated.length;
+      await auditLog(
+        req,
+        "reports_bulk_reviewed",
+        `${BULK_VERBS[status]} ${n} report${n === 1 ? "" : "s"} at once${skipped.length ? ` (${skipped.length} skipped)` : ""}${note ? `. Note: ${note}` : ""}`,
+        {
+          targetType: "report",
+          metadata: { status, count: n, skipped: skipped.length, failed: failed.length, reports: updated, adminNotes: note },
+        }
+      );
+    }
+
+    return res.json({ success: true, updated: updated.length, skipped, failed });
+  } catch (error) {
+    console.error("bulkUpdateReportStatus error", error);
+    return res.status(500).json({ success: false, message: "Failed to update reports" });
   }
 };

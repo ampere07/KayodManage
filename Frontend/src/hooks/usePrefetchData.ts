@@ -11,17 +11,20 @@ import {
 } from '../services';
 import apiClient from '../utils/apiClient';
 import { iconCacheService } from '../services/iconCacheService';
+import { useAuth } from '../context/AuthContext';
 
 export const usePrefetchData = () => {
   const queryClient = useQueryClient();
   const [prefetched, setPrefetched] = useState(false);
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'superadmin';
 
   useEffect(() => {
     if (prefetched) return;
 
     const prefetchAllData = async () => {
       console.log('[Prefetch] Starting to prefetch all data...');
-      console.log('[Prefetch] Prefetching: Dashboard, Users, Jobs, Transactions, Verifications, Support, Activity, Flagged');
+      console.log('[Prefetch] Prefetching: Dashboard, Users, Jobs, Transactions, Verifications, Support, Flagged');
       
       try {
         await Promise.all([
@@ -49,10 +52,11 @@ export const usePrefetchData = () => {
             },
           }),
 
-          // Users - All pages
+          // Users - All pages. Keys must match the queryParams Users.tsx builds,
+          // or the prefetched page is never read.
           queryClient.prefetchQuery({
-            queryKey: ['users', { page: 1, limit: 20 }],
-            queryFn: () => usersService.getUsers({ page: 1, limit: 20 }),
+            queryKey: ['users', { page: 1, limit: 20, userType: 'client,provider' }],
+            queryFn: () => usersService.getUsers({ page: 1, limit: 20, userType: 'client,provider' }),
           }),
           queryClient.prefetchQuery({
             queryKey: ['users', { page: 1, limit: 20, userType: 'client' }],
@@ -63,33 +67,15 @@ export const usePrefetchData = () => {
             queryFn: () => usersService.getUsers({ page: 1, limit: 20, userType: 'provider' }),
           }),
           queryClient.prefetchQuery({
-            queryKey: ['users', { page: 1, limit: 20, restricted: 'true' }],
-            queryFn: () => usersService.getUsers({ page: 1, limit: 20, restricted: 'true' }),
+            queryKey: ['users', { page: 1, limit: 20, userType: 'client,provider', accountStatus: 'restricted,suspended,banned' }],
+            queryFn: () => usersService.getUsers({ page: 1, limit: 20, userType: 'client,provider', accountStatus: 'restricted,suspended,banned' }),
           }),
 
-          // User counts
+          // User counts — the cells every Users card and tab is summed from
+          // (useUserCountCells, no search/profession).
           queryClient.prefetchQuery({
-            queryKey: ['users', 'counts', {}],
-            queryFn: async () => {
-              const [totalData, customersData, providersData, suspendedData, restrictedData, bannedData] = await Promise.all([
-                usersService.getUsers({ limit: 1, page: 1 }),
-                usersService.getUsers({ userType: 'client', limit: 1, page: 1 }),
-                usersService.getUsers({ userType: 'provider', limit: 1, page: 1 }),
-                usersService.getUsers({ status: 'suspended', limit: 1, page: 1 }),
-                usersService.getUsers({ status: 'restricted', limit: 1, page: 1 }),
-                usersService.getUsers({ status: 'banned', limit: 1, page: 1 })
-              ]);
-              return {
-                total: totalData.pagination?.total || 0,
-                customers: customersData.pagination?.total || 0,
-                providers: providersData.pagination?.total || 0,
-                suspended: suspendedData.pagination?.total || 0,
-                restricted: restrictedData.pagination?.total || 0,
-                banned: bannedData.pagination?.total || 0,
-                verified: 0,
-                unverified: 0
-              };
-            },
+            queryKey: ['users', 'countCells', {}],
+            queryFn: async () => (await usersService.getUserCounts({})).cells,
           }),
 
           // Jobs
@@ -187,19 +173,6 @@ export const usePrefetchData = () => {
             },
           }),
 
-          // Activity Logs
-          queryClient.prefetchQuery({
-            queryKey: ['activity'],
-            queryFn: async () => {
-              try {
-                const response = await apiClient.get('/api/admin/activity-logs');
-                return response.data.logs || [];
-              } catch {
-                return [];
-              }
-            },
-          }),
-
           // Flagged Posts
           queryClient.prefetchQuery({
             queryKey: ['flagged'],
@@ -213,8 +186,8 @@ export const usePrefetchData = () => {
             },
           }),
 
-          // Admins (Settings Management)
-          queryClient.prefetchQuery({
+          // Admins (Settings Management) — superadmin-only on the server.
+          isSuperAdmin && queryClient.prefetchQuery({
             queryKey: ['admins'],
             queryFn: async () => {
               try {
@@ -288,5 +261,5 @@ export const usePrefetchData = () => {
     return () => {
       clearInterval(cacheCleanupInterval);
     };
-  }, [queryClient, prefetched]);
+  }, [queryClient, prefetched, isSuperAdmin]);
 };

@@ -9,5 +9,5 @@ export * from './useSupportSocket';
 export * from './useSupportTickets';
 export * from './usePrefetchData';
 export * from './useVerifications';
-export * from './useActivity';
+export * from './useAudit';
 export * from './useFlagged';

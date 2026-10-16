@@ -105,12 +105,18 @@ async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session
   const platformFee = await calculatePlatformFee(job.escrowAmount, providerId);
   const netAmount = job.escrowAmount - platformFee;
 
+  // 'suspended' belongs here: a rebooked job's hold is suspended, and without
+  // it this created a SECOND EscrowRelease alongside the suspended one — two
+  // records pointing at one job, either of which kayod/server's scheduler can
+  // process, i.e. a double payout. Reviving the existing record also matches
+  // kayod/server's own scheduleEscrowRelease, which reuses suspended records.
   const existingRelease = await EscrowRelease.findOne({
     jobId: job._id,
-    status: { $in: ['scheduled', 'processing'] }
+    status: { $in: ['scheduled', 'processing', 'suspended'] }
   }).session(session || null);
 
   if (existingRelease) {
+    existingRelease.status = 'scheduled';
     existingRelease.scheduledFor = releaseDate;
     existingRelease.escrowAmount = job.escrowAmount;
     existingRelease.platformFee = platformFee;
@@ -141,11 +147,19 @@ async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session
   return escrowRelease;
 }
 
-/** The live hold for a job, if any — the record a dispute paused. */
+/**
+ * The live hold for a job, if any — the record a dispute paused.
+ *
+ * 'suspended' counts as live. It is inert to the scheduler but it is still the
+ * job's hold, and it is revivable: a rebook suspends it, and a later ruling on
+ * that same rebook (the redo was never delivered, so pay or refund instead)
+ * has to act on THAT record. Omitting it made resumeEscrowRelease return null
+ * for exactly the jobs whose hold most needed resuming.
+ */
 async function findLiveEscrowRelease(jobId, session = null) {
   return EscrowRelease.findOne({
     jobId,
-    status: { $in: ['scheduled', 'processing', 'failed'] }
+    status: { $in: ['scheduled', 'processing', 'failed', 'suspended'] }
   }).session(session || null);
 }
 

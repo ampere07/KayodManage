@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import {
   Search,
   MessageSquare,
@@ -6,7 +8,8 @@ import {
   Calendar,
   MessageCircleQuestion,
   Eye,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import StatsCard from '../components/Dashboard/StatsCard';
 import { SupportChatModal } from '../components/Modals';
@@ -17,7 +20,25 @@ import { useSupportTickets } from '../hooks/useSupportTickets';
 import { useSupportSocket } from '../hooks/useSupportSocket';
 import { getInitials, getStatusBadge } from '../utils';
 import { hasPreviouslyResolved, calculateTicketStats } from '../utils/supportHelpers';
+import type { TicketRow } from '../utils/supportHelpers';
 import type { ChatSupport, Message } from '../types';
+
+/** How a resolved dispute was ruled — see DISPUTE_RESOLUTION_MAP server-side. */
+const DISPUTE_OUTCOME_LABELS: Record<string, string> = {
+  pay_provider: 'Provider paid',
+  refund_client: 'Client refunded',
+  rebook: 'Rebooked',
+};
+
+/**
+ * A dispute row stands for both parties' threads, so it is badged from the
+ * row's combined status. The primary thread's own displayStatus read
+ * "Resolved" while the other party's thread was still open.
+ */
+const rowStatusBadge = (row: TicketRow) =>
+  row.isDispute
+    ? getStatusBadge(row.status, row.primary.acceptedBy || row.counterpart?.acceptedBy || undefined)
+    : getStatusBadge(row.status, row.primary.acceptedBy, row.primary.displayStatus);
 
 const Support: React.FC = () => {
   const { user } = useAuth();
@@ -31,7 +52,9 @@ const Support: React.FC = () => {
 
   const {
     tickets,
-    paginatedTickets,
+    // Rows collapse each dispute's two threads into one entry.
+    paginatedRows,
+    ticketRows,
     filteredTickets,
     loading,
     filters,
@@ -47,6 +70,10 @@ const Support: React.FC = () => {
   } = useSupportTickets();
 
   const selectRequestIdRef = useRef(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Which deep link has already been honoured, so the effect below does not
+  // reopen the ticket every time the list refreshes underneath it.
+  const deepLinkedRef = useRef<string | null>(null);
 
   const handleNewMessage = useCallback((data: any) => {
     const { chatSupportId, message: newMessage } = data;
@@ -146,6 +173,60 @@ const Support: React.FC = () => {
     }, 300);
   };
 
+  /**
+   * Open the ticket named by `?id=` (or `?ticketId=`) on arrival, so a link
+   * from elsewhere in the admin — a user's activity history, a dashboard alert
+   * — lands on the conversation itself rather than just the ticket list.
+   *
+   * Falls back to fetching the ticket directly when it is not among the loaded
+   * rows: the list collapses each dispute's two threads into one entry, so a
+   * counterpart thread is reachable by id but never appears as a row of its own.
+   */
+  useEffect(() => {
+    const targetId = searchParams.get('id') || searchParams.get('ticketId');
+    if (!targetId || loading) return;
+    if (deepLinkedRef.current === targetId) return;
+    deepLinkedRef.current = targetId;
+
+    const clearParam = () => {
+      searchParams.delete('id');
+      searchParams.delete('ticketId');
+      setSearchParams(searchParams, { replace: true });
+    };
+
+    const listed = tickets.find(
+      (t: ChatSupport) => t._id === targetId || t.ticketId === targetId
+    );
+
+    if (listed) {
+      handleSelectChat(listed);
+      clearParam();
+      return;
+    }
+
+    supportService
+      .getChatSupportById(targetId)
+      .then((data) => {
+        setSelectedChat(data.chatSupport);
+        setIsChatModalOpen(true);
+        joinChat(data.chatSupport._id);
+      })
+      .catch((error) => {
+        // 404 is also what the server returns for a ticket this admin may not
+        // read, so ticket ids cannot be probed across support agents.
+        console.error('Error opening linked support ticket:', error);
+        toast.error(
+          error?.response?.status === 404
+            ? 'You do not have access to that ticket'
+            : 'Failed to open that ticket'
+        );
+      })
+      .finally(clearParam);
+    // handleSelectChat is rebuilt every render; deepLinkedRef is what keeps
+    // this from firing twice for the same link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets, loading, searchParams]);
+
   const handleSendMessage = async () => {
     if (!message.trim() || !selectedChat || sendingMessage) return;
 
@@ -207,10 +288,12 @@ const Support: React.FC = () => {
     }
   };
 
-  const handleChatAction = async (chatSupportId: string, action: string) => {
+  // `reason` is the resolution note the admin must supply before resolving; it
+  // is stored, logged, and shown to the customer. See supportService.closeTicket.
+  const handleChatAction = async (chatSupportId: string, action: string, reason?: string) => {
     try {
       if (action === 'close') {
-        await closeTicket(chatSupportId);
+        await closeTicket({ ticketId: chatSupportId, reason });
         closeChatModal();
       } else if (action === 'reopen') {
         const result = await reopenTicket(chatSupportId);
@@ -226,15 +309,27 @@ const Support: React.FC = () => {
     }
   };
 
+  // Threads an accept has been sent for, released only if it fails. The list
+  // learns a dispute's threads are accepted a render before selectedChat does,
+  // and the dispute-sync effect below — running late, against that render —
+  // re-accepted the thread the admin had just accepted: a 409 on every dispute
+  // picked up. Anything in here is never synced again.
+  const acceptRequestedRef = useRef<Set<string>>(new Set());
+
   const handleAcceptTicket = async (chatSupportId: string) => {
+    acceptRequestedRef.current.add(chatSupportId);
     try {
       const result = await acceptTicket(chatSupportId);
-      setSelectedChat(prev =>
-        prev?._id === chatSupportId
-          ? { ...prev, ...result.chatSupport }
-          : prev
-      );
+      // On a dispute the server accepts both parties' threads; the open one may
+      // be either of them, so match against all of what came back.
+      const accepted = [result.chatSupport, ...(result.linkedChatSupports || [])];
+      accepted.forEach(c => acceptRequestedRef.current.add(c._id));
+      setSelectedChat(prev => {
+        const update = prev && accepted.find(c => c._id === prev._id);
+        return update ? { ...prev, ...update } : prev;
+      });
     } catch (error) {
+      acceptRequestedRef.current.delete(chatSupportId);
       console.error('Error accepting ticket:', error);
       throw error;
     }
@@ -279,6 +374,23 @@ const Support: React.FC = () => {
             t.metadata?.jobId === selectedChat.metadata.jobId
         ) || null
       : null;
+
+  // Acceptance is case-wide: the server accepts both threads of a dispute at
+  // once. Disputes accepted before that was true (or whose counterpart was
+  // filed later) can still be half-accepted — sync the straggler rather than
+  // asking the admin to accept the same dispute a second time.
+  useEffect(() => {
+    if (!selectedChat || !counterpartChat) return;
+    if (selectedChat.status !== 'open' || selectedChat.acceptedBy) return;
+    if (!counterpartChat.acceptedBy) return;
+    if (user?.role !== 'admin' && user?.role !== 'superadmin') return;
+    if (acceptRequestedRef.current.has(selectedChat._id)) return;
+
+    handleAcceptTicket(selectedChat._id).catch(error => {
+      console.error('Error syncing dispute acceptance:', error);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChat?._id, selectedChat?.acceptedBy, counterpartChat?.acceptedBy, user?.role]);
 
   const stats = calculateTicketStats(tickets);
 
@@ -528,7 +640,7 @@ const Support: React.FC = () => {
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
-          {filteredTickets.length === 0 ? (
+          {ticketRows.length === 0 ? (
             <div className="bg-white p-12 text-center">
               <div className="text-gray-400 mb-4">
                 <MessageCircleQuestion className="h-12 w-12 mx-auto" />
@@ -542,7 +654,8 @@ const Support: React.FC = () => {
                 <table className="min-w-full">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-10 border-b-2 border-gray-300">
                     <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
+                      {/* Wide enough for two users side by side on a dispute row. */}
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[26%] min-w-[300px]">User</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Subject</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
                       <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
@@ -552,43 +665,138 @@ const Support: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white">
-                    {paginatedTickets.map((chat) => (
+                    {paginatedRows.map((row) => {
+                      const chat = row.primary;
+                      return (
                       <tr
-                        key={chat._id}
-                        data-testid={`support-ticket-row-${chat._id}`}
+                        key={row.key}
+                        data-testid={`support-ticket-row-${row.key}`}
                         onClick={() => handleSelectChat(chat)}
                         className="hover:bg-gray-50 transition-colors cursor-pointer"
                       >
-                        <td className="px-6 py-2.5 whitespace-nowrap border-b border-gray-300">
-                          <div className="flex items-center gap-3">
-                            {chat.userProfileImage ? (
-                              <img
-                                src={chat.userProfileImage}
-                                alt={chat.userName || 'User'}
-                                className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-100"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                                <span className="text-sm font-bold text-blue-600 uppercase">
-                                  {getInitials(chat.userName || 'Unknown')}
-                                </span>
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className="text-sm font-bold text-gray-900 truncate">{chat.userName || 'Unknown'}</div>
-                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{chat.userEmail || 'N/A'}</div>
+                        <td className="px-6 py-2.5 border-b border-gray-300">
+                          {/* A dispute concerns two people, so the cell lists
+                              both with their role. Everything else keeps the
+                              single-party layout unchanged. */}
+                          {row.isDispute && row.reporter && row.reported ? (
+                            // Reporter on the left, the person reported on the
+                            // right, arrow between: the row reads left-to-right
+                            // as "X reported Y".
+                            <div className="flex items-center gap-2.5">
+                              {([
+                                { party: row.reporter, role: row.reporterRole },
+                                { party: row.reported, role: row.reportedRole },
+                              ] as { party: typeof chat; role: string }[]).map(({ party, role }, i) => (
+                                <React.Fragment key={party._id}>
+                                  {i > 0 && (
+                                    <span
+                                      aria-hidden="true"
+                                      className="shrink-0 text-base font-bold text-gray-300"
+                                    >
+                                      →
+                                    </span>
+                                  )}
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {party.userProfileImage ? (
+                                      <img
+                                        src={party.userProfileImage}
+                                        alt={party.userName || 'User'}
+                                        className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-100"
+                                      />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
+                                        <span className="text-[10px] font-bold text-blue-600 uppercase">
+                                          {getInitials(party.userName || 'Unknown')}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div
+                                        className="text-[13px] font-bold text-gray-900 truncate leading-tight"
+                                        title={`${party.userName || 'Unknown'} — ${role}, ${i === 0 ? 'raised this dispute' : 'is the subject of this dispute'}`}
+                                      >
+                                        {party.userName || 'Unknown'}
+                                      </div>
+                                      <div className="text-[9px] font-black uppercase tracking-widest leading-tight">
+                                        <span className={i === 0 ? 'text-amber-600' : 'text-red-500'}>
+                                          {i === 0 ? 'Reporter' : 'Reported'}
+                                        </span>
+                                        <span className="text-gray-300"> · </span>
+                                        <span className="text-gray-400">{role}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </React.Fragment>
+                              ))}
                             </div>
-                          </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              {chat.userProfileImage ? (
+                                <img
+                                  src={chat.userProfileImage}
+                                  alt={chat.userName || 'User'}
+                                  className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-100"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
+                                  <span className="text-sm font-bold text-blue-600 uppercase">
+                                    {getInitials(chat.userName || 'Unknown')}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-gray-900 truncate">{chat.userName || 'Unknown'}</div>
+                                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{chat.userEmail || 'N/A'}</div>
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="text-sm font-medium text-gray-900 max-w-[200px] truncate">{chat.subject}</div>
+                          <div className="max-w-[260px]">
+                            {row.isDispute ? (
+                              <>
+                                {/* Headline off the JOB, not the thread subject:
+                                    the two threads of one dispute can carry
+                                    different subjects (one side files it as
+                                    "Payment / wallet", the other as "Dispute:
+                                    <job>"), so using the primary thread's
+                                    subject makes the same dispute read
+                                    differently depending on who reported. */}
+                                <div
+                                  className="text-sm font-semibold text-gray-900 truncate"
+                                  title={row.jobTitle || chat.subject}
+                                >
+                                  {row.jobTitle || chat.subject.replace(/^Dispute:\s*/i, '')}
+                                </div>
+                                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
+                                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                                  <span className="uppercase tracking-wider">Job dispute</span>
+                                  {row.jobId && (
+                                    <span title={`Job ${row.jobId}`}>
+                                      · #{row.jobId.slice(-6).toUpperCase()}
+                                    </span>
+                                  )}
+                                  {row.disputeOutcome && (
+                                    <span className="text-emerald-600">
+                                      · {DISPUTE_OUTCOME_LABELS[row.disputeOutcome] || row.disputeOutcome}
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-sm font-medium text-gray-900 truncate" title={chat.subject}>
+                                {chat.subject}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <div className="text-sm text-gray-600">{chat.category}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
                           <div className="flex items-center justify-center gap-2">
-                            {getStatusBadge(chat.status, chat.acceptedBy, chat.displayStatus)}
+                            {/* row.status is open while EITHER thread is open. */}
+                            {rowStatusBadge(row)}
                             {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50" title="You previously resolved a ticket in this conversation">
                                 <CheckCircle className="w-3 h-3 mr-1" />
@@ -598,23 +806,26 @@ const Support: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
-                          <div className="flex items-center justify-center gap-1">
+                          <div
+                            className="flex items-center justify-center gap-1"
+                            title={row.isDispute ? 'Combined across both dispute threads' : undefined}
+                          >
                             <MessageSquare className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-medium text-gray-900">{chat.messages?.length || 0}</span>
-                            {(chat.unreadCount || 0) > 0 && (
+                            <span className="text-sm font-medium text-gray-900">{row.messageCount}</span>
+                            {row.unreadCount > 0 && (
                               <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                                {chat.unreadCount}
+                                {row.unreadCount}
                               </span>
                             )}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
                           <div className="text-xs text-gray-500">
-                            {new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                            {new Date(row.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
                             <Calendar className="h-3 w-3" />
-                            {new Date(chat.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(row.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
@@ -630,25 +841,33 @@ const Support: React.FC = () => {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="md:hidden px-3 py-3 space-y-2">
-                {paginatedTickets.map((chat) => (
+                {paginatedRows.map((row) => {
+                  const chat = row.primary;
+                  return (
                   <div
-                    key={chat._id}
-                    data-testid={`support-ticket-row-${chat._id}`}
+                    key={row.key}
+                    data-testid={`support-ticket-row-${row.key}`}
                     onClick={() => handleSelectChat(chat)}
                     className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
                   >
                     <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
                       <div className="flex items-center gap-2">
-                        {getStatusBadge(chat.status, chat.acceptedBy, chat.displayStatus)}
+                        {rowStatusBadge(row)}
+                        {row.isDispute && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-100">
+                            Dispute
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest">
-                        {new Date(chat.createdAt).toLocaleDateString()}
+                        {new Date(row.createdAt).toLocaleDateString()}
                       </span>
                     </div>
 
@@ -668,11 +887,15 @@ const Support: React.FC = () => {
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
+                          {/* Both parties named, so a dispute card is not
+                              mistaken for a single-user ticket. */}
                           <p className="text-sm font-black text-gray-900 leading-tight mb-0.5">
-                            {chat.userName || 'Unknown User'}
+                            {row.isDispute && row.provider && row.client
+                              ? `${row.client.userName || 'Client'} ↔ ${row.provider.userName || 'Provider'}`
+                              : chat.userName || 'Unknown User'}
                           </p>
                           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 truncate">
-                            {chat.userEmail || 'N/A'}
+                            {row.isDispute ? 'Client ↔ Provider' : chat.userEmail || 'N/A'}
                           </p>
                           <div className="flex flex-wrap gap-2">
                             <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 border border-gray-100 rounded text-[9px] font-black text-gray-500 uppercase tracking-widest">
@@ -724,7 +947,8 @@ const Support: React.FC = () => {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
             </>
@@ -739,7 +963,7 @@ const Support: React.FC = () => {
                 Showing{' '}
                 <span className="font-medium">{((pagination.page - 1) * pagination.limit) + 1}</span>{' '}
                 to{' '}
-                <span className="font-medium">{Math.min(pagination.page * pagination.limit, filteredTickets.length)}</span>{' '}
+                <span className="font-medium">{Math.min(pagination.page * pagination.limit, ticketRows.length)}</span>{' '}
                 of{' '}
                 <span className="font-medium">{filteredTickets.length}</span> results
               </p>

@@ -19,12 +19,7 @@ export const settingsService = {
     return response.data;
   },
   
-  getAdminActivity: async (adminId: string, limit: number = 10, skip: number = 0) => {
-    const response = await apiClient.get(`/api/admin/admins/${adminId}/activity`, {
-      params: { limit, skip }
-    });
-    return response.data;
-  },
+  // Per-admin activity lives in auditService.getAdminActivity (paged, with a summary).
   
   createAdmin: async (adminData: any) => {
     const response = await apiClient.post('/api/admin/admins', adminData);

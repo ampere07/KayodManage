@@ -1,4 +1,10 @@
 // Alert/Reported Post Types
+import type { ReportStatus } from './flagged.types';
+
+// The status lifecycle lives in flagged.types.ts so there is exactly one copy
+// of it — re-exported here for the existing importers of this module.
+export type { ReportStatus, ReportFilterStatus } from './flagged.types';
+
 export interface ReportedPost {
   _id: string;
   jobId: JobDetails;
@@ -6,7 +12,7 @@ export interface ReportedPost {
   jobPosterId: string;
   reason: string;
   comment: string;
-  status: 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';
+  status: ReportStatus;
   reviewedBy?: string;
   reviewedAt?: string;
   adminNotes: string;
@@ -85,5 +91,3 @@ export interface ReviewPostResponse {
   message: string;
   reportedPost: ReportedPost;
 }
-
-export type ReportFilterStatus = 'all' | 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';

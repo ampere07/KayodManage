@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const imageKitService = require('../services/imageKitService');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { auditLog, diffFields, describeChanges } = require('../utils/activityLogger');
 
 const KAYOD_PROFESSIONS_DIR = path.join(__dirname, '../../../..', 'kayod/client/src/assets/icons/professions');
 const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public/assets/icons/professions');
@@ -37,28 +40,108 @@ try {
 }
 
 // Job Categories
-exports.getJobCategories = async (req, res) => {
-  try {
-    const categories = await JobCategory.find().sort({ name: 1 }).lean();
+exports.getJobCategories = asyncHandler(async (req, res) => {
+  const categories = await JobCategory.find().sort({ name: 1 }).lean();
 
-    res.status(200).json({
-      success: true,
-      categories,
-    });
-  } catch (error) {
-    console.error('Error fetching job categories:', error);
-    res.status(500).json({
+  res.status(200).json({
+    success: true,
+    categories,
+  });
+}, 'Failed to fetch job categories');
+
+exports.createJobCategory = asyncHandler(async (req, res) => {
+  const { name, icon, professions, serviceClass } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to fetch job categories',
-      error: error.message,
+      message: 'Category name is required',
     });
   }
-};
 
-exports.createJobCategory = async (req, res) => {
-  try {
-    const { name, icon, professions, serviceClass } = req.body;
+  if (serviceClass !== undefined && !isServiceClass(serviceClass)) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
+    });
+  }
 
+  const existingCategory = await JobCategory.findOne({
+    name: name.trim()
+  });
+
+  if (existingCategory) {
+    return res.status(400).json({
+      success: false,
+      message: 'Category already exists',
+    });
+  }
+
+  // Create the category first
+  const category = await JobCategory.create({
+    name: name.trim(),
+    icon: icon || undefined,
+    // Omitted means the schema default (`standard`) — a new category never
+    // starts on a shortened hold by accident.
+    ...(serviceClass !== undefined ? { serviceClass } : {}),
+    professions: [],
+  });
+
+  // If professions were provided, create them
+  if (professions && Array.isArray(professions)) {
+    for (const professionData of professions) {
+      if (professionData.name && professionData.name.trim()) {
+        const existingProfession = category.professions.find(
+          p => p.name.toLowerCase() === professionData.name.trim().toLowerCase()
+        );
+
+        if (!existingProfession) {
+          category.professions.push({
+            name: professionData.name.trim(),
+            icon: professionData.icon || undefined,
+            // null = inherit the category's class.
+            serviceClass: isServiceClass(professionData.serviceClass)
+              ? professionData.serviceClass
+              : null,
+          });
+        }
+      }
+    }
+
+    // Save the category with professions
+    await category.save();
+  }
+
+  const professionCount = category.professions.length;
+  await auditLog(req, 'job_category_created', `Created category "${category.name}"${professionCount ? ` with ${professionCount} profession${professionCount === 1 ? '' : 's'}` : ''}`, {
+    targetType: 'job_category',
+    targetId: category._id,
+    targetModel: 'JobCategory',
+    metadata: { targetName: category.name, professions: category.professions.map((p) => p.name) },
+  });
+
+  res.status(201).json({
+    success: true,
+    category,
+  });
+}, 'Failed to create job category');
+
+exports.updateJobCategory = asyncHandler(async (req, res) => {
+  const { categoryId } = req.params;
+  const { name, icon, serviceClass } = req.body;
+
+  const category = await JobCategory.findById(categoryId);
+
+  if (!category) {
+    return res.status(404).json({
+      success: false,
+      message: 'Category not found',
+    });
+  }
+
+  const categoryBefore = category.toObject();
+
+  if (name !== undefined) {
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -66,177 +149,183 @@ exports.createJobCategory = async (req, res) => {
       });
     }
 
-    if (serviceClass !== undefined && !isServiceClass(serviceClass)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
-      });
-    }
-
     const existingCategory = await JobCategory.findOne({
-      name: name.trim()
+      name: name.trim(),
+      _id: { $ne: categoryId },
     });
 
     if (existingCategory) {
       return res.status(400).json({
         success: false,
-        message: 'Category already exists',
+        message: 'Category name already exists',
       });
     }
 
-    // Create the category first
-    const category = await JobCategory.create({
-      name: name.trim(),
-      icon: icon || undefined,
-      // Omitted means the schema default (`standard`) — a new category never
-      // starts on a shortened hold by accident.
-      ...(serviceClass !== undefined ? { serviceClass } : {}),
-      professions: [],
-    });
-
-    // If professions were provided, create them
-    if (professions && Array.isArray(professions)) {
-      for (const professionData of professions) {
-        if (professionData.name && professionData.name.trim()) {
-          const existingProfession = category.professions.find(
-            p => p.name.toLowerCase() === professionData.name.trim().toLowerCase()
-          );
-
-          if (!existingProfession) {
-            category.professions.push({
-              name: professionData.name.trim(),
-              icon: professionData.icon || undefined,
-              // null = inherit the category's class.
-              serviceClass: isServiceClass(professionData.serviceClass)
-                ? professionData.serviceClass
-                : null,
-            });
-          }
-        }
-      }
-
-      // Save the category with professions
-      await category.save();
-    }
-
-    res.status(201).json({
-      success: true,
-      category,
-    });
-  } catch (error) {
-    console.error('Error creating job category:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create job category',
-      error: error.message,
-    });
+    category.name = name.trim();
   }
-};
 
-exports.updateJobCategory = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
-    const { name, icon, serviceClass } = req.body;
+  if (icon !== undefined) {
+    category.icon = icon;
+  }
 
-    const category = await JobCategory.findById(categoryId);
-
-    if (!category) {
-      return res.status(404).json({
+  if (serviceClass !== undefined) {
+    if (!isServiceClass(serviceClass)) {
+      return res.status(400).json({
         success: false,
-        message: 'Category not found',
+        message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
       });
     }
+    // Only affects jobs created from here on: every job snapshots its own
+    // release window at creation, so live and completed jobs keep the terms
+    // their clients agreed to. See app/config/serviceClasses.js.
+    category.serviceClass = serviceClass;
+  }
 
-    if (name !== undefined) {
-      if (!name || !name.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category name is required',
-        });
-      }
+  await category.save();
 
-      const existingCategory = await JobCategory.findOne({
-        name: name.trim(),
-        _id: { $ne: categoryId },
-      });
-
-      if (existingCategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category name already exists',
-        });
-      }
-
-      category.name = name.trim();
-    }
-
-    if (icon !== undefined) {
-      category.icon = icon;
-    }
-
-    if (serviceClass !== undefined) {
-      if (!isServiceClass(serviceClass)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}`,
-        });
-      }
-      // Only affects jobs created from here on: every job snapshots its own
-      // release window at creation, so live and completed jobs keep the terms
-      // their clients agreed to. See app/config/serviceClasses.js.
-      category.serviceClass = serviceClass;
-    }
-
-    await category.save();
-
-    res.status(200).json({
-      success: true,
-      category,
-    });
-  } catch (error) {
-    console.error('Error updating job category:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update job category',
-      error: error.message,
+  const categoryChanges = diffFields(categoryBefore, category.toObject(), ['name', 'icon', 'serviceClass']);
+  if (Object.keys(categoryChanges).length) {
+    await auditLog(req, 'job_category_updated', `Edited category "${category.name}": ${describeChanges(categoryChanges)}`, {
+      targetType: 'job_category',
+      targetId: category._id,
+      targetModel: 'JobCategory',
+      metadata: { targetName: category.name, changes: categoryChanges },
     });
   }
-};
 
-exports.deleteJobCategory = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
+  res.status(200).json({
+    success: true,
+    category,
+  });
+}, 'Failed to update job category');
 
-    const category = await JobCategory.findById(categoryId);
+exports.deleteJobCategory = asyncHandler(async (req, res) => {
+  const { categoryId } = req.params;
 
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found',
-      });
-    }
+  const category = await JobCategory.findById(categoryId);
 
-    await category.deleteOne();
-
-    res.status(200).json({
-      success: true,
-      message: 'Category and associated professions deleted successfully',
-    });
-  } catch (error) {
-    console.error('Error deleting job category:', error);
-    res.status(500).json({
+  if (!category) {
+    return res.status(404).json({
       success: false,
-      message: 'Failed to delete job category',
-      error: error.message,
+      message: 'Category not found',
     });
   }
-};
+
+  await category.deleteOne();
+
+  const removedProfessions = category.professions.map((p) => p.name);
+  await auditLog(req, 'job_category_deleted', `Deleted category "${category.name}"${removedProfessions.length ? ` and its ${removedProfessions.length} profession${removedProfessions.length === 1 ? '' : 's'}` : ''}`, {
+    targetType: 'job_category',
+    targetId: category._id,
+    targetModel: 'JobCategory',
+    metadata: { targetName: category.name, professions: removedProfessions },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Category and associated professions deleted successfully',
+  });
+}, 'Failed to delete job category');
 
 // Professions
-exports.createProfession = async (req, res) => {
-  try {
-    const { name, categoryId, serviceClass } = req.body;
+exports.createProfession = asyncHandler(async (req, res) => {
+  const { name, categoryId, serviceClass } = req.body;
 
+  if (!name || !name.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Profession name is required',
+    });
+  }
+
+  if (serviceClass != null && !isServiceClass(serviceClass)) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}, or null to inherit the category.`,
+    });
+  }
+
+  if (!categoryId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Category ID is required',
+    });
+  }
+
+  const category = await JobCategory.findById(categoryId);
+
+  if (!category) {
+    return res.status(404).json({
+      success: false,
+      message: 'Category not found',
+    });
+  }
+
+  const existingProfession = category.professions.find(
+    p => p.name.toLowerCase() === name.trim().toLowerCase()
+  );
+
+  if (existingProfession) {
+    return res.status(400).json({
+      success: false,
+      message: 'Profession already exists in this category',
+    });
+  }
+
+  category.professions.push({
+    name: name.trim(),
+    // null (the default) means "inherit the category's class", which is what
+    // almost every profession does.
+    serviceClass: isServiceClass(serviceClass) ? serviceClass : null,
+  });
+
+  await category.save();
+
+  const newProfession = category.professions[category.professions.length - 1];
+
+  await auditLog(req, 'profession_created', `Added profession "${newProfession.name}" to "${category.name}"`, {
+    targetType: 'profession',
+    targetId: category._id,
+    targetModel: 'JobCategory',
+    metadata: { targetName: newProfession.name, professionId: newProfession._id, category: category.name },
+  });
+
+  res.status(201).json({
+    success: true,
+    profession: newProfession,
+  });
+}, 'Failed to create profession');
+
+exports.updateProfession = asyncHandler(async (req, res) => {
+  const { professionId } = req.params;
+  const { name, icon, isQuickAccess, quickAccessOrder, serviceClass } = req.body;
+
+  const category = await JobCategory.findOne({
+    'professions._id': professionId,
+  });
+
+  if (!category) {
+    return res.status(404).json({
+      success: false,
+      message: 'Profession not found',
+    });
+  }
+
+  const profession = category.professions.id(professionId);
+
+  if (!profession) {
+    return res.status(404).json({
+      success: false,
+      message: 'Profession not found',
+    });
+  }
+
+  // Capture old values before updating
+  const oldName = profession.name;
+  const oldIcon = profession.icon;
+  const professionBefore = profession.toObject();
+
+  if (name !== undefined) {
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -244,587 +333,485 @@ exports.createProfession = async (req, res) => {
       });
     }
 
+    const existingProfession = category.professions.find(
+      p => p._id.toString() !== professionId &&
+        p.name.toLowerCase() === name.trim().toLowerCase()
+    );
+
+    if (existingProfession) {
+      return res.status(400).json({
+        success: false,
+        message: 'Profession name already exists in this category',
+      });
+    }
+
+    profession.name = name.trim();
+  }
+
+  if (icon !== undefined) {
+    profession.icon = icon;
+  }
+
+  if (isQuickAccess !== undefined) {
+    profession.isQuickAccess = isQuickAccess;
+  }
+
+  if (quickAccessOrder !== undefined) {
+    profession.quickAccessOrder = quickAccessOrder;
+  }
+
+  if (serviceClass !== undefined) {
     if (serviceClass != null && !isServiceClass(serviceClass)) {
       return res.status(400).json({
         success: false,
         message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}, or null to inherit the category.`,
       });
     }
+    // Explicit null clears the override and returns the profession to its
+    // category's class.
+    profession.serviceClass = serviceClass ?? null;
+  }
 
-    if (!categoryId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category ID is required',
-      });
+  // When a profession is renamed and its icon already lives in ImageKit (and no new
+  // icon is being uploaded in this same request), rename the ImageKit file so its name
+  // stays in sync with the profession. The Kayod client resolves profession icons by
+  // building professionIconsUpload/<slug>.webp from the profession NAME, so the stored
+  // file MUST match the new name or the icon 404s. Only the filename/URL changes — the
+  // image content is untouched — so the profession keeps using the same icon.
+  let renamedIkIcon = null;
+  let ikRollback = null;
+  const requestIconChanged = icon !== undefined && icon !== oldIcon;
+  const professionRenamed = name !== undefined && name.trim() !== oldName;
+
+  if (professionRenamed && !requestIconChanged && oldIcon && oldIcon.startsWith('ik:')) {
+    const oldFilePath = oldIcon.replace('ik:', '');
+    const normalizedPath = oldFilePath.startsWith('/') ? oldFilePath : `/${oldFilePath}`;
+    const oldFileName = normalizedPath.split('/').pop();
+    const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+    // Keep the original extension (legacy ImageKit icons may be .png, new ones are .webp)
+    const oldExt = oldFileName.includes('.') ? oldFileName.slice(oldFileName.lastIndexOf('.')) : '.webp';
+    const newBaseName = generateIconSlug(name.trim());
+    const newFileName = `${newBaseName}${oldExt}`;
+
+    // Skip if the new name sanitizes to nothing (symbol-only / non-Latin), which would
+    // produce a degenerate ".webp" filename that collides across professions.
+    if (newBaseName && oldFileName !== newFileName) {
+      try {
+        await imageKitService.renameFile(normalizedPath, newFileName, true);
+        renamedIkIcon = `ik:${folderPath}/${newFileName}`;
+        profession.icon = renamedIkIcon;
+        // Compensating action: if the DB write below fails, rename the file back so the
+        // stored icon path and the actual ImageKit file never drift apart.
+        ikRollback = () => imageKitService.renameFile(`${folderPath}/${newFileName}`, oldFileName, true);
+        console.log(`[Configurations] ImageKit profession icon renamed: "${oldFileName}" → "${newFileName}"`);
+      } catch (ikErr) {
+        // e.g. a file with the new name already exists, or a transient API error.
+        // Keep the existing icon reference so the profession still shows its icon.
+        console.warn(`[Configurations] Could not rename ImageKit profession icon: ${ikErr.message}`);
+      }
     }
+  }
 
-    const category = await JobCategory.findById(categoryId);
+  profession.updatedAt = new Date();
 
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found',
-      });
-    }
-
-    const existingProfession = category.professions.find(
-      p => p.name.toLowerCase() === name.trim().toLowerCase()
-    );
-
-    if (existingProfession) {
-      return res.status(400).json({
-        success: false,
-        message: 'Profession already exists in this category',
-      });
-    }
-
-    category.professions.push({
-      name: name.trim(),
-      // null (the default) means "inherit the category's class", which is what
-      // almost every profession does.
-      serviceClass: isServiceClass(serviceClass) ? serviceClass : null,
-    });
-
+  try {
     await category.save();
-
-    const newProfession = category.professions[category.professions.length - 1];
-
-    res.status(201).json({
-      success: true,
-      profession: newProfession,
-    });
-  } catch (error) {
-    console.error('Error creating profession:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create profession',
-      error: error.message,
-    });
+  } catch (saveErr) {
+    // The ImageKit file was already renamed but persisting the profession failed — roll
+    // the file back so the stored icon path and the actual ImageKit file stay consistent.
+    if (ikRollback) {
+      try {
+        await ikRollback();
+        console.warn('[Configurations] Rolled back ImageKit rename after profession save failure');
+      } catch (rbErr) {
+        console.error(`[Configurations] ImageKit rename rollback FAILED: ${rbErr.message}`);
+      }
+    }
+    throw saveErr;
   }
-};
 
-exports.updateProfession = async (req, res) => {
-  try {
-    const { professionId } = req.params;
-    const { name, icon, isQuickAccess, quickAccessOrder, serviceClass } = req.body;
+  // Cascade profession name and icon changes to existing Job and Draft documents
+  const warnings = [];
+  const nameChanged = name && name.trim() !== oldName;
+  const iconChanged = requestIconChanged || !!renamedIkIcon;
 
-    const category = await JobCategory.findOne({
-      'professions._id': professionId,
-    });
+  if (nameChanged || iconChanged) {
+    const update = {};
 
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profession not found',
-      });
+    if (nameChanged) {
+      update.professionName = name.trim();
     }
-
-    const profession = category.professions.id(professionId);
-
-    if (!profession) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profession not found',
-      });
-    }
-
-    // Capture old values before updating
-    const oldName = profession.name;
-    const oldIcon = profession.icon;
-
-    if (name !== undefined) {
-      if (!name || !name.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Profession name is required',
-        });
+    if (renamedIkIcon) {
+      // ImageKit file was renamed — point existing jobs/drafts at the new path.
+      update.icon = renamedIkIcon;
+    } else if (requestIconChanged) {
+      if (icon.startsWith('ik:')) {
+        update.icon = icon;
+      } else {
+        update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
       }
-
-      const existingProfession = category.professions.find(
-        p => p._id.toString() !== professionId &&
-          p.name.toLowerCase() === name.trim().toLowerCase()
-      );
-
-      if (existingProfession) {
-        return res.status(400).json({
-          success: false,
-          message: 'Profession name already exists in this category',
-        });
-      }
-
-      profession.name = name.trim();
     }
 
-    if (icon !== undefined) {
-      profession.icon = icon;
-    }
+    // Handle icon files on disk (only for legacy custom icons)
+    if (requestIconChanged && !icon.startsWith('ik:') && !oldIcon?.startsWith('ik:')) {
+      // Derive old filename from DB icon field, or fall back to generating from old profession name
+      const oldFileName = oldIcon
+        ? (oldIcon.startsWith('custom:') ? oldIcon.replace('custom:', '') : oldIcon)
+        : generateIconFilename(oldName);
+      const newFileName = icon.startsWith('custom:') ? icon.replace('custom:', '') : icon;
 
-    if (isQuickAccess !== undefined) {
-      profession.isQuickAccess = isQuickAccess;
-    }
-
-    if (quickAccessOrder !== undefined) {
-      profession.quickAccessOrder = quickAccessOrder;
-    }
-
-    if (serviceClass !== undefined) {
-      if (serviceClass != null && !isServiceClass(serviceClass)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid service class. Expected one of: ${SERVICE_CLASS_IDS.join(', ')}, or null to inherit the category.`,
-        });
-      }
-      // Explicit null clears the override and returns the profession to its
-      // category's class.
-      profession.serviceClass = serviceClass ?? null;
-    }
-
-    // When a profession is renamed and its icon already lives in ImageKit (and no new
-    // icon is being uploaded in this same request), rename the ImageKit file so its name
-    // stays in sync with the profession. The Kayod client resolves profession icons by
-    // building professionIconsUpload/<slug>.webp from the profession NAME, so the stored
-    // file MUST match the new name or the icon 404s. Only the filename/URL changes — the
-    // image content is untouched — so the profession keeps using the same icon.
-    let renamedIkIcon = null;
-    let ikRollback = null;
-    const requestIconChanged = icon !== undefined && icon !== oldIcon;
-    const professionRenamed = name !== undefined && name.trim() !== oldName;
-
-    if (professionRenamed && !requestIconChanged && oldIcon && oldIcon.startsWith('ik:')) {
-      const oldFilePath = oldIcon.replace('ik:', '');
-      const normalizedPath = oldFilePath.startsWith('/') ? oldFilePath : `/${oldFilePath}`;
-      const oldFileName = normalizedPath.split('/').pop();
-      const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
-      // Keep the original extension (legacy ImageKit icons may be .png, new ones are .webp)
-      const oldExt = oldFileName.includes('.') ? oldFileName.slice(oldFileName.lastIndexOf('.')) : '.webp';
-      const newBaseName = generateIconSlug(name.trim());
-      const newFileName = `${newBaseName}${oldExt}`;
-
-      // Skip if the new name sanitizes to nothing (symbol-only / non-Latin), which would
-      // produce a degenerate ".webp" filename that collides across professions.
-      if (newBaseName && oldFileName !== newFileName) {
+      if (oldFileName !== newFileName) {
+        // COPY in kayod client (preserves static imports, adds new filename for URL serving)
         try {
-          await imageKitService.renameFile(normalizedPath, newFileName, true);
-          renamedIkIcon = `ik:${folderPath}/${newFileName}`;
-          profession.icon = renamedIkIcon;
-          // Compensating action: if the DB write below fails, rename the file back so the
-          // stored icon path and the actual ImageKit file never drift apart.
-          ikRollback = () => imageKitService.renameFile(`${folderPath}/${newFileName}`, oldFileName, true);
-          console.log(`[Configurations] ImageKit profession icon renamed: "${oldFileName}" → "${newFileName}"`);
-        } catch (ikErr) {
-          // e.g. a file with the new name already exists, or a transient API error.
-          // Keep the existing icon reference so the profession still shows its icon.
-          console.warn(`[Configurations] Could not rename ImageKit profession icon: ${ikErr.message}`);
+          const oldPath = path.join(KAYOD_PROFESSIONS_DIR, oldFileName);
+          const newPath = path.join(KAYOD_PROFESSIONS_DIR, newFileName);
+          if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+            fs.copyFileSync(oldPath, newPath);
+            console.log(`[Configurations] Icon file copied: "${oldFileName}" → "${newFileName}" in kayod client`);
+          }
+        } catch (fileErr) {
+          console.warn(`[Configurations] Could not copy icon file in kayod client: ${fileErr.message}`);
         }
-      }
-    }
 
-    profession.updatedAt = new Date();
-
-    try {
-      await category.save();
-    } catch (saveErr) {
-      // The ImageKit file was already renamed but persisting the profession failed — roll
-      // the file back so the stored icon path and the actual ImageKit file stay consistent.
-      if (ikRollback) {
+        // RENAME in KayodManage (no static imports, safe to rename)
         try {
-          await ikRollback();
-          console.warn('[Configurations] Rolled back ImageKit rename after profession save failure');
-        } catch (rbErr) {
-          console.error(`[Configurations] ImageKit rename rollback FAILED: ${rbErr.message}`);
-        }
-      }
-      throw saveErr;
-    }
-
-    // Cascade profession name and icon changes to existing Job and Draft documents
-    const warnings = [];
-    const nameChanged = name && name.trim() !== oldName;
-    const iconChanged = requestIconChanged || !!renamedIkIcon;
-
-    if (nameChanged || iconChanged) {
-      const update = {};
-
-      if (nameChanged) {
-        update.professionName = name.trim();
-      }
-      if (renamedIkIcon) {
-        // ImageKit file was renamed — point existing jobs/drafts at the new path.
-        update.icon = renamedIkIcon;
-      } else if (requestIconChanged) {
-        if (icon.startsWith('ik:')) {
-          update.icon = icon;
-        } else {
-          update.icon = icon.startsWith('custom:') ? icon : `custom:${icon}`;
-        }
-      }
-
-      // Handle icon files on disk (only for legacy custom icons)
-      if (requestIconChanged && !icon.startsWith('ik:') && !oldIcon?.startsWith('ik:')) {
-        // Derive old filename from DB icon field, or fall back to generating from old profession name
-        const oldFileName = oldIcon
-          ? (oldIcon.startsWith('custom:') ? oldIcon.replace('custom:', '') : oldIcon)
-          : generateIconFilename(oldName);
-        const newFileName = icon.startsWith('custom:') ? icon.replace('custom:', '') : icon;
-
-        if (oldFileName !== newFileName) {
-          // COPY in kayod client (preserves static imports, adds new filename for URL serving)
-          try {
-            const oldPath = path.join(KAYOD_PROFESSIONS_DIR, oldFileName);
-            const newPath = path.join(KAYOD_PROFESSIONS_DIR, newFileName);
-            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
-              fs.copyFileSync(oldPath, newPath);
-              console.log(`[Configurations] Icon file copied: "${oldFileName}" → "${newFileName}" in kayod client`);
-            }
-          } catch (fileErr) {
-            console.warn(`[Configurations] Could not copy icon file in kayod client: ${fileErr.message}`);
+          const oldPath = path.join(MANAGE_PROFESSIONS_DIR, oldFileName);
+          const newPath = path.join(MANAGE_PROFESSIONS_DIR, newFileName);
+          if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+            fs.renameSync(oldPath, newPath);
+            console.log(`[Configurations] Icon file renamed: "${oldFileName}" → "${newFileName}" in KayodManage`);
           }
-
-          // RENAME in KayodManage (no static imports, safe to rename)
-          try {
-            const oldPath = path.join(MANAGE_PROFESSIONS_DIR, oldFileName);
-            const newPath = path.join(MANAGE_PROFESSIONS_DIR, newFileName);
-            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
-              fs.renameSync(oldPath, newPath);
-              console.log(`[Configurations] Icon file renamed: "${oldFileName}" → "${newFileName}" in KayodManage`);
-            }
-          } catch (fileErr) {
-            console.warn(`[Configurations] Could not rename icon file in KayodManage: ${fileErr.message}`);
-          }
+        } catch (fileErr) {
+          console.warn(`[Configurations] Could not rename icon file in KayodManage: ${fileErr.message}`);
         }
       }
-
-      // Update Jobs with old profession name
-      const jobQuery = { professionName: oldName };
-      try {
-        const jobResult = await Job.updateMany(jobQuery, { $set: update });
-        console.log(`[Configurations] Updated ${jobResult.modifiedCount} jobs.`);
-      } catch (jobErr) {
-        console.warn(`[Configurations] Could not update jobs: ${jobErr.message}`);
-        // Surface the partial cascade so the admin knows existing jobs may still point at
-        // the old icon path (which no longer exists after the ImageKit rename).
-        warnings.push(`Failed to update some jobs to the renamed icon: ${jobErr.message}`);
-      }
-
-      // Update Drafts with old profession name (no Draft model, use raw collection)
-      try {
-        const draftsCollection = mongoose.connection.collection('drafts');
-        const draftResult = await draftsCollection.updateMany(
-          { professionName: oldName },
-          { $set: update }
-        );
-        console.log(`[Configurations] Updated ${draftResult.modifiedCount} drafts.`);
-      } catch (draftErr) {
-        console.warn(`[Configurations] Could not update drafts: ${draftErr.message}`);
-        warnings.push(`Failed to update some drafts to the renamed icon: ${draftErr.message}`);
-      }
-
-      console.log(
-        `[Configurations] Profession renamed: "${oldName}" → "${name ? name.trim() : oldName}". `
-      );
     }
 
-    // Emit socket event for real-time update
-    if (io) {
-      try {
-        const adminNamespace = io.of('/admin');
-        adminNamespace.emit('configuration:updated', {
-          type: 'profession',
-          action: 'updated',
-          professionId,
-          profession,
-        });
-      } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      profession,
-      ...(warnings.length ? { warnings } : {}),
-    });
-  } catch (error) {
-    console.error('Error updating profession:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update profession',
-      error: error.message,
-    });
-  }
-};
-
-exports.deleteProfession = async (req, res) => {
-  try {
-    const { professionId } = req.params;
-
-    const category = await JobCategory.findOne({
-      'professions._id': professionId,
-    });
-
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profession not found',
-      });
-    }
-
-    category.professions.pull(professionId);
-    await category.save();
-
-    // Emit socket event for real-time update
-    if (io) {
-      try {
-        const adminNamespace = io.of('/admin');
-        adminNamespace.emit('configuration:updated', {
-          type: 'profession',
-          action: 'deleted',
-          professionId,
-        });
-      } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Profession deleted successfully',
-    });
-  } catch (error) {
-    console.error('Error deleting profession:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete profession',
-      error: error.message,
-    });
-  }
-};
-
-// Transfer profession to another category
-exports.transferProfession = async (req, res) => {
-  try {
-    const { professionId } = req.params;
-    const { targetCategoryId } = req.body;
-
-    if (!targetCategoryId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Target category ID is required',
-      });
-    }
-
-    // Find the source category containing the profession
-    const sourceCategory = await JobCategory.findOne({
-      'professions._id': professionId,
-    });
-
-    if (!sourceCategory) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profession not found',
-      });
-    }
-
-    // Prevent transferring to the same category
-    if (sourceCategory._id.toString() === targetCategoryId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Profession is already in this category',
-      });
-    }
-
-    // Find the target category
-    const targetCategory = await JobCategory.findById(targetCategoryId);
-
-    if (!targetCategory) {
-      return res.status(404).json({
-        success: false,
-        message: 'Target category not found',
-      });
-    }
-
-    // Get the profession data
-    const profession = sourceCategory.professions.id(professionId);
-
-    if (!profession) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profession not found in source category',
-      });
-    }
-
-    // Check if a profession with the same name already exists in the target category
-    const existingProfession = targetCategory.professions.find(
-      p => p.name.toLowerCase() === profession.name.toLowerCase()
-    );
-
-    if (existingProfession) {
-      return res.status(400).json({
-        success: false,
-        message: `A profession named "${profession.name}" already exists in "${targetCategory.name}"`,
-      });
-    }
-
-    // Copy profession data to the target category (new _id will be generated)
-    const professionData = {
-      name: profession.name,
-      icon: profession.icon,
-      isQuickAccess: profession.isQuickAccess,
-      quickAccessOrder: profession.quickAccessOrder,
-      createdAt: profession.createdAt,
-      updatedAt: new Date(),
-    };
-
-    targetCategory.professions.push(professionData);
-    await targetCategory.save();
-
-    // Get the newly created profession in the target category
-    const newProfession = targetCategory.professions[targetCategory.professions.length - 1];
-
-    // Remove from source category
-    sourceCategory.professions.pull(professionId);
-    await sourceCategory.save();
-
-    // Update any existing jobs that reference this profession's categoryId
+    // Update Jobs with old profession name
+    const jobQuery = { professionName: oldName };
     try {
-      const jobResult = await Job.updateMany(
-        { professionName: profession.name, 'jobCategory': sourceCategory._id },
-        { $set: { 'jobCategory': targetCategory._id } }
-      );
-      if (jobResult.modifiedCount > 0) {
-        console.log(`[Configurations] Transferred ${jobResult.modifiedCount} jobs to new category.`);
-      }
+      const jobResult = await Job.updateMany(jobQuery, { $set: update });
+      console.log(`[Configurations] Updated ${jobResult.modifiedCount} jobs.`);
     } catch (jobErr) {
-      console.warn(`[Configurations] Could not update jobs during transfer: ${jobErr.message}`);
+      console.warn(`[Configurations] Could not update jobs: ${jobErr.message}`);
+      // Surface the partial cascade so the admin knows existing jobs may still point at
+      // the old icon path (which no longer exists after the ImageKit rename).
+      warnings.push(`Failed to update some jobs to the renamed icon: ${jobErr.message}`);
     }
 
-    // Update drafts
+    // Update Drafts with old profession name (no Draft model, use raw collection)
     try {
       const draftsCollection = mongoose.connection.collection('drafts');
       const draftResult = await draftsCollection.updateMany(
-        { professionName: profession.name, 'jobCategory': sourceCategory._id },
-        { $set: { 'jobCategory': targetCategory._id } }
+        { professionName: oldName },
+        { $set: update }
       );
-      if (draftResult.modifiedCount > 0) {
-        console.log(`[Configurations] Transferred ${draftResult.modifiedCount} drafts to new category.`);
-      }
+      console.log(`[Configurations] Updated ${draftResult.modifiedCount} drafts.`);
     } catch (draftErr) {
-      console.warn(`[Configurations] Could not update drafts during transfer: ${draftErr.message}`);
+      console.warn(`[Configurations] Could not update drafts: ${draftErr.message}`);
+      warnings.push(`Failed to update some drafts to the renamed icon: ${draftErr.message}`);
     }
 
     console.log(
-      `[Configurations] Profession "${profession.name}" transferred from "${sourceCategory.name}" to "${targetCategory.name}".`
+      `[Configurations] Profession renamed: "${oldName}" → "${name ? name.trim() : oldName}". `
     );
+  }
 
-    res.status(200).json({
-      success: true,
-      message: `Profession "${profession.name}" transferred to "${targetCategory.name}" successfully`,
-      profession: newProfession,
-      sourceCategoryId: sourceCategory._id,
-      targetCategoryId: targetCategory._id,
-    });
-  } catch (error) {
-    console.error('Error transferring profession:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to transfer profession',
-      error: error.message,
+  // Emit socket event for real-time update
+  if (io) {
+    try {
+      const adminNamespace = io.of('/admin');
+      adminNamespace.emit('configuration:updated', {
+        type: 'profession',
+        action: 'updated',
+        professionId,
+        profession,
+      });
+    } catch (socketErr) {
+      console.error('Error emitting socket event:', socketErr);
+    }
+  }
+
+  const professionChanges = diffFields(professionBefore, profession.toObject(), ['name', 'icon', 'serviceClass', 'isQuickAccess', 'quickAccessOrder']);
+  if (Object.keys(professionChanges).length) {
+    await auditLog(req, 'profession_updated', `Edited profession "${profession.name}": ${describeChanges(professionChanges)}`, {
+      targetType: 'profession',
+      targetId: category._id,
+      targetModel: 'JobCategory',
+      metadata: { targetName: profession.name, professionId: profession._id, category: category.name, changes: professionChanges },
     });
   }
-};
 
-exports.uploadCategoryIcon = async (req, res) => {
+  res.status(200).json({
+    success: true,
+    profession,
+    ...(warnings.length ? { warnings } : {}),
+  });
+}, 'Failed to update profession');
+
+exports.deleteProfession = asyncHandler(async (req, res) => {
+  const { professionId } = req.params;
+
+  const category = await JobCategory.findOne({
+    'professions._id': professionId,
+  });
+
+  if (!category) {
+    return res.status(404).json({
+      success: false,
+      message: 'Profession not found',
+    });
+  }
+
+  const removedName = category.professions.id(professionId)?.name || 'a profession';
+  category.professions.pull(professionId);
+  await category.save();
+
+  await auditLog(req, 'profession_deleted', `Deleted profession "${removedName}" from "${category.name}"`, {
+    targetType: 'profession',
+    targetId: category._id,
+    targetModel: 'JobCategory',
+    metadata: { targetName: removedName, professionId, category: category.name },
+  });
+
+  // Emit socket event for real-time update
+  if (io) {
+    try {
+      const adminNamespace = io.of('/admin');
+      adminNamespace.emit('configuration:updated', {
+        type: 'profession',
+        action: 'deleted',
+        professionId,
+      });
+    } catch (socketErr) {
+      console.error('Error emitting socket event:', socketErr);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Profession deleted successfully',
+  });
+}, 'Failed to delete profession');
+
+// Transfer profession to another category
+exports.transferProfession = asyncHandler(async (req, res) => {
+  const { professionId } = req.params;
+  const { targetCategoryId } = req.body;
+
+  if (!targetCategoryId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Target category ID is required',
+    });
+  }
+
+  // Find the source category containing the profession
+  const sourceCategory = await JobCategory.findOne({
+    'professions._id': professionId,
+  });
+
+  if (!sourceCategory) {
+    return res.status(404).json({
+      success: false,
+      message: 'Profession not found',
+    });
+  }
+
+  // Prevent transferring to the same category
+  if (sourceCategory._id.toString() === targetCategoryId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Profession is already in this category',
+    });
+  }
+
+  // Find the target category
+  const targetCategory = await JobCategory.findById(targetCategoryId);
+
+  if (!targetCategory) {
+    return res.status(404).json({
+      success: false,
+      message: 'Target category not found',
+    });
+  }
+
+  // Get the profession data
+  const profession = sourceCategory.professions.id(professionId);
+
+  if (!profession) {
+    return res.status(404).json({
+      success: false,
+      message: 'Profession not found in source category',
+    });
+  }
+
+  // Check if a profession with the same name already exists in the target category
+  const existingProfession = targetCategory.professions.find(
+    p => p.name.toLowerCase() === profession.name.toLowerCase()
+  );
+
+  if (existingProfession) {
+    return res.status(400).json({
+      success: false,
+      message: `A profession named "${profession.name}" already exists in "${targetCategory.name}"`,
+    });
+  }
+
+  // Copy profession data to the target category (new _id will be generated)
+  const professionData = {
+    name: profession.name,
+    icon: profession.icon,
+    isQuickAccess: profession.isQuickAccess,
+    quickAccessOrder: profession.quickAccessOrder,
+    createdAt: profession.createdAt,
+    updatedAt: new Date(),
+  };
+
+  targetCategory.professions.push(professionData);
+  await targetCategory.save();
+
+  // Get the newly created profession in the target category
+  const newProfession = targetCategory.professions[targetCategory.professions.length - 1];
+
+  // Remove from source category
+  sourceCategory.professions.pull(professionId);
+  await sourceCategory.save();
+
+  // Update any existing jobs that reference this profession's categoryId
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded',
-      });
-    }
-
-    const { buffer, originalname } = req.file;
-    const { categoryName, oldIcon } = req.body;
-
-    if (!categoryName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category name is required',
-      });
-    }
-
-    const fileExtension = path.extname(originalname);
-    const sanitizedCategoryName = categoryName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const fileName = `${sanitizedCategoryName}${fileExtension}`;
-
-    const kayodPath = path.join(
-      __dirname,
-      '../../../..',
-      'kayod/client/src/assets/icons/categories',
-      fileName
+    const jobResult = await Job.updateMany(
+      { professionName: profession.name, 'jobCategory': sourceCategory._id },
+      { $set: { 'jobCategory': targetCategory._id } }
     );
+    if (jobResult.modifiedCount > 0) {
+      console.log(`[Configurations] Transferred ${jobResult.modifiedCount} jobs to new category.`);
+    }
+  } catch (jobErr) {
+    console.warn(`[Configurations] Could not update jobs during transfer: ${jobErr.message}`);
+  }
 
-    const kayodManagePath = path.join(
-      __dirname,
-      '../../..',
-      'Frontend/public/assets/icons/categories',
-      fileName
+  // Update drafts
+  try {
+    const draftsCollection = mongoose.connection.collection('drafts');
+    const draftResult = await draftsCollection.updateMany(
+      { professionName: profession.name, 'jobCategory': sourceCategory._id },
+      { $set: { 'jobCategory': targetCategory._id } }
     );
-
-    const kayodDir = path.dirname(kayodPath);
-    const kayodManageDir = path.dirname(kayodManagePath);
-
-    if (!fs.existsSync(kayodDir)) {
-      fs.mkdirSync(kayodDir, { recursive: true });
+    if (draftResult.modifiedCount > 0) {
+      console.log(`[Configurations] Transferred ${draftResult.modifiedCount} drafts to new category.`);
     }
-    if (!fs.existsSync(kayodManageDir)) {
-      fs.mkdirSync(kayodManageDir, { recursive: true });
-    }
+  } catch (draftErr) {
+    console.warn(`[Configurations] Could not update drafts during transfer: ${draftErr.message}`);
+  }
 
-    // Delete any existing icon files for this category (including old timestamp versions)
-    const existingFiles = fs.readdirSync(kayodDir).filter(file => {
-      const baseName = file.replace(path.extname(file), '');
-      return baseName === sanitizedCategoryName || baseName.startsWith(`${sanitizedCategoryName}-`);
-    });
+  console.log(
+    `[Configurations] Profession "${profession.name}" transferred from "${sourceCategory.name}" to "${targetCategory.name}".`
+  );
 
-    existingFiles.forEach(file => {
-      const oldKayodPath = path.join(kayodDir, file);
-      const oldKayodManagePath = path.join(kayodManageDir, file);
+  await auditLog(req, 'profession_transferred', `Moved profession "${profession.name}" from "${sourceCategory.name}" to "${targetCategory.name}"`, {
+    targetType: 'profession',
+    targetId: targetCategory._id,
+    targetModel: 'JobCategory',
+    metadata: {
+      targetName: profession.name,
+      professionId: newProfession?._id || professionId,
+      changes: { category: { from: sourceCategory.name, to: targetCategory.name } },
+    },
+  });
 
-      try {
-        if (fs.existsSync(oldKayodPath)) {
-          fs.unlinkSync(oldKayodPath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
-      }
+  res.status(200).json({
+    success: true,
+    message: `Profession "${profession.name}" transferred to "${targetCategory.name}" successfully`,
+    profession: newProfession,
+    sourceCategoryId: sourceCategory._id,
+    targetCategoryId: targetCategory._id,
+  });
+}, 'Failed to transfer profession');
 
-      try {
-        if (fs.existsSync(oldKayodManagePath)) {
-          fs.unlinkSync(oldKayodManagePath);
-        }
-      } catch (err) {
-        console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
-      }
-    });
-
-    fs.writeFileSync(kayodPath, buffer);
-    fs.writeFileSync(kayodManagePath, buffer);
-
-    res.status(200).json({
-      success: true,
-      iconName: `custom:${fileName}`,
-      fullPath: `/assets/icons/categories/${fileName}`,
-      message: 'Icon uploaded successfully',
-    });
-  } catch (error) {
-    console.error('Error uploading category icon:', error);
-    res.status(500).json({
+exports.uploadCategoryIcon = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to upload icon',
-      error: error.message,
+      message: 'No file uploaded',
     });
   }
-};
+
+  const { buffer, originalname } = req.file;
+  const { categoryName, oldIcon } = req.body;
+
+  if (!categoryName) {
+    return res.status(400).json({
+      success: false,
+      message: 'Category name is required',
+    });
+  }
+
+  const fileExtension = path.extname(originalname);
+  const sanitizedCategoryName = categoryName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const fileName = `${sanitizedCategoryName}${fileExtension}`;
+
+  const kayodPath = path.join(
+    __dirname,
+    '../../../..',
+    'kayod/client/src/assets/icons/categories',
+    fileName
+  );
+
+  const kayodManagePath = path.join(
+    __dirname,
+    '../../..',
+    'Frontend/public/assets/icons/categories',
+    fileName
+  );
+
+  const kayodDir = path.dirname(kayodPath);
+  const kayodManageDir = path.dirname(kayodManagePath);
+
+  if (!fs.existsSync(kayodDir)) {
+    fs.mkdirSync(kayodDir, { recursive: true });
+  }
+  if (!fs.existsSync(kayodManageDir)) {
+    fs.mkdirSync(kayodManageDir, { recursive: true });
+  }
+
+  // Delete any existing icon files for this category (including old timestamp versions)
+  const existingFiles = fs.readdirSync(kayodDir).filter(file => {
+    const baseName = file.replace(path.extname(file), '');
+    return baseName === sanitizedCategoryName || baseName.startsWith(`${sanitizedCategoryName}-`);
+  });
+
+  existingFiles.forEach(file => {
+    const oldKayodPath = path.join(kayodDir, file);
+    const oldKayodManagePath = path.join(kayodManageDir, file);
+
+    try {
+      if (fs.existsSync(oldKayodPath)) {
+        fs.unlinkSync(oldKayodPath);
+      }
+    } catch (err) {
+      console.warn(`Failed to delete old icon at ${oldKayodPath}:`, err.message);
+    }
+
+    try {
+      if (fs.existsSync(oldKayodManagePath)) {
+        fs.unlinkSync(oldKayodManagePath);
+      }
+    } catch (err) {
+      console.warn(`Failed to delete old icon at ${oldKayodManagePath}:`, err.message);
+    }
+  });
+
+  fs.writeFileSync(kayodPath, buffer);
+  fs.writeFileSync(kayodManagePath, buffer);
+
+  res.status(200).json({
+    success: true,
+    iconName: `custom:${fileName}`,
+    fullPath: `/assets/icons/categories/${fileName}`,
+    message: 'Icon uploaded successfully',
+  });
+}, 'Failed to upload icon');
 
 exports.uploadProfessionIcon = async (req, res) => {
   // Detect client cancellation: when the browser aborts the request (user clicked
@@ -972,303 +959,302 @@ exports.uploadProfessionIcon = async (req, res) => {
   }
 };
 
-exports.updateQuickAccessProfessions = async (req, res) => {
-  try {
-    const { professions } = req.body;
+exports.updateQuickAccessProfessions = asyncHandler(async (req, res) => {
+  const { professions } = req.body;
 
-    console.log('Received quick access update request:', professions);
+  console.log('Received quick access update request:', professions);
 
-    if (!Array.isArray(professions)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Professions must be an array',
-      });
-    }
-
-    if (professions.length > 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maximum 8 quick access professions allowed',
-      });
-    }
-
-    const mongoose = require('mongoose');
-
-    // Step 1 & 2 Combined: Reset all and set selected professions
-    console.log('\ud83d� Updating professions...');
-    const allCategories = await JobCategory.find();
-
-    for (const category of allCategories) {
-      let modified = false;
-
-      category.professions.forEach(profession => {
-        // Reset all to false first
-        profession.isQuickAccess = false;
-        profession.quickAccessOrder = 0;
-
-        // Check if this profession is in the selected list
-        const selectedIndex = professions.findIndex(
-          p => p.professionId === profession._id.toString()
-        );
-
-        if (selectedIndex !== -1) {
-          profession.isQuickAccess = true;
-          profession.quickAccessOrder = selectedIndex + 1;
-          modified = true;
-          console.log(`  ✅ ${profession.name} (order: ${selectedIndex + 1})`);
-        }
-      });
-
-      if (modified || category.professions.length > 0) {
-        category.markModified('professions');
-        await category.save({ validateModifiedOnly: false });
-        console.log(`  💾 Saved category: ${category.name}`);
-      }
-    }
-
-    // Step 3: Verify the changes
-    console.log('\n🔍 Verifying saved data...');
-    const verifyCategories = await JobCategory.find().lean();
-    let verifiedCount = 0;
-
-    verifyCategories.forEach(cat => {
-      cat.professions.forEach(prof => {
-        if (prof.isQuickAccess) {
-          verifiedCount++;
-          console.log(`  ✓ ${prof.name} (order: ${prof.quickAccessOrder}, category: ${cat.name})`);
-        }
-      });
-    });
-
-    console.log(`\nTotal verified quick access professions: ${verifiedCount}\n`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Quick access professions updated successfully',
-      verifiedCount,
-    });
-  } catch (error) {
-    console.error('❌ Error updating quick access professions:', error);
-    res.status(500).json({
+  if (!Array.isArray(professions)) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to update quick access professions',
-      error: error.message,
+      message: 'Professions must be an array',
     });
   }
-};
+
+  if (professions.length > 8) {
+    return res.status(400).json({
+      success: false,
+      message: 'Maximum 8 quick access professions allowed',
+    });
+  }
+
+  const mongoose = require('mongoose');
+
+  // Step 1 & 2 Combined: Reset all and set selected professions
+  console.log('\ud83d� Updating professions...');
+  const allCategories = await JobCategory.find();
+
+  // The quick-access row, in order, as it was and as it ends up — for the audit row.
+  const quickAccessNames = (categories) => categories
+    .flatMap((cat) => cat.professions.filter((p) => p.isQuickAccess))
+    .sort((a, b) => (a.quickAccessOrder || 0) - (b.quickAccessOrder || 0))
+    .map((p) => p.name);
+  const quickAccessBefore = quickAccessNames(allCategories);
+
+  for (const category of allCategories) {
+    let modified = false;
+
+    category.professions.forEach(profession => {
+      // Reset all to false first
+      profession.isQuickAccess = false;
+      profession.quickAccessOrder = 0;
+
+      // Check if this profession is in the selected list
+      const selectedIndex = professions.findIndex(
+        p => p.professionId === profession._id.toString()
+      );
+
+      if (selectedIndex !== -1) {
+        profession.isQuickAccess = true;
+        profession.quickAccessOrder = selectedIndex + 1;
+        modified = true;
+        console.log(`  ✅ ${profession.name} (order: ${selectedIndex + 1})`);
+      }
+    });
+
+    if (modified || category.professions.length > 0) {
+      category.markModified('professions');
+      await category.save({ validateModifiedOnly: false });
+      console.log(`  💾 Saved category: ${category.name}`);
+    }
+  }
+
+  // Step 3: Verify the changes
+  console.log('\n🔍 Verifying saved data...');
+  const verifyCategories = await JobCategory.find().lean();
+  let verifiedCount = 0;
+
+  verifyCategories.forEach(cat => {
+    cat.professions.forEach(prof => {
+      if (prof.isQuickAccess) {
+        verifiedCount++;
+        console.log(`  ✓ ${prof.name} (order: ${prof.quickAccessOrder}, category: ${cat.name})`);
+      }
+    });
+  });
+
+  console.log(`\nTotal verified quick access professions: ${verifiedCount}\n`);
+
+  const quickAccessAfter = quickAccessNames(verifyCategories);
+  if (JSON.stringify(quickAccessBefore) !== JSON.stringify(quickAccessAfter)) {
+    await auditLog(req, 'quick_access_updated', `Set quick access to ${quickAccessAfter.length ? quickAccessAfter.join(', ') : 'nothing'}`, {
+      targetType: 'profession',
+      metadata: { changes: { quickAccess: { from: quickAccessBefore, to: quickAccessAfter } } },
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Quick access professions updated successfully',
+    verifiedCount,
+  });
+}, 'Failed to update quick access professions');
 
 // Job Posting Settings
-exports.getJobPostingSettings = async (req, res) => {
-  try {
-    const settings = await JobPostingSettings.getSettings();
+exports.getJobPostingSettings = asyncHandler(async (req, res) => {
+  const settings = await JobPostingSettings.getSettings();
 
-    res.status(200).json({
-      success: true,
-      settings,
-    });
-  } catch (error) {
-    console.error('Error fetching job posting settings:', error);
-    res.status(500).json({
+  res.status(200).json({
+    success: true,
+    settings,
+  });
+}, 'Failed to fetch job posting settings');
+
+exports.updateJobPostingSettings = asyncHandler(async (req, res) => {
+  const numericFields = [
+    'maxActiveJobsPerUser',
+    'jobPostDurationDays',
+    'maxAttachments',
+    'asapFee',
+    'bookingFeePercentage',
+    'bookingFeeThreshold',
+    'bookingFeeMinimum',
+    'clientCancellationFeePercentage',
+    'clientCancellationFeeMinimum',
+    'clientCancellationFeeThreshold',
+    'clientCancellationDayOfFeePercentage',
+    'clientCancellationDayOfFeeMinimum',
+    'providerCancellationFeePercentage',
+    'providerCancellationFeeMinimum',
+    'providerCancellationFeeThreshold',
+    'providerCancellationDayOfFeePercentage',
+    'providerCancellationDayOfFeeMinimum',
+    'providerCancellationFeeClientSharePercentage',
+    'providerStrikeLimit',
+    'providerStrikeRatingPenalty',
+    'noShowReviewWindowHours',
+    'noShowReviewReminderHours',
+    'noShowPayoutPercentage',
+    'noShowPayoutMinimum',
+    'noShowPayoutHoldHours',
+    'noShowLapseRestrictionCount',
+    'confirmedFaultRestrictionCount',
+    'disputeLossRestrictionCount',
+  ];
+  const booleanFields = ['requireApproval', 'allowAttachments'];
+
+  const settings = await JobPostingSettings.getSettings();
+  const settingsBefore = settings.toObject();
+
+  // Validate and stage numeric fields (allow non-negative finite numbers only).
+  for (const field of numericFields) {
+    if (req.body[field] === undefined) continue;
+
+    const value = Number(req.body[field]);
+    if (!Number.isFinite(value) || value < 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${field} must be a non-negative number`,
+      });
+    }
+    settings[field] = value;
+  }
+
+  // maxActiveJobsPerUser and jobPostDurationDays must be at least 1.
+  if (settings.maxActiveJobsPerUser < 1) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to fetch job posting settings',
-      error: error.message,
+      message: 'maxActiveJobsPerUser must be at least 1',
     });
   }
-};
-
-exports.updateJobPostingSettings = async (req, res) => {
-  try {
-    const numericFields = [
-      'maxActiveJobsPerUser',
-      'jobPostDurationDays',
-      'maxAttachments',
-      'asapFee',
-      'bookingFeePercentage',
-      'bookingFeeThreshold',
-      'bookingFeeMinimum',
-      'clientCancellationFeePercentage',
-      'clientCancellationFeeMinimum',
-      'clientCancellationFeeThreshold',
-      'clientCancellationDayOfFeePercentage',
-      'clientCancellationDayOfFeeMinimum',
-      'providerCancellationFeePercentage',
-      'providerCancellationFeeMinimum',
-      'providerCancellationFeeThreshold',
-      'providerCancellationDayOfFeePercentage',
-      'providerCancellationDayOfFeeMinimum',
-      'providerCancellationFeeClientSharePercentage',
-      'providerStrikeLimit',
-      'providerStrikeRatingPenalty',
-      'noShowReviewWindowHours',
-      'noShowReviewReminderHours',
-      'noShowPayoutPercentage',
-      'noShowPayoutMinimum',
-      'noShowPayoutHoldHours',
-      'noShowLapseRestrictionCount',
-      'confirmedFaultRestrictionCount',
-      'disputeLossRestrictionCount',
-    ];
-    const booleanFields = ['requireApproval', 'allowAttachments'];
-
-    const settings = await JobPostingSettings.getSettings();
-
-    // Validate and stage numeric fields (allow non-negative finite numbers only).
-    for (const field of numericFields) {
-      if (req.body[field] === undefined) continue;
-
-      const value = Number(req.body[field]);
-      if (!Number.isFinite(value) || value < 0) {
-        return res.status(400).json({
-          success: false,
-          message: `${field} must be a non-negative number`,
-        });
-      }
-      settings[field] = value;
-    }
-
-    // maxActiveJobsPerUser and jobPostDurationDays must be at least 1.
-    if (settings.maxActiveJobsPerUser < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'maxActiveJobsPerUser must be at least 1',
-      });
-    }
-    if (settings.jobPostDurationDays < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'jobPostDurationDays must be at least 1',
-      });
-    }
-
-    // Booking fee percentage is a 0-100 rate.
-    if (settings.bookingFeePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'bookingFeePercentage cannot exceed 100',
-      });
-    }
-
-    // Client cancellation fee percentage is a 0-100 rate.
-    if (settings.clientCancellationFeePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'clientCancellationFeePercentage cannot exceed 100',
-      });
-    }
-
-    // Provider strike limit must be at least 1.
-    if (settings.clientCancellationDayOfFeePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'clientCancellationDayOfFeePercentage cannot exceed 100',
-      });
-    }
-
-    if (settings.providerCancellationFeePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'providerCancellationFeePercentage cannot exceed 100',
-      });
-    }
-
-    if (settings.providerCancellationDayOfFeePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'providerCancellationDayOfFeePercentage cannot exceed 100',
-      });
-    }
-
-    if (settings.providerCancellationFeeClientSharePercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'providerCancellationFeeClientSharePercentage cannot exceed 100',
-      });
-    }
-
-    if (settings.noShowPayoutPercentage > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'noShowPayoutPercentage cannot exceed 100',
-      });
-    }
-
-    if (settings.noShowReviewWindowHours < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'noShowReviewWindowHours must be at least 1',
-      });
-    }
-
-    // A reminder at or after the deadline is a reminder that never fires — the
-    // window resolves first. Caught here rather than silently swallowed by the
-    // scheduler, where it would look like the reminder was simply broken.
-    if (settings.noShowReviewReminderHours >= settings.noShowReviewWindowHours) {
-      return res.status(400).json({
-        success: false,
-        message: 'noShowReviewReminderHours must be less than noShowReviewWindowHours, or the reminder never fires',
-      });
-    }
-
-    // 0 or 1 disables the trigger; 1 would punish a single good-faith
-    // complaint, which is the opposite of what it is for.
-    if (
-      settings.disputeLossRestrictionCount !== undefined &&
-      settings.disputeLossRestrictionCount === 1
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'disputeLossRestrictionCount must be 0 (disabled) or at least 2 — restricting on a single lost dispute penalises a good-faith complaint',
-      });
-    }
-
-    if (settings.noShowLapseRestrictionCount < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'noShowLapseRestrictionCount must be at least 1',
-      });
-    }
-
-    if (settings.providerStrikeLimit < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'providerStrikeLimit must be at least 1',
-      });
-    }
-
-    // Stage boolean fields.
-    for (const field of booleanFields) {
-      if (req.body[field] === undefined) continue;
-      settings[field] = Boolean(req.body[field]);
-    }
-
-    settings.updatedBy = req.session?.uid || req.session?.email || 'unknown';
-    await settings.save();
-
-    // Emit socket event for real-time update
-    if (io) {
-      try {
-        const adminNamespace = io.of('/admin');
-        adminNamespace.emit('configuration:updated', {
-          type: 'job-posting',
-          action: 'updated',
-          settings,
-        });
-      } catch (socketErr) {
-        console.error('Error emitting socket event:', socketErr);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      settings,
-    });
-  } catch (error) {
-    console.error('Error updating job posting settings:', error);
-    res.status(500).json({
+  if (settings.jobPostDurationDays < 1) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to update job posting settings',
-      error: error.message,
+      message: 'jobPostDurationDays must be at least 1',
     });
   }
-};
+
+  // Booking fee percentage is a 0-100 rate.
+  if (settings.bookingFeePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'bookingFeePercentage cannot exceed 100',
+    });
+  }
+
+  // Client cancellation fee percentage is a 0-100 rate.
+  if (settings.clientCancellationFeePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'clientCancellationFeePercentage cannot exceed 100',
+    });
+  }
+
+  // Provider strike limit must be at least 1.
+  if (settings.clientCancellationDayOfFeePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'clientCancellationDayOfFeePercentage cannot exceed 100',
+    });
+  }
+
+  if (settings.providerCancellationFeePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'providerCancellationFeePercentage cannot exceed 100',
+    });
+  }
+
+  if (settings.providerCancellationDayOfFeePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'providerCancellationDayOfFeePercentage cannot exceed 100',
+    });
+  }
+
+  if (settings.providerCancellationFeeClientSharePercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'providerCancellationFeeClientSharePercentage cannot exceed 100',
+    });
+  }
+
+  if (settings.noShowPayoutPercentage > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'noShowPayoutPercentage cannot exceed 100',
+    });
+  }
+
+  if (settings.noShowReviewWindowHours < 1) {
+    return res.status(400).json({
+      success: false,
+      message: 'noShowReviewWindowHours must be at least 1',
+    });
+  }
+
+  // A reminder at or after the deadline is a reminder that never fires — the
+  // window resolves first. Caught here rather than silently swallowed by the
+  // scheduler, where it would look like the reminder was simply broken.
+  if (settings.noShowReviewReminderHours >= settings.noShowReviewWindowHours) {
+    return res.status(400).json({
+      success: false,
+      message: 'noShowReviewReminderHours must be less than noShowReviewWindowHours, or the reminder never fires',
+    });
+  }
+
+  // 0 or 1 disables the trigger; 1 would punish a single good-faith
+  // complaint, which is the opposite of what it is for.
+  if (
+    settings.disputeLossRestrictionCount !== undefined &&
+    settings.disputeLossRestrictionCount === 1
+  ) {
+    return res.status(400).json({
+      success: false,
+      message:
+        'disputeLossRestrictionCount must be 0 (disabled) or at least 2 — restricting on a single lost dispute penalises a good-faith complaint',
+    });
+  }
+
+  if (settings.noShowLapseRestrictionCount < 1) {
+    return res.status(400).json({
+      success: false,
+      message: 'noShowLapseRestrictionCount must be at least 1',
+    });
+  }
+
+  if (settings.providerStrikeLimit < 1) {
+    return res.status(400).json({
+      success: false,
+      message: 'providerStrikeLimit must be at least 1',
+    });
+  }
+
+  // Stage boolean fields.
+  for (const field of booleanFields) {
+    if (req.body[field] === undefined) continue;
+    settings[field] = Boolean(req.body[field]);
+  }
+
+  settings.updatedBy = req.session?.uid || req.session?.email || 'unknown';
+  await settings.save();
+
+  // Fees and penalties change what every client and provider pays, so the
+  // row keeps each changed value's before and after, not just "settings saved".
+  const settingsChanges = diffFields(settingsBefore, settings.toObject(), [...numericFields, ...booleanFields]);
+  if (Object.keys(settingsChanges).length) {
+    await auditLog(req, 'settings_updated', `Changed job & fee settings: ${describeChanges(settingsChanges)}`, {
+      targetType: 'settings',
+      metadata: { targetName: 'Job & fee settings', changes: settingsChanges },
+    });
+  }
+
+  // Emit socket event for real-time update
+  if (io) {
+    try {
+      const adminNamespace = io.of('/admin');
+      adminNamespace.emit('configuration:updated', {
+        type: 'job-posting',
+        action: 'updated',
+        settings,
+      });
+    } catch (socketErr) {
+      console.error('Error emitting socket event:', socketErr);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    settings,
+  });
+}, 'Failed to update job posting settings');
