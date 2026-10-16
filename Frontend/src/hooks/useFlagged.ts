@@ -1,9 +1,99 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { flaggedService, usersService } from '../services';
+import type { ReportSource } from '../services/flaggedService';
 
 const FLAGGED_QUERY_KEY = 'flagged';
 const FLAGGED_STATS_QUERY_KEY = 'flagged-stats';
 const REPORTS_QUERY_KEY = 'reports';
+const COMBINED_REPORTS_QUERY_KEY = 'combined-reports';
+
+const EMPTY_COMBINED_STATS = {
+  total: 0,
+  open: 0,
+  under_review: 0,
+  action_taken: 0,
+  dismissed: 0,
+  escalated: 0,
+  open_total: 0,
+  bySource: { report: 0, reported_post: 0 },
+};
+
+/**
+ * Both report collections in one list. Prefer this over useReports(), which
+ * only reads `reports` and therefore misses everything in `reportedposts`.
+ */
+export const useCombinedReports = (params?: {
+  status?: string;
+  reason?: string;
+  reportType?: string;
+  source?: ReportSource;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}) => {
+  return useQuery({
+    queryKey: [COMBINED_REPORTS_QUERY_KEY, params],
+    queryFn: async () => {
+      const response = await flaggedService.getCombinedReports(params);
+      return {
+        reports: response.data?.reports || [],
+        stats: response.data?.stats || EMPTY_COMBINED_STATS,
+        pagination: response.data?.pagination,
+      };
+    },
+    placeholderData: (previousData) => previousData,
+  });
+};
+
+/**
+ * Update a report in whichever collection it came from, then refresh the
+ * combined feed and the legacy queries that also read these collections.
+ */
+/** Bulk triage from the Flagged page; refreshes the same queries as a single update. */
+export const useBulkUpdateReports = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof flaggedService.bulkUpdateReportStatus>[0]) => flaggedService.bulkUpdateReportStatus(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [COMBINED_REPORTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [REPORTS_QUERY_KEY] });
+    },
+  });
+};
+
+export const useUpdateCombinedReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      reportId,
+      source,
+      status,
+      adminNotes,
+      actionTaken,
+    }: {
+      reportId: string;
+      source: ReportSource;
+      status: string;
+      adminNotes?: string;
+      actionTaken?: string;
+    }) => {
+      return flaggedService.updateAnyReportStatus(reportId, source, {
+        status,
+        // No note → the field is left out and the report keeps whatever it had,
+        // instead of "Action taken by admin" on every decision.
+        adminNotes: adminNotes || undefined,
+        actionTaken: actionTaken || 'none',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [COMBINED_REPORTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [REPORTS_QUERY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [FLAGGED_QUERY_KEY] });
+    },
+  });
+};
 
 export const useReports = (params?: {
   status?: string;
@@ -19,7 +109,7 @@ export const useReports = (params?: {
       const response = await flaggedService.getAllReports(params);
       return {
         reports: response.data?.reports || [],
-        stats: response.data?.stats || { total: 0, open: 0, under_review: 0, action_taken: 0, dismissed: 0, escalated: 0 },
+        stats: response.data?.stats || { total: 0, open: 0, under_review: 0, action_taken: 0, dismissed: 0, escalated: 0, open_total: 0 },
         pagination: response.data?.pagination,
       };
     },

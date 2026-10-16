@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { AUDIT_ACTION_TYPES, AUDIT_TARGET_TYPES, AUDIT_TARGET_MODELS } = require('../constants/auditActions');
 
 const activityLogSchema = new mongoose.Schema({
   adminId: {
@@ -8,40 +9,11 @@ const activityLogSchema = new mongoose.Schema({
   },
   actionType: {
     type: String,
-    enum: [
-      'verification_approved',
-      'verification_rejected',
-      'user_restricted',
-      'user_suspended',
-      'user_banned',
-      'user_deleted',
-      'user_unrestricted',
-      'transaction_completed',
-      'transaction_failed',
-      'support_closed',
-      'support_reopened',
-      'admin_login',
-      'job_hidden',
-      'job_unhidden',
-      'job_deleted',
-      'job_restored',
-      // Both of these ARE logged by jobController (resolveDispute and
-      // forceCancelJob) but were missing from this enum, so every write failed
-      // validation. createActivityLog swallows its errors, so the two admin
-      // actions that move the most money were the two that left no audit trail.
-      'dispute_resolved',
-      'job_force_cancelled',
-      // Logged by supportController when an admin takes ownership of a ticket.
-      // Same omission as the two above: createActivityLog swallows its own
-      // errors, so a missing value here silently loses the audit trail rather
-      // than failing the action. Any new logActivity/createActivityLog call
-      // MUST add its verb to this list — it is the audit trail, not decoration.
-      'support_accepted',
-      // Bulk transaction approval (routes/transactions.js). Found by the enum
-      // coverage guard on its first run — a bulk money approval that had been
-      // leaving no audit entry at all.
-      'bulk_transaction_approval'
-    ],
+    // Built from constants/auditActions.js — the one place a logged action is
+    // declared. A value missing there is rejected here, and because both write
+    // helpers swallow the error and return null, the audit row is silently
+    // dropped while the admin action itself still succeeds.
+    enum: AUDIT_ACTION_TYPES,
     required: true
   },
   description: {
@@ -50,7 +22,7 @@ const activityLogSchema = new mongoose.Schema({
   },
   targetType: {
     type: String,
-    enum: ['user', 'transaction', 'support', 'verification', 'job'],
+    enum: AUDIT_TARGET_TYPES,
     required: false
   },
   targetId: {
@@ -60,7 +32,7 @@ const activityLogSchema = new mongoose.Schema({
   },
   targetModel: {
     type: String,
-    enum: ['User', 'Transaction', 'ChatSupport', 'CredentialVerification', 'Job'],
+    enum: AUDIT_TARGET_MODELS,
     required: false
   },
   metadata: {
@@ -68,6 +40,11 @@ const activityLogSchema = new mongoose.Schema({
     default: {}
   },
   ipAddress: {
+    type: String,
+    required: false
+  },
+  // The browser the action came from, for the entry's "from" line.
+  userAgent: {
     type: String,
     required: false
   }

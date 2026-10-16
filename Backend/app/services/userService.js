@@ -293,12 +293,23 @@ class UserService {
       }
     }
 
+    // "Unverified" is anything not explicitly verified — a document without the
+    // flag would otherwise belong to neither tab, and the tab counts (which come
+    // from countUsersByFacet) would stop adding up to the total.
     if (isVerified !== undefined) {
-      query.isVerified = isVerified === 'true' || isVerified === true;
+      query.isVerified = isVerified === 'true' || isVerified === true ? true : { $ne: true };
     }
 
-    if (userType === 'client' || userType === 'provider') {
-      query.userType = userType;
+    // Comma-separated so the Users page can ask for "client,provider" and leave
+    // staff accounts (admin, finance, support) out of the marketplace lists.
+    const userTypes = String(userType || '')
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t === 'client' || t === 'provider');
+    if (userTypes.length === 1) {
+      query.userType = userTypes[0];
+    } else if (userTypes.length > 1) {
+      query.userType = { $in: userTypes };
     }
 
     // Handle accountStatus filter (more specific than restricted)
@@ -325,6 +336,36 @@ class UserService {
     }
 
     return query;
+  }
+
+  /**
+   * Client/provider counts broken down by type × account status × verification,
+   * under the same search and profession filters as the list.
+   *
+   * The Users page derives every card and tab number by summing these cells, so
+   * each number always equals the rows that clicking it would show. One
+   * aggregation replaces the ~20 `limit=1` list probes the page used to fire.
+   */
+  async countUsersByFacet({ search, profession } = {}) {
+    const match = this.buildUserQuery({ search, profession });
+    match.userType = { $in: ['client', 'provider'] };
+
+    const rows = await User.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { userType: '$userType', accountStatus: '$accountStatus', isVerified: '$isVerified' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    return rows.map(({ _id, count }) => ({
+      userType: _id.userType,
+      accountStatus: _id.accountStatus || 'active',
+      isVerified: _id.isVerified === true,
+      count
+    }));
   }
 
   /**

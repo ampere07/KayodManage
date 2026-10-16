@@ -9,121 +9,113 @@ const DismissedAlert = require('../models/DismissedAlert');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const ChatSupport = require('../models/ChatSupport');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
 
 const getStats = async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    const totalUsers = await User.countDocuments();
-    const customers = await User.countDocuments({ userType: 'client' });
-    const providers = await User.countDocuments({ userType: 'provider' });
-    const totalJobs = await Job.countDocuments();
-    const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
-    const onlineUsers = await User.countDocuments({ isOnline: true });
-    
-    const completedFeeTransactions = await Transaction.find({ status: 'completed', type: 'platform_fee' });
-    const totalRevenue = completedFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-    
-    const pendingFeeRecords = await FeeRecord.find({ 
-      status: { $in: ['pending', 'overdue'] } 
-    });
-    const pendingFees = pendingFeeRecords.reduce((sum, fee) => sum + (fee.amount || 0), 0);
-    const pendingFeesCount = pendingFeeRecords.length;
+  const totalUsers = await User.countDocuments();
+  const customers = await User.countDocuments({ userType: 'client' });
+  const providers = await User.countDocuments({ userType: 'provider' });
+  const totalJobs = await Job.countDocuments();
+  const activeJobs = await Job.countDocuments({ status: { $in: ['open', 'in_progress'] } });
+  const onlineUsers = await User.countDocuments({ isOnline: true });
+  
+  const completedFeeTransactions = await Transaction.find({ status: 'completed', type: 'platform_fee' });
+  const totalRevenue = completedFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+  
+  const pendingFeeRecords = await FeeRecord.find({ 
+    status: { $in: ['pending', 'overdue'] } 
+  });
+  const pendingFees = pendingFeeRecords.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+  const pendingFeesCount = pendingFeeRecords.length;
 
-    const newUsersToday = await User.countDocuments({ 
-      userType: 'client',
-      createdAt: { $gte: today } 
-    });
-    const newProvidersToday = await User.countDocuments({ 
-      userType: 'provider',
-      createdAt: { $gte: today } 
-    });
-    const jobsCreatedToday = await Job.countDocuments({ 
-      createdAt: { $gte: today } 
-    });
-    const completedJobsToday = await Job.countDocuments({ 
-      status: 'completed', 
-      completedAt: { $gte: today } 
-    });
-    const todayFeeTransactions = await Transaction.find({ 
-      status: 'completed',
-      type: 'platform_fee',
-      completedAt: { $gte: today }
-    });
-    const revenueToday = todayFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const newUsersToday = await User.countDocuments({ 
+    userType: 'client',
+    createdAt: { $gte: today } 
+  });
+  const newProvidersToday = await User.countDocuments({ 
+    userType: 'provider',
+    createdAt: { $gte: today } 
+  });
+  const jobsCreatedToday = await Job.countDocuments({ 
+    createdAt: { $gte: today } 
+  });
+  const completedJobsToday = await Job.countDocuments({ 
+    status: 'completed', 
+    completedAt: { $gte: today } 
+  });
+  const todayFeeTransactions = await Transaction.find({ 
+    status: 'completed',
+    type: 'platform_fee',
+    completedAt: { $gte: today }
+  });
+  const revenueToday = todayFeeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
-      status: 'approved' 
-    });
-    const verifiedProviders = verifiedProviderIds.length;
-    
-    const pendingVerifications = await CredentialVerification.countDocuments({ 
-      status: 'pending' 
-    });
+  const verifiedProviderIds = await CredentialVerification.distinct('userId', { 
+    status: 'approved' 
+  });
+  const verifiedProviders = verifiedProviderIds.length;
+  
+  const pendingVerifications = await CredentialVerification.countDocuments({ 
+    status: 'pending' 
+  });
 
-    const completedJobs = await Job.find({ 
-      status: 'completed',
-      'rating.stars': { $exists: true, $ne: null }
-    }).select('rating.stars');
-    
-    const totalRatings = completedJobs.reduce((sum, job) => {
-      return sum + (job.rating?.stars || 0);
-    }, 0);
-    const averageRating = completedJobs.length > 0 
-      ? (totalRatings / completedJobs.length).toFixed(1)
-      : '0.0';
+  const completedJobs = await Job.find({ 
+    status: 'completed',
+    'rating.stars': { $exists: true, $ne: null }
+  }).select('rating.stars');
+  
+  const totalRatings = completedJobs.reduce((sum, job) => {
+    return sum + (job.rating?.stars || 0);
+  }, 0);
+  const averageRating = completedJobs.length > 0 
+    ? (totalRatings / completedJobs.length).toFixed(1)
+    : '0.0';
 
-    const stats = {
-      totalUsers,
-      customers,
-      providers,
-      totalJobs,
-      activeJobs,
-      totalRevenue,
-      pendingFees,
-      pendingFeesCount,
-      onlineUsers,
-      newUsersToday,
-      newProvidersToday,
-      jobsCreatedToday,
-      completedJobsToday,
-      revenueToday,
-      verifiedProviders,
-      pendingVerifications,
-      averageRating
-    };
+  const stats = {
+    totalUsers,
+    customers,
+    providers,
+    totalJobs,
+    activeJobs,
+    totalRevenue,
+    pendingFees,
+    pendingFeesCount,
+    onlineUsers,
+    newUsersToday,
+    newProvidersToday,
+    jobsCreatedToday,
+    completedJobsToday,
+    revenueToday,
+    verifiedProviders,
+    pendingVerifications,
+    averageRating
+  };
 
-    res.json(stats);
-  } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
-  }
+  res.json(stats);
 };
 
 const getActivity = async (req, res) => {
-  try {
-    let activities = await ActivityFeed.find()
-      .populate('userId', 'name email')
-      .populate('jobId', 'title')
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
+  let activities = await ActivityFeed.find()
+    .populate('userId', 'name email')
+    .populate('jobId', 'title')
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
 
-    activities = activities.map(activity => ({
-      ...activity,
-      timestamp: activity.createdAt
-    }));
+  activities = activities.map(activity => ({
+    ...activity,
+    timestamp: activity.createdAt
+  }));
 
-    if (activities.length === 0) {
-      activities = await generateActivitiesFromData();
-    }
-
-    res.json(activities);
-  } catch (error) {
-    console.error('Error fetching activity feed:', error);
-    res.status(500).json({ error: 'Failed to fetch activity feed' });
+  if (activities.length === 0) {
+    activities = await generateActivitiesFromData();
   }
+
+  res.json(activities);
 };
 
 const generateActivitiesFromData = async () => {
@@ -213,36 +205,31 @@ const generateActivitiesFromData = async () => {
 };
 
 const getAlerts = async (req, res) => {
-  try {
-    const mongoose = require('mongoose');
-    const adminId = req.admin?.id || req.user?.id;
-    
-    let alerts = await Alert.find({ isActive: true })
-      .populate('userId', 'name email')
-      .populate('jobId', 'title')
-      .populate('reportId')
-      .populate('verificationId')
-      .populate('supportId')
-      .sort({ priority: -1, createdAt: -1 })
-      .limit(20);
+  const mongoose = require('mongoose');
+  const adminId = req.admin?.id || req.user?.id;
+  
+  let alerts = await Alert.find({ isActive: true })
+    .populate('userId', 'name email')
+    .populate('jobId', 'title')
+    .populate('reportId')
+    .populate('verificationId')
+    .populate('supportId')
+    .sort({ priority: -1, createdAt: -1 })
+    .limit(20);
 
-    if (alerts.length === 0) {
-      const generatedAlerts = await generateAlertsFromData();
-      alerts = generatedAlerts;
-    }
-
-    if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
-      const dismissedAlerts = await DismissedAlert.find({ adminId }).select('alertId');
-      const dismissedAlertIds = dismissedAlerts.map(d => d.alertId.toString());
-      
-      alerts = alerts.filter(alert => !dismissedAlertIds.includes(alert._id.toString()));
-    }
-
-    res.json(alerts);
-  } catch (error) {
-    console.error('Error fetching alerts:', error);
-    res.status(500).json({ error: 'Failed to fetch alerts' });
+  if (alerts.length === 0) {
+    const generatedAlerts = await generateAlertsFromData();
+    alerts = generatedAlerts;
   }
+
+  if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
+    const dismissedAlerts = await DismissedAlert.find({ adminId }).select('alertId');
+    const dismissedAlertIds = dismissedAlerts.map(d => d.alertId.toString());
+    
+    alerts = alerts.filter(alert => !dismissedAlertIds.includes(alert._id.toString()));
+  }
+
+  res.json(alerts);
 };
 
 const generateAlertsFromData = async () => {
@@ -341,261 +328,249 @@ const generateAlertsFromData = async () => {
 };
 
 const markAlertAsRead = async (req, res) => {
-  try {
-    const { alertId } = req.params;
-    
-    await Alert.findByIdAndUpdate(alertId, { isRead: true });
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error marking alert as read:', error);
-    res.status(500).json({ error: 'Failed to mark alert as read' });
-  }
+  const { alertId } = req.params;
+  
+  await Alert.findByIdAndUpdate(alertId, { isRead: true });
+  
+  res.json({ success: true });
 };
 
 const getRevenueChart = async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 7;
-    const chartData = [];
+  const days = parseInt(req.query.days) || 7;
+  const chartData = [];
 
-    if (days <= 31) {
-      for (let i = days - 1; i >= 0; i--) {
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - i);
-        startDate.setHours(0, 0, 0, 0);
+  if (days <= 31) {
+    for (let i = days - 1; i >= 0; i--) {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - i);
+      startDate.setHours(0, 0, 0, 0);
 
-        const endDate = new Date(startDate);
-        endDate.setHours(23, 59, 59, 999);
+      const endDate = new Date(startDate);
+      endDate.setHours(23, 59, 59, 999);
 
-        const dayTransactions = await Transaction.find({
-          status: 'completed',
-          type: 'platform_fee',
-          $or: [
-            { completedAt: { $gte: startDate, $lte: endDate } },
-            { 
-              completedAt: null,
-              createdAt: { $gte: startDate, $lte: endDate }
-            }
-          ]
-        });
+      const dayTransactions = await Transaction.find({
+        status: 'completed',
+        type: 'platform_fee',
+        $or: [
+          { completedAt: { $gte: startDate, $lte: endDate } },
+          { 
+            completedAt: null,
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        ]
+      });
 
-        const revenue = dayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const revenue = dayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-        chartData.push({
-          name: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          revenue: revenue,
-          transactions: dayTransactions.length
-        });
-      }
-    } else {
-      const weeksToShow = Math.ceil(days / 7);
-      for (let i = weeksToShow - 1; i >= 0; i--) {
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() - (i * 7));
-        endDate.setHours(23, 59, 59, 999);
-
-        const startDate = new Date(endDate);
-        startDate.setDate(startDate.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-
-        const weekTransactions = await Transaction.find({
-          status: 'completed',
-          type: 'platform_fee',
-          $or: [
-            { completedAt: { $gte: startDate, $lte: endDate } },
-            { 
-              completedAt: null,
-              createdAt: { $gte: startDate, $lte: endDate }
-            }
-          ]
-        });
-
-        const revenue = weekTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-
-        const weekLabel = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-
-        chartData.push({
-          name: weekLabel,
-          revenue: revenue,
-          transactions: weekTransactions.length
-        });
-      }
+      chartData.push({
+        name: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revenue: revenue,
+        transactions: dayTransactions.length
+      });
     }
+  } else {
+    const weeksToShow = Math.ceil(days / 7);
+    for (let i = weeksToShow - 1; i >= 0; i--) {
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() - (i * 7));
+      endDate.setHours(23, 59, 59, 999);
 
-    res.json(chartData);
-  } catch (error) {
-    console.error('Error fetching revenue chart data:', error);
-    res.status(500).json({ error: 'Failed to fetch revenue chart data' });
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+      startDate.setHours(0, 0, 0, 0);
+
+      const weekTransactions = await Transaction.find({
+        status: 'completed',
+        type: 'platform_fee',
+        $or: [
+          { completedAt: { $gte: startDate, $lte: endDate } },
+          { 
+            completedAt: null,
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        ]
+      });
+
+      const revenue = weekTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+      const weekLabel = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+      chartData.push({
+        name: weekLabel,
+        revenue: revenue,
+        transactions: weekTransactions.length
+      });
+    }
   }
+
+  res.json(chartData);
 };
 
 const getStatsComparison = async (req, res) => {
-  try {
-    const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-    const totalUsersNow = await User.countDocuments();
-    const totalUsersLastMonth = await User.countDocuments({ 
-      createdAt: { $lte: lastMonthEnd } 
-    });
+  const totalUsersNow = await User.countDocuments();
+  const totalUsersLastMonth = await User.countDocuments({ 
+    createdAt: { $lte: lastMonthEnd } 
+  });
 
-    const totalJobsNow = await Job.countDocuments();
-    const totalJobsLastMonth = await Job.countDocuments({ 
-      createdAt: { $lte: lastMonthEnd } 
-    });
+  const totalJobsNow = await Job.countDocuments();
+  const totalJobsLastMonth = await Job.countDocuments({ 
+    createdAt: { $lte: lastMonthEnd } 
+  });
 
-    const currentMonthRevenueDocs = await Transaction.find({
-      status: 'completed',
-      type: 'platform_fee',
-      $or: [
-        { completedAt: { $gte: currentMonthStart } },
-        { completedAt: null, createdAt: { $gte: currentMonthStart } }
-      ]
-    });
-    const currentMonthRevenue = currentMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const currentMonthRevenueDocs = await Transaction.find({
+    status: 'completed',
+    type: 'platform_fee',
+    $or: [
+      { completedAt: { $gte: currentMonthStart } },
+      { completedAt: null, createdAt: { $gte: currentMonthStart } }
+    ]
+  });
+  const currentMonthRevenue = currentMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    const lastMonthRevenueDocs = await Transaction.find({
-      status: 'completed',
-      type: 'platform_fee',
-      $or: [
-        { completedAt: { $gte: lastMonthStart, $lte: lastMonthEnd } },
-        { completedAt: null, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }
-      ]
-    });
-    const lastMonthRevenue = lastMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const lastMonthRevenueDocs = await Transaction.find({
+    status: 'completed',
+    type: 'platform_fee',
+    $or: [
+      { completedAt: { $gte: lastMonthStart, $lte: lastMonthEnd } },
+      { completedAt: null, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }
+    ]
+  });
+  const lastMonthRevenue = lastMonthRevenueDocs.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    const currentPendingFeesTotal = await FeeRecord.countDocuments({
-      status: { $in: ['pending', 'overdue'] }
-    });
-    
-    const pendingFeesResolvedThisMonth = await FeeRecord.countDocuments({
-      status: { $nin: ['pending', 'overdue'] },
-      updatedAt: { $gte: currentMonthStart }
-    });
-    const pendingFeesCreatedThisMonth = await FeeRecord.countDocuments({
-      status: { $in: ['pending', 'overdue'] },
-      createdAt: { $gte: currentMonthStart }
-    });
-    const lastMonthPendingFees = currentPendingFeesTotal - pendingFeesCreatedThisMonth + pendingFeesResolvedThisMonth;
+  const currentPendingFeesTotal = await FeeRecord.countDocuments({
+    status: { $in: ['pending', 'overdue'] }
+  });
+  
+  const pendingFeesResolvedThisMonth = await FeeRecord.countDocuments({
+    status: { $nin: ['pending', 'overdue'] },
+    updatedAt: { $gte: currentMonthStart }
+  });
+  const pendingFeesCreatedThisMonth = await FeeRecord.countDocuments({
+    status: { $in: ['pending', 'overdue'] },
+    createdAt: { $gte: currentMonthStart }
+  });
+  const lastMonthPendingFees = currentPendingFeesTotal - pendingFeesCreatedThisMonth + pendingFeesResolvedThisMonth;
 
-    const currentAlerts = await Alert.countDocuments({ isActive: true });
-    const lastMonthAlerts = await Alert.countDocuments({
-      isActive: true,
-      createdAt: { $lte: lastMonthEnd }
-    });
+  const currentAlerts = await Alert.countDocuments({ isActive: true });
+  const lastMonthAlerts = await Alert.countDocuments({
+    isActive: true,
+    createdAt: { $lte: lastMonthEnd }
+  });
 
-    const calculatePercentage = (current, previous) => {
-      if (previous === 0) return current > 0 ? 100 : 0;
-      return Math.round(((current - previous) / previous) * 100);
-    };
+  const calculatePercentage = (current, previous) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return Math.round(((current - previous) / previous) * 100);
+  };
 
-    res.json({
-      users: {
-        current: totalUsersNow,
-        previous: totalUsersLastMonth,
-        percentage: calculatePercentage(totalUsersNow, totalUsersLastMonth)
-      },
-      jobs: {
-        current: totalJobsNow,
-        previous: totalJobsLastMonth,
-        percentage: calculatePercentage(totalJobsNow, totalJobsLastMonth)
-      },
-      revenue: {
-        current: currentMonthRevenue,
-        previous: lastMonthRevenue,
-        percentage: calculatePercentage(currentMonthRevenue, lastMonthRevenue)
-      },
-      pendingFees: {
-        current: currentPendingFeesTotal,
-        percentage: calculatePercentage(currentPendingFeesTotal, lastMonthPendingFees)
-      },
-      alerts: {
-        current: currentAlerts,
-        percentage: calculatePercentage(currentAlerts, lastMonthAlerts)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching stats comparison:', error);
-    res.status(500).json({ error: 'Failed to fetch stats comparison' });
-  }
+  res.json({
+    users: {
+      current: totalUsersNow,
+      previous: totalUsersLastMonth,
+      percentage: calculatePercentage(totalUsersNow, totalUsersLastMonth)
+    },
+    jobs: {
+      current: totalJobsNow,
+      previous: totalJobsLastMonth,
+      percentage: calculatePercentage(totalJobsNow, totalJobsLastMonth)
+    },
+    revenue: {
+      current: currentMonthRevenue,
+      previous: lastMonthRevenue,
+      percentage: calculatePercentage(currentMonthRevenue, lastMonthRevenue)
+    },
+    pendingFees: {
+      current: currentPendingFeesTotal,
+      percentage: calculatePercentage(currentPendingFeesTotal, lastMonthPendingFees)
+    },
+    alerts: {
+      current: currentAlerts,
+      percentage: calculatePercentage(currentAlerts, lastMonthAlerts)
+    }
+  });
 };
 
 const getPopularJobs = async (req, res) => {
-  try {
-    const period = req.query.period || 'overall';
-    const matchQuery = {
-      $or: [
-        { professionName: { $exists: true, $ne: null, $ne: "" } },
-        { category: { $exists: true, $ne: null, $ne: "" } }
-      ],
-      budget: { $gt: 0 }
-    };
+  const period = req.query.period || 'overall';
+  const matchQuery = {
+    $or: [
+      { professionName: { $exists: true, $ne: null, $ne: "" } },
+      { category: { $exists: true, $ne: null, $ne: "" } }
+    ],
+    budget: { $gt: 0 }
+  };
 
-    if (period !== 'overall') {
-      const now = new Date();
-      let startDate = new Date();
+  if (period !== 'overall') {
+    const now = new Date();
+    let startDate = new Date();
 
-      if (period === 'week') {
-        startDate.setDate(now.getDate() - 7);
-      } else if (period === 'month') {
-        startDate.setMonth(now.getMonth() - 1);
-      } else if (period === '6months') {
-        startDate.setMonth(now.getMonth() - 6);
-      } else if (period === 'year') {
-        startDate.setFullYear(now.getFullYear() - 1);
-      }
-
-      matchQuery.createdAt = { $gte: startDate };
+    if (period === 'week') {
+      startDate.setDate(now.getDate() - 7);
+    } else if (period === 'month') {
+      startDate.setMonth(now.getMonth() - 1);
+    } else if (period === '6months') {
+      startDate.setMonth(now.getMonth() - 6);
+    } else if (period === 'year') {
+      startDate.setFullYear(now.getFullYear() - 1);
     }
 
-    const popularJobs = await Job.aggregate([
-      {
-        $match: matchQuery
-      },
-      { 
-        $group: { 
-          _id: { 
-            $toLower: { 
-              $cond: [
-                { $and: [ 
-                  { $ne: ["$professionName", null] }, 
-                  { $ne: ["$professionName", ""] },
-                  { $ne: [{ $type: "$professionName" }, "missing"] }
-                ] }, 
-                "$professionName", 
-                "$category"
-              ] 
-            }
-          }, 
-          count: { $sum: "$budget" },
-          jobCount: { $sum: 1 },
-          icon: { $first: "$icon" }
-        } 
-      },
-      { $sort: { count: -1 } },
-      { $limit: 10 },
-      { $project: { name: "$_id", count: 1, jobCount: 1, icon: 1, _id: 0 } }
-    ]);
-
-    const formattedData = popularJobs.map(job => {
-      const name = job.name 
-        ? job.name.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-        : 'Uncategorized';
-      return {
-        name,
-        count: job.count,
-        jobCount: job.jobCount,
-        icon: job.icon || null
-      };
-    });
-
-    res.json(formattedData);
-  } catch (error) {
-    console.error('Error fetching popular jobs:', error);
-    res.status(500).json({ error: 'Failed to fetch popular jobs data' });
+    matchQuery.createdAt = { $gte: startDate };
   }
+
+  const popularJobs = await Job.aggregate([
+    {
+      $match: matchQuery
+    },
+    { 
+      $group: { 
+        _id: { 
+          $toLower: { 
+            $cond: [
+              { $and: [ 
+                { $ne: ["$professionName", null] }, 
+                { $ne: ["$professionName", ""] },
+                { $ne: [{ $type: "$professionName" }, "missing"] }
+              ] }, 
+              "$professionName", 
+              "$category"
+            ] 
+          }
+        }, 
+        count: { $sum: "$budget" },
+        jobCount: { $sum: 1 },
+        icon: { $first: "$icon" }
+      } 
+    },
+    { $sort: { count: -1 } },
+    { $limit: 10 },
+    { $project: { name: "$_id", count: 1, jobCount: 1, icon: 1, _id: 0 } }
+  ]);
+
+  const formattedData = popularJobs.map(job => {
+    const name = job.name 
+      ? job.name.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      : 'Uncategorized';
+    return {
+      name,
+      count: job.count,
+      jobCount: job.jobCount,
+      icon: job.icon || null
+    };
+  });
+
+  res.json(formattedData);
 };
 
-module.exports = { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison, getPopularJobs };
+module.exports = {
+  getStats: asyncHandler(getStats, 'Failed to fetch dashboard stats'),
+  getActivity: asyncHandler(getActivity, 'Failed to fetch activity feed'),
+  getAlerts: asyncHandler(getAlerts, 'Failed to fetch alerts'),
+  markAlertAsRead: asyncHandler(markAlertAsRead, 'Failed to mark alert as read'),
+  getRevenueChart: asyncHandler(getRevenueChart, 'Failed to fetch revenue chart data'),
+  getStatsComparison: asyncHandler(getStatsComparison, 'Failed to fetch stats comparison'),
+  getPopularJobs: asyncHandler(getPopularJobs, 'Failed to fetch popular jobs data'),
+};

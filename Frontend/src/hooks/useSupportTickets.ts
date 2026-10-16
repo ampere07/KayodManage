@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supportService } from '../services';
+import { buildTicketRows } from '../utils/supportHelpers';
 import type { ChatSupport } from '../types';
 
 const SUPPORT_QUERY_KEY = 'support';
@@ -64,14 +65,21 @@ export const useSupportTickets = () => {
     });
   }, [tickets, filters]);
 
-  const paginatedTickets = useMemo(() => {
-    return filteredTickets.slice(
+  // Collapse dispute pairs BEFORE paginating — grouping afterwards would let a
+  // pair straddle a page boundary and render as two orphaned halves.
+  const ticketRows = useMemo(
+    () => buildTicketRows(filteredTickets),
+    [filteredTickets]
+  );
+
+  const paginatedRows = useMemo(() => {
+    return ticketRows.slice(
       (pagination.page - 1) * pagination.limit,
       pagination.page * pagination.limit
     );
-  }, [filteredTickets, pagination.page, pagination.limit]);
+  }, [ticketRows, pagination.page, pagination.limit]);
 
-  const totalPages = Math.ceil(filteredTickets.length / pagination.limit);
+  const totalPages = Math.ceil(ticketRows.length / pagination.limit);
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -88,16 +96,25 @@ export const useSupportTickets = () => {
   const acceptTicketMutation = useMutation({
     mutationFn: async (ticketId: string) => {
       const result = await supportService.acceptTicket(ticketId);
-      return { ticketId, chatSupport: result.chatSupport };
+      return {
+        ticketId,
+        chatSupport: result.chatSupport,
+        // The other party's thread of the same dispute, accepted server-side
+        // alongside this one.
+        linkedChatSupports: result.linkedChatSupports || [],
+      };
     },
-    onSuccess: ({ ticketId, chatSupport }) => {
+    onSuccess: ({ ticketId, chatSupport, linkedChatSupports }) => {
       updateTicket(ticketId, chatSupport);
+      linkedChatSupports.forEach(linked => updateTicket(linked._id, linked));
     },
   });
 
+  // Takes an object rather than a bare id because mutateAsync's second argument
+  // is MutateOptions — passing the reason positionally would be silently dropped.
   const closeTicketMutation = useMutation({
-    mutationFn: async (ticketId: string) => {
-      const result = await supportService.closeTicket(ticketId);
+    mutationFn: async ({ ticketId, reason }: { ticketId: string; reason?: string }) => {
+      const result = await supportService.closeTicket(ticketId, reason);
       return { ticketId, chatSupport: result.chatSupport };
     },
     onSuccess: ({ ticketId, chatSupport }) => {
@@ -122,7 +139,10 @@ export const useSupportTickets = () => {
   return {
     tickets,
     filteredTickets,
-    paginatedTickets,
+    // Rows, not raw tickets — dispute pairs are collapsed. Use ticketRows.length
+    // (not filteredTickets.length) for "showing N of M".
+    ticketRows,
+    paginatedRows,
     loading,
     filters,
     pagination,

@@ -118,6 +118,27 @@ export interface UpdateTransactionStatusResponse {
   transaction: Transaction;
 }
 
+/**
+ * Status tallies for the transactions list header, from GET /api/transactions/counts.
+ *
+ * The `*Amount` fields are real sums. Under the previous five-call approach they
+ * were read from a `stats` key the list reply never returned, so they were
+ * always 0 — the page does not render them today, but they are correct now.
+ */
+export interface TransactionCounts {
+  total: number;
+  totalAmount: number;
+  pending: number;
+  pendingAmount: number;
+  completed: number;
+  completedAmount: number;
+  completedRevenue: number;
+  failed: number;
+  failedAmount: number;
+  cancelled: number;
+  cancelledAmount: number;
+}
+
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
 export type TransactionType = 'transaction' | 'fee_record';
 export type PaymentMethod = 'wallet' | 'xendit';

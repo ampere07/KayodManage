@@ -506,7 +506,6 @@ const CreateAdminModal: React.FC<CreateAdminModalProps> = ({ isOpen, onClose, on
                   title="Administrative"
                   icon={Settings}
                   permissions={[
-                    { key: 'activity', label: 'Activity Logs' },
                     { key: 'settings', label: 'Settings' }
                   ]}
                   formData={formData}

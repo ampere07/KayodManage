@@ -58,11 +58,17 @@ class SupportService {
   }
 
   /**
-   * Close a chat support ticket
+   * Close a chat support ticket.
+   *
+   * `reason` is the admin's resolution note. The backend stores it on
+   * statusHistory[].reason, puts it in the support_closed ActivityLog entry's
+   * metadata, AND echoes it to the customer as "Ticket has been resolved:
+   * <reason>" — so it is customer-visible, not an internal note.
    */
-  async closeTicket(chatSupportId: string): Promise<ChatActionResponse> {
+  async closeTicket(chatSupportId: string, reason?: string): Promise<ChatActionResponse> {
     const response = await apiClient.put<ChatActionResponse>(
-      `${this.baseUrl}/${chatSupportId}/close`
+      `${this.baseUrl}/${chatSupportId}/close`,
+      { reason }
     );
     return response.data;
   }

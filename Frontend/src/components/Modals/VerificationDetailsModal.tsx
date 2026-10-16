@@ -11,6 +11,7 @@ import verificationsService from '../../services/verificationsService';
 import ClickableImage from '../UI/ClickableImage';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
 import UserTypeBadge from '../UI/UserTypeBadge';
+import VerificationUserProfile from '../Verifications/VerificationUserProfile';
 import type { Verification, UserInfo } from '../../types';
 import { SidebarContext } from '../Layout/Layout';
 
@@ -261,8 +262,11 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
       const fallback = attemptsFromVerification.find((a: any) => (a?.attemptNumber ?? null) === attemptNumber);
       if (fallback?.submittedAt) return fallback.submittedAt;
     }
+    // This verification record is itself the latest submission.
+    if (attemptNumber === (verification?.verificationAttempts || 1)) return verification?.submittedAt || null;
     return null;
   };
+  const formatAttemptDate = (value?: string | number | Date | null) => (value ? formatDateTime(value) : 'Date not recorded');
 
   const attemptsForHistory = (() => {
     const attemptsFromVerification = (verification as any)?.attempts;
@@ -373,6 +377,8 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
     : Array.isArray(currentImages.credentials) ? currentImages.credentials.length > 0 : !!currentImages.credentials;
 
   const documentsSubmitted = [hasFaceVerification, hasValidId, hasCredentials].filter(Boolean).length;
+  const selectedCredentials = selectedAttemptData?.credentials ?? currentImages.credentials;
+  const credentialsCount = Array.isArray(selectedCredentials) ? selectedCredentials.length : selectedCredentials ? 1 : 0;
 
   const handleQuickApprove = async () => {
     if (!window.confirm('Are you sure you want to approve this verification?')) {
@@ -496,87 +502,19 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
             <div className="relative w-full md:w-[400px] flex-shrink-0 border-b md:border-b-0 md:border-r border-gray-200 bg-white md:bg-gray-50 flex flex-col h-full overflow-hidden">
               <div className="overflow-y-auto flex-1 pb-24 md:pb-0">
                 <div className="p-4 md:p-6">
-                  {/* Personal Information */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Personal Information</h3>
-                    <div className="grid grid-cols-2 gap-x-4 md:gap-x-8 gap-y-2.5">
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">First Name:</span> {user.name.split(' ')[0]}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Age:</span> N/A
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Last Name:</span> {user.name.split(' ').slice(1).join(' ') || user.name.split(' ')[0]}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Birthdate:</span> N/A
-                      </p>
-                    </div>
-                  </div>
+                  <VerificationUserProfile
+                    user={user}
+                    verification={verification}
+                    attemptCount={displayAttemptCount}
+                    selectedAttempt={selectedAttempt}
+                    documents={{
+                      faceVerification: hasFaceVerification,
+                      validId: hasValidId,
+                      credentials: credentialsCount
+                    }}
+                  />
 
-                  <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
-
-                  {/* Contact */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact</h3>
-                    <div className="space-y-2.5">
-                      <p className="text-sm md:text-base text-gray-900 break-all">
-                        <span className="text-gray-600">Email Address:</span> {user.email}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Contact Number:</span> N/A
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Location:</span> N/A
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
-
-                  {/* Verification Details */}
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Verification Details</h3>
-                        <div className="text-sm text-gray-600">
-                          Viewing: <span className="font-medium text-indigo-600">Attempt {selectedAttempt}</span>
-                        </div>
-                      </div>
-                    <div className="space-y-2.5">
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Verification Status:</span>{' '}
-                        {verification.status === 'approved' ? 'Verified' : verification.status === 'rejected' ? 'Rejected' : 'Pending'}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Verified By:</span>{' '}
-                        {verification.reviewedBy ? verification.reviewedBy.name : 'N/A'}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Verification Date:</span>{' '}
-                        {verification.reviewedAt ? new Date(verification.reviewedAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        }) : 'N/A'}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Attempts:</span> {displayAttemptCount}
-                      </p>
-                      <p className="text-sm md:text-base text-gray-900">
-                        <span className="text-gray-600">Documents Uploaded:</span> {documentsSubmitted} out of 3
-                      </p>
-                      <div className="mt-2 ml-4">
-                        <ul className="list-disc text-sm text-gray-700 space-y-1">
-                          {hasFaceVerification && <li>Face Verification</li>}
-                          {hasValidId && <li>Identification Card</li>}
-                          {hasCredentials && <li>Certificate/Credentials</li>}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-gray-300 mb-6 -mx-4 md:-mx-6" />
+                  <div className="border-t border-gray-300 my-6 -mx-4 md:-mx-6" />
 
                   {/* Submission History */}
                   <div className="mb-6">
@@ -631,7 +569,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                               <div className="flex-1">
                                 <p className={`text-sm font-medium transition-colors ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt {attemptNumber}</p>
                                 <p className="text-xs text-gray-500">
-                                  {submittedAt ? formatDateTime(submittedAt) : 'N/A'} - {isCurrent ? 'Current attempt' : `Previous attempt ${attemptNumber}`}
+                                  {formatAttemptDate(submittedAt || getAttemptTimestamp(attemptNumber))} - {isCurrent ? 'Current attempt' : `Previous attempt ${attemptNumber}`}
                                 </p>
                               </div>
                               {isSelected && (
@@ -674,7 +612,7 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
                           <div className="flex-1">
                             <p className={`text-sm font-medium transition-colors ${selectedAttempt === 1 ? 'text-indigo-900' : 'text-gray-900'}`}>Verification Attempt 1</p>
                             <p className="text-xs text-gray-500">
-                              {formatDateTime(getAttemptTimestamp(1))} - {latestAttemptForHistory === 1 ? 'Current attempt' : 'Previous attempt 1'}
+                              {formatAttemptDate(getAttemptTimestamp(1))} - {latestAttemptForHistory === 1 ? 'Current attempt' : 'Previous attempt 1'}
                             </p>
                           </div>
                           {selectedAttempt === 1 && (

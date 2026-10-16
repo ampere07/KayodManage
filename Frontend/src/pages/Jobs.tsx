@@ -361,6 +361,7 @@ const Jobs: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5" />
               <input
                 type="text"
+                data-testid="admin-jobs-search"
                 placeholder="Search jobs, categories, or IDs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -382,136 +383,6 @@ const Jobs: React.FC = () => {
 
           {/* Mobile Row 2: Professions + Payment */}
           <div className="grid grid-cols-2 gap-2 md:hidden">
-            <div
-              onClick={() => setStatusFilter('all')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-blue-50 border-blue-200 ${statusFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <Briefcase className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Total Jobs</span>
-              </div>
-              <span className="text-sm font-bold text-blue-700">{jobCounts.total}</span>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('open')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-green-50 border-green-200 ${statusFilter === 'open' ? 'border-green-400 ring-2 ring-green-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">Open</span>
-              </div>
-              <span className="text-sm font-bold text-green-700">{jobCounts.open}</span>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('in_progress')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-yellow-50 border-yellow-200 ${statusFilter === 'in_progress' ? 'border-yellow-400 ring-2 ring-yellow-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">In Progress</span>
-              </div>
-              <span className="text-sm font-bold text-yellow-700">{jobCounts.inProgress}</span>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('completed')}
-              className={`rounded-lg p-2.5 border cursor-pointer transition-all flex items-center justify-between bg-purple-50 border-purple-200 ${statusFilter === 'completed' ? 'border-purple-400 ring-2 ring-purple-300' : ''
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-purple-600" />
-                <span className="text-sm font-medium text-gray-700">Done</span>
-              </div>
-              <span className="text-sm font-bold text-purple-700">{jobCounts.completed}</span>
-            </div>
-
-            <div className="col-span-2 rounded-lg p-2.5 border border-indigo-200 bg-indigo-50 flex items-center justify-center gap-2">
-              <DollarSign className="h-4 w-4 text-indigo-600" />
-              <span className="text-sm font-medium text-indigo-900">Total Value:</span>
-              <span className="text-sm font-bold text-indigo-700">{formatCurrency(jobCounts.totalValue)}</span>
-            </div>
-          </div>
-
-          {/* Desktop: Grid Layout */}
-          <div className="hidden md:grid grid-cols-5 gap-3">
-            <div
-              onClick={() => setStatusFilter('all')}
-              className={`bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'all' ? 'border-blue-400 ring-2 ring-blue-300' : 'border-blue-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-blue-600">Total Jobs</span>
-                <Briefcase className="h-4 w-4 text-blue-600" />
-              </div>
-              <p className="text-2xl font-bold text-blue-900">{jobCounts.total.toLocaleString()}</p>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('open')}
-              className={`bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'open' ? 'border-green-400 ring-2 ring-green-300' : 'border-green-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-green-600">Open Jobs</span>
-                <FolderOpen className="h-4 w-4 text-green-600" />
-              </div>
-              <p className="text-2xl font-bold text-green-900">{jobCounts.open.toLocaleString()}</p>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('in_progress')}
-              className={`bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'in_progress' ? 'border-yellow-400 ring-2 ring-yellow-300' : 'border-yellow-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-yellow-600">In Progress Jobs</span>
-                <Clock className="h-4 w-4 text-yellow-600" />
-              </div>
-              <p className="text-2xl font-bold text-yellow-900">{jobCounts.inProgress.toLocaleString()}</p>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('completed')}
-              className={`bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 border cursor-pointer hover:shadow-lg transition-all ${statusFilter === 'completed' ? 'border-purple-400 ring-2 ring-purple-300' : 'border-purple-200'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-purple-600">Completed</span>
-                <CheckCircle className="h-4 w-4 text-purple-600" />
-              </div>
-              <p className="text-2xl font-bold text-purple-900">{jobCounts.completed.toLocaleString()}</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-3 border border-indigo-200">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-indigo-600">Total Value</span>
-                <DollarSign className="h-4 w-4 text-indigo-600" />
-              </div>
-              <p className="text-2xl font-bold text-indigo-900">{formatCurrency(jobCounts.totalValue)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 md:h-5 w-4 md:w-5" />
-            <input
-              type="text"
-              data-testid="admin-jobs-search"
-              placeholder="Search jobs..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 md:pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-3 md:flex gap-2 md:gap-3 flex-shrink-0">
             <select
               value={professionFilter}
               onChange={(e) => setProfessionFilter(e.target.value)}
@@ -553,7 +424,6 @@ const Jobs: React.FC = () => {
               >
                 <option value="all">Payment</option>
                 <option value="wallet">Wallet</option>
-                <option value="cash">Cash</option>
                 <option value="xendit">Xendit</option>
               </select>
             </div>

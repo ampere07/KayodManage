@@ -1,4 +1,37 @@
 // Flagged/Reported Post Types
+
+/**
+ * The report status lifecycle. Mirrors REPORT_STATUSES in
+ * Backend/app/constants/reportTaxonomy.js, which is the source of truth.
+ *
+ * Declared once here and reused everywhere (ReportedPost, the Report served by
+ * /api/reports, and the page filters) so a future status change is a single
+ * edit and tsc flags every consumer. The retired pending/reviewed/resolved
+ * vocabulary is mapped in that file's LEGACY_STATUS_MAP.
+ */
+export type ReportStatus =
+  | 'open'
+  | 'under_review'
+  | 'action_taken'
+  | 'dismissed'
+  | 'escalated';
+
+/**
+ * What admins read for each status. The stored values belong to the shared
+ * taxonomy the Kayod app also reads, so only the wording changes here: the raw
+ * "action_taken" was showing on screen, and admins call it "Resolved".
+ */
+export const REPORT_STATUS_LABELS: Record<ReportStatus, string> = {
+  open: 'Open',
+  under_review: 'Under Review',
+  action_taken: 'Resolved',
+  dismissed: 'Dismissed',
+  escalated: 'Escalated to Dispute',
+};
+
+export const reportStatusLabel = (status: string) =>
+  REPORT_STATUS_LABELS[status as ReportStatus] || status;
+
 export interface ReportedPost {
   _id: string;
   jobId: JobDetails;
@@ -6,7 +39,7 @@ export interface ReportedPost {
   jobPosterId: string;
   reason: string;
   comment: string;
-  status: 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';
+  status: ReportStatus;
   reviewedBy?: string;
   reviewedAt?: string;
   adminNotes: string;
@@ -86,4 +119,5 @@ export interface ReviewPostResponse {
   reportedPost: ReportedPost;
 }
 
-export type ReportFilterStatus = 'all' | 'open' | 'under_review' | 'action_taken' | 'dismissed' | 'escalated';
+/** 'needs_review' = open + under review — OPEN_REPORT_STATUSES in reportTaxonomy.js. */
+export type ReportFilterStatus = 'all' | 'needs_review' | ReportStatus;

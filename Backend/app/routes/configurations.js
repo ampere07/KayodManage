@@ -31,6 +31,8 @@ const {
   resetLegalDocument,
 } = require('../controllers/legalController');
 
+const { adminAuth } = require('../middleware/auth');
+
 const router = express.Router();
 
 const upload = multer({
@@ -47,25 +49,9 @@ const upload = multer({
   },
 });
 
-// Middleware to check if user is authenticated admin
-const requireAdmin = (req, res, next) => {
-  if (!req.session || !req.session.isAuthenticated) {
-    return res.status(401).json({
-      success: false,
-      message: 'Not authenticated'
-    });
-  }
-  
-  const allowedRoles = ['admin', 'superadmin'];
-  if (!allowedRoles.includes(req.session.role)) {
-    return res.status(403).json({
-      success: false,
-      message: 'Insufficient permissions'
-    });
-  }
-  
-  next();
-};
+// The shared admin check: it reads the account's current role and status (so a
+// deactivated admin is refused here too) and sets req.admin for the audit log.
+const requireAdmin = adminAuth;
 
 // PUBLIC ENDPOINT - Get job categories (no authentication required)
 // This allows mobile app users to see categories and professions

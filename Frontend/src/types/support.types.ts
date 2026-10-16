@@ -79,6 +79,12 @@ export interface SendMessageResponse {
 export interface ChatActionResponse {
   success: boolean;
   chatSupport: ChatSupport;
+  /**
+   * Other threads the same action was applied to. Accepting one side of a job
+   * dispute accepts the other party's thread too — the case is accepted once,
+   * not once per party.
+   */
+  linkedChatSupports?: ChatSupport[];
 }
 
 export type SupportStatus = 'open' | 'closed';

@@ -1,5 +1,8 @@
 const LegalDocument = require('../models/LegalDocument');
 const { LEGAL_DOCUMENTS_BY_ID, LEGAL_VERSION } = require('../config/legal');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { auditLog, diffFields } = require('../utils/activityLogger');
 
 /**
  * legalController — admin CRUD over the five Kayod legal documents.
@@ -134,116 +137,116 @@ function validateSections(sections) {
 }
 
 /** All five documents, for the admin editor. */
-exports.getLegalDocuments = async (req, res) => {
-  try {
-    const documents = await LegalDocument.getDocuments();
+exports.getLegalDocuments = asyncHandler(async (req, res) => {
+  const documents = await LegalDocument.getDocuments();
 
-    res.status(200).json({
-      success: true,
-      documents,
-      // What the shipped build carries, so the editor can show which documents
-      // have been edited away from the version counsel executed.
-      sourceVersion: LEGAL_VERSION,
-    });
-  } catch (error) {
-    console.error('Error fetching legal documents:', error);
-    res.status(500).json({
+  res.status(200).json({
+    success: true,
+    documents,
+    // What the shipped build carries, so the editor can show which documents
+    // have been edited away from the version counsel executed.
+    sourceVersion: LEGAL_VERSION,
+  });
+}, 'Failed to fetch legal documents');
+
+exports.updateLegalDocument = asyncHandler(async (req, res) => {
+  const { documentId } = req.params;
+
+  if (!LEGAL_DOCUMENTS_BY_ID[documentId]) {
+    return res.status(404).json({
       success: false,
-      message: 'Failed to fetch legal documents',
-      error: error.message,
+      message: `Unknown legal document "${documentId}"`,
     });
   }
-};
 
-exports.updateLegalDocument = async (req, res) => {
-  try {
-    const { documentId } = req.params;
-
-    if (!LEGAL_DOCUMENTS_BY_ID[documentId]) {
-      return res.status(404).json({
-        success: false,
-        message: `Unknown legal document "${documentId}"`,
-      });
-    }
-
-    const document = await LegalDocument.getDocument(documentId);
-    if (!document) {
-      return res.status(404).json({ success: false, message: 'Document not found' });
-    }
-
-    const record = await LegalDocument.findOne({ documentId });
-
-    const { title, shortTitle, subtitle, intro, sections, version } = req.body;
-
-    if (title !== undefined) {
-      if (!isNonEmptyString(title)) {
-        return res.status(400).json({ success: false, message: 'title cannot be empty' });
-      }
-      record.title = title.trim();
-    }
-
-    if (shortTitle !== undefined) {
-      if (!isNonEmptyString(shortTitle)) {
-        return res.status(400).json({ success: false, message: 'shortTitle cannot be empty' });
-      }
-      record.shortTitle = shortTitle.trim();
-    }
-
-    // Subtitle is the one optional line — clearing it is a legitimate edit.
-    if (subtitle !== undefined) {
-      record.subtitle = typeof subtitle === 'string' ? subtitle.trim() : '';
-    }
-
-    if (intro !== undefined) {
-      if (!isNonEmptyString(intro)) {
-        return res.status(400).json({ success: false, message: 'intro cannot be empty' });
-      }
-      record.intro = intro;
-    }
-
-    if (sections !== undefined) {
-      const error = validateSections(sections);
-      if (error) {
-        return res.status(400).json({ success: false, message: error });
-      }
-      record.sections = sections;
-    }
-
-    // An explicit version is how an admin marks an amendment: the Terms say
-    // amendments take effect on posting with notice, and a consent record is
-    // only meaningful if it names the text it covers. Left alone, the version
-    // stays put and the revision still climbs, which is the right behaviour for
-    // a typo fix.
-    if (version !== undefined) {
-      if (!isNonEmptyString(version)) {
-        return res.status(400).json({ success: false, message: 'version cannot be empty' });
-      }
-      record.version = version.trim();
-    }
-
-    record.revision = (record.revision || 1) + 1;
-    record.updatedBy = req.session?.email || req.session?.uid || 'admin';
-
-    await record.save();
-
-    // Live clients poll rather than subscribe, so this only refreshes any admin
-    // browser with the editor open; the app picks the change up on its next
-    // fetch. Mirrors how job-posting settings are broadcast.
-    req.app?.get?.('io')?.emit?.('configuration:updated', { type: 'legal-documents', documentId });
-
-    res.status(200).json({
-      success: true,
-      document: await LegalDocument.findOne({ documentId }).lean(),
-    });
-  } catch (error) {
-    console.error('Error updating legal document:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update legal document',
-      error: error.message,
-    });
+  const document = await LegalDocument.getDocument(documentId);
+  if (!document) {
+    return res.status(404).json({ success: false, message: 'Document not found' });
   }
-};
+
+  const record = await LegalDocument.findOne({ documentId });
+  const recordBefore = record.toObject();
+
+  const { title, shortTitle, subtitle, intro, sections, version } = req.body;
+
+  if (title !== undefined) {
+    if (!isNonEmptyString(title)) {
+      return res.status(400).json({ success: false, message: 'title cannot be empty' });
+    }
+    record.title = title.trim();
+  }
+
+  if (shortTitle !== undefined) {
+    if (!isNonEmptyString(shortTitle)) {
+      return res.status(400).json({ success: false, message: 'shortTitle cannot be empty' });
+    }
+    record.shortTitle = shortTitle.trim();
+  }
+
+  // Subtitle is the one optional line — clearing it is a legitimate edit.
+  if (subtitle !== undefined) {
+    record.subtitle = typeof subtitle === 'string' ? subtitle.trim() : '';
+  }
+
+  if (intro !== undefined) {
+    if (!isNonEmptyString(intro)) {
+      return res.status(400).json({ success: false, message: 'intro cannot be empty' });
+    }
+    record.intro = intro;
+  }
+
+  if (sections !== undefined) {
+    const error = validateSections(sections);
+    if (error) {
+      return res.status(400).json({ success: false, message: error });
+    }
+    record.sections = sections;
+  }
+
+  // An explicit version is how an admin marks an amendment: the Terms say
+  // amendments take effect on posting with notice, and a consent record is
+  // only meaningful if it names the text it covers. Left alone, the version
+  // stays put and the revision still climbs, which is the right behaviour for
+  // a typo fix.
+  if (version !== undefined) {
+    if (!isNonEmptyString(version)) {
+      return res.status(400).json({ success: false, message: 'version cannot be empty' });
+    }
+    record.version = version.trim();
+  }
+
+  record.revision = (record.revision || 1) + 1;
+  record.updatedBy = req.session?.email || req.session?.uid || 'admin';
+
+  await record.save();
+
+  // The text itself is too long for a log row; record which parts changed and
+  // the version/revision it now carries, so the edit can be found and dated.
+  const legalChanges = diffFields(recordBefore, record.toObject(), ['title', 'shortTitle', 'subtitle', 'intro', 'sections', 'version']);
+  const changedParts = Object.keys(legalChanges);
+  await auditLog(req, 'legal_document_updated', `Edited "${record.title}"${changedParts.length ? ` (${changedParts.join(', ')})` : ''} — now revision ${record.revision}${legalChanges.version ? `, version ${record.version}` : ''}`, {
+    targetType: 'legal_document',
+    targetId: record._id,
+    targetModel: 'LegalDocument',
+    metadata: {
+      targetName: record.title,
+      documentId,
+      changedParts,
+      revision: record.revision,
+      ...(legalChanges.version ? { changes: { version: legalChanges.version } } : {}),
+    },
+  });
+
+  // Live clients poll rather than subscribe, so this only refreshes any admin
+  // browser with the editor open; the app picks the change up on its next
+  // fetch. Mirrors how job-posting settings are broadcast.
+  req.app?.get?.('io')?.emit?.('configuration:updated', { type: 'legal-documents', documentId });
+
+  res.status(200).json({
+    success: true,
+    document: await LegalDocument.findOne({ documentId }).lean(),
+  });
+}, 'Failed to update legal document');
 
 /**
  * Restore a document to the text that shipped with the build.
@@ -252,34 +255,31 @@ exports.updateLegalDocument = async (req, res) => {
  * costly to get wrong and least amenable to being fixed by re-typing it from
  * memory, so there is always a way back to the executed version.
  */
-exports.resetLegalDocument = async (req, res) => {
-  try {
-    const { documentId } = req.params;
+exports.resetLegalDocument = asyncHandler(async (req, res) => {
+  const { documentId } = req.params;
 
-    if (!LEGAL_DOCUMENTS_BY_ID[documentId]) {
-      return res.status(404).json({
-        success: false,
-        message: `Unknown legal document "${documentId}"`,
-      });
-    }
-
-    const document = await LegalDocument.resetDocument(
-      documentId,
-      req.session?.email || req.session?.uid || 'admin',
-    );
-
-    req.app?.get?.('io')?.emit?.('configuration:updated', { type: 'legal-documents', documentId });
-
-    res.status(200).json({ success: true, document });
-  } catch (error) {
-    console.error('Error resetting legal document:', error);
-    res.status(500).json({
+  if (!LEGAL_DOCUMENTS_BY_ID[documentId]) {
+    return res.status(404).json({
       success: false,
-      message: 'Failed to reset legal document',
-      error: error.message,
+      message: `Unknown legal document "${documentId}"`,
     });
   }
-};
+
+  const document = await LegalDocument.resetDocument(
+    documentId,
+    req.session?.email || req.session?.uid || 'admin',
+  );
+
+  await auditLog(req, 'legal_document_reset', `Reset "${document?.title || documentId}" to the shipped text`, {
+    targetType: 'legal_document',
+    ...(document?._id ? { targetId: document._id, targetModel: 'LegalDocument' } : {}),
+    metadata: { targetName: document?.title || documentId, documentId, revision: document?.revision },
+  });
+
+  req.app?.get?.('io')?.emit?.('configuration:updated', { type: 'legal-documents', documentId });
+
+  res.status(200).json({ success: true, document });
+}, 'Failed to reset legal document');
 
 // Exported for the controller's unit tests — the block validator is the only
 // thing standing between an admin typo and a clause vanishing from the app.

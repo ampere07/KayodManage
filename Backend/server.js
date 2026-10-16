@@ -5,6 +5,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { connectDatabase } = require('./app/config/database');
 const { sessionConfig } = require('./app/config/session');
+const { requestContext } = require('./app/utils/requestContext');
 const { setupSocketHandlers } = require('./app/socket/socketHandlers');
 const { startAutoApprovalScheduler, stopAutoApprovalScheduler } = require('./app/utils/autoApproveTopups');
 const { startRestrictionScheduler } = require('./app/utils/restrictionScheduler');
@@ -83,6 +84,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionConfig);
 io.engine.use(sessionConfig);
+app.use(requestContext);
 
 // Connect to MongoDB
 connectDatabase();
@@ -136,6 +138,15 @@ app.get('/api/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
 });
+
+// ── Error handling ──────────────────────────────────────────────────────────
+// Must come after every route: Express picks the first matching handler, so a
+// 404 responder registered earlier would swallow the real routes, and an error
+// handler registered earlier would never see their errors.
+const { errorHandler, notFoundHandler } = require('./app/middleware/errorHandler');
+
+app.use('/api', notFoundHandler);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

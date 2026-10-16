@@ -17,6 +17,9 @@ interface StatsCardProps {
   smallIcon?: boolean;
   horizontalMobile?: boolean;
   compact?: boolean;
+  /** The arrow badge on the active card. Off where the card is a filter rather
+   *  than a link, and where the badge's width would truncate the title. */
+  showActiveIcon?: boolean;
 }
 
 const MiniChart = ({ isPositive, isSolid }: { isPositive: boolean; isSolid: boolean }) => {
@@ -46,7 +49,7 @@ const MiniChart = ({ isPositive, isSolid }: { isPositive: boolean; isSolid: bool
   );
 };
 
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, subtitle, icon: Icon, trend, color, variant = 'default', onClick, isActive, smallIcon, horizontalMobile, compact = false }) => {
+const StatsCard: React.FC<StatsCardProps> = ({ title, value, subtitle, icon: Icon, trend, color, variant = 'default', onClick, isActive, smallIcon, horizontalMobile, compact = false, showActiveIcon = true }) => {
   const isSolid = variant === 'solid';
   const isTinted = variant === 'tinted';
 
@@ -162,17 +165,19 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, subtitle, icon: Ico
       </div>
 
       {/* Desktop Layout - Orginal Full Size */}
-      <div className="hidden sm:flex justify-between items-start w-full">
-        <div className="flex items-center gap-3">
+      <div className="hidden sm:flex justify-between items-start w-full gap-2">
+        {/* min-w-0 + truncate: the card is a fixed height, so a title that wraps
+            pushes the value out of view. Ellipsis instead, full text on hover. */}
+        <div className="flex items-center gap-3 min-w-0">
           <div className={`${smallIcon ? 'w-8 h-8 rounded-lg' : 'w-11 h-11 rounded-full'} flex items-center justify-center flex-shrink-0 ${iconCircleClasses}`}>
             <Icon className={smallIcon ? 'w-5 h-5' : 'w-6 h-6'} />
           </div>
-          <span className={`text-[15px] max-w-full ${titleClasses}`}>
+          <span className={`text-[15px] truncate ${titleClasses}`} title={title}>
             {title}
           </span>
         </div>
         
-        {isActive && (
+        {isActive && showActiveIcon && (
           <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${isSolid ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}>
             <ArrowUpRight className="w-4 h-4" />
           </div>

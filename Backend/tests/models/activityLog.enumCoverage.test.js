@@ -26,10 +26,11 @@ const ActivityLog = require("../../app/models/ActivityLog");
 
 const APP_DIR = path.resolve(__dirname, "..", "..", "app");
 
-// `logActivity(adminId, 'verb', ...)` and `createActivityLog(adminId, 'verb', ...)`.
-// The verb is always the second positional argument, always a literal.
+// `logActivity(adminId, 'verb', ...)`, `createActivityLog(adminId, 'verb', ...)`
+// and `auditLog(req, 'verb', ...)`. The verb is the second positional argument;
+// literal verbs are checked here (a ternary between two verbs is not scanned).
 const CALL_PATTERN =
-  /(?:logActivity|createActivityLog)\s*\(\s*[^,()]+,\s*['"]([a-z_]+)['"]/g;
+  /(?:logActivity|createActivityLog|auditLog)\s*\(\s*[^,()]+,\s*['"]([a-z_]+)['"]/g;
 
 function collectJsFiles(dir) {
   const found = [];

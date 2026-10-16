@@ -22,6 +22,9 @@ const { normalizeFinding, describeFinding } = require('../utils/faultFinding');
 const { recordFaultFindings, restrictForConfirmedFault } = require('../utils/confirmedFault');
 const escrowService = require('../services/escrowService');
 const { createActivityLog } = require('./activityLogController');
+const { auditLog } = require('../utils/activityLogger');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
 
 // Helper function to strip random suffix from icon paths
 const cleanIconPath = (iconPath) => {
@@ -33,258 +36,252 @@ const cleanIconPath = (iconPath) => {
 };
 
 const getJobs = async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
-    
-    const search = req.query.search;
-    const status = req.query.status;
-    const category = req.query.category;
-    const profession = req.query.profession;
-    const paymentMethod = req.query.paymentMethod;
-    
-    let query = {};
-    
-    // Filter archived jobs. "archived" is a union of isHidden and isDeleted;
-    // archiveType narrows to one or the other.
-    const archived = req.query.archived === 'true';
-    const archiveType = req.query.archiveType;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+  
+  const search = req.query.search;
+  const status = req.query.status;
+  const category = req.query.category;
+  const profession = req.query.profession;
+  const paymentMethod = req.query.paymentMethod;
+  
+  let query = {};
+  
+  // Filter archived jobs. "archived" is a union of isHidden and isDeleted;
+  // archiveType narrows to one or the other.
+  const archived = req.query.archived === 'true';
+  const archiveType = req.query.archiveType;
 
-    if (archived) {
-      if (archiveType === 'hidden') {
-        query.isHidden = true;
-      } else if (archiveType === 'removed') {
-        query.isDeleted = true;
-      } else {
-        // Merged via $and (not query.$or) so it can't collide with the
-        // separate $or the search filter below sets.
-        query.$and = [...(query.$and || []), { $or: [{ isHidden: true }, { isDeleted: true }] }];
-      }
+  if (archived) {
+    if (archiveType === 'hidden') {
+      query.isHidden = true;
+    } else if (archiveType === 'removed') {
+      query.isDeleted = true;
     } else {
-      query.isHidden = { $ne: true };
-      query.isDeleted = { $ne: true };
+      // Merged via $and (not query.$or) so it can't collide with the
+      // separate $or the search filter below sets.
+      query.$and = [...(query.$and || []), { $or: [{ isHidden: true }, { isDeleted: true }] }];
     }
-    
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { professionName: { $regex: search, $options: 'i' } },
-        { categoryName: { $regex: search, $options: 'i' } }
-      ];
-    }
-    
-    if (status && status !== 'all') {
-      query.status = status;
-    }
-    
-    if (category && category !== 'all') {
-      query.categoryName = { $regex: category, $options: 'i' };
-    }
-    
-    if (profession && profession !== 'all') {
-      query.professionName = { $regex: profession, $options: 'i' };
-    }
-    
-    if (paymentMethod && paymentMethod !== 'all') {
-      query.paymentMethod = paymentMethod;
-    }
-    
-    // Fetch jobs and populate user virtuals
-    const jobs = await Job.find(query)
-      .populate('userId', 'name email phone phoneNumber userType profileImage')
-      .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-    
-    // Get job IDs for application count
-    const jobIds = jobs.map(job => job._id);
-    
-    // Get application counts for each job
-    const applicationCounts = await Application.aggregate([
-      { $match: { job: { $in: jobIds } } },
-      { $group: { _id: '$job', count: { $sum: 1 } } }
-    ]);
-    
-    // Create a map of job ID to application count
-    const countMap = {};
-    applicationCounts.forEach(item => {
-      countMap[item._id.toString()] = item.count;
-    });
-    
-    // Add application count to each job
-    const jobsWithData = jobs.map(job => {
-      let locationDisplay = 'Location not specified';
-      
-      try {
-        if (job.location && typeof job.location === 'object') {
-          locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-        } else if (job.location && typeof job.location === 'string') {
-          locationDisplay = job.location;
-        }
-      } catch (err) {
-        console.error('Error parsing location for job:', job._id, err);
-        locationDisplay = 'Location not specified';
-      }
-      
-      // Clean icon path to remove random suffix
-      const cleanedIcon = cleanIconPath(job.icon);
-      
-      return {
-        ...job,
-        icon: cleanedIcon,
-        user: job.userId,
-        assignedTo: job.assignedToId,
-        applicationCount: countMap[job._id.toString()] || 0,
-        locationDisplay
-      };
-    });
-    
-    const total = await Job.countDocuments(query);
-    const pages = Math.ceil(total / limit);
-    
-    // Calculate total value of ALL jobs (not filtered)
-    const totalValueResult = await Job.aggregate([
-      { $group: { _id: null, totalValue: { $sum: '$budget' } } }
-    ]);
-    const totalValue = totalValueResult.length > 0 ? totalValueResult[0].totalValue : 0;
-    
-    res.json({
-      jobs: jobsWithData,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages
-      },
-      stats: {
-        totalValue
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching jobs:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to fetch jobs', message: error.message });
+  } else {
+    query.isHidden = { $ne: true };
+    query.isDeleted = { $ne: true };
   }
+  
+  if (search) {
+    query.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+      { professionName: { $regex: search, $options: 'i' } },
+      { categoryName: { $regex: search, $options: 'i' } }
+    ];
+  }
+  
+  if (status && status !== 'all') {
+    query.status = status;
+  }
+  
+  if (category && category !== 'all') {
+    query.categoryName = { $regex: category, $options: 'i' };
+  }
+  
+  if (profession && profession !== 'all') {
+    query.professionName = { $regex: profession, $options: 'i' };
+  }
+  
+  if (paymentMethod && paymentMethod !== 'all') {
+    query.paymentMethod = paymentMethod;
+  }
+  
+  // Fetch jobs and populate user virtuals
+  const jobs = await Job.find(query)
+    .populate('userId', 'name email phone phoneNumber userType profileImage')
+    .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+  
+  // Get job IDs for application count
+  const jobIds = jobs.map(job => job._id);
+  
+  // Get application counts for each job
+  const applicationCounts = await Application.aggregate([
+    { $match: { job: { $in: jobIds } } },
+    { $group: { _id: '$job', count: { $sum: 1 } } }
+  ]);
+  
+  // Create a map of job ID to application count
+  const countMap = {};
+  applicationCounts.forEach(item => {
+    countMap[item._id.toString()] = item.count;
+  });
+  
+  // Add application count to each job
+  const jobsWithData = jobs.map(job => {
+    let locationDisplay = 'Location not specified';
+    
+    try {
+      if (job.location && typeof job.location === 'object') {
+        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+      } else if (job.location && typeof job.location === 'string') {
+        locationDisplay = job.location;
+      }
+    } catch (err) {
+      console.error('Error parsing location for job:', job._id, err);
+      locationDisplay = 'Location not specified';
+    }
+    
+    // Clean icon path to remove random suffix
+    const cleanedIcon = cleanIconPath(job.icon);
+    
+    return {
+      ...job,
+      icon: cleanedIcon,
+      user: job.userId,
+      assignedTo: job.assignedToId,
+      applicationCount: countMap[job._id.toString()] || 0,
+      locationDisplay
+    };
+  });
+  
+  const total = await Job.countDocuments(query);
+  const pages = Math.ceil(total / limit);
+  
+  // Calculate total value of ALL jobs (not filtered)
+  const totalValueResult = await Job.aggregate([
+    { $group: { _id: null, totalValue: { $sum: '$budget' } } }
+  ]);
+  const totalValue = totalValueResult.length > 0 ? totalValueResult[0].totalValue : 0;
+  
+  res.json({
+    jobs: jobsWithData,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages
+    },
+    stats: {
+      totalValue
+    }
+  });
 };
 
 const getJobDetails = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    
-    const job = await Job.findById(jobId)
-      .populate('userId', 'name firstName lastName email phone phoneNumber userType profileImage location barangay city isVerified')
-      .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
-      .lean();
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    // Get applications for this job
-    const applications = await Application.find({ job: jobId })
-      .populate('provider', 'name email phone')
-      .sort({ appliedAt: -1 })
-      .lean();
-    
-    let locationDisplay = 'Location not specified';
-    try {
-      if (job.location && typeof job.location === 'object') {
-        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-      } else if (job.location && typeof job.location === 'string') {
-        locationDisplay = job.location;
-      }
-    } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
-    }
-    
-    const jobWithData = {
-      ...job,
-      icon: cleanIconPath(job.icon),
-      user: job.userId,
-      assignedTo: job.assignedToId,
-      applications,
-      applicationCount: applications.length,
-      locationDisplay
-    };
-    
-    res.json(jobWithData);
-  } catch (error) {
-    console.error('Error fetching job details:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to fetch job details', message: error.message });
+  const { jobId } = req.params;
+  
+  const job = await Job.findById(jobId)
+    .populate('userId', 'name firstName lastName email phone phoneNumber userType profileImage location barangay city isVerified')
+    .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
+    .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
   }
+  
+  // Get applications for this job
+  const applications = await Application.find({ job: jobId })
+    .populate('provider', 'name email phone')
+    .sort({ appliedAt: -1 })
+    .lean();
+  
+  let locationDisplay = 'Location not specified';
+  try {
+    if (job.location && typeof job.location === 'object') {
+      locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+    } else if (job.location && typeof job.location === 'string') {
+      locationDisplay = job.location;
+    }
+  } catch (err) {
+    console.error('Error parsing location for job:', jobId, err);
+  }
+  
+  const jobWithData = {
+    ...job,
+    icon: cleanIconPath(job.icon),
+    user: job.userId,
+    assignedTo: job.assignedToId,
+    applications,
+    applicationCount: applications.length,
+    locationDisplay
+  };
+  
+  res.json(jobWithData);
 };
 
 const updateJobStatus = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const { status } = req.body;
+  const { jobId } = req.params;
+  const { status } = req.body;
 
-    // "cancelled" is deliberately excluded — cancelling a job has real money
-    // and notification side effects (see forceCancelJob below) that a bare
-    // status flip would skip entirely, silently stranding any held payment.
-    // Use POST /:jobId/force-cancel instead.
-    const validStatuses = ['open', 'in_progress', 'completed'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status. To cancel a job, use POST /:jobId/force-cancel.' });
-    }
-    
-    const updateData = { status };
-    
-    if (status === 'completed') {
-      updateData.completedAt = new Date();
-    }
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      updateData,
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
-    .lean();
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    const applicationCount = await Application.countDocuments({ job: jobId });
-    
-    let locationDisplay = 'Location not specified';
-    try {
-      if (job.location && typeof job.location === 'object') {
-        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-      } else if (job.location && typeof job.location === 'string') {
-        locationDisplay = job.location;
-      }
-    } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
-    }
-    
-    const jobWithData = {
-      ...job,
-      user: job.userId,
-      assignedTo: job.assignedToId,
-      applicationCount,
-      locationDisplay
-    };
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: jobWithData,
-      updateType: `status changed to ${status}`
-    });
-    
-    res.json(jobWithData);
-  } catch (error) {
-    console.error('Error updating job status:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to update job status', message: error.message });
+  // "cancelled" is deliberately excluded — cancelling a job has real money
+  // and notification side effects (see forceCancelJob below) that a bare
+  // status flip would skip entirely, silently stranding any held payment.
+  // Use POST /:jobId/force-cancel instead.
+  const validStatuses = ['open', 'in_progress', 'completed'];
+  if (!validStatuses.includes(status)) {
+    throw ApiError.badRequest('Invalid status. To cancel a job, use POST /:jobId/force-cancel.');
   }
+  
+  const updateData = { status };
+  
+  if (status === 'completed') {
+    updateData.completedAt = new Date();
+  }
+
+  // For the audit row's before → after.
+  const previous = await Job.findById(jobId).select('status').lean();
+
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    updateData,
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
+  }
+  
+  const applicationCount = await Application.countDocuments({ job: jobId });
+  
+  let locationDisplay = 'Location not specified';
+  try {
+    if (job.location && typeof job.location === 'object') {
+      locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+    } else if (job.location && typeof job.location === 'string') {
+      locationDisplay = job.location;
+    }
+  } catch (err) {
+    console.error('Error parsing location for job:', jobId, err);
+  }
+  
+  const jobWithData = {
+    ...job,
+    user: job.userId,
+    assignedTo: job.assignedToId,
+    applicationCount,
+    locationDisplay
+  };
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: jobWithData,
+    updateType: `status changed to ${status}`
+  });
+
+  if (previous?.status !== status) {
+    await auditLog(req, 'job_status_changed', `Changed job "${job.title}" from ${previous?.status || 'unknown'} to ${status}`, {
+      targetType: 'job',
+      targetId: job._id,
+      targetModel: 'Job',
+      metadata: { targetName: job.title, changes: { status: { from: previous?.status || null, to: status } } }
+    });
+  }
+  
+  res.json(jobWithData);
 };
 
 /**
@@ -308,17 +305,17 @@ const forceCancelJob = async (req, res) => {
     const job = await Job.findById(jobId).session(session);
     if (!job) {
       await session.abortTransaction();
-      return res.status(404).json({ error: 'Job not found' });
+      throw ApiError.notFound('Job not found');
     }
 
     if (job.status === 'cancelled') {
       await session.abortTransaction();
-      return res.status(400).json({ error: 'Job is already cancelled' });
+      throw ApiError.badRequest('Job is already cancelled');
     }
 
     if (job.status === 'completed') {
       await session.abortTransaction();
-      return res.status(400).json({ error: 'Cannot cancel a completed job' });
+      throw ApiError.badRequest('Cannot cancel a completed job');
     }
 
     const heldTransactionId = job.paymentDetails?.heldTransaction;
@@ -503,7 +500,15 @@ const forceCancelJob = async (req, res) => {
 
     res.json({ success: true, job: updatedJob, refundedAmount });
   } catch (error) {
-    await session.abortTransaction();
+    // Every guard above aborts before it throws, and a second abort throws
+    // "Cannot call abortTransaction twice" out of this catch — an unhandled
+    // rejection that exits the process.
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    // The guards' ApiErrors carry the 400/404 the admin should see; asyncHandler
+    // (see module.exports) hands them to errorHandler.
+    if (error instanceof ApiError) throw error;
     console.error('Error force-cancelling job:', error);
     res.status(500).json({ error: 'Failed to cancel job', message: error.message });
   } finally {
@@ -516,6 +521,26 @@ const DISPUTE_RESOLUTION_MAP = {
   refund_client: 'client_refunded',
   rebook: 'rebook',
   no_show_payout: 'no_show_payout',
+};
+
+/**
+ * Does this job still have a rebook nobody has settled?
+ *
+ * True from the moment a rebook is ordered until the reporter confirms the redo
+ * was actually done. While it is true the client's payment is held with no
+ * scheduler that will ever move it on its own (the hold is suspended), so an
+ * admin ruling remains available even though the dispute record is archived.
+ * A rejected redo (satisfied === false) stays unsettled on purpose — that is
+ * the case that most needs a ruling.
+ */
+const hasUnsettledRebook = (job) => {
+  const rebook = job?.completionStatus?.rebook;
+  if (rebook?.orderedAt) return rebook.verdict?.satisfied !== true;
+  // Fallback for rebooks ruled before completionStatus.rebook existed: the only
+  // trace is the resolution left on the archived dispute. A later ruling
+  // overwrites that resolution, so this stops matching once the job is actually
+  // settled. Without it those jobs can never be ruled on again at all.
+  return job?.completionStatus?.dispute?.resolution === 'rebook';
 };
 
 const DISPUTE_OUTCOME_LABELS = {
@@ -546,7 +571,9 @@ const closeDisputeThreadsForJob = async (job, { outcome, adminObjectId, adminNam
     const senderId = adminObjectId || new mongoose.Types.ObjectId('000000000000000000000000');
     const outcomeLabel = DISPUTE_OUTCOME_LABELS[outcome] || outcome;
 
-    for (const thread of disputeThreads) {
+    // Both parties' threads at once — separate documents, so there is no reason
+    // for the second ticket to wait a round trip on the first.
+    await Promise.all(disputeThreads.map(async (thread) => {
       const isClient = thread.userId.toString() === job.userId.toString();
       thread.messages.push({
         senderId,
@@ -587,10 +614,106 @@ const closeDisputeThreadsForJob = async (job, { outcome, adminObjectId, adminNam
         statusHistory: thread.statusHistory,
         metadata: thread.metadata,
       });
-    }
+    }));
   } catch (threadErr) {
     console.error('[closeDisputeThreadsForJob] Dispute thread update error:', threadErr);
   }
+};
+
+/**
+ * Reopen both parties' dispute threads for a job and put a message in each.
+ *
+ * The mirror of closeDisputeThreadsForJob, used when a rebook is rejected: the
+ * ruling that closed these threads has turned out not to have settled anything,
+ * so the same transcript both sides already have is brought back to life rather
+ * than a fresh pair of tickets being filed. Keeping the thread means the new
+ * argument sits under the original complaint, which is the context an admin
+ * needs to rule a second time.
+ *
+ * Deliberately NOT gated on `acceptedBy`: a reopened dispute is unowned again
+ * and has to reappear in the admin queue for whoever picks it up.
+ *
+ * Best-effort, like its counterpart — the money state is already committed by
+ * the time this runs, and a thread that failed to reopen is recoverable by the
+ * admin reopen button, while throwing here would lose the verdict.
+ */
+const reopenDisputeThreadsForJob = async (job, { message, reason, internalNote }) => {
+  const reopened = [];
+  try {
+    const disputeThreads = await ChatSupport.find({
+      'metadata.jobId': job._id.toString(),
+      'metadata.kind': 'dispute',
+      status: 'closed',
+    });
+
+    const { emitChatSupportUpdate } = require('../socket/socketHandlers');
+    const reopenedAt = new Date();
+    const systemId = new mongoose.Types.ObjectId('000000000000000000000000');
+
+    for (const thread of disputeThreads) {
+      thread.messages.push({
+        senderId: systemId,
+        senderName: 'System',
+        senderType: 'Admin',
+        message,
+        timestamp: reopenedAt,
+      });
+      if (internalNote) {
+        thread.messages.push({
+          senderId: systemId,
+          senderName: 'System',
+          senderType: 'Admin',
+          message: internalNote,
+          timestamp: reopenedAt,
+          isInternal: true,
+        });
+      }
+
+      thread.status = 'open';
+      thread.closedAt = null;
+      // Clear ownership so the pair re-enters the unaccepted queue. Leaving the
+      // previous admin assigned would hide a live dispute inside a name that
+      // has already finished with it.
+      thread.assignedTo = null;
+      thread.assignedToName = null;
+      thread.acceptedBy = null;
+      thread.acceptedByName = null;
+      thread.acceptedAt = null;
+      if (!thread.statusHistory) {
+        thread.statusHistory = [];
+      }
+      thread.statusHistory.push({
+        status: 'reopened',
+        timestamp: reopenedAt,
+        performedByName: 'System',
+        reason,
+      });
+      // The previous ruling no longer describes this ticket's state — leaving
+      // disputeOutcome set makes the admin list show a live dispute as already
+      // decided.
+      thread.metadata = { ...(thread.metadata || {}), disputeOutcome: null };
+      thread.markModified('metadata');
+      await thread.save();
+      reopened.push(thread);
+
+      emitChatSupportUpdate(thread._id, {
+        status: thread.status,
+        closedAt: thread.closedAt,
+        assignedTo: thread.assignedTo,
+        assignedToName: thread.assignedToName,
+        acceptedBy: thread.acceptedBy,
+        acceptedByName: thread.acceptedByName,
+        acceptedAt: thread.acceptedAt,
+        updatedAt: thread.updatedAt,
+        messages: thread.messages,
+        statusHistory: thread.statusHistory,
+        metadata: thread.metadata,
+      });
+    }
+  } catch (threadErr) {
+    console.error('[reopenDisputeThreadsForJob] Dispute thread reopen error:', threadErr);
+  }
+  return reopened;
 };
 
 /**
@@ -641,18 +764,24 @@ const resolveDispute = async (req, res) => {
     const resolution = DISPUTE_RESOLUTION_MAP[outcome];
     if (!resolution) {
       await session.abortTransaction();
-      return res.status(400).json({ error: 'outcome must be one of: pay_provider, refund_client, rebook, no_show_payout' });
+      throw ApiError.badRequest('outcome must be one of: pay_provider, refund_client, rebook, no_show_payout');
     }
 
     const job = await Job.findById(jobId).session(session);
     if (!job) {
       await session.abortTransaction();
-      return res.status(404).json({ error: 'Job not found' });
+      throw ApiError.notFound('Job not found');
     }
 
-    if (!job.completionStatus?.dispute?.isActive) {
+    // An unsettled rebook is a second, equally valid reason to rule on this
+    // job. Ruling "rebook" archives the dispute and clears dispute.isActive,
+    // so when the redo is never delivered — the missed-deadline escalation, or
+    // the reporter answering "no" — the admin is asked for a decision that the
+    // isActive check alone would reject with "no active dispute to resolve".
+    // The money is still held either way, so there is still a ruling to make.
+    if (!job.completionStatus?.dispute?.isActive && !hasUnsettledRebook(job)) {
       await session.abortTransaction();
-      return res.status(400).json({ error: 'This job has no active dispute to resolve.' });
+      throw ApiError.badRequest('This job has no active dispute to resolve.');
     }
 
     // A COPY, not a reference. `job.completionStatus.dispute = {...}` below
@@ -664,15 +793,41 @@ const resolveDispute = async (req, res) => {
     // anyone. The history entry pushed just above it was correct, which is what
     // made this invisible: the archive said `client` while the check said
     // nobody.
+    //
+    // The second branch covers a ruling on an unsettled rebook, where the live
+    // dispute has already been archived by the rebook itself:
+    // disputeHistory.raisedBy is an enum with no null member, so pushing the
+    // cleared dispute would fail validation on save and roll back the whole
+    // ruling.
     const activeDispute = job.completionStatus.dispute;
-    const disputeSnapshot = {
-      raisedBy: activeDispute.raisedBy,
-      raisedAt: activeDispute.raisedAt,
-      reason: activeDispute.reason,
-      internalNotes: Array.isArray(activeDispute.internalNotes)
-        ? [...activeDispute.internalNotes]
-        : [],
-    };
+    const disputeSnapshot = activeDispute?.isActive
+      ? {
+          raisedBy: activeDispute.raisedBy,
+          raisedAt: activeDispute.raisedAt,
+          reason: activeDispute.reason,
+          // Copied for the same reason as the rest — and it was missing. The
+          // archive push below reads `disputeSnapshot.claims`, so a copy
+          // without it filed every dispute with an empty claims list, which is
+          // exactly the both-sides record that push exists to preserve.
+          claims: Array.isArray(activeDispute.claims) ? [...activeDispute.claims] : [],
+          internalNotes: Array.isArray(activeDispute.internalNotes)
+            ? [...activeDispute.internalNotes]
+            : [],
+        }
+      : {
+          raisedBy: job.completionStatus.rebook?.reporterRole || 'client',
+          raisedAt: job.completionStatus.rebook?.orderedAt || new Date(),
+          reason:
+            job.completionStatus.rebook?.verdict?.satisfied === false
+              ? `Rebook rejected by the ${job.completionStatus.rebook?.reporterRole || 'reporter'}: ${job.completionStatus.rebook?.verdict?.reason || 'the work was not redone'}`
+              : 'Rebook deadline passed without the work being re-completed',
+          claims: [],
+          // Mediation notes survive a ruling (each ruling copies them onto the
+          // cleared dispute), so they have to survive this one too.
+          internalNotes: Array.isArray(activeDispute?.internalNotes)
+            ? [...activeDispute.internalNotes]
+            : [],
+        };
     let refundedAmount = 0;
     let draftId = null;
     // Populated by pay_provider and no_show_payout so the notifications and the
@@ -714,11 +869,11 @@ const resolveDispute = async (req, res) => {
       rebookDeadline = new Date(rebookDeadlineAt);
       if (Number.isNaN(rebookDeadline.getTime())) {
         await session.abortTransaction();
-        return res.status(400).json({ error: 'rebookDeadlineAt is not a valid date.' });
+        throw ApiError.badRequest('rebookDeadlineAt is not a valid date.');
       }
       if (rebookDeadline <= new Date()) {
         await session.abortTransaction();
-        return res.status(400).json({ error: 'The redo deadline must be in the future.' });
+        throw ApiError.badRequest('The redo deadline must be in the future.');
       }
     }
 
@@ -730,7 +885,7 @@ const resolveDispute = async (req, res) => {
       const settleable = await findSettleableEscrow(job, session);
       if (!settleable) {
         await session.abortTransaction();
-        return res.status(400).json({ error: 'No held payment found for this job — cannot release funds to the provider.' });
+        throw ApiError.badRequest('No held payment found for this job — cannot release funds to the provider.');
       }
       const heldTransaction = settleable.heldTransaction;
 
@@ -838,8 +993,12 @@ const resolveDispute = async (req, res) => {
         // job. Without cancelling it here, clearing dispute.isActive below
         // would let the next scheduler tick pay the provider out of that
         // stale record — after the client was just refunded the same money.
+        // 'suspended' included: refunding a job whose rebook failed leaves a
+        // suspended hold behind, and kayod/server revives a suspended record
+        // when work is re-completed — paying the provider money that has just
+        // been returned to the client.
         await EscrowRelease.updateMany(
-          { jobId: job._id, status: { $in: ['scheduled', 'processing', 'failed'] } },
+          { jobId: job._id, status: { $in: ['scheduled', 'processing', 'failed', 'suspended'] } },
           { $set: { status: 'refunded', refundTransactionId: refundTransaction._id } },
           { session }
         );
@@ -1036,6 +1195,12 @@ const resolveDispute = async (req, res) => {
         orderedBy: adminObjectId,
         deadlineAt: rebookDeadline,
         escalatedAt: null,
+        // The side that complained is the side asked to sign off on the redo.
+        reporterRole: disputeSnapshot.raisedBy || null,
+        // A fresh rebook starts unanswered, including a re-rebook after a
+        // rejected one — otherwise the previous "no" would still be on record
+        // and the new redo would look already-rejected.
+        verdict: { askedAt: null, respondedAt: null, satisfied: null, reason: null },
       };
 
       // Stop the payout countdown. The money neither releases nor refunds — it
@@ -1145,6 +1310,68 @@ const resolveDispute = async (req, res) => {
 
     await session.commitTransaction();
 
+    // State the actual release date rather than a nominal hold length: a
+    // resumed hold keeps its original date, and one whose date already passed
+    // during mediation pays out on the next scheduler tick.
+    const formatDate = (date) =>
+      date
+        ? new Date(date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+    const providerPayoutTiming = escrowOutcome?.releasedImmediately
+      ? 'Payment will be released to your available balance shortly — the original hold period has already elapsed.'
+      : `Payment will be released to your available balance on ${formatDate(escrowOutcome?.scheduledFor)}, the original hold date for this job.`;
+    const rebookDeadlineText = formatDate(rebookDeadline);
+    // The hold length is per-job now (see app/config/serviceClasses.js), so the
+    // rebook copy has to name this job's own window rather than a constant —
+    // an on-the-spot service redone under a 24-hour hold must not be told to
+    // expect five days.
+    const rebookHoldText = escrowService.describeReleaseWindow(job);
+
+    // A job on a zero-hold class has no window to name, so the sentence has to
+    // change shape rather than interpolate an empty one — otherwise the client
+    // is told "a new null hold starts", on a notification about their money.
+    const rebookClientHoldSentence = rebookHoldText
+      ? `a new ${rebookHoldText} hold starts once the redone work is completed and confirmed`
+      : 'your payment is released once the redone work is completed and confirmed';
+    const rebookProviderHoldSentence = rebookHoldText
+      ? `after which this job's standard ${rebookHoldText} hold applies`
+      : 'after which payment is released without a further hold';
+
+    const outcomeMessages = {
+      pay_provider: {
+        client: `Your dispute for "${job.title}" was resolved: the provider has been paid. ${note ? `Admin note: ${note}` : ''}`,
+        provider: `Your dispute for "${job.title}" was resolved in your favor. ${providerPayoutTiming}`,
+      },
+      refund_client: {
+        client: `Your dispute for "${job.title}" was resolved: you've been refunded ₱${refundedAmount}. The job has been saved as a draft so you can repost it whenever you're ready.`,
+        provider: `The dispute for "${job.title}" was resolved in the client's favor. No payment will be released, and the job has been cancelled.`,
+      },
+      rebook: {
+        client: `Your dispute for "${job.title}" was resolved: the same provider will redo the work by ${rebookDeadlineText}. Your payment stays held until then — it is not released and not refunded — and ${rebookClientHoldSentence}.`,
+        provider: `The dispute for "${job.title}" was resolved: you are to redo the work by ${rebookDeadlineText}. The client's payment stays held until the redone work is completed and confirmed, ${rebookProviderHoldSentence}.`,
+      },
+      no_show_payout: {
+        client: `The issue on "${job.title}" was reviewed and it was found that the booking was not attended. ₱${noShowSettlement?.payout ?? 0} has been paid to the provider for the time they reserved, and ₱${noShowSettlement?.clientRefund ?? 0} has been refunded to your wallet.${note ? ` Admin note: ${note}` : ''}`,
+        provider: `The issue on "${job.title}" was reviewed in your favor. You are owed ₱${noShowSettlement?.payout ?? 0} for the time you reserved. ${escrowOutcome?.releasedImmediately ? 'It will reach your available balance shortly.' : `It will reach your available balance on ${formatDate(escrowOutcome?.scheduledFor)}.`}`,
+      },
+    };
+
+    // Post a summary into each party's own dispute support thread and close
+    // it — the ruling ends the mediation, so the threads become read-only
+    // transcripts (shown under Messages → Archived in the app) with the
+    // outcome recorded on the ticket.
+    //
+    // Straight after the commit, ahead of the notifications and the activity
+    // log: none of those touch the threads, and running them first kept the
+    // tickets open for ten more round trips after the ruling had committed.
+    await closeDisputeThreadsForJob(job, {
+      outcome,
+      adminObjectId,
+      adminName: req.admin?.name || req.user?.username || 'Support Agent',
+      summaryFor: (isClient) =>
+        isClient ? outcomeMessages[outcome].client : outcomeMessages[outcome].provider,
+    });
+
     // Notified separately from the ruling: one message is about this job, the
     // other is about a pattern across several, and merging them would read as
     // punishment for this single dispute.
@@ -1215,52 +1442,6 @@ const resolveDispute = async (req, res) => {
       console.error('[resolveDispute] Activity log error:', activityErr);
     }
 
-    // State the actual release date rather than a nominal hold length: a
-    // resumed hold keeps its original date, and one whose date already passed
-    // during mediation pays out on the next scheduler tick.
-    const formatDate = (date) =>
-      date
-        ? new Date(date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-        : null;
-    const providerPayoutTiming = escrowOutcome?.releasedImmediately
-      ? 'Payment will be released to your available balance shortly — the original hold period has already elapsed.'
-      : `Payment will be released to your available balance on ${formatDate(escrowOutcome?.scheduledFor)}, the original hold date for this job.`;
-    const rebookDeadlineText = formatDate(rebookDeadline);
-    // The hold length is per-job now (see app/config/serviceClasses.js), so the
-    // rebook copy has to name this job's own window rather than a constant —
-    // an on-the-spot service redone under a 24-hour hold must not be told to
-    // expect five days.
-    const rebookHoldText = escrowService.describeReleaseWindow(job);
-
-    // A job on a zero-hold class has no window to name, so the sentence has to
-    // change shape rather than interpolate an empty one — otherwise the client
-    // is told "a new null hold starts", on a notification about their money.
-    const rebookClientHoldSentence = rebookHoldText
-      ? `a new ${rebookHoldText} hold starts once the redone work is completed and confirmed`
-      : 'your payment is released once the redone work is completed and confirmed';
-    const rebookProviderHoldSentence = rebookHoldText
-      ? `after which this job's standard ${rebookHoldText} hold applies`
-      : 'after which payment is released without a further hold';
-
-    const outcomeMessages = {
-      pay_provider: {
-        client: `Your dispute for "${job.title}" was resolved: the provider has been paid. ${note ? `Admin note: ${note}` : ''}`,
-        provider: `Your dispute for "${job.title}" was resolved in your favor. ${providerPayoutTiming}`,
-      },
-      refund_client: {
-        client: `Your dispute for "${job.title}" was resolved: you've been refunded ₱${refundedAmount}. The job has been saved as a draft so you can repost it whenever you're ready.`,
-        provider: `The dispute for "${job.title}" was resolved in the client's favor. No payment will be released, and the job has been cancelled.`,
-      },
-      rebook: {
-        client: `Your dispute for "${job.title}" was resolved: the same provider will redo the work by ${rebookDeadlineText}. Your payment stays held until then — it is not released and not refunded — and ${rebookClientHoldSentence}.`,
-        provider: `The dispute for "${job.title}" was resolved: you are to redo the work by ${rebookDeadlineText}. The client's payment stays held until the redone work is completed and confirmed, ${rebookProviderHoldSentence}.`,
-      },
-      no_show_payout: {
-        client: `The issue on "${job.title}" was reviewed and it was found that the booking was not attended. ₱${noShowSettlement?.payout ?? 0} has been paid to the provider for the time they reserved, and ₱${noShowSettlement?.clientRefund ?? 0} has been refunded to your wallet.${note ? ` Admin note: ${note}` : ''}`,
-        provider: `The issue on "${job.title}" was reviewed in your favor. You are owed ₱${noShowSettlement?.payout ?? 0} for the time you reserved. ${escrowOutcome?.releasedImmediately ? 'It will reach your available balance shortly.' : `It will reach your available balance on ${formatDate(escrowOutcome?.scheduledFor)}.`}`,
-      },
-    };
-
     try {
       const notifications = [];
       if (job.userId) {
@@ -1294,18 +1475,6 @@ const resolveDispute = async (req, res) => {
       console.error('[resolveDispute] Notification error:', notifyErr);
     }
 
-    // Post a summary into each party's own dispute support thread and close
-    // it — the ruling ends the mediation, so the threads become read-only
-    // transcripts (shown under Messages → Archived in the app) with the
-    // outcome recorded on the ticket.
-    await closeDisputeThreadsForJob(job, {
-      outcome,
-      adminObjectId,
-      adminName: req.admin?.name || req.user?.username || 'Support Agent',
-      summaryFor: (isClient) =>
-        isClient ? outcomeMessages[outcome].client : outcomeMessages[outcome].provider,
-    });
-
     const updatedJob = await Job.findById(jobId)
       .populate('userId', 'name email userType profileImage')
       .populate('assignedToId', 'name email userType profileImage')
@@ -1338,7 +1507,12 @@ const resolveDispute = async (req, res) => {
       noShowSettlement,
     });
   } catch (error) {
-    await session.abortTransaction();
+    // See forceCancelJob: the guards have already aborted, and aborting again
+    // here crashed the server on every rejected ruling.
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    if (error instanceof ApiError) throw error;
     console.error('Error resolving dispute:', error);
     res.status(500).json({ error: 'Failed to resolve dispute', message: error.message });
   } finally {
@@ -1347,467 +1521,708 @@ const resolveDispute = async (req, res) => {
 };
 
 const assignJobToProvider = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const { providerId } = req.body;
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      { 
-        assignedToId: providerId,
-        status: 'in_progress'
-      },
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
-    .lean();
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    await Application.findOneAndUpdate(
-      { job: jobId, provider: providerId },
-      { status: 'accepted' }
-    );
-    
-    await Application.updateMany(
-      { job: jobId, provider: { $ne: providerId } },
-      { status: 'rejected' }
-    );
-    
-    const applicationCount = await Application.countDocuments({ job: jobId });
-    
-    let locationDisplay = 'Location not specified';
-    try {
-      if (job.location && typeof job.location === 'object') {
-        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-      } else if (job.location && typeof job.location === 'string') {
-        locationDisplay = job.location;
-      }
-    } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
-    }
-    
-    const jobWithData = {
-      ...job,
-      user: job.userId,
-      assignedTo: job.assignedToId,
-      applicationCount,
-      locationDisplay
-    };
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: jobWithData,
-      updateType: 'assigned to provider'
-    });
-    
-    res.json(jobWithData);
-  } catch (error) {
-    console.error('Error assigning job:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to assign job', message: error.message });
+  const { jobId } = req.params;
+  const { providerId } = req.body;
+  
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    { 
+      assignedToId: providerId,
+      status: 'in_progress'
+    },
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
   }
+  
+  await Application.findOneAndUpdate(
+    { job: jobId, provider: providerId },
+    { status: 'accepted' }
+  );
+  
+  await Application.updateMany(
+    { job: jobId, provider: { $ne: providerId } },
+    { status: 'rejected' }
+  );
+  
+  const applicationCount = await Application.countDocuments({ job: jobId });
+  
+  let locationDisplay = 'Location not specified';
+  try {
+    if (job.location && typeof job.location === 'object') {
+      locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+    } else if (job.location && typeof job.location === 'string') {
+      locationDisplay = job.location;
+    }
+  } catch (err) {
+    console.error('Error parsing location for job:', jobId, err);
+  }
+  
+  const jobWithData = {
+    ...job,
+    user: job.userId,
+    assignedTo: job.assignedToId,
+    applicationCount,
+    locationDisplay
+  };
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: jobWithData,
+    updateType: 'assigned to provider'
+  });
+
+  await auditLog(req, 'job_assigned', `Assigned job "${job.title}" to ${job.assignedToId?.name || 'a provider'}`, {
+    targetType: 'job',
+    targetId: job._id,
+    targetModel: 'Job',
+    metadata: { targetName: job.title, providerId, providerName: job.assignedToId?.name || null }
+  });
+  
+  res.json(jobWithData);
 };
 
 const getJobStats = async (req, res) => {
-  try {
-    const totalJobs = await Job.countDocuments();
-    const openJobs = await Job.countDocuments({ status: 'open' });
-    const inProgressJobs = await Job.countDocuments({ status: 'in_progress' });
-    const completedJobs = await Job.countDocuments({ status: 'completed' });
-    const cancelledJobs = await Job.countDocuments({ status: 'cancelled' });
-    
-    const totalApplications = await Application.countDocuments();
-    const pendingApplications = await Application.countDocuments({ status: 'pending' });
-    
-    res.json({
-      totalJobs,
-      openJobs,
-      inProgressJobs,
-      completedJobs,
-      cancelledJobs,
-      totalApplications,
-      pendingApplications
-    });
-  } catch (error) {
-    console.error('Error fetching job stats:', error);
-    res.status(500).json({ error: 'Failed to fetch job stats' });
-  }
+  const totalJobs = await Job.countDocuments();
+  const openJobs = await Job.countDocuments({ status: 'open' });
+  const inProgressJobs = await Job.countDocuments({ status: 'in_progress' });
+  const completedJobs = await Job.countDocuments({ status: 'completed' });
+  const cancelledJobs = await Job.countDocuments({ status: 'cancelled' });
+  
+  const totalApplications = await Application.countDocuments();
+  const pendingApplications = await Application.countDocuments({ status: 'pending' });
+  
+  res.json({
+    totalJobs,
+    openJobs,
+    inProgressJobs,
+    completedJobs,
+    cancelledJobs,
+    totalApplications,
+    pendingApplications
+  });
 };
 
 const hideJob = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const { reason } = req.body;
-    const adminId = req.admin?.id;
-    const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🔒 Hide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      {
-        isHidden: true,
-        hiddenAt: new Date(),
-        hiddenBy: adminName
-      },
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
-    .lean();
+  const { jobId } = req.params;
+  const { reason } = req.body;
+  const adminId = req.admin?.id;
+  const adminName = req.admin?.name || 'Admin';
+  
+  console.log('🔒 Hide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+  
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    {
+      isHidden: true,
+      hiddenAt: new Date(),
+      hiddenBy: adminName
+    },
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
 
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    const notificationMessage = reason
-      ? `Your job "${job.title}" has been hidden by admin. Reason: ${reason}`
-      : `Your job "${job.title}" has been hidden by admin for review.`;
-    
-    await Notification.create({
-      userId: job.userId._id,
-      title: 'Job Hidden by Admin',
-      message: notificationMessage,
-      type: 'admin_action',
-      relatedId: job._id,
-      relatedModel: 'Job',
-      priority: 'high',
-      data: {
-        jobId: job._id,
-        jobTitle: job.title,
-        hiddenBy: adminName,
-        hiddenAt: new Date(),
-        reason: reason || 'No reason provided'
-      }
-    });
-    
-    if (adminId) {
-      console.log('📝 Creating activity log for job_hidden');
-      const activityLog = await createActivityLog(
-        adminId,
-        'job_hidden',
-        `Hidden job "${job.title}" posted by ${job.userId.name}${reason ? `. Reason: ${reason}` : ''}`,
-        {
-          targetType: 'job',
-          targetId: job._id,
-          targetModel: 'Job',
-          metadata: {
-            jobTitle: job.title,
-            userId: job.userId._id,
-            userName: job.userId.name,
-            reason: reason || 'No reason provided'
-          }
-        }
-      );
-      console.log('✅ Activity log created:', activityLog?._id);
-    } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
-    }
-    
-    const applicationCount = await Application.countDocuments({ job: jobId });
-    
-    let locationDisplay = 'Location not specified';
-    try {
-      if (job.location && typeof job.location === 'object') {
-        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-      } else if (job.location && typeof job.location === 'string') {
-        locationDisplay = job.location;
-      }
-    } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
-    }
-    
-    const jobWithData = {
-      ...job,
-      user: job.userId,
-      assignedTo: job.assignedToId,
-      applicationCount,
-      locationDisplay
-    };
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: jobWithData,
-      updateType: 'hidden'
-    });
-    
-    res.json(jobWithData);
-  } catch (error) {
-    console.error('Error hiding job:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to hide job', message: error.message });
+  if (!job) {
+    throw ApiError.notFound('Job not found');
   }
+
+  const notificationMessage = reason
+    ? `Your job "${job.title}" has been hidden by admin. Reason: ${reason}`
+    : `Your job "${job.title}" has been hidden by admin for review.`;
+  
+  await Notification.create({
+    userId: job.userId._id,
+    title: 'Job Hidden by Admin',
+    message: notificationMessage,
+    type: 'admin_action',
+    relatedId: job._id,
+    relatedModel: 'Job',
+    priority: 'high',
+    data: {
+      jobId: job._id,
+      jobTitle: job.title,
+      hiddenBy: adminName,
+      hiddenAt: new Date(),
+      reason: reason || 'No reason provided'
+    }
+  });
+  
+  if (adminId) {
+    console.log('📝 Creating activity log for job_hidden');
+    const activityLog = await createActivityLog(
+      adminId,
+      'job_hidden',
+      `Hidden job "${job.title}" posted by ${job.userId.name}${reason ? `. Reason: ${reason}` : ''}`,
+      {
+        targetType: 'job',
+        targetId: job._id,
+        targetModel: 'Job',
+        metadata: {
+          jobTitle: job.title,
+          userId: job.userId._id,
+          userName: job.userId.name,
+          reason: reason || 'No reason provided'
+        }
+      }
+    );
+    console.log('✅ Activity log created:', activityLog?._id);
+  } else {
+    console.warn('⚠️ No adminId found, activity log NOT created');
+  }
+  
+  const applicationCount = await Application.countDocuments({ job: jobId });
+  
+  let locationDisplay = 'Location not specified';
+  try {
+    if (job.location && typeof job.location === 'object') {
+      locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+    } else if (job.location && typeof job.location === 'string') {
+      locationDisplay = job.location;
+    }
+  } catch (err) {
+    console.error('Error parsing location for job:', jobId, err);
+  }
+  
+  const jobWithData = {
+    ...job,
+    user: job.userId,
+    assignedTo: job.assignedToId,
+    applicationCount,
+    locationDisplay
+  };
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: jobWithData,
+    updateType: 'hidden'
+  });
+  
+  res.json(jobWithData);
 };
 
 const unhideJob = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const adminId = req.admin?.id;
-    const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🔓 Unhide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      {
-        isHidden: false,
-        hiddenAt: null,
-        hiddenBy: null
-      },
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
-    .lean();
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    await Notification.create({
-      userId: job.userId._id,
-      title: 'Job Restored',
-      message: `Your job "${job.title}" has been restored and is now visible.`,
-      type: 'admin_action',
-      relatedId: job._id,
-      relatedModel: 'Job',
-      priority: 'medium',
-      data: {
-        jobId: job._id,
-        jobTitle: job.title,
-        restoredBy: adminName,
-        restoredAt: new Date()
-      }
-    });
-    
-    if (adminId) {
-      console.log('📝 Creating activity log for job_unhidden');
-      const activityLog = await createActivityLog(
-        adminId,
-        'job_unhidden',
-        `Restored job "${job.title}" posted by ${job.userId.name}`,
-        {
-          targetType: 'job',
-          targetId: job._id,
-          targetModel: 'Job',
-          metadata: {
-            jobTitle: job.title,
-            userId: job.userId._id,
-            userName: job.userId.name
-          }
-        }
-      );
-      console.log('✅ Activity log created:', activityLog?._id);
-    } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
-    }
-    
-    const applicationCount = await Application.countDocuments({ job: jobId });
-    
-    let locationDisplay = 'Location not specified';
-    try {
-      if (job.location && typeof job.location === 'object') {
-        locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
-      } else if (job.location && typeof job.location === 'string') {
-        locationDisplay = job.location;
-      }
-    } catch (err) {
-      console.error('Error parsing location for job:', jobId, err);
-    }
-    
-    const jobWithData = {
-      ...job,
-      user: job.userId,
-      assignedTo: job.assignedToId,
-      applicationCount,
-      locationDisplay
-    };
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: jobWithData,
-      updateType: 'unhidden'
-    });
-    
-    res.json(jobWithData);
-  } catch (error) {
-    console.error('Error unhiding job:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to unhide job', message: error.message });
+  const { jobId } = req.params;
+  const adminId = req.admin?.id;
+  const adminName = req.admin?.name || 'Admin';
+  
+  console.log('🔓 Unhide Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+  
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    {
+      isHidden: false,
+      hiddenAt: null,
+      hiddenBy: null
+    },
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
   }
+  
+  await Notification.create({
+    userId: job.userId._id,
+    title: 'Job Restored',
+    message: `Your job "${job.title}" has been restored and is now visible.`,
+    type: 'admin_action',
+    relatedId: job._id,
+    relatedModel: 'Job',
+    priority: 'medium',
+    data: {
+      jobId: job._id,
+      jobTitle: job.title,
+      restoredBy: adminName,
+      restoredAt: new Date()
+    }
+  });
+  
+  if (adminId) {
+    console.log('📝 Creating activity log for job_unhidden');
+    const activityLog = await createActivityLog(
+      adminId,
+      'job_unhidden',
+      `Restored job "${job.title}" posted by ${job.userId.name}`,
+      {
+        targetType: 'job',
+        targetId: job._id,
+        targetModel: 'Job',
+        metadata: {
+          jobTitle: job.title,
+          userId: job.userId._id,
+          userName: job.userId.name
+        }
+      }
+    );
+    console.log('✅ Activity log created:', activityLog?._id);
+  } else {
+    console.warn('⚠️ No adminId found, activity log NOT created');
+  }
+  
+  const applicationCount = await Application.countDocuments({ job: jobId });
+  
+  let locationDisplay = 'Location not specified';
+  try {
+    if (job.location && typeof job.location === 'object') {
+      locationDisplay = job.location?.address || job.location?.city || 'Location not specified';
+    } else if (job.location && typeof job.location === 'string') {
+      locationDisplay = job.location;
+    }
+  } catch (err) {
+    console.error('Error parsing location for job:', jobId, err);
+  }
+  
+  const jobWithData = {
+    ...job,
+    user: job.userId,
+    assignedTo: job.assignedToId,
+    applicationCount,
+    locationDisplay
+  };
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: jobWithData,
+    updateType: 'unhidden'
+  });
+  
+  res.json(jobWithData);
 };
 
 const deleteJob = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const adminId = req.admin?.id;
-    const adminName = req.admin?.name || 'Admin';
-    
-    console.log('🗑️ Delete Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      {
-        isDeleted: true,
-        deletedAt: new Date(),
-        deletedBy: adminName
-      },
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
+  const { jobId } = req.params;
+  const adminId = req.admin?.id;
+  const adminName = req.admin?.name || 'Admin';
+  
+  console.log('🗑️ Delete Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+
+  const existing = await Job.findById(jobId)
+    .select('status paymentDetails.heldTransaction completionStatus.dispute.isActive')
     .lean();
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    await Notification.create({
-      userId: job.userId._id,
-      title: 'Job Removed by Admin',
-      message: `Your job "${job.title}" has been removed by administration.`,
-      type: 'admin_action',
-      relatedId: job._id,
-      relatedModel: 'Job',
-      priority: 'high',
-      data: {
-        jobId: job._id,
-        jobTitle: job.title,
-        deletedBy: adminName,
-        deletedAt: new Date()
-      }
-    });
-    
-    if (adminId) {
-      console.log('📝 Creating activity log for job_deleted');
-      const activityLog = await createActivityLog(
-        adminId,
-        'job_deleted',
-        `Deleted job "${job.title}" posted by ${job.userId.name}`,
-        {
-          targetType: 'job',
-          targetId: job._id,
-          targetModel: 'Job',
-          metadata: {
-            jobTitle: job.title,
-            userId: job.userId._id,
-            userName: job.userId.name
-          }
-        }
-      );
-      console.log('✅ Activity log created:', activityLog?._id);
-    } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
-    }
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: { _id: job._id },
-      updateType: 'deleted'
-    });
-    
-    res.json({ success: true, message: 'Job deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting job:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to delete job', message: error.message });
+  if (!existing) {
+    throw ApiError.notFound('Job not found');
   }
+
+  // kayod/server treats a deleted job as an absolute takedown — gone from the
+  // feed, from both parties' lists, and 404 on open. On a live booking that
+  // would hide the work and the client's held payment from everyone with
+  // nothing settled. Cancel Job is what ends a booking and returns the money.
+  const heldPayment = existing.paymentDetails?.heldTransaction
+    ? await Transaction.exists({ _id: existing.paymentDetails.heldTransaction, status: 'held' })
+    : null;
+  if (
+    ['in_progress', 'scheduled'].includes(existing.status) ||
+    heldPayment ||
+    existing.completionStatus?.dispute?.isActive
+  ) {
+    throw ApiError.conflict(
+      'This job has an active booking, a held payment or an open dispute. Settle it first (Cancel Job returns the payment), then delete it.'
+    );
+  }
+
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    {
+      isDeleted: true,
+      deletedAt: new Date(),
+      deletedBy: adminName
+    },
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
+  }
+
+  // A reported post can belong to an account that no longer exists; the
+  // takedown must still go through, there is just nobody to tell.
+  if (job.userId) await Notification.create({
+    userId: job.userId._id,
+    title: 'Job Removed by Admin',
+    message: `Your job "${job.title}" has been removed by administration.`,
+    type: 'admin_action',
+    relatedId: job._id,
+    relatedModel: 'Job',
+    priority: 'high',
+    data: {
+      jobId: job._id,
+      jobTitle: job.title,
+      deletedBy: adminName,
+      deletedAt: new Date()
+    }
+  });
+  
+  if (adminId) {
+    console.log('📝 Creating activity log for job_deleted');
+    const activityLog = await createActivityLog(
+      adminId,
+      'job_deleted',
+      `Deleted job "${job.title}" posted by ${job.userId?.name || 'a removed account'}`,
+      {
+        targetType: 'job',
+        targetId: job._id,
+        targetModel: 'Job',
+        metadata: {
+          jobTitle: job.title,
+          userId: job.userId?._id || null,
+          userName: job.userId?.name || null
+        }
+      }
+    );
+    console.log('✅ Activity log created:', activityLog?._id);
+  } else {
+    console.warn('⚠️ No adminId found, activity log NOT created');
+  }
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: { _id: job._id },
+    updateType: 'deleted'
+  });
+  
+  res.json({ success: true, message: 'Job deleted successfully' });
 };
 
 const restoreJob = async (req, res) => {
+  const { jobId } = req.params;
+  const adminId = req.admin?.id;
+  const adminName = req.admin?.name || 'Admin';
+  
+  console.log('♻️ Restore Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
+  
+  const job = await Job.findByIdAndUpdate(
+    jobId,
+    {
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null,
+      isHidden: false,
+      hiddenAt: null,
+      hiddenBy: null
+    },
+    { new: true }
+  )
+  .populate('userId', 'name email userType profileImage')
+  .populate('assignedToId', 'name email userType profileImage')
+  .lean();
+  
+  if (!job) {
+    throw ApiError.notFound('Job not found');
+  }
+  
+  await Notification.create({
+    userId: job.userId._id,
+    title: 'Job Restored',
+    message: `Your job "${job.title}" has been restored by administration and is now visible.`,
+    type: 'admin_action',
+    relatedId: job._id,
+    relatedModel: 'Job',
+    priority: 'medium',
+    data: {
+      jobId: job._id,
+      jobTitle: job.title,
+      restoredBy: adminName,
+      restoredAt: new Date()
+    }
+  });
+  
+  if (adminId) {
+    console.log('📝 Creating activity log for job_restored');
+    const activityLog = await createActivityLog(
+      adminId,
+      'job_restored',
+      `Restored job "${job.title}" posted by ${job.userId.name}`,
+      {
+        targetType: 'job',
+        targetId: job._id,
+        targetModel: 'Job',
+        metadata: {
+          jobTitle: job.title,
+          userId: job.userId._id,
+          userName: job.userId.name
+        }
+      }
+    );
+    console.log('✅ Activity log created:', activityLog?._id);
+  } else {
+    console.warn('⚠️ No adminId found, activity log NOT created');
+  }
+  
+  const { io } = require('../../server');
+  io.to('admin').emit('job:updated', {
+    job: { _id: job._id },
+    updateType: 'restored'
+  });
+  
+  res.json({ success: true, message: 'Job restored successfully' });
+};
+
+/**
+ * The reporter's answer to "did the other party do their part?", asked once a
+ * rebook's deadline arrives. Called by kayod/server on the reporter's behalf
+ * (service-key authenticated) — the prompt itself lives in the mobile client.
+ *
+ * A rebook deliberately does NOT reopen the tickets on the deadline: the redo
+ * either happened or it did not, and only the party who complained can say
+ * which. So the closed thread stays closed until they answer.
+ *
+ *   satisfied: true  -> the redo was delivered. The suspended hold is revived
+ *                       with a FRESH window measured from now, which is what
+ *                       the rebook ruling promised both parties ("a new N-day
+ *                       hold starts once the redone work is completed and
+ *                       confirmed"), and the payout proceeds without an admin.
+ *   satisfied: false -> both threads reopen, unowned, and the job's dispute
+ *                       goes active again so the two sides can contest it and
+ *                       an admin can rule a second time.
+ *
+ * Idempotent: a repeated answer returns the recorded one rather than moving
+ * money twice, because a retried request from the client must never be a second
+ * escrow action.
+ */
+const submitRebookVerdict = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { jobId } = req.params;
-    const adminId = req.admin?.id;
-    const adminName = req.admin?.name || 'Admin';
-    
-    console.log('♻️ Restore Job - Admin Info:', { adminId, adminName, reqAdmin: req.admin });
-    
-    const job = await Job.findByIdAndUpdate(
-      jobId,
-      {
-        isDeleted: false,
-        deletedAt: null,
-        deletedBy: null,
-        isHidden: false,
-        hiddenAt: null,
-        hiddenBy: null
-      },
-      { new: true }
-    )
-    .populate('userId', 'name email userType profileImage')
-    .populate('assignedToId', 'name email userType profileImage')
-    .lean();
-    
+    const { satisfied, reporterId, reason } = req.body || {};
+
+    if (typeof satisfied !== 'boolean') {
+      await session.abortTransaction();
+      throw ApiError.badRequest('satisfied must be a boolean.');
+    }
+
+    const job = await Job.findById(jobId).session(session);
     if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
+      await session.abortTransaction();
+      throw ApiError.notFound('Job not found');
     }
-    
-    await Notification.create({
-      userId: job.userId._id,
-      title: 'Job Restored',
-      message: `Your job "${job.title}" has been restored by administration and is now visible.`,
-      type: 'admin_action',
-      relatedId: job._id,
-      relatedModel: 'Job',
-      priority: 'medium',
-      data: {
-        jobId: job._id,
-        jobTitle: job.title,
-        restoredBy: adminName,
-        restoredAt: new Date()
-      }
-    });
-    
-    if (adminId) {
-      console.log('📝 Creating activity log for job_restored');
-      const activityLog = await createActivityLog(
-        adminId,
-        'job_restored',
-        `Restored job "${job.title}" posted by ${job.userId.name}`,
-        {
-          targetType: 'job',
-          targetId: job._id,
-          targetModel: 'Job',
-          metadata: {
-            jobTitle: job.title,
-            userId: job.userId._id,
-            userName: job.userId.name
-          }
-        }
-      );
-      console.log('✅ Activity log created:', activityLog?._id);
+
+    const rebook = job.completionStatus?.rebook;
+    if (!rebook?.orderedAt) {
+      await session.abortTransaction();
+      throw ApiError.badRequest('This job has no rebook to confirm.');
+    }
+
+    if (rebook.verdict?.respondedAt) {
+      await session.abortTransaction();
+      return res.json({
+        success: true,
+        alreadyRecorded: true,
+        verdict: {
+          satisfied: rebook.verdict.satisfied,
+          respondedAt: rebook.verdict.respondedAt,
+          reason: rebook.verdict.reason || null,
+        },
+      });
+    }
+
+    // Only the party who raised the dispute may answer — the whole point is
+    // that the reported side cannot sign off on their own redo. reporterRole is
+    // null on rebooks ordered before it was recorded, and for those the role is
+    // inferred from whichever party the caller names rather than refusing to
+    // let a real reporter answer.
+    const clientId = job.userId?.toString() || null;
+    const providerId = job.assignedToId?.toString() || null;
+    let reporterRole = rebook.reporterRole || null;
+
+    if (!reporterId) {
+      await session.abortTransaction();
+      throw ApiError.badRequest('reporterId is required.');
+    }
+    const callerId = reporterId.toString();
+
+    if (!reporterRole) {
+      if (callerId === clientId) reporterRole = 'client';
+      else if (callerId === providerId) reporterRole = 'provider';
+    }
+
+    const expectedId = reporterRole === 'provider' ? providerId : clientId;
+    if (!reporterRole || !expectedId || callerId !== expectedId) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        error: 'Only the party who raised the dispute can confirm whether the rebooked work was done.',
+      });
+    }
+
+    const respondedAt = new Date();
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+    job.completionStatus.rebook.reporterRole = reporterRole;
+    job.completionStatus.rebook.verdict = {
+      askedAt: rebook.verdict?.askedAt || null,
+      respondedAt,
+      satisfied,
+      reason: trimmedReason || null,
+    };
+
+    let escrowOutcome = null;
+
+    if (satisfied) {
+      // The redo is accepted, so this is a completion — record it as one. The
+      // job was walked back to in_progress when the rebook was ordered, and
+      // leaving it there would keep it in the provider's active work forever.
+      job.status = 'completed';
+      job.completionStatus.completedAt = respondedAt;
+      job.completionStatus.clientConfirmed = true;
+      job.completionStatus.providerConfirmed = true;
+      job.completionStatus.clientConfirmedAt =
+        job.completionStatus.clientConfirmedAt || respondedAt;
+      job.completionStatus.providerConfirmedAt =
+        job.completionStatus.providerConfirmedAt || respondedAt;
+      await job.save({ session });
+
+      // A fresh window from now, NOT resumeEscrowRelease's original date: the
+      // hold is a warranty on the work, and the work that was accepted is the
+      // redone work, delivered today. scheduleEscrowRelease revives the
+      // suspended record rather than adding a second one.
+      const scheduled = await escrowService.scheduleEscrowRelease(job._id, respondedAt, session);
+      escrowOutcome = { scheduledFor: scheduled.scheduledFor };
     } else {
-      console.warn('⚠️ No adminId found, activity log NOT created');
+      // Put the dispute back on the job. Same complainant, new reason — the
+      // failed redo — so an admin sees why this is being ruled on again, and
+      // resolveDispute's isActive guard passes normally.
+      job.completionStatus.dispute = {
+        isActive: true,
+        raisedBy: reporterRole,
+        raisedAt: respondedAt,
+        reason: trimmedReason
+          ? `Rebooked work rejected: ${trimmedReason}`
+          : 'Rebooked work rejected — the work was not redone as ordered.',
+        resolvedAt: null,
+        resolvedBy: null,
+        resolution: null,
+        escalatedAt: respondedAt,
+        internalNotes: job.completionStatus.dispute?.internalNotes || [],
+      };
+      // The hold stays suspended. It is neither released nor refunded until the
+      // second ruling, exactly as during the rebook itself.
+      await job.save({ session });
     }
-    
-    const { io } = require('../../server');
-    io.to('admin').emit('job:updated', {
-      job: { _id: job._id },
-      updateType: 'restored'
+
+    await session.commitTransaction();
+
+    const reporterIsClient = reporterRole === 'client';
+    const formatDate = (date) =>
+      date
+        ? new Date(date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    // Thread and notification work runs after the commit: it is messaging about
+    // a decision that is already final, and a failure here must not roll back
+    // the verdict or the escrow action.
+    let reopenedThreads = [];
+    if (!satisfied) {
+      reopenedThreads = await reopenDisputeThreadsForJob(job, {
+        message:
+          `The ${reporterIsClient ? 'client' : 'provider'} has reported that the redone work for "${job.title}" was not completed as ordered. ` +
+          'This dispute has been reopened so both sides can respond, and the payment stays held until it is resolved again.',
+        reason: 'Rebooked work rejected by the reporting party',
+        internalNote:
+          'Reopened automatically: the reporting party rejected the rebooked work. ' +
+          `Reason given: ${trimmedReason || 'none'}. The held payment is still suspended and needs a ruling.`,
+      });
+    }
+
+    try {
+      const notifications = [];
+      const messages = satisfied
+        ? {
+            client: `You confirmed the redone work for "${job.title}". ${
+              reporterIsClient ? 'Your payment' : "The client's payment"
+            } will be released to the provider on ${formatDate(escrowOutcome?.scheduledFor)}.`,
+            provider: `The redone work for "${job.title}" was accepted. Payment will be released to your available balance on ${formatDate(escrowOutcome?.scheduledFor)}.`,
+          }
+        : {
+            client: `The dispute for "${job.title}" has been reopened because the redone work was reported as not completed. The payment stays held while it is reviewed again.`,
+            provider: `The dispute for "${job.title}" has been reopened: the redone work was reported as not completed. The client's payment stays held while it is reviewed again.`,
+          };
+
+      if (job.userId) {
+        notifications.push({
+          userId: job.userId,
+          title: satisfied ? 'Rebooked Work Confirmed' : 'Dispute Reopened',
+          message: messages.client,
+          type: satisfied ? 'job_completed' : 'system',
+          relatedId: job._id,
+          relatedModel: 'Job',
+          priority: 'high',
+          data: { jobId: job._id.toString(), rebookSatisfied: satisfied },
+        });
+      }
+      if (job.assignedToId) {
+        notifications.push({
+          userId: job.assignedToId,
+          title: satisfied ? 'Rebooked Work Confirmed' : 'Dispute Reopened',
+          message: messages.provider,
+          type: satisfied ? 'job_completed' : 'system',
+          relatedId: job._id,
+          relatedModel: 'Job',
+          priority: 'high',
+          data: { jobId: job._id.toString(), rebookSatisfied: satisfied },
+        });
+      }
+      if (notifications.length) {
+        await Notification.insertMany(notifications);
+      }
+    } catch (notifyErr) {
+      console.error('[submitRebookVerdict] Notification error:', notifyErr);
+    }
+
+    try {
+      const { io } = require('../../server');
+      io.to('admin').emit('job:updated', {
+        job: { _id: job._id },
+        updateType: satisfied ? 'rebook-confirmed' : 'rebook-rejected',
+      });
+    } catch (socketErr) {
+      // best-effort
+    }
+
+    res.json({
+      success: true,
+      satisfied,
+      reporterRole,
+      escrow: escrowOutcome,
+      reopenedThreadIds: reopenedThreads.map((thread) => thread._id.toString()),
     });
-    
-    res.json({ success: true, message: 'Job restored successfully' });
   } catch (error) {
-    console.error('Error restoring job:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to restore job', message: error.message });
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    if (error instanceof ApiError) throw error;
+    console.error('Error recording rebook verdict:', error);
+    res.status(500).json({ error: 'Failed to record rebook verdict', message: error.message });
+  } finally {
+    session.endSession();
   }
 };
 
 module.exports = {
-  getJobs,
-  getJobDetails,
-  updateJobStatus,
-  forceCancelJob,
-  resolveDispute,
-  assignJobToProvider,
-  getJobStats,
-  hideJob,
-  unhideJob,
-  deleteJob,
-  restoreJob
+  getJobs: asyncHandler(getJobs, 'Failed to fetch jobs'),
+  getJobDetails: asyncHandler(getJobDetails, 'Failed to fetch job details'),
+  updateJobStatus: asyncHandler(updateJobStatus, 'Failed to update job status'),
+  // Wrapped for the ApiErrors their catch blocks rethrow; unexpected failures
+  // are still answered by the handlers' own 500s.
+  forceCancelJob: asyncHandler(forceCancelJob, 'Failed to cancel job'),
+  resolveDispute: asyncHandler(resolveDispute, 'Failed to resolve dispute'),
+  submitRebookVerdict: asyncHandler(submitRebookVerdict, 'Failed to record rebook verdict'),
+  assignJobToProvider: asyncHandler(assignJobToProvider, 'Failed to assign job'),
+  getJobStats: asyncHandler(getJobStats, 'Failed to fetch job stats'),
+  hideJob: asyncHandler(hideJob, 'Failed to hide job'),
+  unhideJob: asyncHandler(unhideJob, 'Failed to unhide job'),
+  deleteJob: asyncHandler(deleteJob, 'Failed to delete job'),
+  restoreJob: asyncHandler(restoreJob, 'Failed to restore job'),
 };

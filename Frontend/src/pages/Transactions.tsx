@@ -207,7 +207,12 @@ const Transactions: React.FC = () => {
   return (
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 bg-white px-4 md:px-6 py-4 md:py-5 border-b border-gray-200 z-30 shadow-sm relative">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
+        {/* Padding lives on this inner block, not the header wrapper — the
+            filter bar below must sit flush to the edges like Users.tsx.
+            With padding on the wrapper it stacked with the filter bar's own
+            px-4 and pushed the search field ~24px further in. */}
+        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
         {/* Page Title & Refresh - Desktop only (mobile layout already shows title) */}
         <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
           <div>
@@ -285,7 +290,10 @@ const Transactions: React.FC = () => {
         </div>
 
         {/* Transaction Type Counters Grid */}
-        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-5">
+        {/* No bottom margin: the wrapper's md:py-5 already spaces the stats off
+            the filter bar. An mb-5 here stacked on top of it and left a ~40px
+            gap where Users.tsx has ~20px. */}
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
            {category === 'all' ? (
              <>
                <StatsCard
@@ -376,19 +384,22 @@ const Transactions: React.FC = () => {
              </>
            )}
         </div>
+        </div>
 
         {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
+        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-6">
           {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
           <div className="flex items-center gap-2 lg:contents">
             <div className="relative flex-1 lg:order-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4 lg:left-3.5" />
+              {/* Kept byte-identical to the search field in Users.tsx so the
+                  two pages read as one system. Only the placeholder differs. */}
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
                 placeholder="Search transactions..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 bg-white border border-gray-200 rounded-lg lg:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs lg:text-sm font-medium transition-all shadow-sm h-8 lg:h-10 lg:pl-10"
+                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all shadow-sm h-8 text-xs lg:pl-10 lg:h-10 lg:text-sm lg:rounded-xl"
               />
             </div>
 
@@ -428,9 +439,13 @@ const Transactions: React.FC = () => {
           </div>
 
           {/* Row 2 on Desktop: filters + page limit */}
-          <div className="hidden lg:flex items-center gap-2 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
-            <div className="flex-1 flex items-center gap-2">
-              <div className="flex-1">
+          {/* Mirrors the desktop filter group in Users.tsx. The lg:flex-initial
+              resets matter: without them this group keeps growing at desktop
+              width and squeezes the flex-1 search field, which is why the same
+              input rendered narrower here than on All Users. */}
+          <div className="hidden lg:flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
+            <div className="flex-1 flex items-center gap-2 lg:flex-initial lg:justify-end">
+              <div className="flex-1 lg:flex-initial">
                 <DateRangePicker
                   startDate={dateFrom}
                   endDate={dateTo}

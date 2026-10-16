@@ -68,6 +68,8 @@ const setupSocketHandlers = (io) => {
   adminNamespace.on('connection', async (socket) => {
     const { adminId, adminRole } = socket.data;
     socket.join('admin');
+    // Audit-log updates go to this room only; the log is superadmin-only.
+    if (adminRole === 'superadmin') socket.join('superadmins');
     socket.emit('connection:status', 'connected');
 
     await sendInitialData(socket, adminId);

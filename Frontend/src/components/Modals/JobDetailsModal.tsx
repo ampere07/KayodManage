@@ -65,6 +65,9 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
+/** Destructive actions that route through the shared confirmation sheet. */
+type ConfirmKind = 'hide' | 'delete' | 'restore' | 'cancel';
+
 const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   isOpen,
   onClose,
@@ -75,6 +78,12 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const [showApplicants, setShowApplicants] = useState(false);
   const [applicants, setApplicants] = useState<Application[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
+  // One confirmation sheet drives every destructive action here. The native
+  // confirm()/prompt() they used before gave no room to state consequences,
+  // and delete could not explain itself at all.
+  const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null);
+  const [confirmReason, setConfirmReason] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const { setIsHeaderHidden } = React.useContext(SidebarContext);
 
   useEffect(() => {
@@ -134,23 +143,24 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     }
   };
 
-  const handleHideJob = async () => {
-    if (!job) return;
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount).replace('PHP', '₱');
+  };
 
-    try {
-      await jobsService.hideJob(job._id);
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job hidden');
-      onClose();
-    } catch (error) {
-      console.error('Failed to hide job:', error);
-      toast.error('Failed to hide job');
-    }
+  const closeConfirm = () => {
+    if (confirming) return;
+    setConfirmKind(null);
+    setConfirmReason("");
   };
 
   const handleUnhideJob = async () => {
     if (!job) return;
-
     try {
       await jobsService.unhideJob(job._id);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -162,79 +172,115 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     }
   };
 
-  const handleDeleteJob = async () => {
-    if (!job) return;
+  /**
+   * What each destructive action does and how it has to be confirmed. Keeping
+   * them in one table means the sheet below is written once, and a new action
+   * is a config entry rather than another copy of the markup.
+   */
+  const confirmConfig = !job || !confirmKind
+    ? null
+    : ({
+        hide: {
+          title: 'Hide this job?',
+          confirmLabel: 'Hide job',
+          busyLabel: 'Hiding…',
+          reasonRequired: false,
+          tone: 'amber' as const,
+          consequences: [
+            'The job stops appearing in search and browse for everyone.',
+            'The client keeps it in their account, and you can unhide it later.',
+          ],
+          run: async () => {
+            await jobsService.hideJob(job._id);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            toast.success('Job hidden');
+          },
+          errorMessage: 'Failed to hide job',
+        },
+        delete: {
+          title: 'Delete this job?',
+          confirmLabel: 'Delete job',
+          busyLabel: 'Deleting…',
+          reasonRequired: false,
+          tone: 'red' as const,
+          consequences: [
+            'The job is archived and removed from the client’s account.',
+            'Any applicants lose access to it.',
+            'It can be restored from Archived Jobs.',
+          ],
+          run: async () => {
+            await jobsService.deleteJob(job._id);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+            toast.success('Job deleted successfully');
+          },
+          errorMessage: 'Failed to delete job',
+        },
+        restore: {
+          title: 'Restore this job?',
+          confirmLabel: 'Restore job',
+          busyLabel: 'Restoring…',
+          reasonRequired: false,
+          tone: 'amber' as const,
+          consequences: ['The job becomes visible to the client again.'],
+          run: async () => {
+            await jobsService.restoreJob(job._id);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+            toast.success('Job restored successfully');
+          },
+          errorMessage: 'Failed to restore job',
+        },
+        cancel: {
+          title: 'Cancel this job?',
+          confirmLabel: 'Cancel job & refund',
+          busyLabel: 'Cancelling…',
+          // The only one that moves money, so the only one that demands a
+          // written reason for the audit log.
+          reasonRequired: true,
+          tone: 'red' as const,
+          consequences: [
+            `Any payment still held is refunded to the client in full${
+              job.budget ? ` (up to ${formatCurrency(job.budget)})` : ''
+            }.`,
+            'An active dispute is closed as “client refunded”.',
+            'Both parties are notified. This cannot be undone.',
+          ],
+          run: async (reason: string) => {
+            const result = await jobsService.forceCancelJob(job._id, reason);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+            toast.success(
+              result.refundedAmount > 0
+                ? `Job cancelled — ₱${result.refundedAmount} refunded to client`
+                : 'Job cancelled successfully'
+            );
+          },
+          errorMessage: 'Failed to cancel job',
+        },
+      }[confirmKind]);
 
-    if (!confirm('Are you sure you want to delete this job? This will permanently archive it and remove it from the user\'s account.')) {
-      return;
-    }
+  const runConfirmedAction = async () => {
+    if (!confirmConfig || confirming) return;
+    const reason = confirmReason.trim();
+    if (confirmConfig.reasonRequired && !reason) return;
 
+    setConfirming(true);
     try {
-      await jobsService.deleteJob(job._id);
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
-      toast.success('Job deleted successfully');
-      onClose();
-    } catch (error) {
-      console.error('Failed to delete job:', error);
-      toast.error('Failed to delete job');
-    }
-  };
-
-  const handleRestoreJob = async () => {
-    if (!job) return;
-
-    if (!confirm('Are you sure you want to restore this job? This will make it visible to the user again.')) {
-      return;
-    }
-
-    try {
-      await jobsService.restoreJob(job._id);
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
-      toast.success('Job restored successfully');
-      onClose();
-    } catch (error) {
-      console.error('Failed to restore job:', error);
-      toast.error('Failed to restore job');
-    }
-  };
-
-  const handleForceCancelJob = async () => {
-    if (!job) return;
-
-    const reason = window.prompt(
-      'Reason for cancelling this job? This will release any held payment back to the client in full and notify both parties.'
-    );
-    if (reason === null) return; // user hit Cancel on the prompt
-
-    try {
-      const result = await jobsService.forceCancelJob(job._id, reason || undefined);
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
-      toast.success(
-        result.refundedAmount > 0
-          ? `Job cancelled — ₱${result.refundedAmount} refunded to client`
-          : 'Job cancelled successfully'
-      );
+      await confirmConfig.run(reason);
       onClose();
     } catch (error: any) {
-      console.error('Failed to cancel job:', error);
-      toast.error(error?.response?.data?.error || 'Failed to cancel job');
+      console.error(confirmConfig.errorMessage, error);
+      toast.error(error?.response?.data?.error || confirmConfig.errorMessage);
+    } finally {
+      setConfirming(false);
+      setConfirmKind(null);
+      setConfirmReason("");
     }
   };
 
   if (!isOpen || !job) return null;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      currencyDisplay: 'symbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount).replace('PHP', '₱');
-  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -649,7 +695,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           <div className="flex gap-3">
             {job.isDeleted ? (
               <button
-                onClick={handleRestoreJob}
+                onClick={() => setConfirmKind('restore')}
                 className="flex-1 px-4 py-3.5 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 shadow-md shadow-emerald-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
               >
                 <RotateCcw className="h-4 w-4" />
@@ -667,7 +713,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   </button>
                 ) : (
                   <button
-                    onClick={handleHideJob}
+                    onClick={() => setConfirmKind('hide')}
                     className="flex-1 px-4 py-3.5 bg-gray-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-800 shadow-md shadow-gray-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     <EyeOff className="h-4 w-4" />
@@ -675,7 +721,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   </button>
                 )}
                 <button
-                  onClick={handleDeleteJob}
+                  onClick={() => setConfirmKind('delete')}
                   className="flex-1 px-4 py-3.5 bg-white border border-red-200 text-red-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -686,7 +732,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </div>
           {!job.isHidden && !job.isDeleted && job.status !== 'cancelled' && job.status !== 'completed' && (
             <button
-              onClick={handleForceCancelJob}
+              onClick={() => setConfirmKind('cancel')}
               className="w-full mt-3 px-4 py-3 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
               data-testid="admin-force-cancel-job-btn"
             >
@@ -696,6 +742,116 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* One confirmation sheet for hide / delete / restore / cancel. Docked to
+          the bottom of this panel rather than centred on screen: the action
+          belongs to the job on show, so it stays in the job's own column and
+          leaves the ticket behind it readable. Scrim and sheet are clipped to
+          the panel's width so nothing spills over the chat. */}
+      {confirmConfig && (
+        <>
+          <div
+            className="fixed inset-y-0 right-0 z-[200] w-full bg-black/40 md:w-[550px]"
+            onClick={closeConfirm}
+          />
+          <div className="fixed bottom-0 right-0 z-[201] w-full md:w-[550px]">
+            <div className="rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl">
+              <div className="flex justify-center pt-2.5">
+                <span className="h-1 w-10 rounded-full bg-gray-300" />
+              </div>
+
+              <div className="flex items-start gap-3 px-5 pb-4 pt-3">
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                    confirmConfig.tone === 'red' ? 'bg-red-50' : 'bg-amber-50'
+                  }`}
+                >
+                  <XCircle
+                    className={`h-5 w-5 ${
+                      confirmConfig.tone === 'red' ? 'text-red-600' : 'text-amber-600'
+                    }`}
+                  />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900">
+                    {confirmConfig.title}
+                  </h3>
+                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                    &ldquo;{job.title}&rdquo;
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-5">
+                <ul
+                  className={`space-y-1.5 rounded-xl p-3 text-[12px] leading-relaxed ${
+                    confirmConfig.tone === 'red'
+                      ? 'bg-red-50 text-red-800'
+                      : 'bg-amber-50 text-amber-900'
+                  }`}
+                >
+                  {confirmConfig.consequences.map((line) => (
+                    <li key={line}>· {line}</li>
+                  ))}
+                </ul>
+
+                {confirmConfig.reasonRequired && (
+                  <div>
+                    <label
+                      htmlFor="confirm-reason"
+                      className="mb-1 block text-[11px] font-black uppercase tracking-widest text-gray-500"
+                    >
+                      Reason <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="confirm-reason"
+                      data-testid="force-cancel-reason"
+                      value={confirmReason}
+                      onChange={(e) => setConfirmReason(e.target.value)}
+                      rows={3}
+                      autoFocus
+                      disabled={confirming}
+                      placeholder="Why is this job being cancelled? Both parties will see this."
+                      className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 disabled:opacity-60"
+                    />
+                    {!confirmReason.trim() && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-700">
+                        A reason is required — it goes in the activity log.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* pb clears the home indicator on gesture-nav devices. */}
+              <div className="flex gap-2 px-5 pb-6 pt-4">
+                <button
+                  onClick={closeConfirm}
+                  disabled={confirming}
+                  className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Keep job
+                </button>
+                <button
+                  data-testid="confirm-destructive-action"
+                  onClick={runConfirmedAction}
+                  disabled={
+                    confirming ||
+                    (confirmConfig.reasonRequired && !confirmReason.trim())
+                  }
+                  className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    confirmConfig.tone === 'red'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
+                >
+                  {confirming ? confirmConfig.busyLabel : confirmConfig.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>,
     document.body
   );

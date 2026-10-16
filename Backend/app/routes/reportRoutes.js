@@ -12,8 +12,15 @@ router.post("/", reportController.createReport);
 // GET /api/reports/admin/all - Get all reports (admin only)
 router.get("/admin/all", adminAuth, reportController.getAllReports);
 
+// GET /api/reports/admin/combined - Reports + ReportedPosts in one normalized
+// feed (admin only). This is what the admin Flagged page reads.
+router.get("/admin/combined", adminAuth, reportController.getAllCombinedReports);
+
 // GET /api/reported-posts/admin/all - Get all reported posts (legacy collection)
 router.get("/reported-posts/admin/all", adminAuth, reportController.getAllReportedPosts);
+
+// PATCH /api/reports/bulk-status - Decide several reports (either collection) at once (admin)
+router.patch("/bulk-status", adminAuth, reportController.bulkUpdateReportStatus);
 
 // PUT /api/reported-posts/:reportId/status - Update reported post status (admin)
 router.put("/reported-posts/:reportId/status", adminAuth, reportController.updateReportedPostStatus);

@@ -1,55 +1,40 @@
 const verificationService = require('../services/verificationService');
+const Notification = require('../models/Notification');
 const { logActivity } = require('../utils/activityLogger');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
 
 const getAllVerifications = async (req, res) => {
-  try {
-    const { status, limit = 50, skip = 0 } = req.query;
+  const { status, limit = 50, skip = 0 } = req.query;
 
-    const verifications = await verificationService.getAllVerifications({
-      status,
-      limit,
-      skip
-    });
+  const verifications = await verificationService.getAllVerifications({
+    status,
+    limit,
+    skip
+  });
 
-    res.json({
-      success: true,
-      data: verifications
-    });
-  } catch (error) {
-    console.error('Error fetching verifications:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch verifications',
-      error: error.message
-    });
-  }
+  res.json({
+    success: true,
+    data: verifications
+  });
 };
 
 const getVerificationById = async (req, res) => {
-  try {
-    const { verificationId } = req.params;
+  const { verificationId } = req.params;
 
-    const verification = await verificationService.getVerificationById(verificationId);
+  const verification = await verificationService.getVerificationById(verificationId);
 
-    if (!verification) {
-      return res.status(404).json({
-        success: false,
-        message: 'Verification not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: verification
-    });
-  } catch (error) {
-    console.error('Error fetching verification:', error);
-    res.status(500).json({
+  if (!verification) {
+    return res.status(404).json({
       success: false,
-      message: 'Failed to fetch verification details',
-      error: error.message
+      message: 'Verification not found'
     });
   }
+
+  res.json({
+    success: true,
+    data: verification
+  });
 };
 
 const updateVerificationStatus = async (req, res) => {
@@ -106,6 +91,35 @@ const updateVerificationStatus = async (req, res) => {
       );
     }
 
+    // Tell the provider what to fix. The rejection reason and the "what the user
+    // needs to resubmit" note were stored only on the admin record — the app's
+    // status endpoint (getPublicData) returns neither — so the provider never
+    // saw them. The client already routes this type to its verification screen.
+    // Best-effort: the review has been saved either way.
+    const providerNotice = {
+      rejected: verification.rejectionReason && {
+        title: 'Verification Rejected',
+        message: `Your credential verification was rejected: ${verification.rejectionReason}`,
+      },
+      resubmission_requested: verification.adminNotes && {
+        title: 'Resubmission Requested',
+        message: `Please resubmit your credential verification: ${verification.adminNotes}`,
+      },
+    }[verification.status];
+    if (providerNotice) {
+      try {
+        await Notification.create({
+          userId: verification.userId?._id || verification.userId,
+          ...providerNotice,
+          type: 'credential_verification',
+          priority: 'high',
+          data: { verificationId: String(verification._id), status: verification.status },
+        });
+      } catch (notifyError) {
+        console.error('Error notifying provider of verification outcome:', notifyError);
+      }
+    }
+
     // Emit socket event for user update
     try {
       const targetUserIdForSocket = verification.userId?._id || verification.userId;
@@ -159,83 +173,56 @@ const updateVerificationStatus = async (req, res) => {
 };
 
 const getVerificationStats = async (req, res) => {
-  try {
-    const stats = await verificationService.getVerificationStats();
+  const stats = await verificationService.getVerificationStats();
 
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    console.error('Error fetching verification stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch verification stats',
-      error: error.message
-    });
-  }
+  res.json({
+    success: true,
+    data: stats
+  });
 };
 
 const getUserImages = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const attemptNumber = req.query.attempt ? parseInt(req.query.attempt, 10) : undefined;
+  const { userId } = req.params;
+  const attemptNumber = req.query.attempt ? parseInt(req.query.attempt, 10) : undefined;
 
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'UserId is required'
-      });
-    }
-
-    const data = await verificationService.getUserImages(userId, attemptNumber);
-
-    if (!data) {
-      return res.status(404).json({
-        success: false,
-        message: 'No verifications found for this user'
-      });
-    }
-
-    res.json({
-      success: true,
-      data
-    });
-  } catch (error) {
-    console.error('Error fetching user images:', error);
-    res.status(500).json({
+  if (!userId) {
+    return res.status(400).json({
       success: false,
-      message: 'Failed to fetch user images',
-      error: error.message
+      message: 'UserId is required'
     });
   }
+
+  const data = await verificationService.getUserImages(userId, attemptNumber);
+
+  if (!data) {
+    return res.status(404).json({
+      success: false,
+      message: 'No verifications found for this user'
+    });
+  }
+
+  res.json({
+    success: true,
+    data
+  });
 };
 
 const getVerificationByUserId = async (req, res) => {
-  try {
-    const { userId } = req.params;
+  const { userId } = req.params;
 
-    const verification = await verificationService.getVerificationByUserId(userId);
+  const verification = await verificationService.getVerificationByUserId(userId);
 
-    res.json({
-      success: true,
-      data: verification || null
-    });
-  } catch (error) {
-    console.error('Error fetching user verification:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch user verification details',
-      error: error.message
-    });
-  }
+  res.json({
+    success: true,
+    data: verification || null
+  });
 };
 
 module.exports = {
-  getAllVerifications,
-  getVerificationById,
-  getVerificationByUserId,
+  getAllVerifications: asyncHandler(getAllVerifications, 'Failed to fetch verifications'),
+  getVerificationById: asyncHandler(getVerificationById, 'Failed to fetch verification details'),
+  getVerificationByUserId: asyncHandler(getVerificationByUserId, 'Failed to fetch user verification details'),
   updateVerificationStatus,
-  getVerificationStats,
-  getUserImages
+  getVerificationStats: asyncHandler(getVerificationStats, 'Failed to fetch verification stats'),
+  getUserImages: asyncHandler(getUserImages, 'Failed to fetch user images'),
 };
