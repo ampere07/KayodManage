@@ -5,7 +5,8 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
 
 const getAllVerifications = async (req, res) => {
-  const { status, limit = 50, skip = 0 } = req.query;
+  // No default limit: see verificationService.getAllVerifications.
+  const { status, limit, skip = 0 } = req.query;
 
   const verifications = await verificationService.getAllVerifications({
     status,
@@ -66,25 +67,55 @@ const updateVerificationStatus = async (req, res) => {
 
     console.log('✅ Verification status updated successfully');
 
-    if (status === 'approved' || status === 'rejected') {
-      const actionType = status === 'approved' ? 'verification_approved' : 'verification_rejected';
-      const description = status === 'approved'
-        ? `Approved verification for ${verification.userId.name}`
-        : `Rejected verification for ${verification.userId.name}`;
+    // Every review outcome is an admin decision about this person, so each one
+    // is logged — not only approve/reject. Keyed by the stored (normalized)
+    // status, which is what was actually written.
+    const reviewAction = {
+      approved: { type: 'verification_approved', verb: 'Approved' },
+      rejected: { type: 'verification_rejected', verb: 'Rejected' },
+      resubmission_requested: { type: 'verification_resubmission_requested', verb: 'Requested resubmission of' },
+      flagged: { type: 'verification_flagged', verb: 'Flagged' },
+    }[verification.status];
+    const targetUserId = verification.userId?._id || verification.userId;
+    const targetName = verification.userId?.name || 'user';
 
-      const targetUserId = verification.userId?._id || verification.userId;
-
+    if (reviewAction) {
       await logActivity(
         req.user.id,
-        actionType,
-        description,
+        reviewAction.type,
+        `${reviewAction.verb} verification for ${targetName}`,
         {
           targetType: 'verification',
           targetId: targetUserId,
           targetModel: 'User',
           metadata: {
             verificationId: verification._id,
-            rejectionReason: rejectionReason || null
+            rejectionReason: rejectionReason || null,
+            adminNotes: adminNotes || null
+          },
+          ipAddress: req.ip
+        }
+      );
+    }
+
+    // "Reject & Ban" bans the account as well. Log the ban as its own action so
+    // it shows in the audit log's ban history and in the user's penalty count
+    // (GET /users/:id/penalties counts user_banned), same as a ban from Users.
+    if (verification.status === 'rejected' && banUser) {
+      await logActivity(
+        req.user.id,
+        'user_banned',
+        `Banned user ${targetName} indefinitely (verification rejected)`,
+        {
+          targetType: 'user',
+          targetId: targetUserId,
+          targetModel: 'User',
+          metadata: {
+            reason: rejectionReason || null,
+            duration: -1,
+            expiresAt: null,
+            source: 'verification_rejected',
+            verificationId: verification._id
           },
           ipAddress: req.ip
         }

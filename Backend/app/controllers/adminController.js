@@ -9,6 +9,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { auditLog, diffFields, describeChanges } = require('../utils/activityLogger');
 const { AUDIT_ACTIONS, SENSITIVE_ACTION_TYPES } = require('../constants/auditActions');
+const { listAdminSessions, presentSession, presentSignIn, byLastSeen } = require('../utils/adminSessions');
 
 // Get all reported posts with filtering and pagination
 const getReportedPosts = async (req, res) => {
@@ -527,6 +528,36 @@ const getAllAdmins = async (req, res) => {
     userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
   }).select('name email userType accountStatus createdAt lastLogin permissions');
 
+  // Where each admin is signed in now, and where they last signed in from.
+  const [liveSessions, lastSignIns] = await Promise.all([
+    listAdminSessions(req.sessionStore).catch((error) => {
+      console.error('Could not list sessions:', error.message);
+      return [];
+    }),
+    ActivityLog.aggregate([
+      { $match: { actionType: 'admin_login', adminId: { $in: admins.map((admin) => admin._id) } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$adminId',
+          logId: { $first: '$_id' },
+          createdAt: { $first: '$createdAt' },
+          ipAddress: { $first: '$ipAddress' },
+          userAgent: { $first: '$userAgent' },
+          metadata: { $first: '$metadata' }
+        }
+      }
+    ])
+  ]);
+  const sessionsOf = (adminId) => liveSessions
+    .filter((entry) => String(entry.data.adminId || entry.data.userId) === String(adminId))
+    .map((entry) => presentSession(entry, req.sessionID))
+    .sort(byLastSeen);
+  const lastSignInOf = (adminId) => {
+    const log = lastSignIns.find((entry) => String(entry._id) === String(adminId));
+    return log ? presentSignIn({ ...log, _id: log.logId }) : null;
+  };
+
   const formattedAdmins = admins.map(admin => ({
     _id: admin._id,
     uid: `KYD-${admin._id.toString().slice(-6).toUpperCase()}`,
@@ -546,7 +577,24 @@ const getAllAdmins = async (req, res) => {
     },
     accountStatus: admin.accountStatus,
     createdAt: admin.createdAt,
-    lastLogin: admin.lastLogin
+    lastLogin: admin.lastLogin,
+    signedInNow: (() => {
+      const sessions = sessionsOf(admin._id);
+      if (!sessions.length) return null;
+      const [latest] = sessions;
+      return {
+        count: sessions.length,
+        lastSeenAt: latest.lastSeenAt,
+        device: latest.device,
+        deviceType: latest.deviceType,
+        ipAddress: latest.ipAddress,
+        location: latest.location.label
+      };
+    })(),
+    lastSignIn: (() => {
+      const signIn = lastSignInOf(admin._id);
+      return signIn ? { ...signIn, location: signIn.location.label } : null;
+    })()
   }));
 
   res.json({
@@ -928,15 +976,20 @@ const getAdminActivity = async (req, res) => {
   const day = 24 * 60 * 60 * 1000;
   const since30 = new Date(Date.now() - 30 * day);
   const since7 = new Date(Date.now() - 7 * day);
+  // ?exclude=signins: the Edit Admin panel lists sign-ins on their own (with
+  // device, IP and place), so its timeline leaves them out.
+  const listFilter = req.query.exclude === 'signins'
+    ? { adminId, actionType: { $ne: 'admin_login' } }
+    : { adminId };
 
   const [activities, total, byAction, last7d, lastAction] = await Promise.all([
-    ActivityLog.find({ adminId })
+    ActivityLog.find(listFilter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .populate('targetId', 'name email title subject')
       .lean(),
-    ActivityLog.countDocuments({ adminId }),
+    ActivityLog.countDocuments(listFilter),
     ActivityLog.aggregate([
       { $match: { adminId: adminObjectId, createdAt: { $gte: since30 } } },
       { $group: { _id: '$actionType', count: { $sum: 1 } } },
@@ -993,13 +1046,20 @@ const getAdminActivity = async (req, res) => {
   });
 };
 
+/**
+ * GET /api/admin/admins/:adminId/sessions — where an admin is signed in right
+ * now (device, IP address, place, when they signed in and were last active)
+ * and their last few earlier sign-ins from the audit log. Reads the session store the
+ * app actually runs on (memory locally, MongoDB in production) and never sends
+ * a session id, which works like a password.
+ */
 const getAdminSessions = async (req, res) => {
   const { adminId } = req.params;
 
   const admin = await User.findOne({
     _id: adminId,
     userType: { $in: ['admin', 'superadmin', 'finance', 'customer support', 'support'] }
-  });
+  }).select('_id');
 
   if (!admin) {
     return res.status(404).json({
@@ -1008,134 +1068,24 @@ const getAdminSessions = async (req, res) => {
     });
   }
 
-  const sessionsCollection = mongoose.connection.db.collection('sessions');
-  
-  // Since sessions are stored as JSON strings, we need to fetch all and filter manually
-  const allSessions = await sessionsCollection.find({}).toArray();
-  
-  console.log(`Total sessions in DB: ${allSessions.length}`);
-  
-  // Filter sessions by parsing the JSON string
-  const sessions = allSessions.filter(session => {
-    let sessionData;
-    try {
-      if (typeof session.session === 'string') {
-        sessionData = JSON.parse(session.session);
-      } else {
-        sessionData = session.session;
-      }
-      
-      // Check if this session belongs to the admin
-      return sessionData.adminId === adminId || 
-             sessionData.userId === adminId;
-    } catch (e) {
-      return false;
-    }
-  });
+  const mine = (await listAdminSessions(req.sessionStore))
+    .filter((entry) => String(entry.data.adminId || entry.data.userId) === String(admin._id));
+  const sessions = mine.map((entry) => presentSession(entry, req.sessionID)).sort(byLastSeen);
 
-  console.log(`Found ${sessions.length} sessions for admin ${adminId}`);
-  
-  // Debug: Log first session if found
-  if (sessions.length > 0) {
-    let firstSessionData;
-    try {
-      firstSessionData = typeof sessions[0].session === 'string' 
-        ? JSON.parse(sessions[0].session) 
-        : sessions[0].session;
-      console.log('Session data:', JSON.stringify(firstSessionData, null, 2));
-    } catch (e) {
-      console.log('Could not parse session data');
-    }
-  }
-
-  const activeSessions = sessions.map(session => {
-    let sessionData = session.session || {};
-    
-    // Handle case where session might be a JSON string
-    if (typeof sessionData === 'string') {
-      try {
-        sessionData = JSON.parse(sessionData);
-      } catch (e) {
-        console.error('Failed to parse session data:', e);
-        sessionData = {};
-      }
-    }
-    
-    const userAgent = sessionData.userAgent || 'Unknown';
-    const ipAddress = sessionData.ipAddress || 'Unknown';
-    
-    let device = 'Unknown Device';
-    let os = 'Unknown OS';
-    
-    // If userAgent is 'Unknown', this is an old session created before we added device tracking
-    if (userAgent === 'Unknown') {
-      device = 'Web Browser on Desktop';
-      os = 'Unknown';
-    } else if (userAgent.includes('Mobile') || userAgent.includes('Android') || userAgent.includes('iPhone')) {
-      if (userAgent.includes('Android')) {
-        device = 'Mobile App on Android';
-        os = 'Android';
-      } else if (userAgent.includes('iPhone') || userAgent.includes('iOS')) {
-        device = 'Mobile App on iOS';
-        os = 'iOS';
-      } else {
-        device = 'Mobile Device';
-        os = 'Mobile';
-      }
-    } else {
-      if (userAgent.includes('Chrome') && !userAgent.includes('Edge')) {
-        device = 'Chrome';
-      } else if (userAgent.includes('Firefox')) {
-        device = 'Firefox';
-      } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
-        device = 'Safari';
-      } else if (userAgent.includes('Edg')) {
-        device = 'Edge';
-      } else {
-        device = 'Web Browser';
-      }
-      
-      if (userAgent.includes('Windows')) {
-        os = 'Windows';
-      } else if (userAgent.includes('Mac')) {
-        os = 'MacOS';
-      } else if (userAgent.includes('Linux')) {
-        os = 'Linux';
-      } else {
-        os = 'Desktop';
-      }
-      
-      device = `${device} on ${os}`;
-    }
-
-    // Handle location - prioritize location field over IP
-    let location;
-    if (sessionData.location) {
-      location = sessionData.location;
-    } else if (ipAddress && ipAddress !== 'Unknown') {
-      location = ipAddress;
-    } else {
-      location = 'Unknown';
-    }
-    
-    const lastAccess = session.expires || new Date();
-    const isCurrent = sessionData.sessionId === req.sessionID;
-
-    return {
-      _id: session._id,
-      device,
-      os,
-      location,
-      ipAddress,
-      lastAccess,
-      isCurrent,
-      userAgent
-    };
-  });
+  // Earlier sign-ins: the ones that started a still-live session are already
+  // listed above, so they're left out (matched by the entry id login stored).
+  const liveSignInIds = new Set(mine.map((entry) => entry.data.signInLogId).filter(Boolean));
+  const signIns = await ActivityLog.find({ adminId: admin._id, actionType: 'admin_login' })
+    .sort({ createdAt: -1 })
+    .limit(5 + liveSignInIds.size)
+    .select('createdAt ipAddress userAgent metadata')
+    .lean();
+  const earlier = signIns.filter((log) => !liveSignInIds.has(String(log._id))).slice(0, 5);
 
   res.json({
     success: true,
-    sessions: activeSessions
+    sessions,
+    recentSignIns: earlier.map(presentSignIn)
   });
 };
 

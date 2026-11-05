@@ -163,7 +163,11 @@ class VerificationService {
    * Get all verifications with optional filtering
    */
   async getAllVerifications(filters = {}) {
-    const { status, limit = 50, skip = 0 } = filters;
+    // No implicit cap. The Verifications page groups and counts on the client,
+    // so a default page here silently dropped every submission older than the
+    // newest 50 — the longest-waiting pending reviews first — and every stat
+    // card undercounted. A caller that wants a page passes limit/skip.
+    const { status, limit, skip = 0 } = filters;
 
     const query = {};
     if (status && status !== 'all') {
@@ -195,11 +199,12 @@ class VerificationService {
       };
     });
 
-    // Apply pagination after processing
-    const paginatedResults = verificationsWithAttempts
-      .slice(parseInt(skip), parseInt(skip) + parseInt(limit));
-
-    return paginatedResults;
+    // Apply pagination after processing, only when asked for
+    const start = parseInt(skip) || 0;
+    const pageSize = parseInt(limit);
+    return pageSize > 0
+      ? verificationsWithAttempts.slice(start, start + pageSize)
+      : verificationsWithAttempts.slice(start);
   }
 
   /**

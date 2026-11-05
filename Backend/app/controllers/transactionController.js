@@ -6,6 +6,44 @@ const Job = require('../models/Job');
 const { logActivity } = require('../utils/activityLogger');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
+const escapeRegex = require('../utils/escapeRegex');
+
+// The list's own filters (search, payment method, date range), shared by the
+// list and its counters so every counter is the rows clicking it would show.
+const transactionFilters = ({ search, paymentMethod, dateFrom, dateTo }) => {
+  const query = {};
+  if (search && String(search).trim()) {
+    // Escaped: what the admin types is text, not a pattern ("(" or "+63…"
+    // used to make the whole list request fail).
+    const term = escapeRegex(String(search).trim());
+    query.$or = [
+      { description: { $regex: term, $options: 'i' } },
+      { type: { $regex: term, $options: 'i' } }
+    ];
+  }
+  if (paymentMethod && paymentMethod !== 'all') query.paymentMethod = paymentMethod;
+  if (dateFrom || dateTo) {
+    query.createdAt = {};
+    if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+      query.createdAt.$lte = endDate;
+    }
+  }
+  return query;
+};
+
+// The list's orders: by date (newest first by default) or by amount.
+const TRANSACTION_SORTS = {
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  amount_desc: { amount: -1, createdAt: -1 },
+  amount_asc: { amount: 1, createdAt: -1 },
+};
+
+// Who a row names, with their account type so the list can label them.
+const PERSON_FIELDS = 'name email phone location profileImage userType';
 
 const getTransactions = async (req, res) => {
   const page = parseInt(req.query.page) || 1;
@@ -28,13 +66,9 @@ const getTransactions = async (req, res) => {
   }
   let dateQuery = {};
   
-  // Search functionality
-  if (search) {
-    query.$or = [
-      { description: { $regex: search, $options: 'i' } },
-      { type: { $regex: search, $options: 'i' } }
-    ];
-  }
+  // Search, payment method and date range: the same filters the counters use.
+  Object.assign(query, transactionFilters({ search, paymentMethod, dateFrom, dateTo }));
+  if (query.createdAt) dateQuery = query.createdAt;
   
   // Filter by type
   if (type && type !== 'all') {
@@ -50,33 +84,16 @@ const getTransactions = async (req, res) => {
     query.status = status;
   }
   
-  // Filter by payment method
-  if (paymentMethod && paymentMethod !== 'all') {
-    query.paymentMethod = paymentMethod;
-  }
-  
-  // Date range filter
-  if (dateFrom || dateTo) {
-    if (dateFrom) {
-      dateQuery.$gte = new Date(dateFrom);
-    }
-    if (dateTo) {
-      const endDate = new Date(dateTo);
-      endDate.setHours(23, 59, 59, 999);
-      dateQuery.$lte = endDate;
-    }
-    query.createdAt = dateQuery;
-  }
   
   // Fetch regular transactions
   const transactions = await Transaction.find(query)
-    .populate('fromUser', 'name email phone location profileImage')
-    .populate('toUser', 'name email phone location profileImage')
-    .populate('fromUserId', 'name email phone location profileImage')
-    .populate('toUserId', 'name email phone location profileImage')
+    .populate('fromUser', PERSON_FIELDS)
+    .populate('toUser', PERSON_FIELDS)
+    .populate('fromUserId', PERSON_FIELDS)
+    .populate('toUserId', PERSON_FIELDS)
     .populate({
       path: 'jobId',
-      select: 'title category categoryName professionName icon userId assignedToId budget',
+      select: 'title category categoryName professionName icon userId assignedToId budget agreedPrice',
       populate: [
         {
           path: 'userId',
@@ -88,7 +105,7 @@ const getTransactions = async (req, res) => {
         }
       ]
     })
-    .sort({ createdAt: -1 })
+    .sort(TRANSACTION_SORTS[req.query.sort] || TRANSACTION_SORTS.newest)
     .skip(skip)
     .limit(limit)
     .lean();
@@ -140,7 +157,7 @@ const getTransactions = async (req, res) => {
     if (search) {
       // For fee records, we can't search description directly, but we can search related job
       const searchedJobs = await Job.find({
-        title: { $regex: search, $options: 'i' }
+        title: { $regex: escapeRegex(String(search).trim()), $options: 'i' }
       }).select('_id');
       
       if (searchedJobs.length > 0) {
@@ -163,7 +180,7 @@ const getTransactions = async (req, res) => {
       })
       .populate({
         path: 'jobId',
-        select: 'title category categoryName professionName icon userId assignedToId budget',
+        select: 'title category categoryName professionName icon userId assignedToId budget agreedPrice',
         populate: [
           {
             path: 'userId',
@@ -340,10 +357,10 @@ const getTransactionDetails = async (req, res) => {
     }
   } else {
     transactionData = await Transaction.findById(transactionId)
-      .populate('fromUser', 'name email phone location profileImage')
-      .populate('toUser', 'name email phone location profileImage')
-      .populate('fromUserId', 'name email phone location profileImage')
-      .populate('toUserId', 'name email phone location profileImage')
+      .populate('fromUser', PERSON_FIELDS)
+      .populate('toUser', PERSON_FIELDS)
+      .populate('fromUserId', PERSON_FIELDS)
+      .populate('toUserId', PERSON_FIELDS)
       .populate({
         path: 'jobId',
         select: 'title description category categoryName professionName icon userId assignedToId budget',
@@ -496,7 +513,7 @@ const updateTransactionStatus = async (req, res) => {
   .populate('toUserId', 'name email phone location')
   .populate({
     path: 'jobId',
-    select: 'title category categoryName professionName icon userId assignedToId budget',
+    select: 'title category categoryName professionName icon userId assignedToId budget agreedPrice',
     populate: [
       {
         path: 'userId',
@@ -836,7 +853,9 @@ const declineRefund = async (req, res) => {
  */
 const getTransactionCounts = async (req, res) => {
   const { type } = req.query;
-  const match = type && type !== 'all' ? { type } : {};
+  // Narrowed by the list's search, payment method and date range, so each
+  // count is the rows the list shows for that status.
+  const match = { ...transactionFilters(req.query), ...(type && type !== 'all' ? { type } : {}) };
 
   const grouped = await Transaction.aggregate([
     { $match: match },
@@ -862,6 +881,9 @@ const getTransactionCounts = async (req, res) => {
     failedAmount: of('failed').amount,
     cancelled: of('cancelled').count,
     cancelledAmount: of('cancelled').amount,
+    // Every status present, including the ones without a field above
+    // (expired, processing, refunded…), so the counters always add up.
+    byStatus,
   });
 };
 

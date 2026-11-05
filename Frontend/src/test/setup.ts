@@ -8,3 +8,9 @@ import { afterEach } from 'vitest';
 afterEach(() => {
   cleanup();
 });
+
+// jsdom doesn't lay pages out, so it has no Element.scrollTo; side panels call
+// it to start each record at the top. A no-op keeps those panels testable.
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}

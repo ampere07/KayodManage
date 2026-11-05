@@ -47,6 +47,18 @@ export const settingsService = {
     return response.data;
   },
 
+  /** Jobs (all and still running) and providers per category and profession, matched by name. */
+  getJobCategoryUsage: async () => {
+    const response = await apiClient.get('/api/admin/configurations/job-categories/usage');
+    return response.data;
+  },
+
+  /** Per profession: whether the icon the app loads is there (true), missing (false) or unknown (null). */
+  getProfessionIconCheck: async () => {
+    const response = await apiClient.get('/api/admin/configurations/job-categories/icon-check');
+    return response.data;
+  },
+
   createJobCategory: async (data: CreateJobCategoryRequest) => {
     const response = await apiClient.post('/api/admin/configurations/job-categories', data);
     return response.data;

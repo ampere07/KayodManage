@@ -28,6 +28,8 @@ export interface CreateJobCategoryRequest {
   name: string;
   icon?: string;
   serviceClass?: ServiceClassId;
+  /** Professions to create with it; each inherits the category's class. */
+  professions?: { name: string }[];
 }
 
 export interface CreateProfessionRequest {
@@ -118,6 +120,23 @@ export interface AdOverlay {
 // stays the field the client app filters on.
 export type AdStatus = 'draft' | 'published' | 'paused';
 
+/** The carousels in the Kayod app an ad can show in. */
+export type AdPlacement = 'client_home' | 'provider_home';
+
+/** What the list calls an ad right now: its status, read with its schedule. */
+export type AdState = 'live' | 'scheduled' | 'paused' | 'draft' | 'ended';
+
+/** Views and taps the app counted (Backend utils/advertisementRules summarizeStats). */
+export interface AdStats {
+  views: number;
+  taps: number;
+  /** The last day it was seen or tapped ('YYYY-MM-DD', Philippine time). */
+  lastSeen: string | null;
+  /** The last 14 days, oldest first, zero-filled. */
+  daily: { day: string; views: number; taps: number }[];
+  byPlacement: Record<AdPlacement, { views: number; taps: number }>;
+}
+
 export interface Advertisement {
   _id: string;
   type: AdvertisementType;
@@ -130,15 +149,24 @@ export interface Advertisement {
   imageFileId: string;
   overlays: AdOverlay[];
   linkAction: string;
+  /** Where it shows. Missing (an ad from before placements) means the client home. */
+  placements?: AdPlacement[];
+  /** Shown from (null: as soon as it's published) … */
+  startsAt?: string | null;
+  /** … until (null: until it's paused). */
+  endsAt?: string | null;
   status: AdStatus;
   isActive: boolean;
   order: number;
+  /** Computed by the server on the admin list. */
+  state?: AdState;
+  stats?: AdStats;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
 
 export type AdvertisementInput = Partial<
-  Omit<Advertisement, '_id' | 'createdAt' | 'updatedAt'>
+  Omit<Advertisement, '_id' | 'createdAt' | 'updatedAt' | 'state' | 'stats'>
 >;
 
 export interface JobCategoriesResponse {

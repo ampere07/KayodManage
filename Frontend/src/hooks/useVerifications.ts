@@ -42,6 +42,9 @@ export const useUpdateVerificationStatus = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [VERIFICATIONS_QUERY_KEY] });
+      // A review changes the user record too: verified status, and Reject & Ban
+      // bans the account. The Users lists and their counts must not keep the old state.
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
 };

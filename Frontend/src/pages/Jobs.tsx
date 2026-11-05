@@ -1,177 +1,139 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Search,
-  CheckCircle,
-  Clock,
-  Wallet,
-  Calendar,
-  Users,
   Briefcase,
-  FolderOpen,
   LayoutGrid,
   Table2,
-  DollarSign,
+  MapPin,
+  Wallet,
+  Calendar,
+  Clock,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { getProfessionIconByName } from '../constants/categoryIcons';
 
 // Component imports
 import { JobDetailsModal } from '../components/Modals';
-import StatsCard from '../components/Dashboard/StatsCard';
-
-// Tpye imports
-import type { Job, JobsPagination } from '../types';
-
-
-// Utility imports
+import JobCounters from '../components/Jobs/JobCounters';
 import {
-  getInitials,
-  getJobStatusColor,
-  getJobStatusIcon,
-  formatPHPCurrency
-} from '../utils';
+  JobIcon,
+  StatusBadge,
+  StatusLine,
+  Person,
+  providerEmpty,
+  PriceText,
+  ago,
+} from '../components/Jobs/JobListParts';
+import { SortHeader, ListFooter, selectClass } from '../components/UI/ListControls';
+import {
+  JOB_STATUSES,
+  resolveJobIcon,
+  serviceLabel,
+} from '../components/Jobs/jobListHelpers';
+
+// Type imports
+import type { Job, JobsQuickFilter, JobsSort } from '../types';
 
 // Hooks
-import { useJobs, useJobCounts, useJobCategories, useJobMutations } from '../hooks/useJobs';
+import { useJobs, useJobsSummary, useJobCategories } from '../hooks/useJobs';
 import { useSocket as useSocketContext } from '../context/SocketContext';
+
+const STATUS_KEYS: string[] = ['all', ...JOB_STATUSES.map((s) => s.key)];
+const QUICK_FILTERS: JobsQuickFilter[] = ['dispute', 'no_quotes'];
+
+const SORTS: { value: JobsSort; label: string }[] = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'price_desc', label: 'Highest price' },
+  { value: 'price_asc', label: 'Lowest price' },
+];
 
 /**
  * Jobs Management Page
- * Displays and manages all jobs in the system
+ * Every job on the platform: where the marketplace's jobs stand, the two kinds
+ * that need an admin's eye (disputes, open jobs nobody has quoted on), and a
+ * list whose rows say what each job is waiting on.
  */
 const Jobs: React.FC = () => {
-  // State management
+  // The status tab and quick filter live in the URL, so links can open the
+  // page on them (/jobs?status=open) and the sidebar's "All Jobs" resets them.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusParam = searchParams.get('status') || 'all';
+  const statusFilter = STATUS_KEYS.includes(statusParam) ? statusParam : 'all';
+  const flagParam = searchParams.get('flag') as JobsQuickFilter | null;
+  const flag = flagParam && QUICK_FILTERS.includes(flagParam) ? flagParam : null;
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+  const [sort, setSort] = useState<JobsSort>('newest');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobModal, setJobModal] = useState({ isOpen: false });
-  const [pagination, setPagination] = useState<JobsPagination>({
-    page: 1,
-    limit: 20,
-    total: 0,
-    pages: 0
-  });
-  const { categories, professionsList } = useJobCategories();
   const [mobileViewType, setMobileViewType] = useState<'card' | 'table'>('card');
+  const { categories, professionsList } = useJobCategories();
 
-  // Resolver logic adapted from Dashboard.tsx for icons parity
-  const resolveIconForJob = useMemo(() => (jobCategory: string, jobIcon?: string) => {
-    if (!jobCategory) return { imagePath: '/assets/icons/categories/professional-services.png', label: 'General Service' };
+  const setFilters = (status: string, nextFlag: JobsQuickFilter | null) => {
+    const next = new URLSearchParams();
+    if (status !== 'all') next.set('status', status);
+    if (nextFlag) next.set('flag', nextFlag);
+    setSearchParams(next, { replace: true });
+  };
 
-    // First, try to find the profession in categories data to get the correct icon
-    const normalizedSearch = jobCategory.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    
-    for (const c of categories) {
-      const prof = c.professions?.find((p: any) => {
-        const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
-      });
-      if (prof && prof.icon) {
-        return getProfessionIconByName(prof.icon, c.icon);
-      }
-    }
+  // Counters toggle: the selected one clicked again shows every job. A quick
+  // filter is a view of its own, so choosing a status leaves it.
+  const chooseStatus = (status: string) => setFilters(status === statusFilter && !flag ? 'all' : status, null);
+  const toggleFlag = (next: JobsQuickFilter) => {
+    if (flag === next) setFilters(statusFilter, null);
+    else setFilters(next === 'no_quotes' ? 'open' : 'all', next);
+  };
 
-    // If ik: prefix (ImageKit), pass directly to getProfessionIconByName
-    if (jobIcon && jobIcon.startsWith('ik:')) {
-      const resolved = getProfessionIconByName(jobIcon);
-      return resolved;
-    }
+  const anyFilterActive = Boolean(searchTerm) || statusFilter !== 'all' || flag !== null
+    || professionFilter !== 'all' || paymentMethodFilter !== 'all' || sort !== 'newest';
+  const clearFilters = () => {
+    setSearchTerm('');
+    setProfessionFilter('all');
+    setPaymentMethodFilter('all');
+    setSort('newest');
+    setFilters('all', null);
+  };
 
-    // If a direct icon path or URL is provided, use it
-    if (jobIcon && (jobIcon.startsWith('http') || jobIcon.includes('.'))) {
-      // Strip custom: prefix if present
-      const iconFileName = jobIcon.startsWith('custom:') ? jobIcon.replace('custom:', '') : jobIcon;
-      return {
-        imagePath: jobIcon.startsWith('http') ? jobIcon : `/assets/icons/professions/${iconFileName}`,
-        label: jobCategory
-      };
-    }
-
-    let categoryIconStr = '';
-    let iconStr = '';
-
-    // 1. Try to find in fetched categories/professions (with normalization)
-    const cat = categories.find((c: any) => c.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch);
-    if (cat) {
-      categoryIconStr = cat.icon || '';
-    } else {
-      for (const c of categories) {
-        const prof = c.professions?.find((p: any) => {
-          const pNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return pNorm === normalizedSearch || pNorm.includes(normalizedSearch) || normalizedSearch.includes(pNorm);
-        });
-        if (prof) {
-          iconStr = prof.icon || '';
-          categoryIconStr = c.icon || '';
-          break;
-        }
-      }
-    }
-
-    // 2. Legacy/Fuzzy mapping fallback for known platform variants
-    if (!iconStr) {
-      const legacyMap: Record<string, string> = {
-        'catering': 'custom:catering.webp',
-        'painting': 'custom:painter.webp',
-        'beauty': 'custom:beauty--personal-care.webp',
-        'cleaning': 'custom:house-cleaning.webp',
-        'carpentry': 'custom:carpentry-cabinetry.webp',
-        'acrefrigeration': 'custom:ac--refrigerator.webp',
-        'acref': 'custom:ac--refrigerator.webp',
-        'gardening': 'custom:gardening--landscaping.webp',
-        'landscaping': 'custom:gardening--landscaping.webp',
-        'moving': 'custom:lipat-bahay-mover.webp',
-        'delivery': 'custom:delivery.webp',
-        'courier': 'custom:delivery.webp',
-        'computerrepair': 'custom:computer-technician.webp',
-        'itrep': 'custom:computer-technician.webp',
-        'automechanic': 'custom:auto-mechanic.webp',
-        'automecanic': 'custom:auto-mechanic.webp',
-        'creativedesign': 'custom:graphic-design.webp',
-        'graphicdesign': 'custom:graphic-design.webp',
-        'logo': 'custom:graphic-design.webp',
-        'housekeeping': 'custom:house-cleaning.webp',
-        'handyman': 'custom:general-handyman.webp',
-        'maintenance': 'custom:general-handyman.webp',
-        'welding': 'custom:welding.webp',
-        'architecture': 'custom:architecture-drafting.webp',
-        'architectural': 'custom:architecture-drafting.webp',
-        'architecturedrafting': 'custom:architecture-drafting.webp'
-      };
-      iconStr = legacyMap[normalizedSearch] || '';
-    }
-
-    const resolved = getProfessionIconByName(iconStr, categoryIconStr);
-    return resolved;
-  }, [categories]);
+  const resolveIcon = useMemo(
+    () => (job: Job) => {
+      const icon = resolveJobIcon(categories, job.professionName || job.categoryName || job.category || '', job.icon);
+      // Cache-bust ImageKit icons with the job's last update.
+      return job.icon?.startsWith('ik:') && job.updatedAt ? `${icon.imagePath}?v=${new Date(job.updatedAt).getTime()}` : icon.imagePath;
+    },
+    [categories]
+  );
 
   const queryParams = useMemo(() => ({
-    page: pagination.page,
-    limit: pagination.limit,
+    page,
+    limit,
     ...(searchTerm && { search: searchTerm }),
     ...(statusFilter !== 'all' && { status: statusFilter }),
     ...(professionFilter !== 'all' && { profession: professionFilter }),
     ...(paymentMethodFilter !== 'all' && { paymentMethod: paymentMethodFilter }),
-  }), [pagination.page, pagination.limit, searchTerm, statusFilter, professionFilter, paymentMethodFilter]);
+    ...(flag && { flag }),
+    ...(sort !== 'newest' && { sort }),
+  }), [page, limit, searchTerm, statusFilter, professionFilter, paymentMethodFilter, flag, sort]);
 
   const queryClient = useQueryClient();
   const { socket } = useSocketContext();
-  const { data: jobsData, isLoading } = useJobs(queryParams);
-  const { data: jobCounts = { total: 0, open: 0, inProgress: 0, completed: 0, totalValue: 0 } } = useJobCounts();
-  const mutations = useJobMutations();
+  const { data: jobsData, isLoading, isPlaceholderData } = useJobs(queryParams);
+  const { data: summary } = useJobsSummary();
 
   const jobs = jobsData?.jobs || [];
-  const loading = isLoading;
+  const total = jobsData?.pagination?.total || 0;
+  const pages = jobsData?.pagination?.pages || 0;
 
   useEffect(() => {
     if (!socket) return;
 
     const handleJobUpdate = (data: any) => {
-      console.log('Job updated via socket:', data);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
 
       if (data.updateType === 'hidden') {
@@ -189,55 +151,36 @@ const Jobs: React.FC = () => {
   }, [socket, queryClient]);
 
   useEffect(() => {
-    if (jobsData?.pagination) {
-      setPagination(prev => ({
-        ...prev,
-        total: jobsData.pagination.total || 0,
-        pages: jobsData.pagination.pages || 0
-      }));
-    }
-  }, [jobsData]);
+    setPage(1);
+  }, [searchTerm, statusFilter, professionFilter, paymentMethodFilter, flag, sort, limit]);
 
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter, professionFilter, paymentMethodFilter]);
-
-  /**
-   * Open job details modal
-   */
   const openJobModal = (job: Job) => {
     setSelectedJob(job);
     setJobModal({ isOpen: true });
   };
 
-  /**
-   * Close job details modal
-   */
   const closeJobModal = () => {
     setJobModal({ isOpen: false });
     setTimeout(() => setSelectedJob(null), 300);
   };
 
-  /**
-   * Format currency with zero decimals
-   */
-  const formatCurrency = (amount: number) => {
-    if (!amount || isNaN(amount)) {
-      return '₱0';
-    }
-    return formatPHPCurrency(amount, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).replace('PHP', '₱');
-  };
+  const professionOptions = [...new Set(professionsList)].map((prof: any) => (
+    <option key={prof} value={prof} className="capitalize">{prof}</option>
+  ));
+  // What an empty list means depends on what was asked for.
+  const empty = flag === 'dispute' && !searchTerm
+    ? { title: 'No open disputes', text: 'Every booking is going ahead without a dispute.' }
+    : flag === 'no_quotes' && !searchTerm
+      ? { title: 'Every open job has a quote', text: 'Providers have quoted on all of the open jobs.' }
+      : { title: 'No jobs found', text: 'Try adjusting your search or filters.' };
 
   return (
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-4 pt-3 pb-3 md:px-6 md:py-5">
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
                   <Briefcase className="h-5 w-5 text-blue-600" />
@@ -247,220 +190,95 @@ const Jobs: React.FC = () => {
                 </h1>
               </div>
               <p className="text-xs text-gray-500 font-medium">
-                Monitor and manage all service requests across the platform
+                {summary ? `${summary.total.toLocaleString()} jobs on the platform` : 'Every service request on the platform'}, and what each one is waiting on
               </p>
             </div>
-
-
           </div>
 
-          {/* Mobile Header */}
-          <div className="md:hidden">
-            {/* Summary strip */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Revenue</p>
-                <p className="text-base font-black text-emerald-600 leading-tight">{formatCurrency(jobCounts.totalValue)}</p>
-              </div>
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Jobs</p>
-                <p className="text-base font-black text-gray-900 leading-tight">{jobCounts.total.toLocaleString()}</p>
-              </div>
-            </div>
-
-            {/* Horizontal filter pills */}
-            <div className="flex gap-2">
-              {([
-                { label: 'All',      value: jobCounts.total,     filter: 'all',         Icon: Briefcase   as React.ElementType, activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'Open',     value: jobCounts.open,      filter: 'open',        Icon: FolderOpen  as React.ElementType, activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-                { label: 'Assigned', value: jobCounts.inProgress, filter: 'in_progress', Icon: Clock       as React.ElementType, activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
-                { label: 'Done',     value: jobCounts.completed, filter: 'completed',   Icon: CheckCircle as React.ElementType, activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
-              ] as { label: string; value: number; filter: string; Icon: React.ElementType; activeBg: string; border: string }[]).map(({ label, value, filter, Icon, activeBg, border }) => {
-                const active = statusFilter === filter;
-                return (
-                  <button
-                    key={filter}
-                    onClick={() => setStatusFilter(filter)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <Icon className="h-3 w-3 flex-shrink-0" />
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Desktop Stats Grid */}
-          <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('all')}>
-              <StatsCard
-                title="Total"
-                value={jobCounts.total.toLocaleString()}
-                icon={Briefcase}
-                color="blue"
-                variant="tinted"
-                isActive={statusFilter === 'all'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('open')}>
-              <StatsCard
-                title="Open"
-                value={jobCounts.open.toLocaleString()}
-                icon={FolderOpen}
-                color="green"
-                variant="tinted"
-                isActive={statusFilter === 'open'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('in_progress')}>
-              <StatsCard
-                title="Assigned"
-                value={jobCounts.inProgress.toLocaleString()}
-                icon={Clock}
-                color="indigo"
-                variant="tinted"
-                isActive={statusFilter === 'in_progress'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer transition-transform active:scale-95" onClick={() => setStatusFilter('completed')}>
-              <StatsCard
-                title="Done"
-                value={jobCounts.completed.toLocaleString()}
-                icon={CheckCircle}
-                color="purple"
-                variant="tinted"
-                isActive={statusFilter === 'completed'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="md:col-span-1">
-              <StatsCard
-                title="Revenue"
-                value={formatCurrency(jobCounts.totalValue)}
-                icon={DollarSign}
-                color="green"
-                variant="solid"
-                smallIcon={true}
-                horizontalMobile={true}
-              />
-            </div>
-          </div>
+          <JobCounters
+            summary={summary}
+            status={statusFilter}
+            flag={flag}
+            onStatus={chooseStatus}
+            onFlag={toggleFlag}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+          />
         </div>
 
-        {/* Filter Bar */}
-        <div className="px-4 py-2 md:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
-
-          {/* Mobile Row 1: Search + View Toggle */}
-          <div className="flex items-center gap-2 md:contents">
-            <div className="relative flex-1 md:order-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5" />
+        {/* Filter Bar — one bar for every width. Phones stack it (search, then
+            the three selects); from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="order-1 lg:order-none flex items-center gap-2 w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
                 data-testid="admin-jobs-search"
                 placeholder="Search jobs, categories, or IDs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm h-8 md:h-10 md:pl-10 md:pr-4 md:rounded-xl md:text-sm"
+                className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
               />
             </div>
 
-            {/* Page Limit - Mobile only */}
+            {/* Page Limit - phones (the desktop one sits by the pages) */}
             <select
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-              className="md:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
             </select>
-          </div>
 
-          {/* Mobile Row 2: Professions + Payment */}
-          <div className="grid grid-cols-2 gap-2 md:hidden">
-            <select
-              value={professionFilter}
-              onChange={(e) => setProfessionFilter(e.target.value)}
-              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 truncate h-8"
-            >
-              <option value="all">Professions</option>
-              {[...new Set(professionsList)].map((prof: any) => (
-                <option key={prof} value={prof} className="capitalize">{prof}</option>
-              ))}
-            </select>
-            <select
-              value={paymentMethodFilter}
-              onChange={(e) => setPaymentMethodFilter(e.target.value)}
-              className="w-full bg-white px-2 py-1.5 border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8"
-            >
-              <option value="all">Payment</option>
-              <option value="wallet">Wallet</option>
-              <option value="xendit">Xendit</option>
-            </select>
-          </div>
-
-          {/* Desktop: Professions + Payment + Page Limit + View Toggle */}
-          <div className="hidden md:flex items-center justify-end gap-6 md:order-2">
-            <div className="flex items-center gap-2">
-              <select
-                value={professionFilter}
-                onChange={(e) => setProfessionFilter(e.target.value)}
-                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[140px] truncate"
-              >
-                <option value="all">Professions</option>
-                {[...new Set(professionsList)].map((prof: any) => (
-                  <option key={prof} value={prof} className="capitalize">{prof}</option>
-                ))}
-              </select>
-              <select
-                value={paymentMethodFilter}
-                onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[110px]"
-              >
-                <option value="all">Payment</option>
-                <option value="wallet">Wallet</option>
-                <option value="xendit">Xendit</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
-            <div className="flex items-center bg-white border border-gray-200 rounded-[12px] p-1 shadow-sm shrink-0">
+            {/* The phone list switches between cards and a compact list; the
+                desktop table has one layout, so the toggle isn't shown there. */}
+            <div className="lg:hidden flex items-center bg-white border border-gray-200 rounded-lg p-0.5 shadow-sm shrink-0 h-8">
               <button
+                type="button"
+                aria-label="Card view"
+                aria-pressed={mobileViewType === 'card'}
                 onClick={() => setMobileViewType('card')}
-                className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`p-1.5 rounded-md transition-all ${mobileViewType === 'card' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
+                aria-label="Compact list view"
+                aria-pressed={mobileViewType === 'table'}
                 onClick={() => setMobileViewType('table')}
-                className={`p-1.5 rounded-[10px] transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`p-1.5 rounded-md transition-all ${mobileViewType === 'table' ? 'bg-blue-50 text-blue-600 shadow-inner' : 'text-gray-400 hover:text-gray-600'}`}
               >
                 <Table2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
+
+          <div className="order-2 lg:order-none grid grid-cols-3 gap-2 w-full lg:contents">
+            <select value={professionFilter} onChange={(e) => setProfessionFilter(e.target.value)} className={`${selectClass} lg:w-[150px]`}>
+              <option value="all">Professions</option>
+              {professionOptions}
+            </select>
+            <select value={paymentMethodFilter} onChange={(e) => setPaymentMethodFilter(e.target.value)} className={`${selectClass} lg:w-[130px]`}>
+              <option value="all">Payment</option>
+              <option value="wallet">Wallet</option>
+              <option value="xendit">Xendit</option>
+            </select>
+            <select value={sort} onChange={(e) => setSort(e.target.value as JobsSort)} aria-label="Sort jobs" className={`${selectClass} lg:w-[170px] xl:hidden`}>
+              {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
+        <div className={`flex-1 overflow-y-auto transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -468,306 +286,196 @@ const Jobs: React.FC = () => {
               </div>
             </div>
           ) : jobs.length === 0 ? (
-            <div className="bg-white p-12 text-center">
-              <div className="text-gray-400 mb-4">
+            <div className="bg-white p-12 text-center" data-testid="jobs-empty">
+              <div className="text-gray-300 mb-4">
                 <Search className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-medium">No jobs found</p>
-              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              <p className="text-gray-700 font-semibold">{empty.title}</p>
+              <p className="text-sm text-gray-500 mt-1">{empty.text}</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show all jobs
+                </button>
+              )}
             </div>
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden md:block bg-white flex-1 relative overflow-hidden">
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
                 <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
-                    <tr className="border-b border-gray-200">
-                      <th className="w-[35%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Job Information
+                    <tr>
+                      <th className="w-[37%] xl:w-[34%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Job
                       </th>
-                      <th className="w-[20%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Requested By
+                      <th className="w-[26%] xl:w-[24%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Client &amp; provider
                       </th>
-                      <th className="w-[18%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[21%] xl:w-[17%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[12%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Price
+                      <th
+                        className="w-[16%] xl:w-[12%] px-4 xl:px-6 py-3.5 text-right text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'price_desc' ? 'descending' : sort === 'price_asc' ? 'ascending' : 'none'}
+                      >
+                        <SortHeader
+                          label="Price"
+                          dir={sort === 'price_desc' ? 'desc' : sort === 'price_asc' ? 'asc' : null}
+                          onClick={() => setSort(sort === 'price_desc' ? 'price_asc' : 'price_desc')}
+                        />
                       </th>
-                      <th className="w-[15%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Posted
+                      <th
+                        className="hidden xl:table-cell w-[13%] px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'newest' ? 'descending' : sort === 'oldest' ? 'ascending' : 'none'}
+                      >
+                        <SortHeader
+                          label="Posted"
+                          dir={sort === 'newest' ? 'desc' : sort === 'oldest' ? 'asc' : null}
+                          onClick={() => setSort(sort === 'newest' ? 'oldest' : 'newest')}
+                        />
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
-                      // Add cache-busting using profession's updatedAt timestamp
-                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
-                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
-                        : iconData.imagePath;
-                      return (
-                        <tr
-                          key={job._id}
-                          data-testid={`admin-job-row-${job._id}`}
-                          onClick={() => openJobModal(job)}
-                          className="group transition-all duration-150 cursor-pointer h-20"
-                        >
-                          <td className="w-[35%] px-6 py-2 border-b border-gray-300 h-20 align-middle overflow-hidden max-w-full">
-                            <div className="flex items-center gap-4 w-full h-full">
-                              <div className="h-14 w-14 flex-shrink-0 flex items-center justify-center">
-                                <img
-                                  src={iconPath}
-                                  alt={job.professionName || job.categoryName || job.category || 'Category'}
-                                  className="h-14 w-14 object-contain group-hover:scale-105 transition-transform"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                    (e.target as HTMLImageElement).onerror = null;
-                                  }}
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1 overflow-hidden">
-                                <p className="text-[10px] text-gray-400 font-bold tracking-wider mb-1 truncate whitespace-nowrap">
-                                  {(() => {
-                                    const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
-                                    return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                                  })()}
-                                </p>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
-                                    {job.title}
-                                  </p>
-                                </div>
-                                <p className="text-[11px] text-gray-600 font-medium truncate whitespace-nowrap" title={job.description}>
-                                  {job.description || 'No description'}
-                                </p>
-                              </div>
+                  <tbody className="bg-white">
+                    {jobs.map((job) => (
+                      <tr
+                        key={job._id}
+                        data-testid={`admin-job-row-${job._id}`}
+                        onClick={() => openJobModal(job)}
+                        className="group h-20 cursor-pointer transition-colors hover:bg-gray-50/70"
+                      >
+                        <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle overflow-hidden">
+                          <div className="flex items-center gap-4 min-w-0">
+                            <div className="h-12 w-12 flex-shrink-0 flex items-center justify-center">
+                              <JobIcon src={resolveIcon(job)} className="h-12 w-12 object-contain group-hover:scale-105 transition-transform" />
                             </div>
-                          </td>
-                          <td className="w-[20%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 flex-shrink-0">
-                                <span className="text-[10px] font-bold text-gray-500">{getInitials(job.user?.name || 'U')}</span>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-gray-900 truncate">{job.user?.name || 'Anonymous'}</p>
-                                <p className="text-[10px] text-gray-400 truncate mt-0.5">{job.user?.phoneNumber || job.user?.phone || 'No phone number'}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="w-[18%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                            <div className="flex justify-center">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getJobStatusColor(job.status)} shadow-sm`}>
-                                {getJobStatusIcon(job.status)}
-                                {job.status.replace('_', ' ')}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="w-[12%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
-                            <div className="flex flex-col items-center">
-                              <p className="text-sm font-black text-gray-900">
-                                {formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0))}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[10px] text-gray-400 font-bold tracking-wider truncate">{serviceLabel(job)}</p>
+                              <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">{job.title}</p>
+                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500 min-w-0">
+                                {job.locationDisplay && job.locationDisplay !== 'Location not specified' ? (
+                                  <>
+                                    <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                    <span className="truncate" title={job.locationDisplay}>{job.locationDisplay}</span>
+                                  </>
+                                ) : (
+                                  <span className="truncate" title={job.description}>{job.description || 'No description'}</span>
+                                )}
+                                {/* Below xl the Posted column is hidden; its age rides here. */}
+                                <span className="xl:hidden flex-shrink-0 text-gray-400">· {ago(job.createdAt)}</span>
                               </p>
-                              <div className="flex items-center gap-1 text-[9px] font-black text-gray-400 uppercase mt-0.5">
-                                <Wallet className="h-2.5 w-2.5" />
-                                {job.paymentMethod}
-                              </div>
                             </div>
-                          </td>
-                          <td className="w-[15%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                            <div className="flex flex-col">
-                              <p className="text-xs font-bold text-gray-900">
-                                {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                              </p>
-                              <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(job.createdAt).toLocaleDateString()}
-                              </div>
+                          </div>
+                        </td>
+                        <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                          <div className="space-y-2 min-w-0">
+                            <Person role="Client" name={job.user?.name} empty="Unknown client" />
+                            <Person role="Provider" name={job.assignedTo?.name} empty={providerEmpty(job)} />
+                          </div>
+                        </td>
+                        <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                          <div className="flex flex-col items-start gap-1.5 min-w-0">
+                            <StatusBadge status={job.status} />
+                            <StatusLine job={job} className="text-[11px] max-w-full" />
+                          </div>
+                        </td>
+                        <td className="px-4 xl:px-6 py-2 text-right border-b border-gray-200 h-20 align-middle">
+                          <div className="flex flex-col items-end">
+                            <PriceText job={job} className="text-sm" />
+                            <div className="flex items-center gap-1 text-[9px] font-black text-gray-400 uppercase mt-0.5">
+                              <Wallet className="h-2.5 w-2.5" />
+                              {job.paymentMethod}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          </div>
+                        </td>
+                        <td className="hidden xl:table-cell px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                          <p className="text-xs font-bold text-gray-900 truncate">
+                            {ago(job.createdAt)}
+                          </p>
+                          <div className="flex items-center gap-1 text-[10px] font-medium text-gray-400 mt-1">
+                            <Calendar className="h-3 w-3" />
+                            {format(new Date(job.createdAt), 'MMM d, yyyy')}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Mobile Toggleable View */}
-              <div className="md:hidden flex-1 flex flex-col min-h-0 bg-white">
+              {/* Phones and tablets */}
+              <div className="lg:hidden flex-1 flex flex-col min-h-0 bg-white">
                 {mobileViewType === 'card' ? (
                   <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
-                    {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
-                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
-                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
-                        : iconData.imagePath;
-                      const price = formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0));
-                      const categoryLabel = (() => {
-                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
-                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                      })();
-                      return (
-                        <div
-                          key={job._id}
-                          onClick={() => openJobModal(job)}
-                          className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                        >
-                          {/* Main Row */}
-                          <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
-                            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
-                              <img
-                                src={iconPath}
-                                alt=""
-                                className="h-9 w-9 object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                  (e.target as HTMLImageElement).onerror = null;
-                                }}
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[130px]">
-                                  {categoryLabel}
-                                </span>
-                              </div>
-                              <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
-                            </div>
-                            {/* Status badge */}
-                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white flex-shrink-0`}>
-                              {getJobStatusIcon(job.status)}
-                              {job.status.replace('_', ' ')}
-                            </span>
+                    {jobs.map((job) => (
+                      <div
+                        key={job._id}
+                        onClick={() => openJobModal(job)}
+                        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
+                          <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                            <JobIcon src={resolveIcon(job)} className="h-9 w-9 object-contain" />
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-gray-400 tracking-wider truncate">{serviceLabel(job)}</p>
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
+                            <StatusLine job={job} className="mt-1 text-[11px]" />
+                          </div>
+                          <StatusBadge status={job.status} small />
+                        </div>
 
-                          {/* Footer strip */}
-                          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
-                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                              <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
-                                {getInitials(job.user?.name || 'U')}
-                              </div>
-                              <p className="text-[10px] font-bold text-gray-500 truncate">{job.user?.name || 'Anonymous'}</p>
-                            </div>
-                            <p className="text-sm font-black text-gray-900 flex-shrink-0">{price}</p>
-                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
-                              <Clock className="h-2.5 w-2.5" />
-                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                            </div>
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <Person small role="Client" name={job.user?.name} empty="Unknown client" />
+                            {job.assignedTo?.name && <Person small role="Provider" name={job.assignedTo.name} />}
+                          </div>
+                          <PriceText job={job} className="text-sm flex-shrink-0" />
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                            <Clock className="h-2.5 w-2.5" />
+                            {ago(job.createdAt)}
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto py-2 space-y-px bg-gray-100">
-                    {jobs.map((job) => {
-                      const iconData = resolveIconForJob(job.professionName || job.categoryName || job.category || '', job.icon);
-                      const iconPath = job.icon?.startsWith('ik:') && job.updatedAt
-                        ? `${iconData.imagePath}?v=${new Date(job.updatedAt).getTime()}`
-                        : iconData.imagePath;
-                      const price = formatCurrency(job.budget > 0 ? job.budget : (job.agreedPrice || job.acceptedProvider?.agreedPrice || 0));
-                      const categoryLabel = (() => {
-                        const lbl = job.professionName || job.categoryName || job.category || iconData.label || '';
-                        return /^[a-fA-F0-9]{24}$/.test(lbl) ? 'General Service' : lbl;
-                      })();
-                      return (
-                        <div
-                          key={job._id}
-                          onClick={() => openJobModal(job)}
-                          className="bg-white flex items-center gap-3 px-4 py-3 active:bg-gray-50 transition-colors"
-                        >
-                          {/* Icon */}
-                          <div className="h-10 w-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
-                            <img
-                              src={iconPath}
-                              alt=""
-                              className="h-7 w-7 object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = '/assets/icons/categories/professional-services.png';
-                                (e.target as HTMLImageElement).onerror = null;
-                              }}
-                            />
-                          </div>
+                    {jobs.map((job) => (
+                      <div
+                        key={job._id}
+                        onClick={() => openJobModal(job)}
+                        className="bg-white flex items-center gap-3 px-4 py-3 active:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        <div className="h-10 w-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
+                          <JobIcon src={resolveIcon(job)} className="h-7 w-7 object-contain" />
+                        </div>
 
-                          {/* Middle: category + title + customer */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate max-w-[140px]">
-                                {categoryLabel}
-                              </span>
-                            </div>
-                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <div className="h-4 w-4 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-[7px] font-black text-gray-500 flex-shrink-0">
-                                {getInitials(job.user?.name || 'U')}
-                              </div>
-                              <p className="text-[10px] text-gray-400 font-bold truncate">{job.user?.name || 'Anonymous'}</p>
-                              <span className="text-gray-300">·</span>
-                              <div className="flex items-center gap-0.5 text-[10px] font-bold text-gray-400 flex-shrink-0">
-                                <Users className="h-2.5 w-2.5" />
-                                {job.applicationCount || 0}
-                              </div>
-                            </div>
-                          </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold text-gray-400 tracking-wider truncate">{serviceLabel(job)}</p>
+                          <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{job.title}</p>
+                          <StatusLine job={job} className="mt-0.5 text-[10px]" />
+                        </div>
 
-                          {/* Right: status + price + time */}
-                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                            <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${getJobStatusColor(job.status)} bg-white`}>
-                              {getJobStatusIcon(job.status)}
-                              {job.status.replace('_', ' ')}
-                            </span>
-                            <p className="text-sm font-black text-gray-900">{price}</p>
-                            <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400">
-                              <Clock className="h-2.5 w-2.5" />
-                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                            </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <StatusBadge status={job.status} small />
+                          <PriceText job={job} className="text-sm" />
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400">
+                            <Clock className="h-2.5 w-2.5" />
+                            {ago(job.createdAt)}
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-
             </>
           )}
         </div>
 
-        {!loading && jobs.length > 0 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 font-inter h-[65px] flex items-center">
-            <div className="flex items-center justify-between w-full">
-              <div>
-                <p className="text-xs md:text-sm text-gray-700">
-                  Showing{' '}
-                  <span className="font-medium">
-                    {((pagination.page - 1) * pagination.limit) + 1}
-                  </span>{' '}
-                  to{' '}
-                  <span className="font-medium">
-                    {Math.min(pagination.page * pagination.limit, pagination.total)}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-medium">{pagination.total}</span> results
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
-                  disabled={pagination.page === pagination.pages}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+        {!isLoading && jobs.length > 0 && (
+          <ListFooter page={page} limit={limit} total={total} pages={pages} onPage={setPage} onLimit={setLimit} />
         )}
       </div>
 

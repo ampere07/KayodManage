@@ -2,6 +2,9 @@ const JobCategory = require('../models/JobCategory');
 const { isServiceClass, SERVICE_CLASS_IDS } = require('../config/serviceClasses');
 const JobPostingSettings = require('../models/JobPostingSettings');
 const Job = require('../models/Job');
+const User = require('../models/User');
+const { tallyUsage, ACTIVE_JOB_STATUSES } = require('../utils/categoryUsage');
+const { iconSlug, checkIcons } = require('../utils/professionIcons');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
@@ -17,18 +20,10 @@ const MANAGE_PROFESSIONS_DIR = path.join(__dirname, '../../..', 'Frontend/public
 // (kayod/client: JobCard.jsx & categoryVisualMapping.js), which builds
 // professionIconsUpload/<slug>.webp from the profession NAME. If these diverge the
 // client requests a filename the stored icon doesn't have and the icon 404s.
+// The slug itself lives in utils/professionIcons (shared with the icon check).
+const generateIconSlug = iconSlug;
 const generateIconFilename = (professionName) => {
   return generateIconSlug(professionName) + '.webp';
-};
-
-const generateIconSlug = (professionName) => {
-  return professionName
-    .replace(/([a-z])([A-Z])/g, '$1-$2') // camelCase → kebab (parity with Kayod client)
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-');
 };
 
 // Get socket.io instance
@@ -48,6 +43,46 @@ exports.getJobCategories = asyncHandler(async (req, res) => {
     categories,
   });
 }, 'Failed to fetch job categories');
+
+/**
+ * GET /api/admin/configurations/job-categories/usage — for every category and
+ * profession: how many jobs use it (and how many are still running) and how
+ * many providers list it. Shown beside each one in Settings → Configuration so
+ * an admin can see what a rename, move or delete would touch.
+ */
+exports.getJobCategoryUsage = asyncHandler(async (req, res) => {
+  const active = { $sum: { $cond: [{ $in: ['$status', ACTIVE_JOB_STATUSES] }, 1, 0] } };
+  const liveJobs = { isDeleted: { $ne: true } };
+  const [categories, jobsByProfession, jobsByCategory, providers] = await Promise.all([
+    JobCategory.find().select('name professions._id professions.name').lean(),
+    Job.aggregate([
+      { $match: { ...liveJobs, professionName: { $type: 'string', $ne: '' } } },
+      { $group: { _id: '$professionName', jobs: { $sum: 1 }, active } },
+    ]),
+    Job.aggregate([
+      { $match: liveJobs },
+      { $group: { _id: { $ifNull: ['$category', '$categoryName'] }, jobs: { $sum: 1 }, active } },
+    ]),
+    User.find({ userType: 'provider', accountStatus: { $ne: 'deleted' } }).select('categories category').lean(),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    ...tallyUsage({ categories, jobsByProfession, jobsByCategory, providers }),
+  });
+}, 'Failed to count category usage');
+
+/**
+ * GET /api/admin/configurations/job-categories/icon-check — for every
+ * profession, whether the icon the app loads is there (true), missing (false)
+ * or couldn't be checked (null). The admin page uses it so the browser only
+ * requests icons that exist. Never fails on ImageKit trouble: those are null.
+ */
+exports.getProfessionIconCheck = asyncHandler(async (req, res) => {
+  const categories = await JobCategory.find().select('professions._id professions.name professions.updatedAt').lean();
+  const icons = await checkIcons(categories.flatMap((category) => category.professions || []));
+  res.status(200).json({ success: true, icons });
+}, 'Failed to check profession icons');
 
 exports.createJobCategory = asyncHandler(async (req, res) => {
   const { name, icon, professions, serviceClass } = req.body;
@@ -662,6 +697,9 @@ exports.transferProfession = asyncHandler(async (req, res) => {
   const professionData = {
     name: profession.name,
     icon: profession.icon,
+    // Keep a payment-release override across the move: dropping it would
+    // silently change how long its new jobs hold payment.
+    serviceClass: profession.serviceClass ?? null,
     isQuickAccess: profession.isQuickAccess,
     quickAccessOrder: profession.quickAccessOrder,
     createdAt: profession.createdAt,
@@ -1111,10 +1149,22 @@ exports.updateJobPostingSettings = asyncHandler(async (req, res) => {
   }
 
   // maxActiveJobsPerUser and jobPostDurationDays must be at least 1.
-  if (settings.maxActiveJobsPerUser < 1) {
+  if (settings.maxActiveJobsPerUser < 1 || !Number.isInteger(settings.maxActiveJobsPerUser)) {
     return res.status(400).json({
       success: false,
-      message: 'maxActiveJobsPerUser must be at least 1',
+      message: 'maxActiveJobsPerUser must be a whole number of at least 1',
+    });
+  }
+  // The app's photo/video picker lays out one slot per attachment; 1-10 keeps
+  // it usable. Photos and videos count together, as the app counts them.
+  if (
+    !Number.isInteger(settings.maxAttachments) ||
+    settings.maxAttachments < 1 ||
+    settings.maxAttachments > 10
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'maxAttachments must be a whole number from 1 to 10',
     });
   }
   if (settings.jobPostDurationDays < 1) {
@@ -1226,7 +1276,9 @@ exports.updateJobPostingSettings = asyncHandler(async (req, res) => {
     settings[field] = Boolean(req.body[field]);
   }
 
-  settings.updatedBy = req.session?.uid || req.session?.email || 'unknown';
+  // Login stores the admin's email as `username`; `uid`/`email` were never set,
+  // so every save used to read "by unknown".
+  settings.updatedBy = req.session?.username || 'unknown';
   await settings.save();
 
   // Fees and penalties change what every client and provider pays, so the

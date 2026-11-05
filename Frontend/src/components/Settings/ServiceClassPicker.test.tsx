@@ -54,6 +54,15 @@ describe('ServiceClassPicker — category mode', () => {
     expect(within(getOption(/Immediate Service/)).getByText(/released as soon as/)).toBeInTheDocument();
   });
 
+  it('does not claim a hold for a class that has none', () => {
+    // Immediate holds for 0 hours; "Payment is held after completion" (with
+    // the window blank) contradicted its own description.
+    render(<ServiceClassPicker value={SERVICE_CLASS.STANDARD} onChange={vi.fn()} />);
+
+    expect(within(getOption(/Immediate Service/)).queryByText(/Payment is held/)).toBeNull();
+    expect(within(getOption(/Standard Service/)).getByText(/Payment is held/)).toBeInTheDocument();
+  });
+
   it('emits the class id when a different option is picked', async () => {
     const onChange = vi.fn();
     render(<ServiceClassPicker value={SERVICE_CLASS.STANDARD} onChange={onChange} />);

@@ -1,81 +1,108 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Zap,
-  Percent,
-  Ban,
-  UserX,
-  Save,
-  RotateCcw,
-  Loader2,
-  AlertCircle,
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calculator, Info, Pencil, type LucideIcon } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import {
   useJobPostingSettings,
-  useUpdateJobPostingSettings,
   JOB_POSTING_SETTINGS_KEY,
 } from '../../hooks/useJobPostingSettings';
-import { JobPostingSettings } from '../../types/configuration.types';
 import { useSocket } from '../../context/SocketContext';
+import JobPostingTopicPanel, { TOPIC_META } from './jobPosting/JobPostingTopicPanel';
+import {
+  STANDARD_PLATFORM_RATE,
+  TOPIC_ORDER,
+  clientCancelFee,
+  flatUpTo,
+  hours,
+  noShowPayout,
+  normalize,
+  peso,
+  platformFee,
+  platformRate,
+  plural,
+  providerCancelFee,
+  providerFeeIsOff,
+  ratingPenaltyText,
+  restrictionCounts,
+  type Policy,
+  type TopicId,
+} from './jobPosting/policy';
 
-type FormState = Omit<JobPostingSettings, 'updatedAt' | 'updatedBy'>;
+/**
+ * Settings → Configuration → Job Posting.
+ *
+ * The rules the Kayod app applies to every job, read like a policy: one card
+ * per topic, in the order a job lives through them (posted → paid out →
+ * cancelled → missed), each stating its current rules in plain words with a
+ * worked ₱1,000 example. Editing happens one topic at a time in a side panel
+ * (jobPosting/JobPostingTopicPanel), which saves only that topic's settings.
+ */
 
-const normalize = (s: Partial<JobPostingSettings>): FormState => ({
-  maxActiveJobsPerUser: s.maxActiveJobsPerUser ?? 5,
-  jobPostDurationDays: s.jobPostDurationDays ?? 30,
-  asapFee: s.asapFee ?? 100,
-  bookingFeePercentage: s.bookingFeePercentage ?? 0,
-  bookingFeeThreshold: s.bookingFeeThreshold ?? 0,
-  bookingFeeMinimum: s.bookingFeeMinimum ?? 0,
-  clientCancellationFeePercentage: s.clientCancellationFeePercentage ?? 10,
-  clientCancellationFeeMinimum: s.clientCancellationFeeMinimum ?? 150,
-  clientCancellationFeeThreshold: s.clientCancellationFeeThreshold ?? 0,
-  clientCancellationDayOfFeePercentage: s.clientCancellationDayOfFeePercentage ?? 20,
-  clientCancellationDayOfFeeMinimum: s.clientCancellationDayOfFeeMinimum ?? 300,
-  providerCancellationFeePercentage: s.providerCancellationFeePercentage ?? 20,
-  providerCancellationFeeMinimum: s.providerCancellationFeeMinimum ?? 300,
-  providerCancellationFeeThreshold: s.providerCancellationFeeThreshold ?? 0,
-  providerCancellationDayOfFeePercentage: s.providerCancellationDayOfFeePercentage ?? 40,
-  providerCancellationDayOfFeeMinimum: s.providerCancellationDayOfFeeMinimum ?? 600,
-  providerCancellationFeeClientSharePercentage: s.providerCancellationFeeClientSharePercentage ?? 50,
-  providerStrikeLimit: s.providerStrikeLimit ?? 4,
-  providerStrikeRatingPenalty: s.providerStrikeRatingPenalty ?? 0,
-  noShowReviewWindowHours: s.noShowReviewWindowHours ?? 48,
-  noShowReviewReminderHours: s.noShowReviewReminderHours ?? 24,
-  noShowPayoutPercentage: s.noShowPayoutPercentage ?? 20,
-  noShowPayoutMinimum: s.noShowPayoutMinimum ?? 300,
-  noShowPayoutHoldHours: s.noShowPayoutHoldHours ?? 0,
-  noShowLapseRestrictionCount: s.noShowLapseRestrictionCount ?? 3,
-  confirmedFaultRestrictionCount: s.confirmedFaultRestrictionCount ?? 2,
-  disputeLossRestrictionCount: s.disputeLossRestrictionCount ?? 3,
-  requireApproval: s.requireApproval ?? false,
-  allowAttachments: s.allowAttachments ?? true,
-  maxAttachments: s.maxAttachments ?? 5,
-});
+const EXAMPLE = 1000;
+
+const Fact: React.FC<{ label: string; value: React.ReactNode; sub?: React.ReactNode; testId?: string }> = ({ label, value, sub, testId }) => (
+  <div className="min-w-0" data-testid={testId}>
+    <dt className="text-[11px] text-gray-500">{label}</dt>
+    <dd className="text-sm font-semibold text-gray-900 mt-0.5 break-words">{value}</dd>
+    {sub && <dd className="text-[11px] text-gray-500">{sub}</dd>}
+  </div>
+);
+
+const PolicyCard: React.FC<{
+  topic: TopicId;
+  onEdit: (topic: TopicId) => void;
+  example: React.ReactNode;
+  /** Calculator for a worked example; Info for a plain consequence. */
+  exampleIcon?: LucideIcon;
+  wide?: boolean;
+  children: React.ReactNode;
+}> = ({ topic, onEdit, example, exampleIcon: ExampleIcon = Calculator, wide, children }) => {
+  const { title, description, icon: Icon } = TOPIC_META[topic];
+  return (
+    <section
+      className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col ${wide ? 'xl:col-span-2' : ''}`}
+      data-testid={`jp-card-${topic}`}
+    >
+      <header className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 flex-shrink-0">
+          <Icon className="h-3.5 w-3.5 text-gray-600" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-gray-900 leading-tight">{title}</h3>
+          <p className="text-[11px] text-gray-500 leading-snug">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onEdit(topic)}
+          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex-shrink-0"
+          aria-label={`Edit ${title.toLowerCase()}`}
+          data-testid={`jp-edit-${topic}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      </header>
+      <dl className={`px-4 py-4 grid grid-cols-2 gap-x-4 gap-y-3 ${wide ? 'lg:grid-cols-4' : ''}`}>{children}</dl>
+      <p className="mt-auto flex items-start gap-2 px-4 py-2.5 border-t border-gray-100 text-xs text-gray-600" data-testid={`jp-example-${topic}`}>
+        <ExampleIcon className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 mt-px" />
+        <span>{example}</span>
+      </p>
+    </section>
+  );
+};
+
+/** "10%" / "₱150 flat on bookings up to ₱150" for one cancellation tier. */
+const tierSub = (flat: number, threshold: number, extra?: string) =>
+  `${peso(flat)} flat on bookings up to ${peso(flatUpTo(flat, threshold))}${extra ? ` · ${extra}` : ''}`;
 
 const JobPostingConfiguration: React.FC = () => {
   const queryClient = useQueryClient();
   const { socket } = useSocket();
   const { settings, isLoading } = useJobPostingSettings();
-  const updateMutation = useUpdateJobPostingSettings();
+  const [editing, setEditing] = useState<TopicId | null>(null);
+  const policy: Policy = useMemo(() => normalize(settings), [settings]);
 
-  const [form, setForm] = useState<FormState | null>(null);
-  const [baseline, setBaseline] = useState<FormState | null>(null);
-
-  const isDirty = useMemo(
-    () => !!form && !!baseline && JSON.stringify(form) !== JSON.stringify(baseline),
-    [form, baseline]
-  );
-  const isDirtyRef = useRef(isDirty);
-  isDirtyRef.current = isDirty;
-
-  useEffect(() => {
-    if (!settings) return;
-    const server = normalize(settings);
-    setForm((current) => (current === null || !isDirtyRef.current ? server : current));
-    setBaseline(server);
-  }, [settings]);
-
+  // Another admin's save refreshes this page too.
   useEffect(() => {
     if (!socket) return;
     const handleConfigurationUpdate = (data: any) => {
@@ -87,43 +114,7 @@ const JobPostingConfiguration: React.FC = () => {
     return () => { socket.off('configuration:updated', handleConfigurationUpdate); };
   }, [socket, queryClient]);
 
-  const validationError = useMemo(() => {
-    if (!form) return null;
-    if (form.bookingFeePercentage < 0 || form.bookingFeePercentage > 100) return 'Booking fee percentage must be between 0 and 100.';
-    if (form.clientCancellationFeePercentage < 0 || form.clientCancellationFeePercentage > 100) return 'Client cancellation fee percentage must be between 0 and 100.';
-    if (form.clientCancellationDayOfFeePercentage < 0 || form.clientCancellationDayOfFeePercentage > 100) return 'Day-of cancellation fee percentage must be between 0 and 100.';
-    if (form.providerCancellationFeePercentage < 0 || form.providerCancellationFeePercentage > 100) return 'Provider cancellation fee percentage must be between 0 and 100.';
-    if (form.providerCancellationDayOfFeePercentage < 0 || form.providerCancellationDayOfFeePercentage > 100) return 'Provider day-of cancellation fee percentage must be between 0 and 100.';
-    if (form.providerCancellationFeeClientSharePercentage < 0 || form.providerCancellationFeeClientSharePercentage > 100) return 'Client share of the provider cancellation fee must be between 0 and 100.';
-    if (form.providerStrikeLimit < 1) return 'Provider strike limit must be at least 1.';
-    if (form.noShowPayoutPercentage < 0 || form.noShowPayoutPercentage > 100) return 'No-show payout percentage must be between 0 and 100.';
-    if (form.noShowReviewWindowHours < 1) return 'The no-show review window must be at least 1 hour.';
-    // A reminder at or after the deadline never fires — the window resolves
-    // first. Same rule the API enforces; catching it here means the admin sees
-    // why rather than a rejected save.
-    if (form.noShowReviewReminderHours >= form.noShowReviewWindowHours) return 'The reminder must fire before the review window closes, otherwise it never sends.';
-    if (form.noShowLapseRestrictionCount < 1) return 'Missed bookings before restriction must be at least 1.';
-    if (form.confirmedFaultRestrictionCount < 0) return 'Confirmed no-shows before restriction cannot be negative.';
-    // 1 would restrict on a single good-faith complaint, which is the opposite
-    // of what this protects against. 0 disables it.
-    if (form.disputeLossRestrictionCount === 1) return 'Lost disputes before restriction must be 0 (disabled) or at least 2 — one lost dispute is not abuse.';
-    return null;
-  }, [form]);
-
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((f) => (f ? { ...f, [key]: value } : f));
-  };
-
-  const handleSave = () => {
-    if (!form || !isDirty || validationError) return;
-    updateMutation.mutate(form);
-  };
-
-  const handleDiscard = () => {
-    if (baseline) setForm(baseline);
-  };
-
-  if (isLoading || !form) {
+  if (isLoading || !settings) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
@@ -131,275 +122,167 @@ const JobPostingConfiguration: React.FC = () => {
     );
   }
 
-  const canSave = isDirty && !validationError && !updateMutation.isPending;
+  const p = policy;
+  // 'unknown' is what every save recorded before the session field was fixed — not a name.
+  const by = settings.updatedBy && settings.updatedBy !== 'unknown' ? settings.updatedBy : null;
+  const platform = platformFee(EXAMPLE, p);
+  const providerOff = providerFeeIsOff(p);
+  const restrictions = restrictionCounts(p);
+
+  const cards: Record<TopicId, React.ReactNode> = {
+    posting: (
+      <PolicyCard
+        topic="posting"
+        onEdit={setEditing}
+        exampleIcon={Info}
+        example={`A client with ${plural(p.maxActiveJobsPerUser, 'active job')} can't post another until one is completed or cancelled.`}
+      >
+        <Fact label="Active jobs per client" value={p.maxActiveJobsPerUser} sub="Open or in progress" testId="jp-fact-active" />
+        <Fact label="Photos & videos per post" value={p.maxAttachments} sub="Counted together" testId="jp-fact-media" />
+        <Fact
+          label="ASAP post"
+          value={p.asapFee > 0 ? peso(p.asapFee) : 'Free'}
+          sub={p.asapFee > 0 ? "From the client's wallet, when posting" : 'No priority fee'}
+          testId="jp-fact-asap"
+        />
+      </PolicyCard>
+    ),
+    platform: (
+      <PolicyCard
+        topic="platform"
+        onEdit={setEditing}
+        example={`On a ${peso(EXAMPLE)} job the platform keeps ${peso(platform)} and the provider receives ${peso(EXAMPLE - platform)}.`}
+      >
+        <Fact
+          label="Rate"
+          value={`${platformRate(p)}%`}
+          sub={p.bookingFeePercentage > 0 ? `Premium providers ${platformRate(p, true)}%` : `The standard ${STANDARD_PLATFORM_RATE}% · Premium ${platformRate(p, true)}%`}
+          testId="jp-fact-rate"
+        />
+        <Fact
+          label="Cheaper jobs"
+          value={p.bookingFeeThreshold > 0 ? `${peso(p.bookingFeeMinimum)} flat` : 'Same rate'}
+          sub={p.bookingFeeThreshold > 0 ? `Under ${peso(p.bookingFeeThreshold)}` : 'No flat fee set'}
+          testId="jp-fact-cheaper"
+        />
+        <Fact label="Taken" value="At payout" sub="From the provider's earnings" />
+      </PolicyCard>
+    ),
+    clientCancel: (
+      <PolicyCard
+        topic="clientCancel"
+        onEdit={setEditing}
+        example={`A ${peso(EXAMPLE)} booking costs ${peso(clientCancelFee(EXAMPLE, p, false))} to cancel before the day, ${peso(clientCancelFee(EXAMPLE, p, true))} on the day.`}
+      >
+        <Fact
+          label="Before the booking day"
+          value={`${p.clientCancellationFeePercentage}%`}
+          sub={tierSub(p.clientCancellationFeeMinimum, p.clientCancellationFeeThreshold)}
+          testId="jp-fact-client-advance"
+        />
+        <Fact
+          label="On the booking day"
+          value={`${p.clientCancellationDayOfFeePercentage}%`}
+          sub={tierSub(p.clientCancellationDayOfFeeMinimum, p.clientCancellationFeeThreshold, 'ASAP counts')}
+          testId="jp-fact-client-day-of"
+        />
+        <Fact label="Fee goes to" value="The provider" sub="The rest is refunded to the client" />
+      </PolicyCard>
+    ),
+    providerCancel: (
+      <PolicyCard
+        topic="providerCancel"
+        onEdit={setEditing}
+        example={
+          providerOff
+            ? 'Provider cancellations cost nothing — only the strike and rating penalty apply.'
+            : `A ${peso(EXAMPLE)} booking costs the provider ${peso(providerCancelFee(EXAMPLE, p, false))} before the day, ${peso(providerCancelFee(EXAMPLE, p, true))} on the day; ${p.providerCancellationFeeClientSharePercentage === 50 ? 'half' : `${p.providerCancellationFeeClientSharePercentage}%`} goes to the client.`
+        }
+      >
+        {providerOff ? (
+          <Fact label="Cancellation fee" value="None" sub="All four amounts are 0" testId="jp-fact-provider-advance" />
+        ) : (
+          <>
+            <Fact
+              label="Before the booking day"
+              value={`${p.providerCancellationFeePercentage}%`}
+              sub={tierSub(p.providerCancellationFeeMinimum, p.providerCancellationFeeThreshold)}
+              testId="jp-fact-provider-advance"
+            />
+            <Fact
+              label="On the booking day"
+              value={`${p.providerCancellationDayOfFeePercentage}%`}
+              sub={tierSub(p.providerCancellationDayOfFeeMinimum, p.providerCancellationFeeThreshold, 'ASAP counts')}
+              testId="jp-fact-provider-day-of"
+            />
+            <Fact
+              label="Fee goes to"
+              value={`Client ${p.providerCancellationFeeClientSharePercentage}%`}
+              sub={`Platform ${Math.max(0, 100 - p.providerCancellationFeeClientSharePercentage)}% · unpaid part is owed`}
+              testId="jp-fact-provider-split"
+            />
+          </>
+        )}
+        <Fact
+          label="Strikes"
+          value={`Restricted at ${p.providerStrikeLimit}`}
+          sub={ratingPenaltyText(p)}
+          testId="jp-fact-strikes"
+        />
+      </PolicyCard>
+    ),
+    noShow: (
+      <PolicyCard
+        topic="noShow"
+        wide
+        onEdit={setEditing}
+        example={`A ${peso(EXAMPLE)} booking nobody speaks up about is refunded in full; if an issue is upheld, the provider gets ${peso(noShowPayout(EXAMPLE, p))} and the client ${peso(EXAMPLE - noShowPayout(EXAMPLE, p))}.`}
+      >
+        <Fact
+          label="Review window"
+          value={hours(p.noShowReviewWindowHours)}
+          sub={`After the booking day · reminder at ${p.noShowReviewReminderHours}h`}
+          testId="jp-fact-window"
+        />
+        <Fact label="If nobody speaks up" value="Full refund" sub="No fee, no payout, no strike" />
+        <Fact
+          label="If an issue is upheld"
+          value={`Provider gets ${p.noShowPayoutPercentage}%`}
+          sub={`At least ${peso(p.noShowPayoutMinimum)} · ${p.noShowPayoutHoldHours > 0 ? `held ${hours(p.noShowPayoutHoldHours)}` : "on the job's release window"}`}
+          testId="jp-fact-upheld"
+        />
+        <Fact
+          label="Restricted after (30 days)"
+          value={restrictions.missed}
+          sub={`${restrictions.confirmed} · ${restrictions.disputes}`}
+          testId="jp-fact-restriction"
+        />
+      </PolicyCard>
+    ),
+  };
 
   return (
-    <div className="h-full flex flex-col bg-white">
-
-      {/* Toolbar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 h-[65px] border-b border-gray-100">
-        <div className="text-xs text-gray-400">
-          {isDirty ? (
-            <span className="inline-flex items-center gap-1.5 text-amber-600 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              Unsaved changes
-            </span>
-          ) : settings?.updatedAt ? (
-            <span>
-              Last updated {new Date(settings.updatedAt).toLocaleString()}
-              {settings.updatedBy ? ` by ${settings.updatedBy}` : ''}
-            </span>
-          ) : (
-            <span>Configure the rules applied to every new job post</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleDiscard}
-            disabled={!isDirty || updateMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Discard
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {updateMutation.isPending
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Save className="w-3.5 h-3.5" />}
-            Save Changes
-          </button>
-        </div>
+    <div className="h-full flex flex-col bg-gray-50">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-xs text-gray-500 font-medium" data-testid="jp-summary">
+          What every job in the Kayod app runs on. Saved changes reach the app straight away.
+        </p>
+        <p className="text-xs text-gray-400" data-testid="jp-updated">
+          {settings.updatedAt
+            ? `Last changed ${format(new Date(settings.updatedAt), 'MMM d, yyyy h:mm a')}${by ? ` by ${by}` : ''}`
+            : 'Not changed yet — these are the defaults'}
+        </p>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        <div className="px-8 py-8">
-
-          {validationError && (
-            <div className="mb-6 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {validationError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-16 gap-y-10">
-
-            {/* Booking Fee — left column, spans both rows on xl */}
-            <div className="xl:row-span-2">
-              <div className="flex items-center gap-2 mb-0.5">
-                <Percent className="w-4 h-4 text-blue-500" />
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">Booking Fee</h3>
-              </div>
-              <p className="text-xs text-gray-400 mb-5 pl-6">
-                Platform fee based on a job's budget. A percentage applies at or above the threshold; smaller jobs pay a flat minimum.
-              </p>
-              <div className="divide-y divide-gray-100">
-                <Row label="Booking fee percentage" desc="Percentage of the budget charged when the budget is at or above the threshold.">
-                  <NumInput value={form.bookingFeePercentage} min={0} suffix="%" onChange={(v) => setField('bookingFeePercentage', v)} />
-                </Row>
-                <Row label="Percentage trigger (threshold)" desc="Budget at or above this amount is charged the percentage fee.">
-                  <NumInput value={form.bookingFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('bookingFeeThreshold', v)} />
-                </Row>
-                <Row label="Minimum booking fee" desc="Flat fee charged when a job's budget is below the threshold.">
-                  <NumInput value={form.bookingFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('bookingFeeMinimum', v)} />
-                </Row>
-              </div>
-              <p className="text-xs text-gray-400 italic mt-3">
-                {form.bookingFeePercentage === 0 && form.bookingFeeMinimum === 0
-                  ? 'Booking fee is disabled. Set a percentage or minimum to start charging.'
-                  : `Jobs ≥ ₱${form.bookingFeeThreshold.toLocaleString()} pay ${form.bookingFeePercentage}% · jobs below pay a flat ₱${form.bookingFeeMinimum.toLocaleString()}.`}
-              </p>
-            </div>
-
-            {/* Priority Fees — right column top */}
-            <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <Zap className="w-4 h-4 text-amber-500" />
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">Priority Fees</h3>
-              </div>
-              <p className="text-xs text-gray-400 mb-5 pl-6">
-                Fees charged to the client for priority job posts in the Kayod app.
-              </p>
-              <div className="divide-y divide-gray-100">
-                <Row label="ASAP fee" desc="Fee a client pays when posting an ASAP (immediate) job. Charged from the client's wallet on posting.">
-                  <NumInput value={form.asapFee} min={0} prefix="₱" onChange={(v) => setField('asapFee', v)} />
-                </Row>
-              </div>
-            </div>
-
-            {/* Cancellation — right column bottom */}
-            <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <Ban className="w-4 h-4 text-red-500" />
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">Cancellation</h3>
-              </div>
-              <p className="text-xs text-gray-400 mb-5 pl-6">
-                Two tiers, by when the client cancels: cancelling in advance frees a slot the
-                provider can refill, cancelling on the day costs them the day. Providers pay the
-                same two-tier shape at double the baseline, split between the client and the
-                platform, on top of the strike effect.
-              </p>
-              <div className="divide-y divide-gray-100">
-                <Row label="Advance cancellation fee" desc="Percentage of the agreed price charged when a client cancels BEFORE the booking day.">
-                  <NumInput value={form.clientCancellationFeePercentage} min={0} suffix="%" onChange={(v) => setField('clientCancellationFeePercentage', v)} />
-                </Row>
-                <Row label="Advance flat fee" desc="Charged INSTEAD of the percentage when the agreed price is at or below the trigger. Not a floor: above the trigger the percentage applies even if it works out smaller than this.">
-                  <NumInput value={form.clientCancellationFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('clientCancellationFeeMinimum', v)} />
-                </Row>
-                <Row label="Day-of cancellation fee" desc="Percentage charged when a client cancels ON or AFTER the booking day. ASAP bookings count as day-of from the moment they are booked.">
-                  <NumInput value={form.clientCancellationDayOfFeePercentage} min={0} suffix="%" onChange={(v) => setField('clientCancellationDayOfFeePercentage', v)} />
-                </Row>
-                <Row label="Day-of flat fee" desc="Charged INSTEAD of the day-of percentage when the agreed price is at or below the trigger. Not a floor — see the advance flat fee.">
-                  <NumInput value={form.clientCancellationDayOfFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('clientCancellationDayOfFeeMinimum', v)} />
-                </Row>
-                <Row label="Percentage trigger (threshold)" desc="Agreed price above this amount pays the percentage; at or below it pays that tier's flat fee. 0 uses each tier's own flat fee as the trigger.">
-                  <NumInput value={form.clientCancellationFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('clientCancellationFeeThreshold', v)} />
-                </Row>
-                <Row label="Provider advance fee" desc="Percentage charged to a PROVIDER who cancels before the booking day. Baseline is double the client rate.">
-                  <NumInput value={form.providerCancellationFeePercentage} min={0} suffix="%" onChange={(v) => setField('providerCancellationFeePercentage', v)} />
-                </Row>
-                <Row label="Provider advance flat fee" desc="Charged instead of the provider percentage at or below the trigger.">
-                  <NumInput value={form.providerCancellationFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('providerCancellationFeeMinimum', v)} />
-                </Row>
-                <Row label="Provider day-of fee" desc="Percentage charged to a provider who cancels on or after the booking day.">
-                  <NumInput value={form.providerCancellationDayOfFeePercentage} min={0} suffix="%" onChange={(v) => setField('providerCancellationDayOfFeePercentage', v)} />
-                </Row>
-                <Row label="Provider day-of flat fee" desc="Charged instead of the provider day-of percentage at or below the trigger.">
-                  <NumInput value={form.providerCancellationDayOfFeeMinimum} min={0} prefix="₱" onChange={(v) => setField('providerCancellationDayOfFeeMinimum', v)} />
-                </Row>
-                <Row label="Provider percentage trigger" desc="Agreed price above this pays the provider percentage; at or below it pays that tier's flat fee. 0 uses each tier's own flat fee.">
-                  <NumInput value={form.providerCancellationFeeThreshold} min={0} prefix="₱" onChange={(v) => setField('providerCancellationFeeThreshold', v)} />
-                </Row>
-                <Row label="Client share of provider fee" desc="Portion of the provider's fee credited to the client on top of their full refund. The remainder goes to the platform.">
-                  <NumInput value={form.providerCancellationFeeClientSharePercentage} min={0} max={100} suffix="%" onChange={(v) => setField('providerCancellationFeeClientSharePercentage', v)} />
-                </Row>
-                <Row label="Provider strike limit" desc="Cancellation strikes before a provider is restricted from accepting jobs.">
-                  <NumInput value={form.providerStrikeLimit} min={1} onChange={(v) => setField('providerStrikeLimit', v)} />
-                </Row>
-                <Row label="Rating penalty per strike" desc="Rating points deducted each time a provider cancels. 0 keeps the default escalating penalties (0.3 / 0.5 / 0.7…).">
-                  <NumInput value={form.providerStrikeRatingPenalty} min={0} step="any" onChange={(v) => setField('providerStrikeRatingPenalty', v)} />
-                </Row>
-              </div>
-              <p className="text-xs text-gray-400 italic mt-3">
-                Above the trigger the PERCENTAGE applies; at or below it, the flat fee.
-                Before the day: {form.clientCancellationFeePercentage}% or ₱{form.clientCancellationFeeMinimum.toLocaleString()} flat ·
-                on the day: {form.clientCancellationDayOfFeePercentage}% or ₱{form.clientCancellationDayOfFeeMinimum.toLocaleString()} flat.
-                A ₱1,000 day-of cancellation therefore pays {form.clientCancellationDayOfFeePercentage}% — which can be
-                LESS than the flat fee. That is deliberate; the flat fee is not a floor.
-              </p>
-              <p className="text-xs text-gray-400 italic mt-2">
-                A provider cancelling pays {form.providerCancellationFeePercentage}% in advance ·
-                {' '}{form.providerCancellationDayOfFeePercentage}% on the day, of which
-                {' '}{form.providerCancellationFeeClientSharePercentage}% goes to the client as
-                compensation and {100 - form.providerCancellationFeeClientSharePercentage}% to the
-                platform. Anything their wallet cannot cover becomes an unpaid fee that blocks new
-                bookings until settled.
-              </p>
-            </div>
-
-            {/* No-show review — full width, below both columns */}
-            <div className="xl:col-span-2">
-              <div className="flex items-center gap-2 mb-0.5">
-                <UserX className="w-4 h-4 text-purple-500" />
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-700">No-Show Review</h3>
-              </div>
-              <p className="text-xs text-gray-400 mb-5 pl-6">
-                When a booking's day passes with neither side confirming, both parties are notified
-                and both can raise an issue. If nobody does, the booking closes and the client is
-                refunded in full — no fee, no payout, no strike. The payout below applies only when
-                an admin reviews a raised issue and finds the client did not appear.
-              </p>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-16">
-                <div className="divide-y divide-gray-100">
-                  <Row label="Review window" desc="Hours from the booking day ending until the booking closes and the client is refunded in full.">
-                    <NumInput value={form.noShowReviewWindowHours} min={1} suffix="h" onChange={(v) => setField('noShowReviewWindowHours', v)} />
-                  </Row>
-                  <Row label="Reminder at" desc="Hours into the window when both parties get a single 'time is running out' reminder. Must be less than the window.">
-                    <NumInput value={form.noShowReviewReminderHours} min={0} suffix="h" onChange={(v) => setField('noShowReviewReminderHours', v)} />
-                  </Row>
-                  <Row label="Missed bookings before restriction" desc="Unclaimed no-shows within 30 days before an account is restricted automatically. A single one never restricts anyone.">
-                    <NumInput value={form.noShowLapseRestrictionCount} min={1} onChange={(v) => setField('noShowLapseRestrictionCount', v)} />
-                  </Row>
-                  <Row label="Lost disputes before restriction" desc="Disputes a party raised and did NOT win, within 30 days, before their account is restricted. Raising a dispute freezes a payout, so repeat losing claims are a denial-of-service. 0 disables; 1 is rejected because one lost dispute is not abuse.">
-                    <NumInput value={form.disputeLossRestrictionCount} min={0} onChange={(v) => setField('disputeLossRestrictionCount', v)} />
-                  </Row>
-                  <Row label="Confirmed no-shows before restriction" desc="Findings where an admin established that this party failed to attend, within 30 days, before their account is restricted. Lower than the two above on purpose: a lapse means nobody spoke up and a lost dispute is not a finding of fault, but a finding IS the evidence. 0 disables auto-restriction while still recording every finding.">
-                    <NumInput value={form.confirmedFaultRestrictionCount} min={0} onChange={(v) => setField('confirmedFaultRestrictionCount', v)} />
-                  </Row>
-                </div>
-                <div className="divide-y divide-gray-100">
-                  <Row label="Reserved-time payout" desc="Percentage of the held amount paid to the provider when an admin finds the client did not appear. The rest is refunded to the client.">
-                    <NumInput value={form.noShowPayoutPercentage} min={0} suffix="%" onChange={(v) => setField('noShowPayoutPercentage', v)} />
-                  </Row>
-                  <Row label="Minimum payout (floor)" desc="A true FLOOR, unlike the cancellation flat fees above: the payout is never less than this, even when the percentage works out smaller. Capped at the held amount.">
-                    <NumInput value={form.noShowPayoutMinimum} min={0} prefix="₱" onChange={(v) => setField('noShowPayoutMinimum', v)} />
-                  </Row>
-                  <Row label="Payout hold" desc="Hours the payout is held before reaching the provider's balance. 0 uses the job's own release window, so an instant-service job isn't paid out the moment you click.">
-                    <NumInput value={form.noShowPayoutHoldHours} min={0} suffix="h" onChange={(v) => setField('noShowPayoutHoldHours', v)} />
-                  </Row>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 italic mt-3">
-                Nobody raises an issue within {form.noShowReviewWindowHours}h → client refunded in full.
-                Issue raised and upheld → provider gets {form.noShowPayoutPercentage}% (min ₱{form.noShowPayoutMinimum.toLocaleString()}),
-                held for {form.noShowPayoutHoldHours > 0 ? `${form.noShowPayoutHoldHours}h` : "the job's own release window"}.
-              </p>
-            </div>
-
-          </div>
+        <div className="p-3 md:p-6 grid grid-cols-1 xl:grid-cols-2 gap-3 md:gap-4" data-testid="jp-cards">
+          {TOPIC_ORDER.map((topic) => <React.Fragment key={topic}>{cards[topic]}</React.Fragment>)}
         </div>
       </div>
+
+      <JobPostingTopicPanel topic={editing} saved={policy} onClose={() => setEditing(null)} />
     </div>
   );
 };
-
-// --- Helpers ------------------------------------------------------------------
-
-const Row: React.FC<{ label: string; desc: string; children: React.ReactNode; disabled?: boolean }> = ({
-  label, desc, children, disabled,
-}) => (
-  <div className={`flex items-center justify-between gap-8 py-4 ${disabled ? 'opacity-40' : ''}`}>
-    <div className="min-w-0 flex-1">
-      <p className="text-sm font-medium text-gray-900">{label}</p>
-      <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{desc}</p>
-    </div>
-    <div className="flex-shrink-0">{children}</div>
-  </div>
-);
-
-interface NumInputProps {
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  step?: number | 'any';
-  prefix?: string;
-  suffix?: string;
-  disabled?: boolean;
-}
-
-const NumInput: React.FC<NumInputProps> = ({ value, onChange, min = 0, step, prefix, suffix, disabled }) => (
-  <div className="relative flex items-center">
-    {prefix && (
-      <span className="absolute left-3 text-sm text-gray-400 pointer-events-none select-none">{prefix}</span>
-    )}
-    <input
-      type="number"
-      min={min}
-      step={step}
-      value={Number.isFinite(value) ? value : ''}
-      disabled={disabled}
-      onFocus={(e) => e.target.select()}
-      onChange={(e) => { const n = e.target.valueAsNumber; onChange(Number.isNaN(n) ? 0 : n); }}
-      className={`w-28 py-2 text-right text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${prefix ? 'pl-7' : 'pl-3'} ${suffix ? 'pr-10' : 'pr-3'}`}
-    />
-    {suffix && (
-      <span className="absolute right-3 text-xs text-gray-400 pointer-events-none select-none">{suffix}</span>
-    )}
-  </div>
-);
 
 export default JobPostingConfiguration;

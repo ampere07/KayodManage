@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const FeeRecord = require('../models/FeeRecord');
 const mongoose = require('mongoose');
+const escapeRegex = require('../utils/escapeRegex');
 
 /**
  * User Service
@@ -12,10 +13,10 @@ class UserService {
    * Get users with pagination and filtering
    */
   async getUsers(query, pagination) {
-    const { skip, limit } = pagination;
+    const { skip, limit, sort } = pagination;
 
     const users = await User.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: sort === 'oldest' ? 1 : -1 })
       .skip(skip)
       .limit(limit)
       .lean();
@@ -242,9 +243,15 @@ class UserService {
 
     if (search) {
       const term = search.replace(/^KYD:\s*/i, '').trim();
+      // Literal match: a phone as displayed ("+639…") or a "(" is otherwise an
+      // invalid pattern and fails both the list and the counts with a 500.
+      const pattern = escapeRegex(term);
       const orClauses = [
-        { name: { $regex: term, $options: 'i' } },
-        { email: { $regex: term, $options: 'i' } }
+        { name: { $regex: pattern, $options: 'i' } },
+        { email: { $regex: pattern, $options: 'i' } },
+        // Every row shows the phone as its contact line, so it has to be searchable.
+        { phone: { $regex: pattern, $options: 'i' } },
+        { phoneNumber: { $regex: pattern, $options: 'i' } }
       ];
       if (mongoose.Types.ObjectId.isValid(term)) {
         orClauses.push({ _id: new mongoose.Types.ObjectId(term) });

@@ -1,36 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { SidebarContext } from '../components/Layout/Layout';
-import {
-  AlertTriangle,
-  Eye,
-  Calendar,
-  Search,
-  Image as ImageIcon,
-  Briefcase,
-  CheckCircle,
-  XCircle,
-  Flag,
-  MessageSquare,
-  Users,
-  CreditCard,
-  Star,
-  ChevronRight,
-  Inbox,
-  X,
-  AlertCircle,
-  EyeOff,
-  Files,
-  Repeat,
-  Trash2,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { AlertTriangle, Flag, Search, X, Clock, Files, Repeat } from 'lucide-react';
 import { ReviewReportModal, TransactionDetailsModal } from '../components/Modals';
 import type { ReportDecision } from '../components/Modals/ReviewReportModal';
 import { useBulkUpdateReports, useCombinedReports, useUpdateCombinedReport, useUserMutations } from '../hooks';
 import ConfirmDialog from '../components/UI/ConfirmDialog';
-import { ACCOUNT_SIGNAL, PartyAvatar, Signal, StatusPill } from '../components/Flagged/ReportUI';
+import CounterGroups from '../components/UI/CounterGroups';
+import type { Counter, CounterGroup } from '../components/UI/CounterGroups';
+import { ListFooter, SortHeader, ago, selectClass } from '../components/UI/ListControls';
+import { ACCOUNT_SIGNAL, Signal, StatusPill } from '../components/Flagged/ReportUI';
 import {
+  ROLE_LABELS,
   ageLine,
   humanize,
   buildReportIndex,
@@ -40,45 +21,33 @@ import {
 } from '../components/Flagged/reportInsights';
 import { jobsService, transactionsService } from '../services';
 import toast from 'react-hot-toast';
-import { formatDistanceToNowStrict } from 'date-fns';
-import StatsCard from '../components/Dashboard/StatsCard';
+import { format } from 'date-fns';
 
 // Type imports
-import type { ReportFilterStatus } from '../types/alerts.types';
 import type { CombinedReport, ReportSource } from '../services/flaggedService';
 import type { Transaction } from '../types';
 
 /** Which collection a row came from — 'all' shows both. */
 type SourceFilter = 'all' | ReportSource;
 
-/** What is being reported, independent of which collection stores it. */
-type ReportTypeFilter = 'all' | 'job' | 'user';
+/** What the counters filter by: a status, or the overdue ones still waiting. */
+type View = 'all' | 'open' | 'under_review' | 'overdue' | 'action_taken' | 'dismissed' | 'escalated';
+const VIEWS: View[] = ['all', 'open', 'under_review', 'overdue', 'action_taken', 'dismissed', 'escalated'];
+/** What was reported. Messages, chats and reviews count as Other. */
+type TypeFilter = 'all' | 'job' | 'user' | 'other';
+const TYPES: TypeFilter[] = ['all', 'job', 'user', 'other'];
+const typeOf = (report: CombinedReport): Exclude<TypeFilter, 'all'> =>
+  report.reportType === 'job' ? 'job' : report.reportType === 'user' ? 'user' : 'other';
 
-/**
- * The counter row. These slice on two different axes — "Reported Jobs"/"Reported
- * Users" filter by what was reported, "Resolved"/"Dismissed" by status — so
- * each card sets both axes and only one can be active at a time.
- */
-const STAT_CARDS: {
-  key: string;
-  title: string;
-  statKey: 'needs_review' | 'total' | 'job' | 'user' | 'action_taken' | 'dismissed';
-  status: ReportFilterStatus;
-  type: ReportTypeFilter;
-  icon: LucideIcon;
-  color: 'blue' | 'green' | 'purple' | 'red' | 'indigo' | 'orange';
-}[] = [
-  { key: 'needs_review', title: 'Needs Review',   statKey: 'needs_review', status: 'needs_review', type: 'all',  icon: Inbox,       color: 'red'    },
-  { key: 'all',          title: 'Total Reports',  statKey: 'total',        status: 'all',          type: 'all',  icon: Flag,        color: 'blue'   },
-  { key: 'job',          title: 'Reported Jobs',  statKey: 'job',          status: 'all',          type: 'job',  icon: Briefcase,   color: 'orange' },
-  { key: 'user',         title: 'Reported Users', statKey: 'user',         status: 'all',          type: 'user', icon: Users,       color: 'purple' },
-  { key: 'action_taken', title: 'Resolved',       statKey: 'action_taken', status: 'action_taken', type: 'all',  icon: CheckCircle, color: 'green'  },
-  { key: 'dismissed',    title: 'Dismissed',      statKey: 'dismissed',    status: 'dismissed',    type: 'all',  icon: XCircle,     color: 'indigo' },
-];
-
-const SOURCE_BADGES: Record<ReportSource, { label: string; className: string }> = {
-  report: { label: 'Reports', className: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
-  reported_post: { label: 'Reported Posts', className: 'bg-teal-50 text-teal-700 border-teal-100' },
+/** The small label above a report's reason. */
+const TYPE_LABEL: Record<string, string> = {
+  job: 'Job post',
+  user: 'User',
+  message: 'Message',
+  conversation: 'Chat',
+  review: 'Review',
+  payment: 'Payment',
+  other: 'Other',
 };
 
 /**
@@ -125,15 +94,27 @@ const BULK_LIMIT = 500;
 const selectionKey = (report: CombinedReport) => `${report.source}:${report._id}`;
 const isAwaitingDecision = (report: CombinedReport) => report.status === 'open' || report.status === 'under_review';
 
-const AGE_TONE = { urgent: 'text-red-600', warn: 'text-amber-600', muted: 'text-gray-900' } as const;
+const AGE_TONE = { urgent: 'text-red-600', warn: 'text-amber-600', muted: 'text-gray-500' } as const;
+/** Account-type colours, as on the Users and Jobs rows. */
+const ROLE_TONE: Record<string, string> = { client: 'text-purple-600', provider: 'text-indigo-600' };
 
-/** A reporter needs this many reports here before the count is worth a chip. */
+/** A reporter needs this many reports here before the count is worth a flag. */
 const SERIAL_REPORTER = 3;
 
 /** Most accounts sign up with a phone number and have no email on file. */
 const contactOf = (party?: { email?: string; phoneNumber?: string } | null) =>
   party?.email || party?.phoneNumber || '';
 
+/** Waiting longer than the overdue threshold (reportInsights.OVERDUE_DAYS). */
+const isOverdue = (report: CombinedReport) => isAwaitingDecision(report) && ageLine(report)?.tone === 'urgent';
+
+/**
+ * Flagged — every report about a person, a job post or a message, from both
+ * the `reports` and `reportedposts` collections. The same counters, rows and
+ * footer as the other list pages: where each report stands, what's overdue,
+ * and what was reported; every number is the rows clicking it shows. Status
+ * and type live in the URL; ?reportId= opens one report.
+ */
 const Flagged: React.FC = () => {
   // Reads `reports` and `reportedposts` together — see useCombinedReports.
   const { data: reportsData, isLoading } = useCombinedReports();
@@ -212,27 +193,8 @@ const Flagged: React.FC = () => {
     return signals;
   };
 
-  const stats = useMemo(() => {
-    return {
-      total: reports.length,
-      open: reports.filter((r: CombinedReport) => r.status === 'open').length,
-      under_review: reports.filter((r: CombinedReport) => r.status === 'under_review').length,
-      action_taken: reports.filter((r: CombinedReport) => r.status === 'action_taken').length,
-      dismissed: reports.filter((r: CombinedReport) => r.status === 'dismissed').length,
-      escalated: reports.filter((r: CombinedReport) => r.status === 'escalated').length,
-      report: reports.filter((r: CombinedReport) => r.source === 'report').length,
-      reported_post: reports.filter((r: CombinedReport) => r.source === 'reported_post').length,
-      // Reported jobs come from both collections: every `reportedposts` row plus
-      // the legacy job-shaped rows sitting in `reports`.
-      job: reports.filter((r: CombinedReport) => r.reportType === 'job').length,
-      user: reports.filter((r: CombinedReport) => r.reportType === 'user').length,
-    };
-  }, [reports]);
-
   const [selectedReport, setSelectedReport] = useState<CombinedReport | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [filter, setFilter] = useState<ReportFilterStatus>('all');
-  const [typeFilter, setTypeFilter] = useState<ReportTypeFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -245,10 +207,25 @@ const Flagged: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [isFetchingTransaction, setIsFetchingTransaction] = useState(false);
+  const [, setIsFetchingTransaction] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+
+  // Status and type live in the URL; they combine.
+  const viewParam = (searchParams.get('status') || 'all') as View;
+  const view: View = VIEWS.includes(viewParam) ? viewParam : 'all';
+  const typeParam = (searchParams.get('type') || 'all') as TypeFilter;
+  const typeFilter: TypeFilter = TYPES.includes(typeParam) ? typeParam : 'all';
+  const setFilters = (nextView: View, nextType: TypeFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextView === 'all') next.delete('status'); else next.set('status', nextView);
+    if (nextType === 'all') next.delete('type'); else next.set('type', nextType);
+    setSearchParams(next, { replace: true });
+  };
+  // Clicking the selected counter again lifts that filter.
+  const chooseView = (next: View) => setFilters(next === view ? 'all' : next, typeFilter);
+  const chooseType = (next: TypeFilter) => setFilters(view, next === typeFilter ? 'all' : next);
 
   const { setIsHeaderHidden } = useContext(SidebarContext);
 
@@ -385,47 +362,15 @@ const Flagged: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const statusCounts = useMemo(() => ({
-    all: stats.total,
-    total: stats.total,
-    open: stats.open,
-    under_review: stats.under_review,
-    action_taken: stats.action_taken,
-    dismissed: stats.dismissed,
-    escalated: stats.escalated,
-    job: stats.job,
-    user: stats.user,
-    // Everything still awaiting an admin — mirrors OPEN_REPORT_STATUSES /
-    // open_total in Backend/app/constants/reportTaxonomy.js.
-    needs_review: stats.open + stats.under_review
-  }), [stats]);
-
-  /**
-   * A counter card owns both axes, so selecting one clears the other. Clicking the
-   * active card again goes back to everything (the desktop row has no Total card).
-   */
-  const selectStatCard = (card: (typeof STAT_CARDS)[number]) => {
-    const next = card.key !== 'all' && filter === card.status && typeFilter === card.type
-      ? STAT_CARDS.find((c) => c.key === 'all')!
-      : card;
-    setFilter(next.status);
-    setTypeFilter(next.type);
-  };
-
-  const isStatCardActive = (card: (typeof STAT_CARDS)[number]) =>
-    filter === card.status && typeFilter === card.type;
-
-  const filteredReports = useMemo(() => {
-    let filtered = reports;
-    if (filter === 'needs_review') filtered = filtered.filter(isAwaitingDecision);
-    else if (filter !== 'all') filtered = filtered.filter((r: CombinedReport) => r.status === filter);
-    if (typeFilter !== 'all') filtered = filtered.filter((r: CombinedReport) => r.reportType === typeFilter);
-    if (sourceFilter !== 'all') filtered = filtered.filter((r: CombinedReport) => r.source === sourceFilter);
+  // Source and search narrow the counters as well as the list.
+  const searched = useMemo(() => {
+    let list = reports;
+    if (sourceFilter !== 'all') list = list.filter((r: CombinedReport) => r.source === sourceFilter);
     if (searchTerm.trim()) {
       const s = searchTerm.toLowerCase();
       // Every field is optional-guarded: legacy rows copied into `reports` carry
       // no reportType at all, and an unguarded .toLowerCase() threw on them.
-      filtered = filtered.filter((r: CombinedReport) =>
+      list = list.filter((r: CombinedReport) =>
         (r.reportType || '').toLowerCase().includes(s) ||
         (r.reportedBy?.name || '').toLowerCase().includes(s) ||
         contactOf(r.reportedBy).toLowerCase().includes(s) ||
@@ -436,9 +381,19 @@ const Flagged: React.FC = () => {
         (r.reportedUserId?.name || '').toLowerCase().includes(s)
       );
     }
+    return list;
+  }, [reports, sourceFilter, searchTerm]);
+
+  const matchesView = (r: CombinedReport, v: View) => v === 'all' || (v === 'overdue' ? isOverdue(r) : r.status === v);
+  const matchesType = (r: CombinedReport, t: TypeFilter) => t === 'all' || typeOf(r) === t;
+  const countWhere = (v: View, t: TypeFilter) => searched.filter((r) => matchesView(r, v) && matchesType(r, t)).length;
+
+  const filteredReports = useMemo(() => {
+    const list = searched.filter((r) => matchesView(r, view) && matchesType(r, typeFilter));
     const time = (r: CombinedReport) => new Date(r.createdAt).getTime() || 0;
-    return [...filtered].sort((a, b) => (sortOrder === 'oldest' ? time(a) - time(b) : time(b) - time(a)));
-  }, [reports, filter, typeFilter, sourceFilter, searchTerm, sortOrder]);
+    return [...list].sort((a, b) => (sortOrder === 'oldest' ? time(a) - time(b) : time(b) - time(a)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched, view, typeFilter, sortOrder]);
 
   // Narrowing the result set can strand you past the last page, showing an
   // empty table over a non-empty list.
@@ -446,7 +401,7 @@ const Flagged: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
     setSelected(new Map());
-  }, [filter, typeFilter, sourceFilter, searchTerm, itemsPerPage, sortOrder]);
+  }, [view, typeFilter, sourceFilter, searchTerm, itemsPerPage, sortOrder]);
 
   const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -492,25 +447,121 @@ const Flagged: React.FC = () => {
     }
   };
 
-  const getReportTypeIcon = (reportType: string) => {
-    const icons = {
-      job: <ImageIcon className="h-4 w-4" />,
-      user: <Users className="h-4 w-4" />,
-      message: <MessageSquare className="h-4 w-4" />,
-      conversation: <MessageSquare className="h-4 w-4" />,
-      review: <Star className="h-4 w-4" />,
-      payment: <CreditCard className="h-4 w-4" />,
+  // ── Counters ─────────────────────────────────────────────────────────────
+  const viewCell = (key: View, label: string, tone: Counter['tone'], hint: string, extra: Partial<Counter> = {}): Counter => ({
+    key,
+    label,
+    tone,
+    hint,
+    count: isLoading ? undefined : countWhere(key, typeFilter),
+    selected: view === key,
+    onClick: () => chooseView(key),
+    ...extra,
+  });
+  const typeCell = (key: Exclude<TypeFilter, 'all'>, label: string, tone: Counter['tone'], hint: string): Counter => ({
+    key,
+    label,
+    tone,
+    hint,
+    count: isLoading ? undefined : countWhere(view, key),
+    selected: typeFilter === key,
+    onClick: () => chooseType(key),
+  });
+  const waitingTotal = countWhere('open', typeFilter) + countWhere('under_review', typeFilter);
+  const closedTotal = countWhere('action_taken', typeFilter) + countWhere('dismissed', typeFilter) + countWhere('escalated', typeFilter);
+  const groups: CounterGroup[] = [
+    {
+      label: 'Waiting',
+      total: isLoading ? undefined : waitingTotal,
+      cells: [
+        viewCell('open', 'Open', 'amber', 'Nobody has looked at these yet'),
+        viewCell('under_review', 'Under review', 'blue', 'An admin is looking into these', { shortLabel: 'Reviewing' }),
+      ],
+    },
+    {
+      label: 'Closed',
+      total: isLoading ? undefined : closedTotal,
+      cells: [
+        viewCell('action_taken', 'Resolved', 'emerald', 'Closed with action: a post deleted or kept, or an account restricted'),
+        viewCell('dismissed', 'Dismissed', 'gray', 'Closed with no action'),
+        viewCell('escalated', 'Escalated', 'orange', 'Sent on to a job dispute'),
+      ],
+    },
+    {
+      label: 'Needs a look',
+      cells: [viewCell('overdue', 'Overdue', 'red', 'Waiting more than 7 days for a decision', { alert: true })],
+    },
+    {
+      label: 'Reported',
+      cells: [
+        typeCell('job', 'Jobs', 'orange', 'Reports about a job post'),
+        typeCell('user', 'Users', 'purple', 'Reports about a person'),
+        typeCell('other', 'Other', 'gray', 'Messages, chats and reviews'),
+      ],
+    },
+  ];
+
+  const anyFilterActive = Boolean(searchTerm) || view !== 'all' || typeFilter !== 'all' || sourceFilter !== 'all' || sortOrder !== 'newest';
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSourceFilter('all');
+    setSortOrder('newest');
+    setFilters('all', 'all');
+  };
+  const waitingAll = reports.filter(isAwaitingDecision).length;
+  const overdueAll = reports.filter(isOverdue).length;
+  const emptyText = (view === 'open' || view === 'overdue') && !searchTerm
+    ? { title: view === 'overdue' ? 'Nothing overdue' : 'Nothing waiting', text: 'Every report in this view has a decision.' }
+    : { title: 'No reports found', text: 'Try adjusting your search or filters.' };
+
+  /** The one line under a report's status: how long it has waited, or what was decided and by whom. */
+  const statusLine = (report: CombinedReport): { text: string; tone: string; title?: string } => {
+    const age = ageLine(report);
+    if (isAwaitingDecision(report)) {
+      return age
+        ? { text: age.tone === 'urgent' ? `Overdue · ${age.text.toLowerCase()}` : age.text, tone: AGE_TONE[age.tone] }
+        : { text: `Reported ${ago(report.createdAt)}`, tone: 'text-gray-500' };
+    }
+    const outcome = tableOutcome(report);
+    const by = report.reviewedBy?.name ? `by ${report.reviewedBy.name}` : '';
+    return {
+      text: [outcome, by].filter(Boolean).join(' · ') || (report.reviewedAt ? `Decided ${format(new Date(report.reviewedAt), 'MMM d')}` : 'Decided'),
+      tone: 'text-gray-500',
+      title: report.reviewedAt ? new Date(report.reviewedAt).toLocaleString() : undefined,
     };
-    return icons[reportType as keyof typeof icons] || <Flag className="h-4 w-4" />;
+  };
+
+  /**
+   * One person in their own column (the header says which part they play):
+   * account type, name, and the most important flag on them.
+   */
+  const partyCell = (role: 'reported' | 'reporter', report: CombinedReport) => {
+    const party = role === 'reported' ? report.reportedUserId : report.reportedBy;
+    const signals = role === 'reported' ? reportedSignals(report) : reporterSignals(report);
+    return (
+      <div className="min-w-0" data-testid={role === 'reported' ? 'flagged-reported-user' : 'flagged-reporter'} title={[party?.name, contactOf(party)].filter(Boolean).join(' · ') || undefined}>
+        {party?.userType && (
+          <p className={`text-[9px] font-black uppercase tracking-wider truncate ${ROLE_TONE[party.userType] || 'text-gray-400'}`}>
+            {ROLE_LABELS[party.userType] || party.userType}
+          </p>
+        )}
+        <p className={`text-sm truncate ${party?.name ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>
+          {party?.name || (role === 'reported' ? 'No account linked' : 'Unknown')}
+        </p>
+        {signals.length > 0 && (
+          <div className="mt-0.5 truncate" data-testid={role === 'reported' ? 'flagged-reported-chips' : 'flagged-reporter-chips'}>{signals[0]}</div>
+        )}
+      </div>
+    );
   };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-red-50 rounded-lg">
                   <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -519,179 +570,71 @@ const Flagged: React.FC = () => {
                   Flagged Content
                 </h1>
               </div>
-              <p className="text-xs text-gray-500 font-medium">Review and resolve user complaints and reported content</p>
+              <p className="text-xs text-gray-500 font-medium">
+                {isLoading ? 'Reports about people, job posts and messages' : `${reports.length.toLocaleString()} reports about people, job posts and messages`}
+                {!isLoading && waitingAll > 0 && <span className="text-amber-600 font-semibold"> · {waitingAll} waiting for a decision</span>}
+                {!isLoading && overdueAll > 0 && <span className="text-red-600 font-semibold"> · {overdueAll} overdue</span>}
+              </p>
             </div>
-            
+          </div>
 
-          </div>
-
-          {/* Mobile Header */}
-          <div className="md:hidden">
-            {/* Summary strip */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Reports</p>
-                <p className="text-base font-black text-blue-600 leading-tight">{statusCounts.all.toLocaleString()}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => selectStatCard(STAT_CARDS[0])}
-                className={`flex-1 text-left rounded-xl px-3 py-2 border ${isStatCardActive(STAT_CARDS[0]) ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-100'}`}
-              >
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Needs Review</p>
-                <p className="text-base font-black text-amber-600 leading-tight">{statusCounts.needs_review.toLocaleString()}</p>
-              </button>
-            </div>
-            {/* Filter pills — the same five slices as the desktop counter row. */}
-            <div className="flex gap-2">
-              {([
-                { card: STAT_CARDS[1], label: 'All',       activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { card: STAT_CARDS[2], label: 'Jobs',      activeBg: 'bg-orange-500',  border: 'border-orange-500'  },
-                { card: STAT_CARDS[3], label: 'Users',     activeBg: 'bg-purple-500',  border: 'border-purple-500'  },
-                { card: STAT_CARDS[4], label: 'Resolved',  activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-                { card: STAT_CARDS[5], label: 'Dismissed', activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
-              ]).map(({ card, label, activeBg, border }) => {
-                const active = isStatCardActive(card);
-                return (
-                  <button
-                    key={card.key}
-                    onClick={() => selectStatCard(card)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <span className="text-[11px] font-black">{statusCounts[card.statKey].toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          {/* Counter row — the five slices, always on one line. Statuses that
-              aren't headline numbers (Open, Under Review, Escalated) stay
-              reachable through the status dropdown in the filter bar. */}
-          <div className="hidden md:grid md:grid-cols-5 gap-2 lg:gap-4">
-            {STAT_CARDS.filter((card) => card.key !== 'all').map((card) => (
-              <div key={card.key} className="cursor-pointer min-w-0" onClick={() => selectStatCard(card)}>
-                <StatsCard
-                  title={card.title}
-                  value={statusCounts[card.statKey].toLocaleString()}
-                  icon={card.icon}
-                  color={card.color}
-                  variant="tinted"
-                  isActive={isStatCardActive(card)}
-                  smallIcon={true}
-                  showActiveIcon={false}
-                />
-              </div>
-            ))}
-          </div>
+          <CounterGroups
+            groups={groups}
+            gridClass="grid-cols-[0.75fr_2.2fr_3.3fr_1.4fr_2.35fr] xl:grid-cols-[0.7fr_2.55fr_3.3fr_1fr_2.45fr]"
+            all={{ count: isLoading ? undefined : searched.length, selected: view === 'all' && typeFilter === 'all', onClick: () => setFilters('all', 'all') }}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+            testId="flagged-counters"
+            idPrefix="flagged"
+            allCell={{ label: 'All', hint: 'Every report under the source and search filters' }}
+          />
         </div>
 
-        {/* Filter Bar */}
-        <div className="px-4 md:px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-3 md:gap-4">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
+        {/* Filter Bar — one bar for every width. Phones stack it; from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="relative w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
+            <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
             <input
               type="text"
+              data-testid="flagged-search"
               placeholder="Search by keywords, reporter, or reported user..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-4 h-8 md:h-auto md:py-2 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
+              className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
             />
           </div>
-
-          {/* Mobile filter dropdowns grid */}
-          <div className="grid grid-cols-3 gap-2 md:hidden w-full">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as ReportFilterStatus)}
-              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">All Statuses</option>
-              <option value="needs_review">Needs Review</option>
-              <option value="open">Open</option>
-              <option value="under_review">Under Review</option>
-              <option value="action_taken">Resolved</option>
-              <option value="dismissed">Dismissed</option>
-              <option value="escalated">Escalated to Dispute</option>
-            </select>
+          <div className="grid grid-cols-3 gap-2 w-full lg:w-auto lg:flex lg:items-center">
+            {/* `reports` and `reportedposts` are separate collections merged into this one list. */}
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              aria-label="Where the report is stored"
+              data-testid="flagged-source"
+              className={`${selectClass} lg:w-[190px]`}
             >
-              <option value="all">All Sources ({stats.total})</option>
-              <option value="report">Reports ({stats.report})</option>
-              <option value="reported_post">Reported Posts ({stats.reported_post})</option>
+              <option value="all">All sources</option>
+              <option value="report">Reports</option>
+              <option value="reported_post">Reported posts</option>
+            </select>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+              aria-label="Sort reports"
+              data-testid="flagged-sort"
+              className={`${selectClass} lg:w-[130px] xl:hidden`}
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
             </select>
             <select
               value={itemsPerPage}
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
-              className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              aria-label="Reports per page"
+              className={`${selectClass} lg:hidden`}
             >
               <option value={10}>10 / page</option>
               <option value={20}>20 / page</option>
               <option value={50}>50 / page</option>
-            </select>
-          </div>
-
-          {/* Status — Open, Under Review and Escalated have no counter card, and
-              this picker existed only in the mobile layout, so on desktop the
-              reports still awaiting a decision could not be isolated at all. */}
-          <div className="hidden md:flex items-center gap-2 md:order-1 shrink-0">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Status</span>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as ReportFilterStatus)}
-              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">All ({statusCounts.all})</option>
-              <option value="needs_review">Needs Review ({statusCounts.needs_review})</option>
-              <option value="open">Open ({statusCounts.open})</option>
-              <option value="under_review">Under Review ({statusCounts.under_review})</option>
-              <option value="action_taken">Resolved ({statusCounts.action_taken})</option>
-              <option value="dismissed">Dismissed ({statusCounts.dismissed})</option>
-              <option value="escalated">Escalated to Dispute ({statusCounts.escalated})</option>
-            </select>
-          </div>
-
-          {/* Source picker — `reports` and `reportedposts` are separate
-              collections merged into this one table. */}
-          <div className="hidden md:flex items-center gap-2 md:order-2 shrink-0">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Source</span>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">All ({stats.total})</option>
-              <option value="report">Reports ({stats.report})</option>
-              <option value="reported_post">Reported Posts ({stats.reported_post})</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 md:order-3 shrink-0 w-full md:w-auto">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Sort</span>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
-              className="flex-1 md:flex-none bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              data-testid="flagged-sort"
-            >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-            </select>
-          </div>
-
-          <div className="hidden md:flex items-center gap-2 md:order-4 shrink-0">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => setItemsPerPage(Number(e.target.value))}
-              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
             </select>
           </div>
         </div>
@@ -702,15 +645,23 @@ const Flagged: React.FC = () => {
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Loading reports...</p>
+              </div>
             </div>
           ) : paginatedReports.length === 0 ? (
-            <div className="bg-white p-20 text-center">
-              <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gray-50 mb-6">
-                <Flag className="h-10 w-10 text-gray-300" />
+            <div className="bg-white p-12 text-center" data-testid="flagged-empty">
+              <div className="text-gray-300 mb-4">
+                <Flag className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-900 font-black text-xl mb-2">Clean slate!</p>
-              <p className="text-gray-500 text-sm max-w-xs mx-auto">No reports match your current filters. Everything looks good.</p>
+              <p className="text-gray-700 font-semibold">{emptyText.title}</p>
+              <p className="text-sm text-gray-500 mt-1">{emptyText.text}</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show every report
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -718,8 +669,8 @@ const Flagged: React.FC = () => {
               <div className="hidden lg:block bg-white flex-1 relative">
                 <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
-                    <tr className="border-b border-gray-200">
-                      <th className="w-12 pl-6 pr-2 py-4 border-b border-gray-200">
+                    <tr>
+                      <th className="w-12 pl-6 pr-2 py-3.5 border-b border-gray-200">
                         <input
                           type="checkbox"
                           aria-label="Select every report on this page that needs review"
@@ -731,254 +682,136 @@ const Flagged: React.FC = () => {
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-30 cursor-pointer"
                         />
                       </th>
-                      <th className="w-[12%] px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Type</th>
-                      <th className="w-[12%] px-3 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Source</th>
-                      <th className="w-[16%] px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported User</th>
-                      <th className="w-[14%] px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported By</th>
-                      <th className="w-[17%] px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reason & Comment</th>
-                      <th className="w-[10%] px-3 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported</th>
-                      <th className="w-[13%] px-4 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Status</th>
+                      {/* No width: Report takes what's left, so hiding Submitted below xl widens it, not the checkbox. */}
+                      <th className="px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Report</th>
+                      <th className="w-[19%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported user</th>
+                      <th className="w-[16%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Reported by</th>
+                      <th className="w-[20%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">Status</th>
+                      <th
+                        className="hidden xl:table-cell w-[15%] px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sortOrder === 'newest' ? 'descending' : 'ascending'}
+                      >
+                        <SortHeader
+                          label="Submitted"
+                          dir={sortOrder === 'newest' ? 'desc' : 'asc'}
+                          onClick={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')}
+                        />
+                      </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {paginatedReports.map((report) => (
-                      <tr
-                        key={report._id}
-                        ref={highlightedPostId === report._id ? highlightedRowRef : null}
-                        onClick={() => handleViewReport(report)}
-                        data-testid="flagged-row"
-                        className={`group h-20 transition-all duration-150 cursor-pointer ${highlightedPostId === report._id ? 'bg-amber-50 ring-inset ring-2 ring-amber-400' : selected.has(selectionKey(report)) ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}
-                      >
-                        <td className="pl-6 pr-2 py-2 align-middle border-b border-gray-300" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            aria-label={isAwaitingDecision(report) ? 'Select report' : 'Already closed'}
-                            title={isAwaitingDecision(report) ? undefined : 'Already closed — open it to see the decision'}
-                            data-testid="flagged-select"
-                            checked={selected.has(selectionKey(report))}
-                            disabled={!isAwaitingDecision(report)}
-                            onChange={() => toggleSelected(report)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
-                          />
-                        </td>
-                        {/* Type */}
-                        <td className="px-4 py-2 align-middle border-b border-gray-300">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-lg group-hover:bg-blue-50/50 group-hover:border-blue-100 transition-colors">
-                              {React.cloneElement(getReportTypeIcon(report.reportType) as React.ReactElement, { className: 'h-4 w-4 text-gray-400 group-hover:text-blue-500' })}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-gray-900 group-hover:text-blue-700 transition-colors capitalize truncate">{report.reportType || 'other'}</p>
-                              {report.job?.title && (
-                                <p className="text-[11px] text-gray-400 truncate" title={report.job.title}>{report.job.title}</p>
+                  <tbody className="bg-white">
+                    {paginatedReports.map((report) => {
+                      const line = statusLine(report);
+                      const postGone = report.job?.isDeleted || report.job?.isHidden;
+                      return (
+                        <tr
+                          key={report._id}
+                          ref={highlightedPostId === report._id ? highlightedRowRef : null}
+                          onClick={() => handleViewReport(report)}
+                          data-testid="flagged-row"
+                          className={`group h-20 cursor-pointer transition-colors ${highlightedPostId === report._id ? 'bg-amber-50/70' : selected.has(selectionKey(report)) ? 'bg-blue-50/60' : 'hover:bg-gray-50/70'}`}
+                        >
+                          <td className="pl-6 pr-2 py-2 align-middle border-b border-gray-200" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={isAwaitingDecision(report) ? 'Select report' : 'Already closed'}
+                              title={isAwaitingDecision(report) ? undefined : 'Already closed — open it to see the decision'}
+                              data-testid="flagged-select"
+                              checked={selected.has(selectionKey(report))}
+                              disabled={!isAwaitingDecision(report)}
+                              onChange={() => toggleSelected(report)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 h-20 align-middle border-b border-gray-200">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-gray-400 truncate">
+                              {TYPE_LABEL[report.reportType] || 'Other'}
+                              {postGone && (
+                                <span className="text-red-600"> · {report.job?.isDeleted ? 'Post deleted' : 'Post hidden'}</span>
                               )}
-                              {(report.job?.isDeleted || report.job?.isHidden) && (
-                                <Signal icon={report.job.isDeleted ? Trash2 : EyeOff} tone="red" title={report.job.isDeleted ? 'The post has been deleted' : 'The post is hidden from the app'}>
-                                  {report.job.isDeleted ? 'Post deleted' : 'Post hidden'}
-                                </Signal>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Source */}
-                        <td className="px-3 py-2 align-middle border-b border-gray-300">
-                          <span
-                            title={SOURCE_BADGES[report.source].label}
-                            className={`inline-block max-w-full truncate px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border align-middle ${SOURCE_BADGES[report.source].className}`}
-                          >
-                            {SOURCE_BADGES[report.source].label}
-                          </span>
-                        </td>
-
-                        {/* Reported user */}
-                        <td className="px-4 py-2 align-middle border-b border-gray-300">
-                          {(() => {
-                            const party = report.reportedUserId;
-                            const signals = reportedSignals(report);
-                            return (
-                              <div className="flex items-center gap-2.5 min-w-0" title={contactOf(party) || undefined}>
-                                <PartyAvatar name={party?.name} tone="reported" />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-gray-900 truncate">{party?.name || 'N/A'}</p>
-                                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">{contactOf(party) || 'No contact'}</p>
-                                  {signals.length > 0 && (
-                                    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-0.5" data-testid="flagged-reported-chips">{signals}</div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </td>
-
-                        {/* Reported by */}
-                        <td className="px-4 py-2 align-middle border-b border-gray-300">
-                          {(() => {
-                            const party = report.reportedBy;
-                            const signals = reporterSignals(report);
-                            return (
-                              <div className="flex items-center gap-2.5 min-w-0" title={contactOf(party) || undefined}>
-                                <PartyAvatar name={party?.name} tone="reporter" />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-gray-900 truncate">{party?.name || 'Unknown'}</p>
-                                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">{contactOf(party) || 'No contact'}</p>
-                                  {signals.length > 0 && (
-                                    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-0.5" data-testid="flagged-reporter-chips">{signals}</div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </td>
-
-                        {/* Reason & comment */}
-                        <td className="px-4 py-2 align-middle border-b border-gray-300">
-                          <p className="text-xs font-bold text-red-600 truncate">{humanize(report.reason) || 'Other'}</p>
-                          {report.comment ? (
-                            <p className="text-[11px] text-gray-500 leading-snug line-clamp-2 mt-0.5" title={report.comment}>{report.comment}</p>
-                          ) : (
-                            <p className="text-[11px] text-gray-400 italic mt-0.5">No comment</p>
-                          )}
-                        </td>
-
-                        {/* Reported */}
-                        <td className="px-3 py-2 align-middle border-b border-gray-300">
-                          {(() => {
-                            const age = ageLine(report);
-                            const open = isAwaitingDecision(report);
-                            return (
-                              <>
-                                <p
-                                  className={`text-xs font-bold whitespace-nowrap ${open && age ? AGE_TONE[age.tone] : 'text-gray-900'}`}
-                                  title={open && age ? age.text : new Date(report.createdAt).toLocaleString()}
-                                  data-testid="flagged-age-time"
-                                >
-                                  {formatDistanceToNowStrict(new Date(report.createdAt), { addSuffix: true })}
-                                </p>
-                                <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap" data-testid="flagged-date">{new Date(report.createdAt).toLocaleDateString()}</p>
-                                {age && open && age.tone === 'urgent' && (
-                                  <span className="block mt-0.5" data-testid="flagged-age">
-                                    <Signal icon={AlertCircle} tone="red" title={age.text}>Overdue</Signal>
-                                  </span>
-                                )}
-                                {age && !open && (
-                                  <p className="text-[10px] text-gray-400 mt-0.5" data-testid="flagged-age">{age.text}</p>
-                                )}
-                              </>
-                            );
-                          })()}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-2 align-middle text-center border-b border-gray-300">
-                          <div className="flex flex-col items-center gap-1 min-w-0">
-                            <StatusPill status={report.status} testId="flagged-status" />
-                            {tableOutcome(report) && (
-                              <p className="max-w-full text-[11px] font-semibold text-gray-700 truncate" title={tableOutcome(report) || undefined} data-testid="flagged-outcome">{tableOutcome(report)}</p>
-                            )}
-                            {report.reviewedBy?.name && !isAwaitingDecision(report) && (
-                              <p className="max-w-full text-[10px] text-gray-400 truncate" title={report.reviewedAt ? new Date(report.reviewedAt).toLocaleString() : undefined}>
-                                by {report.reviewedBy.name}{report.reviewedAt ? ` · ${formatDistanceToNowStrict(new Date(report.reviewedAt), { addSuffix: true })}` : ''}
-                              </p>
-                            )}
-                            {isAwaitingDecision(report) && (
-                              <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-0.5">
-                                <Eye className="h-3 w-3" /> Review <ChevronRight className="h-3 w-3" />
+                            </p>
+                            <p className="text-sm font-bold text-gray-900 truncate group-hover:text-blue-700 transition-colors">{humanize(report.reason) || 'Other'}</p>
+                            <p className="text-[11px] text-gray-500 truncate" title={report.job?.title || report.comment || undefined}>
+                              {report.job?.title ? report.job.title : report.comment ? `“${report.comment}”` : <span className="italic text-gray-400">No comment</span>}
+                            </p>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 h-20 align-middle border-b border-gray-200">
+                            {partyCell('reported', report)}
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 h-20 align-middle border-b border-gray-200">
+                            {partyCell('reporter', report)}
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 h-20 align-middle border-b border-gray-200">
+                            <div className="flex flex-col items-start gap-1.5 min-w-0">
+                              <StatusPill status={report.status} testId="flagged-status" />
+                              <span
+                                className={`flex items-center gap-1 max-w-full text-[11px] ${line.tone}`}
+                                title={line.title}
+                                data-testid={isAwaitingDecision(report) ? 'flagged-age' : 'flagged-outcome'}
+                              >
+                                <Clock className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{line.text}</span>
                               </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                            </div>
+                          </td>
+                          <td className="hidden xl:table-cell px-6 py-2 h-20 align-middle border-b border-gray-200">
+                            <p className="text-xs font-bold text-gray-900 truncate" data-testid="flagged-age-time" title={new Date(report.createdAt).toLocaleString()}>{ago(report.createdAt)}</p>
+                            <p className="text-[10px] font-medium text-gray-400 mt-1" data-testid="flagged-date">{format(new Date(report.createdAt), 'MMM d, yyyy')}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              {/* Mobile Card View */}
-              <div className="lg:hidden px-3 py-3 space-y-2">
-                {paginatedReports.map((report) => (
-                  <div
-                    key={report._id}
-                    onClick={() => handleViewReport(report)}
-                    data-testid="flagged-card"
-                    className={`bg-white rounded-xl border shadow-sm overflow-hidden active:scale-[0.98] transition-all ${selected.has(selectionKey(report)) ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-300'}`}
-                  >
-                    <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {isAwaitingDecision(report) && (
-                          <input
-                            type="checkbox"
-                            aria-label="Select report"
-                            checked={selected.has(selectionKey(report))}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={() => toggleSelected(report)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0"
-                          />
-                        )}
-                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-gray-200 text-gray-700 shrink-0">{report.reportType || 'other'}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border shrink-0 ${SOURCE_BADGES[report.source].className}`}>{SOURCE_BADGES[report.source].label}</span>
-                        <StatusPill status={report.status} className="shrink-0 !text-[9px] !px-2" />
+              {/* Phones and tablets */}
+              <div className="lg:hidden bg-white">
+                <div className="px-3 py-3 space-y-2">
+                  {paginatedReports.map((report) => {
+                    const line = statusLine(report);
+                    return (
+                      <div
+                        key={report._id}
+                        onClick={() => handleViewReport(report)}
+                        data-testid="flagged-card"
+                        className={`bg-white rounded-xl border shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer ${selected.has(selectionKey(report)) ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200'}`}
+                      >
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
+                          {isAwaitingDecision(report) ? (
+                            <input
+                              type="checkbox"
+                              aria-label="Select report"
+                              checked={selected.has(selectionKey(report))}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => toggleSelected(report)}
+                              className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                            />
+                          ) : (
+                            <span className="w-4 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-gray-400 truncate">{TYPE_LABEL[report.reportType] || 'Other'}</p>
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{humanize(report.reason) || 'Other'}</p>
+                            <p className="mt-0.5 text-[11px] text-gray-500 truncate">
+                              <span className="font-semibold text-gray-700">{report.reportedUserId?.name || report.job?.title || 'No account'}</span>
+                              {' '}reported by {report.reportedBy?.name || 'unknown'}
+                            </p>
+                          </div>
+                          <StatusPill status={report.status} className="flex-shrink-0 !text-[9px] !px-2" />
+                        </div>
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <p className={`flex-1 min-w-0 text-[10px] font-semibold truncate ${line.tone}`}>{line.text}</p>
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                            <Clock className="h-2.5 w-2.5" />
+                            {ago(report.createdAt)}
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-gray-400 shrink-0">
-                        {formatDistanceToNowStrict(new Date(report.createdAt), { addSuffix: true })}
-                      </span>
-                    </div>
-
-                    <div className="px-3 py-2.5">
-                       <h3 className="text-sm font-bold text-red-600 mb-2">{humanize(report.reason) || 'Other'}</h3>
-
-                       {report.job?.title && (
-                         <div className="px-2.5 py-2 mb-2 bg-gray-50 rounded-xl border border-gray-100">
-                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">Reported Job</p>
-                            <p className="text-xs font-black text-gray-900 truncate">{report.job.title}</p>
-                         </div>
-                       )}
-
-                       <div className="grid grid-cols-2 gap-2 mb-2">
-                          <div className="px-2.5 py-2 bg-gray-50 rounded-xl border border-gray-100 min-w-0">
-                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported User</p>
-                             <div className="flex items-center gap-2 min-w-0">
-                               <PartyAvatar name={report.reportedUserId?.name} tone="reported" />
-                               <p className="text-xs font-black text-gray-900 truncate">{report.reportedUserId?.name || 'N/A'}</p>
-                             </div>
-                             {reportedSignals(report).length > 0 && <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-1.5">{reportedSignals(report)}</div>}
-                          </div>
-                          <div className="px-2.5 py-2 bg-gray-50 rounded-xl border border-gray-100 min-w-0">
-                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Reported By</p>
-                             <div className="flex items-center gap-2 min-w-0">
-                               <PartyAvatar name={report.reportedBy?.name} tone="reporter" />
-                               <p className="text-xs font-black text-gray-900 truncate">{report.reportedBy?.name || 'Unknown'}</p>
-                             </div>
-                             {reporterSignals(report).length > 0 && <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-1.5">{reporterSignals(report)}</div>}
-                          </div>
-                       </div>
-
-                       <div className="px-2.5 py-2 bg-blue-50/30 rounded-xl border border-blue-100/50">
-                          <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-0.5">Reporter's comment</p>
-                          <p className="text-xs text-gray-700 leading-relaxed italic">"{report.comment || 'No additional details provided by reporter.'}"</p>
-                       </div>
-                    </div>
-
-                    <div className="px-3 py-2.5 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
-                       <div className="flex items-center gap-1.5 text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                         <Calendar className="h-3 w-3" />
-                         {new Date(report.createdAt).toLocaleDateString()}
-                         {(() => {
-                           const age = ageLine(report);
-                           if (!age) return null;
-                           return isAwaitingDecision(report)
-                             ? <span className={AGE_TONE[age.tone]}>· {age.tone === 'urgent' ? 'Overdue' : age.text}</span>
-                             : <span>· {age.text}</span>;
-                         })()}
-                       </div>
-                       <div className="text-blue-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-1">
-                          REVIEW REPORT <ChevronRight className="h-3 w-3" />
-                       </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
               </div>
-
             </>
           )}
         </div>
@@ -1019,33 +852,8 @@ const Flagged: React.FC = () => {
           </div>
         )}
 
-        {/* Pagination — outside scroll, always sticky at bottom */}
-        {totalPages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
-            <div className="flex items-center justify-between w-full">
-              <p className="text-xs md:text-sm text-gray-700">
-                Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
-                <span className="font-medium">{Math.min(startIndex + itemsPerPage, filteredReports.length)}</span> of{' '}
-                <span className="font-medium">{filteredReports.length}</span> results
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+        {!isLoading && filteredReports.length > 0 && (
+          <ListFooter page={currentPage} limit={itemsPerPage} total={filteredReports.length} pages={totalPages} onPage={setCurrentPage} onLimit={setItemsPerPage} />
         )}
       </div>
 

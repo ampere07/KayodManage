@@ -16,13 +16,30 @@ class SupportService {
   private baseUrl = '/api/support/chatsupports';
 
   /**
-   * Fetch all chat supports
+   * Fetch every chat support. The endpoint pages (50 by default, 100 at most),
+   * and the Support page counts and filters the whole inbox, so the first page
+   * alone silently dropped the oldest tickets from the list and its counters.
    */
   async getChatSupports(): Promise<ChatSupportsResponse> {
-    const response = await apiClient.get<ChatSupportsResponse>(this.baseUrl, {
-      timeout: 30000 // 30 second timeout for support tickets
-    });
-    return response.data;
+    const PAGE_SIZE = 100;
+    const fetchPage = (page: number) =>
+      apiClient.get<ChatSupportsResponse>(this.baseUrl, {
+        params: { page, limit: PAGE_SIZE },
+        timeout: 30000 // 30 second timeout for support tickets
+      });
+    const first = (await fetchPage(1)).data;
+    const pages = first.pagination?.total || 1;
+    if (pages <= 1) return first;
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, i) => fetchPage(i + 2))
+    );
+    // A ticket created between page requests shifts the pages by one, so the
+    // same ticket can arrive twice; keep the first copy.
+    const seen = new Set<string>();
+    const chatSupports = [first, ...rest.map((r) => r.data)]
+      .flatMap((data) => data.chatSupports || [])
+      .filter((chat) => (seen.has(chat._id) ? false : (seen.add(chat._id), true)));
+    return { ...first, chatSupports };
   }
 
   /**

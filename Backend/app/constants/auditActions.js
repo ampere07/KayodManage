@@ -37,6 +37,8 @@ const AUDIT_ACTIONS = {
   // Users
   verification_approved: { group: 'users', label: 'Verification approved' },
   verification_rejected: { group: 'users', label: 'Verification rejected' },
+  verification_resubmission_requested: { group: 'users', label: 'Verification resubmission requested' },
+  verification_flagged: { group: 'users', label: 'Verification flagged for review' },
   user_verified: { group: 'users', label: 'User marked verified' },
   user_unverified: { group: 'users', label: 'User verification removed' },
   user_restricted: { group: 'users', label: 'User restricted', sensitive: true },

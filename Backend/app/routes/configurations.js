@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const {
   getJobCategories,
+  getJobCategoryUsage,
+  getProfessionIconCheck,
   createJobCategory,
   updateJobCategory,
   deleteJobCategory,
@@ -22,6 +24,7 @@ const {
   updateAdvertisement,
   reorderAdvertisements,
   deleteAdvertisement,
+  duplicateAdvertisement,
   uploadAdvertisementImage,
 } = require('../controllers/advertisementsController');
 
@@ -56,6 +59,10 @@ const requireAdmin = adminAuth;
 // PUBLIC ENDPOINT - Get job categories (no authentication required)
 // This allows mobile app users to see categories and professions
 router.get('/job-categories', getJobCategories);
+// Admin-only: jobs and providers per category and profession (by name).
+router.get('/job-categories/usage', requireAdmin, getJobCategoryUsage);
+// Admin-only: which profession icons the app can load (HEAD to ImageKit, cached).
+router.get('/job-categories/icon-check', requireAdmin, getProfessionIconCheck);
 
 // ADMIN ONLY ENDPOINTS - Require authentication and admin role
 router.post('/job-categories', requireAdmin, createJobCategory);
@@ -96,6 +103,7 @@ router.post('/advertisements/upload-image', requireAdmin, upload.single('image')
 // Must precede '/advertisements/:id' — otherwise :id captures 'reorder'.
 router.patch('/advertisements/reorder', requireAdmin, reorderAdvertisements);
 router.patch('/advertisements/:id', requireAdmin, updateAdvertisement);
+router.post('/advertisements/:id/duplicate', requireAdmin, duplicateAdvertisement);
 router.delete('/advertisements/:id', requireAdmin, deleteAdvertisement);
 
 // Debug endpoint to check quick access professions

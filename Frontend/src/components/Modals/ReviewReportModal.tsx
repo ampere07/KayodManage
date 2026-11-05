@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  AlertTriangle,
   Trash2,
   CheckCircle,
   XCircle,
@@ -12,24 +12,22 @@ import {
   AlertCircle,
   Flag,
   User as UserIcon,
-  UserX,
   Users,
   Briefcase,
   MessageSquare,
   ChevronRight,
-  ChevronDown,
   EyeOff,
   Gavel,
   Repeat,
-  Info,
   Quote,
-  Files,
   FileText,
   Copy,
+  PenLine,
+  X as XIcon,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceStrict, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
-import SideModal from '../SideModal';
+import PanelSection from '../UI/PanelSection';
 import type { CombinedReport, ReportParty } from '../../services/flaggedService';
 import { formatBudgetWithType } from '../../utils/currency';
 import { useUserDetails, useUserPenalties, useUserStanding } from '../../hooks/useUsers';
@@ -77,32 +75,17 @@ const TYPE_META: Record<string, { label: string; icon: React.ElementType }> = {
 
 /** What the report points at, when the content itself isn't stored on the report. */
 const UNSTORED_CONTENT: Record<string, string> = {
-  message: 'The reported message is not stored with the report — only its reference below. Weigh the reporter’s comment and the people involved.',
-  conversation: 'The reported chat is not stored with the report — only its reference below. Weigh the reporter’s comment and the people involved.',
-  review: 'The reported review is not stored with the report — only its reference below.',
-  payment: 'The payment is not stored with the report — only its reference below. Check Transactions for the money trail.',
+  message: 'The reported message is not stored with the report — only its reference. Weigh the reporter’s comment and the people involved.',
+  conversation: 'The reported chat is not stored with the report — only its reference. Weigh the reporter’s comment and the people involved.',
+  review: 'The reported review is not stored with the report — only its reference.',
+  payment: 'The payment is not stored with the report — only its reference. Check Transactions for the money trail.',
   other: 'This report has no attached content — only the reporter’s reason and comment.',
 };
 
-const SOURCE_LABEL: Record<string, string> = { report: 'Reports', reported_post: 'Reported Posts' };
+const SOURCE_LABEL: Record<string, string> = { report: 'Reports', reported_post: 'Reported posts' };
 
-/** Same pills as the Users page. */
-const ROLE_PILL: Record<string, string> = {
-  provider: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-  client: 'bg-purple-50 text-purple-700 border-purple-100',
-};
-const ACCOUNT_PILL: Record<string, string> = {
-  restricted: 'bg-amber-50 text-amber-700 border-amber-200',
-  suspended: 'bg-orange-50 text-orange-700 border-orange-200',
-  banned: 'bg-red-50 text-red-700 border-red-200',
-  deleted: 'bg-gray-100 text-gray-600 border-gray-200',
-};
-
-const AGE_PILL = {
-  urgent: 'bg-red-50 text-red-700 border-red-200',
-  warn: 'bg-amber-50 text-amber-700 border-amber-200',
-  muted: 'bg-gray-50 text-gray-500 border-gray-200',
-} as const;
+/** Role words in the Users page's colours. */
+const ROLE_TEXT: Record<string, string> = { provider: 'text-indigo-600', client: 'text-purple-600' };
 
 const formatStamp = (value?: string | Date | null) => (value ? format(new Date(value), 'MMM d, yyyy · h:mm a') : '—');
 const formatDay = (value?: string | Date | null) => (value ? format(new Date(value), 'MMM d, yyyy') : '—');
@@ -112,37 +95,6 @@ const copy = (value: string, label: string) =>
   navigator.clipboard.writeText(value)
     .then(() => toast.success(`${label} copied`))
     .catch(() => toast.error(`Failed to copy ${label.toLowerCase()}`));
-
-const Pill: React.FC<{ className: string; title?: string; children: React.ReactNode }> = ({ className, title, children }) => (
-  <span title={title} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border whitespace-nowrap ${className}`}>
-    {children}
-  </span>
-);
-
-/**
- * One collapsible section: a row with a title and a one-line summary, so the
- * panel reads at a glance and the detail is one click away.
- */
-const Disclosure: React.FC<{ id: string; title: string; icon: React.ElementType; summary?: React.ReactNode; open: boolean; onToggle: () => void; testId?: string; children: React.ReactNode }> = ({ id, title, icon: Icon, summary, open, onToggle, testId, children }) => (
-  <section className="rounded-xl border border-gray-100 bg-white" data-testid={testId}>
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      aria-controls={`report-section-${id}`}
-      data-testid={testId ? `${testId}-toggle` : undefined}
-      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-50/80 transition-colors"
-    >
-      <Icon className="h-4 w-4 text-gray-400 shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-gray-900">{title}</span>
-        {summary && <span className="block text-xs text-gray-500 truncate mt-0.5">{summary}</span>}
-      </span>
-      <ChevronDown className={`h-4 w-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-    </button>
-    {open && <div id={`report-section-${id}`} className="px-4 pb-4 pt-3 border-t border-gray-100">{children}</div>}
-  </section>
-);
 
 /** Long text clamped to a few lines with a "Show more" toggle. */
 const ExpandableText: React.FC<{ text: string; lines?: 3 | 4; className?: string }> = ({ text, lines = 4, className = 'text-gray-800' }) => {
@@ -168,7 +120,7 @@ const Fact: React.FC<{ label: string; value: React.ReactNode; tone?: string; wid
   </div>
 );
 
-/** A highlighted line inside a card (restriction, mutual reports, hidden post). */
+/** A highlighted line inside a card (restriction, hidden post, account action). */
 const Banner: React.FC<{ icon: React.ElementType; className: string; iconClass: string; children: React.ReactNode }> = ({ icon: Icon, className, iconClass, children }) => (
   <div className={`flex items-start gap-2 p-3 border rounded-lg text-xs ${className}`}>
     <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconClass}`} />
@@ -176,51 +128,50 @@ const Banner: React.FC<{ icon: React.ElementType; className: string; iconClass: 
   </div>
 );
 
-const PartyHeader: React.FC<{ party: ReportParty; tone: 'reported' | 'reporter' }> = ({ party, tone }) => {
-  const status = party.accountStatus;
-  return (
-    <div className="flex items-center gap-3">
+/** One person on the report, labelled with their part in it. */
+const PartyCard: React.FC<{ party: ReportParty; tone: 'reported' | 'reporter'; flags?: React.ReactNode; children?: React.ReactNode; testId: string }> = ({ party, tone, flags, children, testId }) => (
+  <div className="rounded-lg border border-gray-100 px-3 py-3 space-y-3" data-testid={testId}>
+    <div className="flex items-center gap-3 min-w-0">
       <PartyAvatar name={party.name} tone={tone} size="md" />
       <div className="min-w-0 flex-1">
-        <p className="text-base font-bold text-gray-900 truncate">{party.name || 'Unknown'}</p>
-        <p className="text-xs text-gray-500 truncate">
+        <p className="text-[9px] font-black uppercase tracking-wider">
+          <span className={tone === 'reported' ? 'text-rose-600' : 'text-blue-600'}>{tone === 'reported' ? 'Reported user' : 'Reported by'}</span>
+          {party.userType && <span className={ROLE_TEXT[party.userType] || 'text-gray-500'}> · {ROLE_LABELS[party.userType] || party.userType}</span>}
+        </p>
+        <p className="text-sm font-bold text-gray-900 truncate">{party.name || 'Unknown'}</p>
+        <p className="text-[11px] text-gray-500 truncate">
           {partyContact(party) || 'No contact on file'}
           <span className="text-gray-300"> · </span>
           <span className="font-mono text-gray-400">#{party._id.slice(-6).toUpperCase()}</span>
         </p>
       </div>
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        {party.userType && (
-          <Pill className={ROLE_PILL[party.userType] || 'bg-gray-50 text-gray-600 border-gray-200'}>
-            {party.userType === 'provider' ? <Briefcase className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
-            {ROLE_LABELS[party.userType] || party.userType}
-          </Pill>
-        )}
-        {status && status !== 'active' && <Pill className={ACCOUNT_PILL[status] || 'bg-gray-50 text-gray-600 border-gray-200'}>{status}</Pill>}
-      </div>
     </div>
-  );
-};
+    {flags}
+    {children}
+  </div>
+);
 
 const RelatedRow: React.FC<{ report: CombinedReport; label: string; onOpen: () => void }> = ({ report, label, onOpen }) => (
-  <button
-    type="button"
-    onClick={onOpen}
-    data-testid="report-related-row"
-    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/40 text-left transition-colors"
-  >
-    <div className="min-w-0 flex-1">
-      <p className="text-xs font-bold text-gray-900 truncate">
-        {humanize(report.reason)} <span className="font-medium text-gray-400">· {label}</span>
-      </p>
-      <p className="text-[11px] text-gray-400 truncate">
-        {ago(report.createdAt)}
-        {tableOutcome(report) ? ` · ${tableOutcome(report)}` : ''}
-      </p>
-    </div>
-    <StatusPill status={report.status} className="shrink-0" />
-    <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
-  </button>
+  <li>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="report-related-row"
+      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold text-gray-900 truncate">
+          {humanize(report.reason)} <span className="font-normal text-gray-400">· {label}</span>
+        </p>
+        <p className="text-[11px] text-gray-500 truncate">
+          {ago(report.createdAt)}
+          {tableOutcome(report) ? ` · ${tableOutcome(report)}` : ''}
+        </p>
+      </div>
+      <StatusPill status={report.status} className="shrink-0" />
+      <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+    </button>
+  </li>
 );
 
 const CopyId: React.FC<{ value: string; label: string }> = ({ value, label }) => (
@@ -230,8 +181,16 @@ const CopyId: React.FC<{ value: string; label: string }> = ({ value, label }) =>
   </button>
 );
 
-const RELATED_SHOWN = 5;
+const RELATED_SHOWN = 3;
 
+/**
+ * One report, in the details-panel standard (UI/PanelSection), who → what →
+ * when → where: the reason and comment up top (and the decision, once made),
+ * then People (who was reported, who reported them, with what the moderator
+ * weighs about each), the reported post or content, a Timeline (reported,
+ * waited or decided, and other reports about the same person or post), and
+ * the Source it came from. The decision buttons stay below.
+ */
 const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
   isOpen,
   onClose,
@@ -248,8 +207,7 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
   const [durationHours, setDurationHours] = useState<number>(0);
   const [durationMinutes, setDurationMinutes] = useState<number>(0);
   const [actionReason, setActionReason] = useState<string>('');
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  const toggle = (key: string) => setOpen((o) => ({ ...o, [key]: !o[key] }));
+  const [showAllRelated, setShowAllRelated] = useState(false);
 
   const resetAction = () => {
     setConfirmingAction(null);
@@ -263,8 +221,28 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
   useEffect(() => {
     setAdminNotes('');
     resetAction();
-    setOpen({ content: report?.reportType === 'job' });
+    setShowAllRelated(false);
   }, [report?._id, isOpen]);
+
+  // The page behind doesn't scroll while the panel is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [isOpen]);
+
+  // Escape steps back out of an account action first, then closes the panel.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || isLoading) return;
+      if (confirmingAction) resetAction();
+      else onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, confirmingAction, isLoading, onClose]);
 
   const reported = report?.reportedUserId || null;
   const reporter = report?.reportedBy || null;
@@ -276,9 +254,10 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
 
   const index = useMemo(() => buildReportIndex(allReports), [allReports]);
 
-  if (!report) return null;
+  if (!isOpen || !report) return null;
 
   const type = TYPE_META[report.reportType] || TYPE_META.other;
+  const TypeIcon = type.icon;
   const isJobReport = report.reportType === 'job';
   const job = report.job;
   const age = ageLine(report);
@@ -306,35 +285,50 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
   const againstTotal = standing.data?.reportsAgainst.total || 0;
   const penaltyTotal = penalties.data?.totalPenalties || 0;
 
-  // The few facts worth seeing before opening anything.
+  // What a moderator weighs about each person, as quiet flags.
   const accountStatus = user?.accountStatus || reported?.accountStatus;
   const accountSignal = accountStatus && accountStatus !== 'active' ? ACCOUNT_SIGNAL[accountStatus] : null;
   const untilText = accountSignal && restrictionEnds && !indefinite ? ` until ${format(new Date(restrictionEnds), 'MMM d')}` : '';
   const reportCount = standing.data ? againstTotal : aboutPerson.length + (reported ? 1 : 0);
   const mostlyDismissed = record.total >= 3 && record.dismissed / Math.max(1, record.dismissed + record.actioned) >= 0.75;
-  const signals = [
+  const reportedFlags = [
     accountSignal && <Signal key="account" icon={accountSignal.icon} tone={accountSignal.tone} title="The reported account's status right now">{accountSignal.label}{untilText}</Signal>,
     reportCount >= 2 && <Signal key="reports" icon={Flag} tone={reportCount >= 3 ? 'red' : 'amber'} title="Reports naming this person">Reported {reportCount}×</Signal>,
     penaltyTotal > 0 && <Signal key="penalties" icon={Gavel} tone="orange" title="Earlier restrictions, suspensions and bans">{penaltyTotal} past {penaltyTotal === 1 ? 'penalty' : 'penalties'}</Signal>,
     mutual && <Signal key="mutual" icon={Repeat} tone="violet" title="Each has reported the other">Reported each other</Signal>,
-    mostlyDismissed && <Signal key="reporter" icon={AlertCircle} tone="amber" title="Most of this reporter's decided reports were dismissed">Reporter often dismissed</Signal>,
-    isJobReport && job && (job.isDeleted || job.isHidden) && <Signal key="post" icon={job.isDeleted ? Trash2 : EyeOff} tone="red">{job.isDeleted ? 'Post deleted' : 'Post hidden'}</Signal>,
+  ].filter(Boolean);
+  const reporterFlags = [
+    mostlyDismissed && <Signal key="reporter" icon={AlertCircle} tone="amber" title="Most of this reporter's decided reports were dismissed">Often dismissed</Signal>,
+    mutual && <Signal key="mutual" icon={Repeat} tone="violet" title="Each has reported the other">Reported each other</Signal>,
   ].filter(Boolean);
 
-  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const reportedSummary = reported
-    ? [reported.name, ROLE_LABELS[reported.userType] || reported.userType,
-      accountSignal ? `${accountSignal.label}${untilText}` : null,
-      standing.data ? count(againstTotal, 'report against them', 'reports against them') : null,
-      penaltyTotal ? count(penaltyTotal, 'past penalty', 'past penalties') : null].filter(Boolean).join(' · ')
-    : 'No account attached';
-  const reporterSummary = reporter
-    ? [reporter.name, ROLE_LABELS[reporter.userType] || reporter.userType,
-      record.total ? `${count(record.total, 'other report', 'other reports')} filed${record.dismissed ? `, ${record.dismissed} dismissed` : ''}` : 'First report they filed'].filter(Boolean).join(' · ')
-    : 'Reporter not found';
-  const stillOpen = [...aboutPerson, ...aboutJob].filter(isAwaiting).length;
-  const relatedSummary = [aboutPerson.length ? `${aboutPerson.length} about ${reported?.name?.split(' ')[0] || 'this person'}` : null,
-    aboutJob.length ? `${aboutJob.length} about this post` : null, stillOpen ? `${stillOpen} still open` : null].filter(Boolean).join(' · ');
+  const relatedCount = aboutPerson.length + aboutJob.length;
+  const relatedShown = (list: CombinedReport[]) => (showAllRelated ? list : list.slice(0, RELATED_SHOWN));
+
+  // When: the report's own events; the waiting one stays last.
+  const events: { key: string; label: string; at?: string | null; note?: React.ReactNode; tone: string }[] = [
+    {
+      key: 'reported',
+      label: 'Reported',
+      at: report.createdAt,
+      note: [reporter?.name ? `by ${reporter.name}` : null, report.reportMetadata?.reportSource ? `from ${humanize(report.reportMetadata.reportSource)}` : null].filter(Boolean).join(' · ') || undefined,
+      tone: 'bg-gray-400',
+    },
+    awaiting
+      ? {
+          key: 'waiting',
+          label: report.status === 'under_review' ? 'Under review' : 'Waiting for a decision',
+          note: `for ${formatDistanceToNow(new Date(report.createdAt))} so far${age?.tone === 'urgent' ? ' · overdue' : ''}`,
+          tone: age?.tone === 'urgent' ? 'bg-red-500' : 'bg-amber-500',
+        }
+      : {
+          key: 'decided',
+          label: outcome || humanize(report.status),
+          at: report.reviewedAt,
+          note: [report.reviewedBy?.name ? `by ${report.reviewedBy.name}` : null, report.reviewedAt ? `${formatDistanceStrict(new Date(report.reviewedAt), new Date(report.createdAt))} after it came in` : null].filter(Boolean).join(' · ') || undefined,
+          tone: report.status === 'dismissed' ? 'bg-gray-400' : report.status === 'escalated' ? 'bg-orange-500' : 'bg-emerald-500',
+        },
+  ];
 
   const handleConfirmAction = async () => {
     if (!confirmingAction || !reported?._id || !onUserAction) return;
@@ -360,27 +354,53 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
 
   const actionLabel = confirmingAction ? confirmingAction.charAt(0).toUpperCase() + confirmingAction.slice(1) : '';
 
-  return (
-    <SideModal isOpen={isOpen} onClose={onClose} title={`Review ${type.label.toLowerCase()} report`} width="2xl">
-      <div className="flex-1 min-h-0 flex flex-col" data-testid="report-modal">
-        {/* SideModal's content area doesn't scroll, so this does; the action bar sits below it. */}
+  return createPortal(
+    <>
+      <div className="fixed inset-0 bg-black/50 z-[100] transition-opacity" onClick={() => !isLoading && onClose()} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Review ${type.label.toLowerCase()} report`}
+        data-testid="report-modal"
+        className="fixed right-0 top-0 h-full w-full md:w-[560px] bg-white z-[101] shadow-2xl flex flex-col overflow-hidden"
+      >
+        {/* Header: what kind of report, and its reason */}
+        <div className="flex-shrink-0 border-b border-gray-200 px-4 md:px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-rose-50 text-rose-600 border border-rose-100">
+              <TypeIcon className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">{type.label} report</p>
+              <h2 className="text-lg font-bold text-gray-900 truncate" data-testid="report-title">{humanize(report.reason) || 'No reason given'}</h2>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isLoading}
+            aria-label="Close"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+          >
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* The panel's body scrolls; the decision bar sits below it. */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain" data-testid="report-scroll">
-          {/* At a glance: everything needed to decide, nothing more. */}
-          <section className="px-4 md:px-6 pt-5 pb-4 space-y-3" data-testid="report-summary">
-            <div className="flex flex-wrap items-center gap-1.5">
+          {/* What was said, and where it stands */}
+          <div className="px-5 md:px-6 py-5 space-y-3 border-b border-gray-100" data-testid="report-summary">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <StatusPill status={report.status} />
-              {age && (
-                <Pill className={AGE_PILL[age.tone]}>
-                  <Clock className="h-3 w-3" />
-                  {age.text}
-                </Pill>
+              {awaiting && age && (
+                <span className={`inline-flex items-center gap-1 text-xs font-semibold ${age.tone === 'urgent' ? 'text-red-600' : 'text-amber-600'}`}>
+                  <Clock className="h-3.5 w-3.5" />
+                  {age.tone === 'urgent' ? `Overdue · ${age.text.toLowerCase()}` : age.text}
+                </span>
               )}
               <span className="ml-auto text-xs text-gray-400 whitespace-nowrap" title={formatStamp(report.createdAt)}>Reported {formatDay(report.createdAt)}</span>
             </div>
-
-            <h2 className="text-xl font-bold text-gray-900 leading-tight">{humanize(report.reason) || 'No reason given'}</h2>
-
-            <div className="flex items-start gap-2.5 rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+            <div className="flex items-start gap-2.5 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
               <Quote className="h-4 w-4 text-gray-300 shrink-0 mt-0.5" />
               {report.comment ? (
                 <ExpandableText text={report.comment} />
@@ -388,122 +408,38 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                 <p className="text-sm text-gray-400 italic">The reporter didn’t add a comment.</p>
               )}
             </div>
-
-            <div className="flex items-center gap-2 min-w-0 text-xs">
-              <span className="sr-only">Filed by {reporter?.name || 'an unknown user'} against {reported?.name || job?.title || 'an unknown user'}</span>
-              <PartyAvatar name={reporter?.name} tone="reporter" />
-              <span className="font-semibold text-gray-800 truncate" aria-hidden>{reporter?.name || 'Unknown'}</span>
-              <span className="text-gray-400 shrink-0" aria-hidden>reported</span>
-              <PartyAvatar name={reported?.name || job?.title} tone="reported" />
-              <span className="font-semibold text-gray-800 truncate" aria-hidden>{reported?.name || job?.title || 'Unknown'}</span>
-            </div>
-
-            {!isJobReport && report.reportType !== 'user' && (
-              <p className="flex items-start gap-1.5 text-xs text-gray-500" data-testid="report-content">
-                <Info className="h-3.5 w-3.5 text-gray-400 mt-0.5 shrink-0" />
-                {UNSTORED_CONTENT[report.reportType] || UNSTORED_CONTENT.other}
-              </p>
-            )}
-
-            {signals.length > 0 && (
-              <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1" data-testid="report-signals">{signals}</div>
-            )}
-          </section>
-
-          <div className="px-4 md:px-6 pb-5 space-y-2">
-            {/* Decision, once made */}
+            {/* The decision, once made */}
             {!awaiting && (
-              <section
-                className={`rounded-xl border p-4 mb-2 ${report.status === 'dismissed' ? 'border-gray-200 bg-gray-50' : 'border-emerald-100 bg-emerald-50/50'}`}
+              <div
+                className={`rounded-lg border px-3 py-2.5 ${report.status === 'dismissed' ? 'border-gray-200 bg-gray-50' : 'border-emerald-100 bg-emerald-50/50'}`}
                 data-testid="report-decision"
               >
                 <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
                   <Gavel className={`h-4 w-4 ${report.status === 'dismissed' ? 'text-gray-500' : 'text-emerald-700'}`} />
                   {outcome || humanize(report.status)}
-                </p>
-                <p className="text-xs text-gray-600 mt-1">
-                  {report.reviewedBy?.name ? <>by <span className="font-semibold">{report.reviewedBy.name}</span></> : 'Reviewer not recorded'}
-                  {report.reviewedAt ? ` · ${formatStamp(report.reviewedAt)}` : ''}
-                  {age?.tone === 'muted' ? ` · ${age.text.toLowerCase()}` : ''}
+                  <span className="font-normal text-xs text-gray-500">
+                    {report.reviewedBy?.name ? `· by ${report.reviewedBy.name}` : '· reviewer not recorded'}
+                  </span>
                 </p>
                 {notes ? (
-                  <p className="mt-2 text-sm text-gray-800 whitespace-pre-wrap break-words" data-testid="report-decision-notes">{notes}</p>
+                  <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap break-words" data-testid="report-decision-notes">“{notes}”</p>
                 ) : (
-                  <p className="mt-2 text-xs text-gray-400 italic">No note was left with this decision.</p>
+                  <p className="mt-1 text-xs text-gray-400 italic">No note was left with this decision.</p>
                 )}
-              </section>
+              </div>
             )}
+          </div>
 
-            {/* The reported post: the evidence, open by default */}
-            {isJobReport && (
-              <Disclosure
-                id="content"
-                title="Reported post"
-                icon={Briefcase}
-                summary={job ? [job.title || 'Untitled', job.category, `${job.media?.length || 0} ${(job.media?.length || 0) === 1 ? 'photo' : 'photos'}`].filter(Boolean).join(' · ') : 'Post not found'}
-                open={!!open.content}
-                onToggle={() => toggle('content')}
-                testId="report-content"
-              >
-                {job ? (
-                  <div className="space-y-3">
-                    {(job.isDeleted || job.isHidden) && (
-                      <Banner icon={AlertTriangle} className="bg-red-50 border-red-100 text-red-800" iconClass="text-red-500">
-                        <p className="font-semibold">
-                          {job.isDeleted ? 'This post has been deleted — shown from the copy saved with the report.' : 'This post is hidden from the app.'}
-                        </p>
-                      </Banner>
-                    )}
-                    <div>
-                      <p className="text-sm font-bold text-gray-900">{job.title || 'Untitled'}</p>
-                      {job.description ? <ExpandableText text={job.description} className="text-gray-600 mt-0.5" lines={3} /> : <p className="text-sm text-gray-400">No description</p>}
-                    </div>
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                      <Fact label="Category" value={job.category || '—'} />
-                      <Fact label="Budget" value={job.budget ? formatBudgetWithType(job.budget, job.budgetType || 'fixed') : 'Not set'} tone={job.budget ? undefined : 'text-gray-400'} />
-                      <Fact label="Location" value={[job.location?.address, job.location?.city].filter(Boolean).join(', ') || '—'} />
-                      <Fact label="Posted" value={job.createdAt ? `${formatDay(job.createdAt)} · ${humanize(job.status) || '—'}` : '—'} />
-                    </dl>
-                    <div>
-                      <p className="text-[11px] text-gray-500 mb-1.5">Media {job.media?.length ? `(${job.media.length})` : ''}</p>
-                      {job.media && job.media.length > 0 ? (
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                          {job.media.map((item, i) => {
-                            const url = typeof item === 'string' ? item : (item as any)?.url || (item as any)?.type;
-                            const isVideo = typeof item === 'string' ? /\.(mp4|webm|mov|avi)$/i.test(url || '') : (item as any)?.mediaType === 'video';
-                            return (
-                              <a key={i} href={url} target="_blank" rel="noopener noreferrer" title={isVideo ? 'Open video' : 'Open image'}
-                                className="relative block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50 hover:opacity-90">
-                                {isVideo ? <video src={url} className="w-full h-full object-cover" preload="metadata" muted /> : <img src={url} alt={`Attachment ${i + 1}`} className="w-full h-full object-cover" />}
-                                {isVideo && <Video className="absolute top-1 left-1 h-3.5 w-3.5 text-white drop-shadow" />}
-                              </a>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400">No media on this post</p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">The post could not be found, and no copy was saved with the report.</p>
-                )}
-              </Disclosure>
-            )}
-
-            {/* Reported user */}
-            <Disclosure
-              id="reported"
-              title={isJobReport ? 'Posted by (reported)' : 'Reported user'}
-              icon={UserX}
-              summary={reportedSummary}
-              open={!!open.reported}
-              onToggle={() => toggle('reported')}
-              testId="report-reported-user"
-            >
+          {/* Who */}
+          <PanelSection icon={Users} label="People" description="Who was reported, and who reported them" testId="report-people">
+            <div className="space-y-2">
               {reported ? (
-                <div className="space-y-3">
-                  <PartyHeader party={reported} tone="reported" />
+                <PartyCard
+                  party={reported}
+                  tone="reported"
+                  testId="report-reported-user"
+                  flags={reportedFlags.length > 0 && <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="report-signals">{reportedFlags}</div>}
+                >
                   {restriction && user?.accountStatus && user.accountStatus !== 'active' && (
                     <Banner icon={ShieldAlert} className="bg-amber-50 border-amber-200 text-amber-900" iconClass="text-amber-600">
                       <p className="font-bold">
@@ -511,7 +447,6 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                         {restrictionEnds && !indefinite ? ` until ${formatStamp(restrictionEnds)}` : indefinite ? ' · no end date' : ''}
                       </p>
                       {restriction.reason && <p className="mt-0.5 text-amber-800">“{restriction.reason}”</p>}
-                      <p className="mt-0.5 text-amber-700/80">Since {formatStamp(restriction.restrictedAt)}</p>
                     </Banner>
                   )}
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
@@ -525,8 +460,6 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                       value={penalties.isLoading ? '…' : penalties.data ? `${penaltyTotal}${penalties.data.lastPenalty ? ` · last ${ago(penalties.data.lastPenalty)}` : ''}` : '—'}
                       tone={penaltyTotal > 0 ? 'text-orange-600' : undefined}
                     />
-                    <Fact label="Reports they filed" value={loadingStanding ? '…' : standing.data?.reportsFiled ?? '—'} />
-                    <Fact label="Member since" value={details.isLoading ? '…' : user?.createdAt ? formatDay(user.createdAt) : '—'} />
                     <Fact label="Verified" value={details.isLoading ? '…' : user ? (user.isVerified ? 'Yes' : 'No') : '—'} tone={user && !user.isVerified ? 'text-gray-500' : undefined} />
                     <Fact label="Last seen" value={details.isLoading ? '…' : user?.lastLogin ? ago(user.lastLogin) : '—'} />
                     {reported.userType === 'provider' ? (
@@ -537,113 +470,167 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
                     {(user?.faultFindings?.length || 0) > 0 && <Fact label="Dispute fault findings" value={user!.faultFindings!.length} tone="text-orange-600" />}
                   </dl>
                   {details.isError && <p className="text-xs text-gray-400">Couldn’t load the full account — some details may be missing.</p>}
-                </div>
+                </PartyCard>
               ) : (
-                <p className="text-sm text-gray-500">No account is attached to this report{isJobReport ? ' — the poster could not be resolved.' : ' (it may have been deleted).'}</p>
+                <p className="text-sm text-gray-500" data-testid="report-reported-user">No account is attached to this report{isJobReport ? ' — the poster could not be resolved.' : ' (it may have been deleted).'}</p>
               )}
-            </Disclosure>
-
-            {/* Reporter */}
-            <Disclosure
-              id="reporter"
-              title="Reported by"
-              icon={Users}
-              summary={reporterSummary}
-              open={!!open.reporter}
-              onToggle={() => toggle('reporter')}
-              testId="report-reporter"
-            >
               {reporter ? (
+                <PartyCard
+                  party={reporter}
+                  tone="reporter"
+                  testId="report-reporter"
+                  flags={reporterFlags.length > 0 && <div className="flex flex-wrap gap-x-3 gap-y-1">{reporterFlags}</div>}
+                >
+                  <p className="text-xs text-gray-600">
+                    {record.total
+                      ? <>Filed {record.total} other report{record.total === 1 ? '' : 's'}: {record.dismissed} dismissed, <span className={record.actioned ? 'text-emerald-700 font-semibold' : ''}>{record.actioned} led to action</span>{record.awaiting ? `, ${record.awaiting} waiting` : ''}.</>
+                      : 'This is the first report they filed here.'}
+                    {mutual && <span className="block mt-1 text-violet-700">{reported?.name || 'The reported person'} has also reported {reporter.name}, so this may be one side of a dispute.</span>}
+                  </p>
+                </PartyCard>
+              ) : (
+                <p className="text-sm text-gray-500" data-testid="report-reporter">The reporter’s account could not be found.</p>
+              )}
+            </div>
+          </PanelSection>
+
+          {/* What — the reported post, or what the report points at */}
+          {isJobReport ? (
+            <PanelSection icon={Briefcase} label="Reported post" description={job ? 'The post as it was reported' : 'The post this report is about'} testId="report-content">
+              {job ? (
                 <div className="space-y-3">
-                  <PartyHeader party={reporter} tone="reporter" />
-                  <dl className="grid grid-cols-3 gap-x-4">
-                    <Fact label="Other reports filed" value={record.total} />
-                    <Fact label="Dismissed" value={record.dismissed} />
-                    <Fact label="Led to action" value={record.actioned} tone={record.actioned > 0 ? 'text-emerald-700' : undefined} />
+                  {(job.isDeleted || job.isHidden) && (
+                    <Banner icon={job.isDeleted ? Trash2 : EyeOff} className="bg-red-50 border-red-100 text-red-800" iconClass="text-red-500">
+                      <p className="font-semibold">
+                        {job.isDeleted ? 'This post has been deleted — shown from the copy saved with the report.' : 'This post is hidden from the app.'}
+                      </p>
+                    </Banner>
+                  )}
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{job.title || 'Untitled'}</p>
+                    {job.description ? <ExpandableText text={job.description} className="text-gray-600 mt-0.5" lines={3} /> : <p className="text-sm text-gray-400">No description</p>}
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    <Fact label="Category" value={job.category || '—'} />
+                    <Fact label="Budget" value={job.budget ? formatBudgetWithType(job.budget, job.budgetType || 'fixed') : 'Not set'} tone={job.budget ? undefined : 'text-gray-400'} />
+                    <Fact label="Location" value={[job.location?.address, job.location?.city].filter(Boolean).join(', ') || '—'} />
+                    <Fact label="Posted" value={job.createdAt ? `${formatDay(job.createdAt)} · ${humanize(job.status) || '—'}` : '—'} />
                   </dl>
-                  {mostlyDismissed && <p className="text-xs text-amber-700">Most of this person’s decided reports were dismissed.</p>}
-                  {mutual && <p className="text-xs text-violet-700">{reported?.name || 'The reported person'} has also reported {reporter.name}, so this may be one side of a dispute.</p>}
+                  {job.media && job.media.length > 0 ? (
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
+                      {job.media.map((item, i) => {
+                        const url = typeof item === 'string' ? item : (item as any)?.url || (item as any)?.type;
+                        const isVideo = typeof item === 'string' ? /\.(mp4|webm|mov|avi)$/i.test(url || '') : (item as any)?.mediaType === 'video';
+                        return (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer" title={isVideo ? 'Open video' : 'Open image'}
+                            className="relative block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50 hover:opacity-90">
+                            {isVideo ? <video src={url} className="w-full h-full object-cover" preload="metadata" muted /> : <img src={url} alt={`Attachment ${i + 1}`} className="w-full h-full object-cover" />}
+                            {isVideo && <Video className="absolute top-1 left-1 h-3.5 w-3.5 text-white drop-shadow" />}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">No photos on this post</p>
+                  )}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">The reporter’s account could not be found.</p>
+                <p className="text-sm text-gray-500">The post could not be found, and no copy was saved with the report.</p>
               )}
-            </Disclosure>
+            </PanelSection>
+          ) : report.reportType !== 'user' ? (
+            <PanelSection icon={type.icon as any} label={`Reported ${type.label.toLowerCase()}`} description="What the report points at" testId="report-content">
+              <p className="text-sm text-gray-600">{UNSTORED_CONTENT[report.reportType] || UNSTORED_CONTENT.other}</p>
+              {report.relatedId && (
+                <dl className="mt-3 grid grid-cols-2 gap-x-4">
+                  <Fact label="Reference" value={<CopyId value={report.relatedId} label="Reference" />} wide />
+                </dl>
+              )}
+            </PanelSection>
+          ) : null}
 
-            {/* Other reports */}
-            {(aboutPerson.length > 0 || aboutJob.length > 0) && (
-              <Disclosure
-                id="related"
-                title="Other reports"
-                icon={Files}
-                summary={relatedSummary}
-                open={!!open.related}
-                onToggle={() => toggle('related')}
-                testId="report-related"
-              >
-                <div className="space-y-3">
-                  {aboutPerson.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-semibold text-gray-600">About {reported?.name || 'this person'} ({aboutPerson.length})</p>
-                      {aboutPerson.slice(0, RELATED_SHOWN).map((r) => (
+          {/* When */}
+          <PanelSection icon={Clock} label="Timeline" description={relatedCount ? 'What happened, and other reports about them' : 'What happened so far'} testId="report-timeline">
+            <ol className="space-y-3">
+              {events.map((event, i) => (
+                <li key={event.key} className="relative flex gap-3" data-testid={`report-when-${event.key}`}>
+                  {i < events.length - 1 && <span className="absolute left-[4px] top-3 bottom-[-12px] w-px bg-gray-200" aria-hidden="true" />}
+                  <span className={`relative mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ring-2 ring-white ${event.tone}`} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900">{event.label}</p>
+                    {event.at && <p className="text-[11px] text-gray-500">{formatStamp(event.at)} ({ago(event.at)})</p>}
+                    {event.note && <p className="text-[11px] text-gray-500">{event.note}</p>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            {relatedCount > 0 && (
+              <div className="mt-4 space-y-3" data-testid="report-related">
+                {aboutPerson.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-500 mb-1.5">
+                      Other reports about {reported?.name || 'this person'} <span className="font-normal text-gray-400">({aboutPerson.length})</span>
+                    </p>
+                    <ul className="rounded-lg border border-gray-100 divide-y divide-gray-100 overflow-hidden">
+                      {relatedShown(aboutPerson).map((r) => (
                         <RelatedRow key={r._id} report={r} label={`by ${r.reportedBy?.name || 'unknown'}`} onOpen={() => onOpenReport(r)} />
                       ))}
-                      {aboutPerson.length > RELATED_SHOWN && <p className="text-[11px] text-gray-400">and {aboutPerson.length - RELATED_SHOWN} more</p>}
-                    </div>
-                  )}
-                  {aboutJob.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-semibold text-gray-600">About this post ({aboutJob.length})</p>
-                      {aboutJob.slice(0, RELATED_SHOWN).map((r) => (
+                    </ul>
+                  </div>
+                )}
+                {aboutJob.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-500 mb-1.5">
+                      Other reports about this post <span className="font-normal text-gray-400">({aboutJob.length})</span>
+                    </p>
+                    <ul className="rounded-lg border border-gray-100 divide-y divide-gray-100 overflow-hidden">
+                      {relatedShown(aboutJob).map((r) => (
                         <RelatedRow key={r._id} report={r} label={`by ${r.reportedBy?.name || 'unknown'}`} onOpen={() => onOpenReport(r)} />
                       ))}
-                      {aboutJob.length > RELATED_SHOWN && <p className="text-[11px] text-gray-400">and {aboutJob.length - RELATED_SHOWN} more</p>}
-                    </div>
-                  )}
-                </div>
-              </Disclosure>
-            )}
-
-            {/* Record */}
-            <Disclosure
-              id="record"
-              title="Report details"
-              icon={FileText}
-              summary={[`#${report._id.slice(-6).toUpperCase()}`, SOURCE_LABEL[report.source] || report.source, report.reportMetadata?.reportSource ? `via ${humanize(report.reportMetadata.reportSource)}` : null].filter(Boolean).join(' · ')}
-              open={!!open.record}
-              onToggle={() => toggle('record')}
-              testId="report-record"
-            >
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                <Fact label="Report ID" value={<CopyId value={report._id} label="Report ID" />} wide />
-                <Fact label="Stored in" value={SOURCE_LABEL[report.source] || report.source} />
-                <Fact label="Submitted via" value={humanize(report.reportMetadata?.reportSource) || '—'} />
-                <Fact label="Reported at" value={formatStamp(report.createdAt)} wide />
-                {report.relatedId && !isJobReport && <Fact label="Reference" value={<CopyId value={report.relatedId} label="Reference" />} wide />}
-                {report.rawStatus && report.rawStatus !== report.status && <Fact label="Stored status" value={report.rawStatus} tone="text-gray-500" />}
-                {report.rawReason && report.rawReason !== report.reason && <Fact label="Stored reason" value={report.rawReason} tone="text-gray-500" />}
-              </dl>
-            </Disclosure>
-
-            {/* Note, sent with whichever decision is made below. */}
-            {awaiting && (
-              <div className="pt-3">
-                <label htmlFor="report-admin-notes" className="text-xs font-semibold text-gray-600">
-                  Note for the record <span className="font-normal text-gray-400">(optional)</span>
-                </label>
-                <textarea
-                  id="report-admin-notes"
-                  value={adminNotes}
-                  onChange={(e) => setAdminNotes(e.target.value)}
-                  data-testid="report-admin-notes"
-                  maxLength={1000}
-                  rows={2}
-                  className="mt-1 w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  placeholder="Why you decided this — saved on the report"
-                />
-                {notes && <p className="mt-1 text-xs text-gray-500">Earlier note: “{notes}”</p>}
+                    </ul>
+                  </div>
+                )}
+                {(aboutPerson.length > RELATED_SHOWN || aboutJob.length > RELATED_SHOWN) && (
+                  <button type="button" onClick={() => setShowAllRelated((v) => !v)} className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+                    {showAllRelated ? 'Show fewer' : `Show all ${relatedCount}`}
+                  </button>
+                )}
               </div>
             )}
-          </div>
+          </PanelSection>
+
+          {/* Where */}
+          <PanelSection icon={FileText} label="Source" description="Where the report came from" testId="report-record" last={!awaiting}>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+              <Fact label="Submitted from" value={humanize(report.reportMetadata?.reportSource) || '—'} />
+              <Fact label="Stored in" value={SOURCE_LABEL[report.source] || report.source} />
+              <Fact label="Report ID" value={<CopyId value={report._id} label="Report ID" />} wide />
+              {report.relatedId && isJobReport && <Fact label="Post ID" value={<CopyId value={report.relatedId} label="Post ID" />} wide />}
+              {report.rawStatus && report.rawStatus !== report.status && <Fact label="Stored status" value={report.rawStatus} tone="text-gray-500" />}
+              {report.rawReason && report.rawReason !== report.reason && <Fact label="Stored reason" value={report.rawReason} tone="text-gray-500" />}
+            </dl>
+          </PanelSection>
+
+          {/* The note goes with whichever decision is made below. */}
+          {awaiting && (
+            <PanelSection icon={PenLine} label="Your decision" description="Add a note, then choose below" testId="report-note" last>
+              <label htmlFor="report-admin-notes" className="text-[11px] text-gray-500">
+                Note for the record <span className="text-gray-400">(optional, saved on the report)</span>
+              </label>
+              <textarea
+                id="report-admin-notes"
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                data-testid="report-admin-notes"
+                maxLength={1000}
+                rows={2}
+                className="mt-1 w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                placeholder="Why you decided this"
+              />
+              {notes && <p className="mt-1 text-xs text-gray-500">Earlier note: “{notes}”</p>}
+            </PanelSection>
+          )}
         </div>
 
         {/* Actions, below the scroll area while the report awaits a decision. */}
@@ -790,7 +777,8 @@ const ReviewReportModal: React.FC<ReviewReportModalProps> = ({
           </div>
         )}
       </div>
-    </SideModal>
+    </>,
+    document.body
   );
 };
 

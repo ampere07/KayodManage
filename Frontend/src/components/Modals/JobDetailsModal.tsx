@@ -10,23 +10,27 @@ import {
   RotateCcw,
   XCircle,
   MapPin,
-  Calendar,
-  Briefcase,
-  DollarSign,
   Users,
-  Phone,
-  CreditCard,
-  Hash
+  Briefcase,
+  Clock,
+  Copy,
+  AlertTriangle,
+  ShieldCheck,
+  ExternalLink,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import VerificationStatusBadge from '../UI/VerificationStatusBadge';
-import UserTypeBadge from '../UI/UserTypeBadge';
 import ClickableImage from '../UI/ClickableImage';
+import PanelSection from '../UI/PanelSection';
+import { useJobCategories } from '../../hooks/useJobs';
+import { resolveJobIcon } from '../Jobs/jobListHelpers';
+import { JobIcon, StatusBadge, StatusLine } from '../Jobs/JobListParts';
 import { jobsService } from '../../services';
-import type { Job, Application } from '../../types/jobs.types';
+import type { Job, JobQuote, JobQuoteStatus } from '../../types/jobs.types';
 import { SidebarContext } from '../Layout/Layout';
 import { formatReleaseWindow, getServiceClass } from '../../constants/serviceClasses';
+import { getProfessionDisplayName } from '../../utils/professionUtils';
 
 // ImageKit configuration
 const IMAGEKIT_URL_ENDPOINT = 'https://ik.imagekit.io/9vpn8u272';
@@ -65,6 +69,45 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
+const QUOTE_STATUS_STYLE: Record<JobQuoteStatus, string> = {
+  pending: 'bg-yellow-50 text-yellow-700 border-yellow-100',
+  accepted: 'bg-green-50 text-green-700 border-green-100',
+  rejected: 'bg-red-50 text-red-700 border-red-100',
+  withdrawn: 'bg-gray-50 text-gray-600 border-gray-200',
+  expired: 'bg-gray-50 text-gray-600 border-gray-200',
+};
+
+/** A person on the job, labelled with their role (the Jobs list's colours). */
+const PartyCard: React.FC<{ role: 'Client' | 'Provider'; name?: string; image?: string; verified?: boolean; lines: string[]; id?: string }> = ({ role, name, image, verified, lines, id }) => (
+  <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5 min-w-0" data-testid={`job-party-${role.toLowerCase()}`}>
+    {image ? (
+      <img src={image} alt="" className="h-10 w-10 rounded-full object-cover border border-gray-100 flex-shrink-0" />
+    ) : (
+      <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${role === 'Provider' ? 'bg-indigo-50 text-indigo-600' : 'bg-purple-50 text-purple-600'}`}>
+        <span className="text-sm font-bold">{getInitials(name || '?')}</span>
+      </div>
+    )}
+    <div className="min-w-0 flex-1">
+      <p className={`text-[9px] font-black uppercase tracking-wider ${role === 'Provider' ? 'text-indigo-600' : 'text-purple-600'}`}>{role}</p>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <p className="text-sm font-bold text-gray-900 truncate">{name || 'Unknown'}</p>
+        {verified && <VerificationStatusBadge isVerified={true} size="sm" />}
+      </div>
+      {lines.length > 0 && <p className="text-[11px] text-gray-500 truncate">{lines.join(' · ')}</p>}
+    </div>
+    {id && <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">KYD {id.slice(-8).toUpperCase()}</span>}
+  </div>
+);
+
+/** A labelled fact tile (the user and transaction panels' look). */
+const Fact: React.FC<{ label: string; value: string; sub?: string; subTone?: string }> = ({ label, value, sub, subTone = 'text-gray-500' }) => (
+  <div className="min-w-0 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{label}</p>
+    <p className="mt-0.5 text-sm font-black text-gray-900 truncate">{value}</p>
+    {sub && <p className={`text-[11px] truncate ${subTone}`}>{sub}</p>}
+  </div>
+);
+
 /** Destructive actions that route through the shared confirmation sheet. */
 type ConfirmKind = 'hide' | 'delete' | 'restore' | 'cancel';
 
@@ -74,10 +117,15 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   job
 }) => {
   const queryClient = useQueryClient();
-  const [showMediaAttachments, setShowMediaAttachments] = useState(false);
-  const [showApplicants, setShowApplicants] = useState(false);
-  const [applicants, setApplicants] = useState<Application[]>([]);
-  const [loadingApplicants, setLoadingApplicants] = useState(false);
+  const { categories } = useJobCategories();
+  const [showQuotes, setShowQuotes] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
+  const [showAllMedia, setShowAllMedia] = useState(false);
+  const [quotes, setQuotes] = useState<JobQuote[]>([]);
+  // The full record from GET /jobs/:id (it arrives with the quotes): the
+  // client's area and the provider's contact details the list row lacks.
+  const [details, setDetails] = useState<Job | null>(null);
+  const [loadingQuotes, setLoadingQuotes] = useState(false);
   // One confirmation sheet drives every destructive action here. The native
   // confirm()/prompt() they used before gave no room to state consequences,
   // and delete could not explain itself at all.
@@ -97,51 +145,29 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     };
   }, [isOpen, setIsHeaderHidden]);
 
+  // The job's quotes — its applicants in the app. Read-only: a client accepts a
+  // quote in the app, which holds their payment in escrow; the admin panel does
+  // not do that on their behalf.
+  const jobId = job?._id;
   useEffect(() => {
-    if (isOpen && job) {
-      fetchApplicants();
-    }
-  }, [isOpen, job]);
-
-  const fetchApplicants = async () => {
-    if (!job) return;
-
-    try {
-      setLoadingApplicants(true);
-      const data = await jobsService.getJobById(job._id);
-      setApplicants(data.applications || []);
-    } catch (error) {
-      console.error('Failed to fetch applicants:', error);
-    } finally {
-      setLoadingApplicants(false);
-    }
-  };
-
-  const handleAcceptApplication = async (applicationId: string) => {
-    if (!job) return;
-
-    try {
-      await jobsService.acceptApplication(job._id, applicationId);
-      toast.success('Application accepted');
-      fetchApplicants();
-    } catch (error) {
-      console.error('Failed to accept application:', error);
-      toast.error('Failed to accept application');
-    }
-  };
-
-  const handleRejectApplication = async (applicationId: string) => {
-    if (!job) return;
-
-    try {
-      await jobsService.rejectApplication(job._id, applicationId);
-      toast.success('Application rejected');
-      fetchApplicants();
-    } catch (error) {
-      console.error('Failed to reject application:', error);
-      toast.error('Failed to reject application');
-    }
-  };
+    if (!isOpen || !jobId) return;
+    let current = true;
+    setQuotes([]);
+    setDetails(null);
+    setShowQuotes(false);
+    setShowFullDescription(false);
+    setShowAllMedia(false);
+    setLoadingQuotes(true);
+    jobsService.getJobById(jobId)
+      .then((data) => {
+        if (!current) return;
+        setQuotes(data.quotes || []);
+        setDetails(data as unknown as Job);
+      })
+      .catch((error) => console.error('Failed to fetch quotes:', error))
+      .finally(() => { if (current) setLoadingQuotes(false); });
+    return () => { current = false; };
+  }, [isOpen, jobId]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -152,6 +178,16 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
       maximumFractionDigits: 0,
     }).format(amount).replace('PHP', '₱');
   };
+
+  // What the job is worth. Quote-based jobs keep budget 0 and carry the price
+  // in the accepted quote — the same rule the Jobs list's Price column uses, so
+  // the panel never says "Unset" for a job the list prices at ₱4,000.
+  const jobPrice = !job
+    ? 0
+    : job.budget > 0
+      ? job.budget
+      : job.agreedPrice || job.acceptedProvider?.agreedPrice || 0;
+  const priceIsQuote = !!job && !(job.budget > 0) && jobPrice > 0;
 
   const closeConfirm = () => {
     if (confirming) return;
@@ -241,7 +277,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           tone: 'red' as const,
           consequences: [
             `Any payment still held is refunded to the client in full${
-              job.budget ? ` (up to ${formatCurrency(job.budget)})` : ''
+              jobPrice ? ` (up to ${formatCurrency(jobPrice)})` : ''
             }.`,
             'An active dispute is closed as “client refunded”.',
             'Both parties are notified. This cannot be undone.',
@@ -250,6 +286,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             const result = await jobsService.forceCancelJob(job._id, reason);
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['jobCounts'] });
+            // The refund lands on the client's wallet and money history.
+            queryClient.invalidateQueries({ queryKey: ['users'] });
             toast.success(
               result.refundedAmount > 0
                 ? `Job cancelled — ₱${result.refundedAmount} refunded to client`
@@ -279,8 +317,29 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     }
   };
 
+  // Escape closes the confirmation sheet first, then the panel.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || confirming) return;
+      if (confirmKind) {
+        setConfirmKind(null);
+        setConfirmReason("");
+      } else {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, confirmKind, confirming, onClose]);
+
   if (!isOpen || !job) return null;
 
+  // The full record when it has arrived (contacts, the client's area), else the row.
+  const full: Job = details || job;
+  const client = full.user || job.user;
+  const provider = full.assignedTo || job.assignedTo;
+  const loc: any = full.location ?? job.location;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -290,6 +349,107 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     });
   };
 
+  const iconSrc = (() => {
+    const icon = resolveJobIcon(categories, job.professionName || job.categoryName || job.category || '', job.icon);
+    return job.icon?.startsWith('ik:') && job.updatedAt ? `${icon.imagePath}?v=${new Date(job.updatedAt).getTime()}` : icon.imagePath;
+  })();
+  const service = (() => {
+    const val = ((job as any).professionName || (job as any).categoryName || job.category || '').trim();
+    if (!val || /^[a-fA-F0-9]{24}$/.test(val)) return 'General Service';
+    // camelCase keys split, acronyms kept ("CCTV Installer", not "C C T V").
+    return getProfessionDisplayName(val);
+  })();
+
+  // WHO: the quotes, summarised before they are listed.
+  const quoteCount = loadingQuotes ? job.applicationCount || 0 : quotes.length;
+  const amounts = quotes.map((q) => q.amount).filter((a): a is number => typeof a === 'number' && a > 0);
+  const lowest = amounts.length ? Math.min(...amounts) : 0;
+  const waitingQuotes = quotes.filter((q) => q.status === 'pending').length;
+
+  // WHAT: money.
+  const paymentLine = (() => {
+    switch (job.paymentStatus) {
+      case 'escrow_held': return { text: `${formatCurrency(job.escrowAmount || jobPrice)} held in escrow`, tone: 'text-blue-700' };
+      case 'paid': return { text: `Paid${job.paidAmount ? ` · ${formatCurrency(job.paidAmount)}` : ''}`, tone: 'text-emerald-700' };
+      case 'refunded': return { text: 'Refunded to the client', tone: 'text-gray-600' };
+      case 'escrow_required': return { text: 'Waiting for the client to pay', tone: 'text-amber-700' };
+      case 'failed': return { text: 'Payment failed', tone: 'text-red-700' };
+      default: return { text: 'Not paid yet', tone: 'text-gray-500' };
+    }
+  })();
+  const terms = getServiceClass(job.serviceClass);
+  const media = job.media || [];
+
+  // WHEN: everything that happened (or will), in order.
+  const now = Date.now();
+  const at = (value?: Date | string | null) => (value ? new Date(value) : null);
+  const events = ([
+    { key: 'posted', label: `Posted by ${client?.name || 'the client'}`, at: at(job.createdAt) },
+    {
+      key: 'wanted',
+      label: 'Wanted for',
+      at: at(job.date),
+      detail: [
+        (job.timeWindows || []).filter(Boolean).join(', '),
+        (job.selectedDates || []).length > 1 ? `also ${(job.selectedDates || []).slice(1).map((d) => format(new Date(d), 'MMM d')).join(', ')}` : '',
+      ].filter(Boolean).join(' · ') || undefined,
+    },
+    {
+      key: 'booked',
+      label: `Booked ${provider?.name || 'a provider'}`,
+      at: at(job.acceptedProvider?.acceptedAt),
+      detail: job.acceptedProvider?.agreedPrice ? `at ${formatCurrency(job.acceptedProvider.agreedPrice)}` : undefined,
+    },
+    { key: 'paid', label: job.paymentStatus === 'escrow_held' ? 'Paid into escrow' : 'Paid', at: at(job.paidAt), detail: job.paidAmount ? formatCurrency(job.paidAmount) : undefined },
+    {
+      key: 'dispute',
+      label: `Dispute raised${job.completionStatus?.dispute?.raisedBy ? ` by the ${job.completionStatus.dispute.raisedBy}` : ''}`,
+      at: at(job.completionStatus?.dispute?.raisedAt),
+      tone: 'bg-amber-500',
+    },
+    {
+      key: 'completed',
+      label: 'Marked done',
+      at: at(job.completionStatus?.completedAt),
+      detail: [
+        job.completionStatus?.clientConfirmed ? 'client confirmed' : '',
+        job.completionStatus?.providerConfirmed ? 'provider confirmed' : '',
+      ].filter(Boolean).join(' · ') || undefined,
+      tone: 'bg-emerald-500',
+    },
+    {
+      key: 'release',
+      label: job.escrowStatus === 'released' || (job.escrowReleaseAt && new Date(job.escrowReleaseAt).getTime() < now) ? 'Payment released to the provider' : 'Payment releases to the provider',
+      at: job.escrowStatus && !['none', 'refunded'].includes(job.escrowStatus) ? at(job.escrowReleaseAt) : null,
+    },
+    {
+      key: 'cancelled',
+      label: `Cancelled${job.cancellation?.cancelledBy ? ` by ${job.cancellation.cancelledBy}` : ''}`,
+      at: at(job.cancellation?.cancelledAt),
+      tone: 'bg-red-500',
+    },
+    { key: 'hidden', label: 'Hidden from listings', at: job.isHidden ? at(job.hiddenAt) : null, tone: 'bg-gray-400' },
+    { key: 'deleted', label: 'Deleted', at: job.isDeleted ? at(job.deletedAt) : null, tone: 'bg-gray-400' },
+  ] as { key: string; label: string; at: Date | null; detail?: string; tone?: string }[])
+    .filter((e) => e.at && !Number.isNaN(e.at.getTime()))
+    .sort((a, b) => a.at!.getTime() - b.at!.getTime());
+
+  // WHERE.
+  const address = (() => {
+    if (!loc) return '';
+    if (typeof loc === 'string') return loc;
+    return [loc.address, loc.barangay, loc.city, loc.province, loc.country].filter(Boolean).join(', ');
+  })() || (job.locationDisplay && job.locationDisplay !== 'Location not specified' ? job.locationDisplay : '');
+  const coords = (() => {
+    if (!loc || typeof loc !== 'object') return null;
+    if (typeof loc.latitude === 'number' && typeof loc.longitude === 'number') return `${loc.latitude},${loc.longitude}`;
+    if (Array.isArray(loc.coordinates) && loc.coordinates.length === 2) return `${loc.coordinates[1]},${loc.coordinates[0]}`;
+    if (Array.isArray(loc.coordinates?.coordinates) && loc.coordinates.coordinates.length === 2) return `${loc.coordinates.coordinates[1]},${loc.coordinates.coordinates[0]}`;
+    return null;
+  })();
+  const mapsUrl = coords || address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coords || address)}` : '';
+  const clientArea = [(client as any)?.barangay, (client as any)?.city].filter(Boolean).join(', ');
+
   return createPortal(
     <>
       <div
@@ -297,399 +457,319 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-gray-50 z-[100] shadow-2xl flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0 z-10">
-          <div className="flex items-start justify-between gap-4">
+      <div className="fixed right-0 top-0 h-full w-full md:w-[550px] bg-white z-[100] shadow-2xl flex flex-col" data-testid="job-panel">
+        {/* Header: the job, where it stands, and what it's worth */}
+        <div className="px-5 md:px-6 pt-4 pb-4 border-b border-gray-200 bg-white flex-shrink-0">
+          <div className="flex items-start gap-3">
+            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0">
+              <JobIcon src={iconSrc} className="h-10 w-10 object-contain" />
+            </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-0.5">
-                <h3 className="text-lg font-black text-gray-900 truncate leading-tight">
-                  {job.title}
-                </h3>
-                <div className="flex-shrink-0 flex gap-1 transform scale-[0.85] origin-left">
-                  <VerificationStatusBadge isVerified={job.user?.isVerified || false} />
-                  <UserTypeBadge userType={job.user?.userType || 'client'} />
-                </div>
-              </div>
+              <p className="text-[10px] font-bold text-gray-400 tracking-wider truncate">{service}</p>
+              <h3 className="text-lg font-black text-gray-900 leading-tight line-clamp-2">{job.title}</h3>
               <button
                 onClick={() => copyToClipboard(job._id)}
-                className="flex items-center gap-1.5 group"
-                title="Click to copy Job ID"
+                className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-blue-600 transition-colors"
+                title="Copy the full job ID"
               >
-                <span className="text-[10px] font-mono font-bold text-gray-400 group-hover:text-blue-600 transition-colors">
-                  ID: {job._id}
-                </span>
-                <span className="text-[8px] font-black text-gray-300 group-hover:text-blue-500 uppercase tracking-tighter transition-colors">
-                  • Click to Copy
-                </span>
+                ID {job._id.slice(-8).toUpperCase()}
+                <Copy className="h-3 w-3" />
               </button>
             </div>
             <button
               onClick={onClose}
-              className="p-1 -mr-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              className="p-1.5 -mr-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
               aria-label="Close modal"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
-          <div className="p-0">
-            {/* User Quick Profile - No Container */}
-            <div className="px-6 py-6 flex items-center gap-4">
-              {job.user?.profileImage ? (
-                <div className="relative">
-                  <img
-                    src={job.user.profileImage}
-                    alt={job.user.name}
-                    className="w-14 h-14 rounded-full object-cover border border-gray-100"
-                  />
-                </div>
-              ) : (
-                <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
-                  <span className="text-xl font-black text-blue-600">
-                    {getInitials(job.user?.name || 'U')}
-                  </span>
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <h4 className="text-base font-black text-gray-900 truncate">{job.user?.name || 'Unknown User'}</h4>
-                  {job.user?.isVerified && <VerificationStatusBadge isVerified={true} size="sm" />}
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-1.5 text-gray-500">
-                    <Phone className="h-3 w-3" />
-                    <span className="text-[11px] font-medium truncate">{job.user?.phoneNumber || job.user?.phone || 'No phone number'}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    <Hash className="h-3 w-3" />
-                    <span className="text-[10px] font-bold">KYD: {job.user?._id?.slice(-8).toUpperCase() || '00000000'}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-shrink-0">
-                <UserTypeBadge userType={job.user?.userType || 'client'} />
-              </div>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <div className="flex flex-col items-start gap-1.5 min-w-0">
+              <StatusBadge status={job.status} />
+              <StatusLine job={job} className="text-[11px] max-w-full" />
             </div>
-
-            {/* Job Title and Description */}
-            <div className="px-6 py-4 border-y border-gray-100">
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center gap-1.5 text-gray-900 mb-1">
-                    <Briefcase className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Job Title</span>
-                  </div>
-                  <p className="text-base font-medium text-gray-600 leading-tight">
-                    {job.title}
-                  </p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 text-gray-900 mb-1">
-                    <Hash className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Job Details</span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-600 leading-relaxed">
-                    {job.description || 'No description provided'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 border-y border-gray-100">
-              <div className="px-6 py-6 bg-indigo-50/20 border-r border-gray-100">
-                <div className="flex items-center gap-2 mb-1">
-                  <DollarSign className="h-3 w-3 text-indigo-500" />
-                  <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Budget</span>
-                </div>
-                <p className="text-xl font-black text-indigo-900">
-                  {job.budget ? formatCurrency(job.budget) : 'Unset'}
-                </p>
-              </div>
-              
-              <div className="px-6 py-6 bg-emerald-50/20">
-                <div className="flex items-center gap-2 mb-1">
-                  <Users className="h-3 w-3 text-emerald-500" />
-                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Applicants</span>
-                </div>
-                <p className="text-xl font-black text-emerald-900">
-                  {job.applicationCount || 0}
-                </p>
-              </div>
-            </div>
-
-            {(job.completionStatus?.dispute?.isActive ||
-              job.cancellation?.reason ||
-              (job.escrowStatus && job.escrowStatus !== 'none')) && (
-              <>
-                <div className="px-6 pt-6 space-y-3">
-                  {job.completionStatus?.dispute?.isActive && (
-                    <div data-testid="admin-job-active-dispute-banner" className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-                      <p className="text-sm font-semibold text-amber-800 mb-1">
-                        Active Dispute — raised by {job.completionStatus.dispute.raisedBy || 'unknown'}
-                      </p>
-                      <p className="text-sm text-amber-900">{job.completionStatus.dispute.reason || 'No reason given'}</p>
-                      {job.completionStatus.dispute.raisedAt && (
-                        <p className="text-xs text-amber-700 mt-1">
-                          Raised {new Date(job.completionStatus.dispute.raisedAt).toLocaleString('en-US')}
-                        </p>
-                      )}
-                      <p className="text-xs text-amber-700 mt-2">Resolve this from the Support inbox.</p>
-                    </div>
-                  )}
-
-                  {job.cancellation?.reason && (
-                    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                      <p className="text-sm font-semibold text-red-800 mb-1">Cancellation</p>
-                      <p className="text-sm text-red-900">{job.cancellation.reason}</p>
-                      <p className="text-xs text-red-700 mt-1">
-                        Fee applied: {job.cancellation.feeApplied ? formatCurrency(job.cancellation.feeApplied) : '₱0'}
-                        {job.cancellation.cancelledAt &&
-                          ` — ${new Date(job.cancellation.cancelledAt).toLocaleString('en-US')}`}
-                      </p>
-                    </div>
-                  )}
-
-                  {job.escrowStatus && job.escrowStatus !== 'none' && (
-                    <div data-testid="admin-job-escrow-card" className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                      <p className="text-sm font-semibold text-blue-800 mb-1">Escrow</p>
-                      <p data-testid="admin-job-escrow-status" className="text-sm text-blue-900 capitalize">Status: {job.escrowStatus}</p>
-                      {/* The hold length is per-job, snapshotted at booking —
-                          an admin deciding a dispute needs the terms this
-                          client actually agreed to, not the current category
-                          setting, which may since have changed. */}
-                      <p data-testid="admin-job-service-class" className="text-xs text-blue-700 mt-1">
-                        Terms: {getServiceClass(job.serviceClass).label} · held{' '}
-                        {formatReleaseWindow(
-                          job.paymentReleaseHours ??
-                            getServiceClass(job.serviceClass).paymentReleaseHours,
-                        )}
-                      </p>
-                      {job.escrowReleaseAt && (
-                        <p data-testid="admin-job-escrow-release-date" className="text-xs text-blue-700 mt-1">
-                          Release date: {new Date(job.escrowReleaseAt).toLocaleString('en-US')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Service Attributes Section */}
-            <div className="px-6 py-8">
-              <div className="flex items-center gap-2 mb-6">
-                <div className="h-px flex-1 bg-gray-100" />
-                <h5 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-2 flex items-center gap-2">
-                  <Briefcase className="h-3 w-3" />
-                  Service Details
-                </h5>
-                <div className="h-px flex-1 bg-gray-100" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-y-8 gap-x-6">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-900">
-                    <Calendar className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Posted On</span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-600">
-                    {new Date(job.createdAt).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-900">
-                    <Briefcase className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Profession</span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-600 capitalize">
-                    {(() => {
-                      const val = ((job as any).professionName || (job as any).categoryName || job.category || '').trim();
-                      if (/^[a-fA-F0-9]{24}$/.test(val)) return 'General Service';
-                      return val.replace(/([A-Z])/g, ' $1').trim();
-                    })()}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-gray-900">
-                    <CreditCard className="h-3 w-3" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Payment</span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-600 capitalize">
-                    {job.paymentMethod}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-8 pt-8 border-t border-gray-50">
-                <div className="flex items-center gap-1.5 text-gray-900 mb-3">
-                  <MapPin className="h-3 w-3" />
-                  <span className="text-[9px] font-black uppercase tracking-widest">Job Location</span>
-                </div>
-                <p className="text-sm font-medium text-gray-600 leading-relaxed bg-gray-50/50 p-4 rounded-xl border border-gray-100/50">
-                  {(() => {
-                    const loc = job.location;
-                    if (!loc) return 'Location not specified';
-                    
-                    if (typeof loc === 'string') return loc;
-                    
-                    if (typeof loc === 'object') {
-                      const parts = [
-                        loc.address,
-                        loc.city,
-                        loc.country
-                      ].filter(Boolean);
-                      
-                      return parts.length > 0 ? parts.join(', ') : 'Location not specified';
-                    }
-                    
-                    return 'Location not specified';
-                  })()}
-                </p>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div className="overflow-hidden">
-                <button
-                  onClick={() => setShowMediaAttachments(!showMediaAttachments)}
-                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-900 hover:text-blue-500 uppercase tracking-[0.2em] transition-colors`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Eye className="h-3 w-3" />
-                    <span>Media Attachments ({job.media?.length || 0})</span>
-                  </div>
-                  <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${showMediaAttachments ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showMediaAttachments && (
-                  <div className="pt-4 grid grid-cols-2 gap-3">
-                    {job.media && job.media.length > 0 ? (
-                      job.media.map((url, index) => (
-                        <div key={index} className="aspect-video bg-gray-100 rounded-lg overflow-hidden border border-gray-100">
-                          <ClickableImage
-                            src={getImageKitMediaUrl(url)}
-                            alt={`Job media ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            imageType="credential"
-                            title={`Job media ${index + 1}`}
-                            modalClassName="md:right-[550px]"
-                          />
-                        </div>
-                      ))
-                    ) : (
-                      <div className="col-span-2 text-center py-4 text-[9px] font-bold text-gray-300 uppercase tracking-widest">
-                        No attachments
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="h-px bg-gray-50" />
-
-              <div className="overflow-hidden">
-                <button
-                  onClick={() => setShowApplicants(!showApplicants)}
-                  className={`w-full flex items-center justify-between py-2 text-[10px] font-black text-gray-900 hover:text-emerald-500 uppercase tracking-[0.2em] transition-colors`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Users className="h-3 w-3" />
-                    <span>Applicants ({applicants.length})</span>
-                  </div>
-                  <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${showApplicants ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showApplicants && (
-                  <div className="mt-4">
-                    {loadingApplicants ? (
-                      <div className="text-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                      </div>
-                    ) : applicants.length > 0 ? (
-                      <div className="space-y-3">
-                      {applicants.map((application) => (
-                        <div
-                          key={application._id}
-                          className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow"
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                                <span className="text-sm font-semibold text-blue-700">
-                                  {getInitials(application.provider?.name || 'P')}
-                                </span>
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-gray-900">
-                                  {application.provider?.name || 'Unknown Provider'}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {application.provider?.email || 'No email'}
-                                </p>
-                              </div>
-                            </div>
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${application.status === 'accepted'
-                                ? 'bg-green-100 text-green-700'
-                                : application.status === 'rejected'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-yellow-100 text-yellow-700'
-                                }`}
-                            >
-                              {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
-                            </span>
-                          </div>
-
-                          {application.provider?.phone && (
-                            <div className="mb-2">
-                              <p className="text-xs text-gray-500">Phone:</p>
-                              <p className="text-sm text-gray-900">{application.provider.phone}</p>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                            <p className="text-xs text-gray-500">
-                              Applied {formatDistanceToNow(new Date(application.appliedAt), { addSuffix: true })}
-                            </p>
-                            {application.status === 'pending' && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleAcceptApplication(application._id)}
-                                  className="px-3 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-md transition-colors"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={() => handleRejectApplication(application._id)}
-                                  className="px-3 py-1 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6 text-sm text-gray-500 border border-gray-200 rounded-lg bg-gray-50">
-                      No applicants yet
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="text-right flex-shrink-0">
+              <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">{jobPrice ? formatCurrency(jobPrice) : 'By quote'}</p>
+              <p className="mt-1 text-[11px] text-gray-500">{jobPrice ? (priceIsQuote ? 'Agreed quote' : "Client's budget") : 'Set when a quote is accepted'}</p>
             </div>
           </div>
         </div>
-      </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
+          {/* What needs attention, before anything else */}
+          {(job.completionStatus?.dispute?.isActive || job.cancellation?.reason || job.isHidden || job.isDeleted) && (
+            <div className="px-5 md:px-6 pt-4 space-y-2">
+              {job.completionStatus?.dispute?.isActive && (
+                <div data-testid="admin-job-active-dispute-banner" className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Active dispute — raised by {job.completionStatus.dispute.raisedBy || 'unknown'}
+                    {job.completionStatus.dispute.raisedAt && <span className="font-normal text-amber-700"> · {formatDistanceToNow(new Date(job.completionStatus.dispute.raisedAt), { addSuffix: true })}</span>}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-900">“{job.completionStatus.dispute.reason || 'No reason given'}”</p>
+                  <p className="mt-1 text-[11px] text-amber-700">Resolve this from the Support inbox.</p>
+                </div>
+              )}
+              {job.cancellation?.reason && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs font-bold text-red-800">
+                    Cancellation{job.cancellation.cancelledBy ? ` · by ${job.cancellation.cancelledBy}` : ''}
+                  </p>
+                  <p className="mt-1 text-xs text-red-900">“{job.cancellation.reason}”</p>
+                  <p className="mt-1 text-[11px] text-red-700">
+                    Fee applied: {job.cancellation.feeApplied ? formatCurrency(job.cancellation.feeApplied) : '₱0'}
+                    {job.cancellation.cancelledAt && ` · ${format(new Date(job.cancellation.cancelledAt), 'MMM d, yyyy h:mm a')}`}
+                  </p>
+                </div>
+              )}
+              {(job.isHidden || job.isDeleted) && (
+                <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                  {job.isDeleted ? <Trash2 className="h-3.5 w-3.5 mt-px text-red-500 flex-shrink-0" /> : <EyeOff className="h-3.5 w-3.5 mt-px text-orange-500 flex-shrink-0" />}
+                  <p>
+                    <span className="font-bold">{job.isDeleted ? 'Deleted' : 'Hidden'}</span>
+                    {(job.isDeleted ? job.deletedAt : job.hiddenAt) && ` ${format(new Date((job.isDeleted ? job.deletedAt : job.hiddenAt)!), 'MMM d, yyyy')}`}
+                    {job.isDeleted ? ' — removed from the client’s account. Restore it below.' : ' — not shown in search or browse. Unhide it below.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* WHO */}
+          <PanelSection testId="job-section-who" icon={Users} label="People" description="Who posted it and who's doing it">
+            <div className="space-y-2">
+              <PartyCard
+                role="Client"
+                name={client?.name}
+                image={client?.profileImage}
+                verified={client?.isVerified}
+                lines={[client?.phoneNumber || client?.phone, client?.email, clientArea].filter(Boolean) as string[]}
+                id={client?._id}
+              />
+              {provider?.name ? (
+                <PartyCard
+                  role="Provider"
+                  name={provider.name}
+                  image={(provider as any).profileImage}
+                  lines={[(provider as any).phoneNumber || (provider as any).phone, provider.email].filter(Boolean) as string[]}
+                  id={provider._id}
+                />
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-300 px-3 py-2.5">
+                  <span className="h-10 w-10 rounded-full border border-dashed border-gray-300 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-indigo-600">Provider</p>
+                    <p className="text-sm font-semibold text-gray-500">
+                      {job.status === 'open' ? 'No provider booked yet' : job.acceptedProvider ? 'Booked (details unavailable)' : 'No provider was booked'}
+                    </p>
+                    {job.status === 'open' && (
+                      <p className="text-[11px] text-gray-400">{quoteCount ? `${quoteCount} quote${quoteCount === 1 ? '' : 's'} waiting for the client` : 'Nobody has quoted yet'}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Quotes: the job's applicants in the app. Read-only — a client
+                  accepts a quote in the app, which holds their payment in
+                  escrow; the admin panel does not do that on their behalf.
+                  Shown while the job is open or has quotes; a booked job
+                  with none would only say "Quotes (0)". */}
+              {(job.status === 'open' || loadingQuotes || quotes.length > 0) && (
+              <button
+                onClick={() => setShowQuotes(!showQuotes)}
+                className="w-full flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+              >
+                <span className="min-w-0">
+                  <span className="text-xs font-bold text-gray-900">Quotes ({loadingQuotes ? '…' : quotes.length})</span>
+                  {!loadingQuotes && quotes.length > 0 && (
+                    <span className="text-[11px] text-gray-500">
+                      {lowest ? ` · lowest ${formatCurrency(lowest)}` : ''}{waitingQuotes ? ` · ${waitingQuotes} waiting` : ''}
+                    </span>
+                  )}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${showQuotes ? 'rotate-180' : ''}`} />
+              </button>
+              )}
+
+              {showQuotes && (
+                <div data-testid="admin-job-quotes">
+                  {loadingQuotes ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                    </div>
+                  ) : quotes.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {quotes.map((quote) => (
+                        <div
+                          key={quote._id}
+                          data-testid={`admin-job-quote-${quote._id}`}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-bold text-indigo-600">{getInitials(quote.provider?.name || 'P')}</span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-900 truncate">{quote.provider?.name || 'Unknown provider'}</p>
+                              <p className="text-[11px] text-gray-500 truncate">
+                                {quote.provider?.phoneNumber || quote.provider?.phone || quote.provider?.email || 'No contact info'}
+                                {quote.submittedAt && ` · ${formatDistanceToNow(new Date(quote.submittedAt), { addSuffix: true })}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <p className="text-sm font-black text-gray-900 tabular-nums">{quote.amount != null ? formatCurrency(quote.amount) : '—'}</p>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${QUOTE_STATUS_STYLE[quote.status] || QUOTE_STATUS_STYLE.pending}`}>
+                              {quote.status.charAt(0).toUpperCase() + quote.status.slice(1)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="pt-1 text-[11px] text-gray-400">
+                        The client accepts a quote in the app, which holds their payment in escrow.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-xs text-gray-500 border border-gray-200 rounded-lg bg-gray-50">
+                      No quotes yet
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </PanelSection>
+
+          {/* WHAT */}
+          <PanelSection testId="job-section-what" icon={Briefcase} label="Job details" description="What's needed and what it pays">
+            {job.description ? (
+              <div>
+                <p className={`text-sm text-gray-700 leading-relaxed whitespace-pre-line ${showFullDescription ? '' : 'line-clamp-4'}`}>{job.description}</p>
+                {job.description.length > 220 && (
+                  <button onClick={() => setShowFullDescription(!showFullDescription)} className="mt-1 text-xs font-semibold text-blue-600 hover:text-blue-700">
+                    {showFullDescription ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No description provided</p>
+            )}
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Fact label="Price" value={jobPrice ? formatCurrency(jobPrice) : 'By quote'} sub={jobPrice ? (priceIsQuote ? 'agreed quote' : "client's budget") : undefined} />
+              <Fact label="Payment" value={job.paymentMethod === 'xendit' ? 'Xendit' : 'Wallet'} sub={paymentLine.text} subTone={paymentLine.tone} />
+              <div className="col-span-2">
+                <Fact label="Service" value={service} sub={job.categoryName && job.categoryName !== service ? job.categoryName : undefined} />
+              </div>
+            </div>
+
+            {job.escrowStatus && job.escrowStatus !== 'none' && (
+              <div data-testid="admin-job-escrow-card" className="mt-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+                <ShieldCheck className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0 text-xs">
+                  {/* The hold length is per-job, snapshotted at booking — an admin
+                      deciding a dispute needs the terms this client actually
+                      agreed to, not the current category setting. */}
+                  <p data-testid="admin-job-escrow-status" className="font-bold text-blue-900 capitalize">
+                    Escrow · Status: {job.escrowStatus}{job.escrowAmount ? ` · ${formatCurrency(job.escrowAmount)}` : ''}
+                  </p>
+                  <p data-testid="admin-job-service-class" className="mt-0.5 text-blue-700">
+                    Terms: {terms.label} · held {formatReleaseWindow(job.paymentReleaseHours ?? terms.paymentReleaseHours)}
+                  </p>
+                  {job.escrowReleaseAt && (
+                    <p data-testid="admin-job-escrow-release-date" className="mt-0.5 text-blue-700">
+                      Release date: {format(new Date(job.escrowReleaseAt), 'MMM d, yyyy h:mm a')} ({formatDistanceToNow(new Date(job.escrowReleaseAt), { addSuffix: true })})
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Photos ({media.length})</p>
+              {media.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {(showAllMedia ? media : media.slice(0, 6)).map((url, index) => (
+                    <div key={index} className="aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-100">
+                      <ClickableImage
+                        src={getImageKitMediaUrl(url)}
+                        alt={`Job media ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        imageType="credential"
+                        title={`Job media ${index + 1}`}
+                        modalClassName="md:right-[550px]"
+                      />
+                    </div>
+                  ))}
+                  {!showAllMedia && media.length > 6 && (
+                    <button onClick={() => setShowAllMedia(true)} className="aspect-square rounded-lg border border-gray-200 bg-gray-50 text-xs font-bold text-gray-600 hover:bg-gray-100">
+                      +{media.length - 6} more
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">No photos attached</p>
+              )}
+            </div>
+          </PanelSection>
+
+          {/* WHEN */}
+          <PanelSection testId="job-section-when" icon={Clock} label="Timeline" description="What happened and what's next">
+            <ol className="space-y-3">
+              {events.map((event, index) => {
+                const upcoming = event.at!.getTime() > now;
+                return (
+                  <li key={event.key} className="relative flex gap-3" data-testid={`job-when-${event.key}`}>
+                    {index < events.length - 1 && <span className="absolute left-[4px] top-3 bottom-[-12px] w-px bg-gray-200" aria-hidden="true" />}
+                    <span
+                      className={`relative mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ring-2 ring-white ${upcoming ? 'border-2 border-dashed border-blue-400 bg-white' : event.tone || 'bg-gray-400'}`}
+                    />
+                    <div className="min-w-0">
+                      <p className={`text-xs font-bold ${upcoming ? 'text-blue-700' : 'text-gray-900'}`}>
+                        {event.label}
+                        {upcoming && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-500">upcoming</span>}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {format(event.at!, 'MMM d, yyyy · h:mm a')} ({formatDistanceToNow(event.at!, { addSuffix: true })})
+                      </p>
+                      {event.detail && <p className="text-[11px] text-gray-500">{event.detail}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </PanelSection>
+
+          {/* WHERE */}
+          <PanelSection testId="job-section-where" icon={MapPin} label="Location" description="Where the work happens" last>
+            {address ? (
+              <div className="space-y-2">
+                <p className="flex items-start gap-2 text-sm font-semibold text-gray-900">
+                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <span>{address}</span>
+                </p>
+                {(full.locationDetails || job.locationDetails) && (
+                  <p className="ml-6 rounded-lg bg-amber-50/60 border border-amber-100 px-3 py-2 text-xs text-amber-900">
+                    <span className="font-bold">Note from the client:</span> {full.locationDetails || job.locationDetails}
+                  </p>
+                )}
+                {mapsUrl && (
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-6 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Open in Google Maps
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Location not specified</p>
+            )}
+          </PanelSection>
+        </div>
 
       <div className="border-t border-gray-100 p-6 bg-white flex-shrink-0">
           <div className="flex gap-3">

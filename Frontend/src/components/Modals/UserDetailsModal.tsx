@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -9,8 +9,7 @@ import {
   AlertCircle,
   Trash2,
   Star,
-  Scale,
-  FileText
+  Scale
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -224,11 +223,17 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     return () => clearInterval(interval);
   }, [user]);
 
+  // The user this panel is currently showing, and the one whose record
+  // (verification audit + legal acceptances) is loaded. A response for anyone
+  // else is dropped, and a new user's panel starts empty rather than showing
+  // the previous person's agreements while it loads.
+  const shownUserIdRef = useRef<string | null>(null);
+  const loadedRecordForRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (isOpen && user?.isVerified) {
-      fetchVerificationDetails();
-    }
+    shownUserIdRef.current = isOpen && user ? user._id : null;
     if (isOpen && user) {
+      fetchUserRecord();
       fetchPenaltyData();
       if (user.restrictionDetails?.restrictedBy) {
         const restrictedById = typeof user.restrictionDetails.restrictedBy === 'string'
@@ -244,32 +249,42 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       setDuration(EMPTY_DURATION);
       setReason('');
       setRestrictedByAdmin(null);
+      setVerificationDetails(null);
+      setLegalAcceptances([]);
+      loadedRecordForRef.current = null;
     }
   }, [isOpen, user]);
 
-  const fetchVerificationDetails = async () => {
+  /**
+   * The full user record: who reviewed their verification, and the legal
+   * agreements they accepted. Fetched for every user — acceptances are recorded
+   * at sign-up and booking whether or not the account is verified, and loading
+   * them only for verified users left an unverified user's panel showing the
+   * previous user's agreements.
+   */
+  const fetchUserRecord = async () => {
     if (!user?._id) return;
+    const userId = user._id;
 
+    if (loadedRecordForRef.current !== userId) {
+      setVerificationDetails(null);
+      setLegalAcceptances([]);
+    }
     setLoadingVerification(true);
     try {
-      // Use getUserById which now includes verificationAudit to avoid extra API confusion
-      const fullUser = await usersService.getUserById(user._id);
-      if (fullUser && fullUser.verificationAudit) {
-        setVerificationDetails(fullUser.verificationAudit);
-      } else {
-        setVerificationDetails(null);
-      }
-      // Same round-trip: the acceptance history rides along on getUserById
-      // rather than costing a second request, since support opens this modal
-      // for one reason at a time and usually already has it loaded.
+      const fullUser = await usersService.getUserById(userId);
+      if (shownUserIdRef.current !== userId) return;
+      setVerificationDetails(fullUser?.verificationAudit || null);
+      // Same round-trip: the acceptance history rides along on getUserById.
       setLegalAcceptances(
         Array.isArray(fullUser?.legalAcceptances) ? fullUser.legalAcceptances : []
       );
+      loadedRecordForRef.current = userId;
     } catch (error) {
-      console.error('Error fetching verification details:', error);
-      setVerificationDetails(null);
+      console.error('Error fetching user record:', error);
+      if (shownUserIdRef.current === userId) setVerificationDetails(null);
     } finally {
-      setLoadingVerification(false);
+      if (shownUserIdRef.current === userId) setLoadingVerification(false);
     }
   };
 
@@ -604,245 +619,148 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          <div className="px-4 md:px-6 py-6 space-y-8">
-            {activeTab === 'activity' && (
-              <UserActivityTab userId={user._id} onOpenTarget={handleOpenTarget} />
-            )}
-            {activeTab === 'jobs' && (
-              <UserJobsTab userId={user._id} onOpenTarget={handleOpenTarget} />
-            )}
-            {activeTab === 'money' && <UserMoneyTab userId={user._id} />}
-            {activeTab === 'reviews' && isProviderUser && (
-              <UserReviewsTab userId={user._id} storedRating={user.ratings} onOpenTarget={handleOpenTarget} />
-            )}
-
-            {activeTab === 'profile' && (
-            <div className="space-y-4">
-            {/* The account's standing first — the full panel is in Security Audit below. */}
-            {isRestricted && (
-              <div className={`flex items-start gap-2 p-3 border rounded-lg ${presentation.panel}`} data-testid="user-status-banner">
-                <Ban className={`w-4 h-4 mt-0.5 flex-shrink-0 ${presentation.accent}`} />
-                <div className="min-w-0 text-xs">
-                  <p className={`font-bold ${presentation.accent}`}>
-                    {presentation.label}
-                    {(restriction?.suspendedUntil || restriction?.expiresAt)
-                      ? ` until ${formatStamp(restriction.suspendedUntil || restriction.expiresAt)}`
-                      : restrictionType !== 'deleted' ? ' · no end date' : ''}
-                  </p>
-                  {restriction?.reason && <p className={`mt-0.5 ${presentation.body}`}>“{restriction.reason}”</p>}
-                </div>
-              </div>
-            )}
-
-            {/* At a glance */}
-            {/* Wide, short tiles: two per row, value and its detail on one line. */}
-            <section className="grid grid-cols-2 gap-2" data-testid="user-at-a-glance">
-              {glanceTiles.map(tile => {
-                const Tile = tile.onClick ? 'button' : 'div';
-                return (
-                  <Tile
-                    key={tile.testId}
-                    {...(tile.onClick ? { type: 'button' as const, onClick: tile.onClick } : {})}
-                    data-testid={tile.testId}
-                    className={`min-w-0 text-left rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 ${tile.onClick ? 'hover:border-amber-200 hover:bg-amber-50/50 transition-colors' : ''}`}
-                  >
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{tile.label}</p>
-                    <p className="flex items-baseline gap-1.5 mt-0.5 min-w-0 whitespace-nowrap">
-                      <span className="text-sm font-black text-gray-900">{tile.value}</span>
-                      {tile.sub && <span className="text-[11px] text-gray-500 truncate">· {tile.sub}</span>}
-                    </p>
-                  </Tile>
-                );
-              })}
-            </section>
-
-
-            <UserProfileDetails
-              user={user}
-              jobCategories={jobCategories}
-              verification={{
-                reviewedBy: (verificationDetails?.reviewedBy as { name?: string } | undefined)?.name || null,
-                reviewedAt: verificationDetails?.reviewedAt || null,
-                loading: loadingVerification
-              }}
-            />
-
-
-            {/* Penalty Tracker */}
-            <section className="rounded-xl border border-gray-100 bg-gray-50/60 p-4" data-testid="user-security-audit">
-              <h3 className="flex items-center gap-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3"><Shield className="w-3.5 h-3.5 text-gray-400" />Security Audit</h3>
-              {loadingPenalties ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto"></div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white rounded-lg p-3 border border-gray-100 text-center">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Total Bans</p>
-                      <p className="text-lg font-bold text-red-600">{penaltyData.totalPenalties}</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 border border-gray-100 text-center">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Warnings</p>
-                      <p className="text-lg font-bold text-yellow-600">{penaltyData.activeWarnings}</p>
+          {activeTab === 'profile' ? (
+            <div>
+              {/* What needs attention first, then the numbers an admin looks for. */}
+              <div className="px-5 md:px-6 py-5 space-y-3 border-b border-gray-100">
+                {isRestricted && (
+                  <div className={`flex items-start gap-2 p-3 border rounded-lg ${presentation.panel}`} data-testid="user-status-banner">
+                    <Ban className={`w-4 h-4 mt-0.5 flex-shrink-0 ${presentation.accent}`} />
+                    <div className="min-w-0 text-xs">
+                      <p className={`font-bold ${presentation.accent}`}>
+                        {presentation.label}
+                        {(restriction?.suspendedUntil || restriction?.expiresAt)
+                          ? ` until ${formatStamp(restriction.suspendedUntil || restriction.expiresAt)}`
+                          : restrictionType !== 'deleted' ? ' · no end date' : ''}
+                      </p>
+                      {restriction?.reason && <p className={`mt-0.5 ${presentation.body}`}>“{restriction.reason}”</p>}
                     </div>
                   </div>
+                )}
 
-                  {/* Why this account is sanctioned. Shown for every non-active
-                      status, not only the ones with a countdown: a permanent ban
-                      has no expiry, and its reason is exactly what support opens
-                      this modal to read. */}
-                  {isRestricted && (
-                    <div
-                      className={`p-4 border rounded-lg ${presentation.panel}`}
-                      data-testid="user-restriction-details"
-                    >
-                      <div className="flex items-center gap-2 mb-3">
-                        <Ban className={`w-4 h-4 ${presentation.accent}`} />
-                        <p className={`text-xs font-bold uppercase tracking-wider ${presentation.accent}`}>
+                {/* Wide, short tiles: two per row, value and its detail on one line. */}
+                <section className="grid grid-cols-2 gap-2" data-testid="user-at-a-glance">
+                  {glanceTiles.map(tile => {
+                    const Tile = tile.onClick ? 'button' : 'div';
+                    return (
+                      <Tile
+                        key={tile.testId}
+                        {...(tile.onClick ? { type: 'button' as const, onClick: tile.onClick } : {})}
+                        data-testid={tile.testId}
+                        className={`min-w-0 text-left rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 ${tile.onClick ? 'hover:border-amber-200 hover:bg-amber-50/50 transition-colors' : ''}`}
+                      >
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{tile.label}</p>
+                        <p className="flex items-baseline gap-1.5 mt-0.5 min-w-0 whitespace-nowrap">
+                          <span className="text-sm font-black text-gray-900">{tile.value}</span>
+                          {tile.sub && <span className="text-[11px] text-gray-500 truncate">· {tile.sub}</span>}
+                        </p>
+                      </Tile>
+                    );
+                  })}
+                </section>
+              </div>
+
+              {/* Profile · Work · Money · Standing · Timeline · Location */}
+              <UserProfileDetails
+                user={user}
+                jobCategories={jobCategories}
+                verification={{
+                  reviewedBy: (verificationDetails?.reviewedBy as { name?: string } | undefined)?.name || null,
+                  reviewedAt: verificationDetails?.reviewedAt || null,
+                  loading: loadingVerification
+                }}
+                legalAcceptances={legalAcceptances}
+                penalties={{ loading: loadingPenalties, total: penaltyData.totalPenalties, warnings: penaltyData.activeWarnings }}
+                securityAudit={
+                  <>
+                    {/* Why this account is sanctioned. Shown for every non-active
+                        status, not only the ones with a countdown: a permanent ban
+                        has no expiry, and its reason is exactly what support opens
+                        this panel to read. */}
+                    {isRestricted && (
+                      <div className={`p-3 border rounded-lg ${presentation.panel}`} data-testid="user-restriction-details">
+                        <p className={`flex items-center gap-1.5 text-xs font-bold ${presentation.accent}`}>
+                          <Ban className="w-3.5 h-3.5" />
                           {presentation.label}
                         </p>
+                        {restriction?.reason ? (
+                          <p className={`mt-1 text-sm font-medium ${presentation.body}`} data-testid="user-restriction-reason">
+                            "{restriction.reason}"
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-gray-500 italic">No reason recorded for this account.</p>
+                        )}
+                        <dl className={`mt-3 pt-3 border-t border-black/10 grid grid-cols-2 gap-x-4 gap-y-2 ${presentation.body}`}>
+                          <div>
+                            <dt className="text-[11px] opacity-70">{restrictionTimer ? 'Time remaining' : 'Duration'}</dt>
+                            <dd className="text-sm font-bold">{restrictionTimer || 'Permanent'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] opacity-70">Issued</dt>
+                            <dd className="text-sm font-medium">{formatStamp(restriction?.restrictedAt) || '—'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] opacity-70">Issued by</dt>
+                            <dd className="text-sm font-medium">{loadingRestrictedBy ? '...' : restrictedByName || 'System'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] opacity-70">{restriction?.suspendedUntil ? 'Suspended until' : 'Appeal'}</dt>
+                            <dd className="text-sm font-medium">
+                              {restriction?.suspendedUntil
+                                ? formatStamp(restriction.suspendedUntil)
+                                : restriction?.appealAllowed === false
+                                  ? 'Not allowed'
+                                  : 'Allowed'}
+                            </dd>
+                          </div>
+                        </dl>
                       </div>
+                    )}
 
-                      <p className={`text-[10px] font-bold uppercase tracking-wider opacity-70 ${presentation.accent}`}>
-                        Reason
-                      </p>
-                      {restriction?.reason ? (
-                        <p
-                          className={`mt-1 text-sm font-medium ${presentation.body}`}
-                          data-testid="user-restriction-reason"
-                        >
-                          "{restriction.reason}"
+                    {/* What admins found when ruling on this user's disputes. */}
+                    {faultFindings.length > 0 && (
+                      <div data-testid="user-fault-findings">
+                        <p className="text-[11px] font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                          <Scale className="w-3.5 h-3.5" /> Dispute findings against this user <span className="text-gray-400 font-normal">({faultFindings.length})</span>
                         </p>
-                      ) : (
-                        <p className="mt-1 text-xs text-gray-500 italic">
-                          No reason recorded for this account.
-                        </p>
-                      )}
-
-                      <div className={`mt-3 pt-3 border-t border-black/10 grid grid-cols-2 gap-3 ${presentation.body}`}>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">
-                            {restrictionTimer ? 'Time Remaining' : 'Duration'}
-                          </p>
-                          <p className="text-sm font-bold">
-                            {restrictionTimer || 'Permanent'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Issued</p>
-                          <p className="text-sm font-medium">
-                            {formatStamp(restriction?.restrictedAt) || '—'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Issued By</p>
-                          <p className="text-sm font-medium">
-                            {loadingRestrictedBy ? '...' : restrictedByName || 'System'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">
-                            {restriction?.suspendedUntil ? 'Suspended Until' : 'Appeal'}
-                          </p>
-                          <p className="text-sm font-medium">
-                            {restriction?.suspendedUntil
-                              ? formatStamp(restriction.suspendedUntil)
-                              : restriction?.appealAllowed === false
-                                ? 'Not allowed'
-                                : 'Allowed'}
-                          </p>
-                        </div>
+                        <ul className="rounded-lg border border-gray-100 divide-y divide-gray-100">
+                          {faultFindings.map((finding, index) => (
+                            <li key={`${finding.jobId}-${index}`} className="px-3 py-2 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-gray-900">
+                                  {FINDING_REASON[finding.findingReason || 'other'] || finding.findingReason}
+                                  {finding.role && <span className="font-normal text-gray-500"> · as {finding.role}</span>}
+                                  {finding.faultParty === 'both' && <span className="font-normal text-gray-500"> · shared fault</span>}
+                                </span>
+                                <span className="text-gray-400 flex-shrink-0">
+                                  {finding.decidedAt ? new Date(finding.decidedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                                </span>
+                              </div>
+                              {finding.sanctioned && <span className="text-[11px] font-semibold text-red-600">Sanctioned</span>}
+                              {finding.notes && <p className="text-gray-600 mt-0.5">{finding.notes}</p>}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                    </div>
-                  )}
-
-                  {/* What admins found when ruling on this user's disputes. */}
-                  {faultFindings.length > 0 && (
-                    <div className="rounded-lg border border-gray-200 p-3" data-testid="user-fault-findings">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <Scale className="w-3.5 h-3.5" /> Dispute findings against this user ({faultFindings.length})
-                      </p>
-                      <ul className="space-y-2">
-                        {faultFindings.map((finding, index) => (
-                          <li key={`${finding.jobId}-${index}`} className="text-xs">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-gray-900">
-                                {FINDING_REASON[finding.findingReason || 'other'] || finding.findingReason}
-                                {finding.role && <span className="font-normal text-gray-500"> · as {finding.role}</span>}
-                                {finding.faultParty === 'both' && <span className="font-normal text-gray-500"> · shared fault</span>}
-                              </span>
-                              <span className="text-gray-400 flex-shrink-0">
-                                {finding.decidedAt ? new Date(finding.decidedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
-                              </span>
-                            </div>
-                            {finding.sanctioned && <span className="text-[10px] font-bold text-red-600 uppercase">Sanctioned</span>}
-                            {finding.notes && <p className="text-gray-600 mt-0.5">{finding.notes}</p>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-
-            {/* Legal Acceptances.
-                Appended by the Kayod server whenever this user affirms the
-                agreements — at sign-up, at booking, when posting a job. Never
-                edited here: it is an audit trail, and a mutable one proves
-                nothing. Empty for accounts created before acceptances were
-                recorded, which is meaningful in itself and so is said plainly
-                rather than rendered as a blank list. */}
-            <section className="rounded-xl border border-gray-100 bg-gray-50/60 p-4" data-testid="user-legal">
-              <h3 className="flex items-center gap-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3"><FileText className="w-3.5 h-3.5 text-gray-400" />Legal Agreements</h3>
-              {legalAcceptances.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">
-                  No recorded acceptances. Accounts created before agreement
-                  tracking was added will show nothing here.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {legalAcceptances
-                    .slice()
-                    .sort(
-                      (a, b) =>
-                        new Date(b.acceptedAt).getTime() -
-                        new Date(a.acceptedAt).getTime()
-                    )
-                    .map((entry, index) => (
-                      <div
-                        key={`${entry.acceptedAt}-${index}`}
-                        className="bg-gray-50 rounded-lg p-3 border border-gray-100"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-gray-900 capitalize">
-                            {String(entry.context || "").replace("-", " ")}
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
-                            v{entry.version}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          {entry.acceptedAt
-                            ? new Date(entry.acceptedAt).toLocaleString()
-                            : "—"}
-                        </p>
-                        {Array.isArray(entry.documentIds) &&
-                        entry.documentIds.length > 0 ? (
-                          <p className="text-[11px] text-gray-400 mt-1">
-                            {entry.documentIds.join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </section>
+                    )}
+                  </>
+                }
+              />
             </div>
-            )}
-          </div>
+          ) : (
+            <div className="px-4 md:px-6 py-6 space-y-8">
+              {activeTab === 'activity' && (
+                <UserActivityTab userId={user._id} onOpenTarget={handleOpenTarget} />
+              )}
+              {activeTab === 'jobs' && (
+                <UserJobsTab userId={user._id} onOpenTarget={handleOpenTarget} />
+              )}
+              {activeTab === 'money' && <UserMoneyTab userId={user._id} />}
+              {activeTab === 'reviews' && isProviderUser && (
+                <UserReviewsTab userId={user._id} storedRating={user.ratings} onOpenTarget={handleOpenTarget} />
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -876,10 +794,12 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertCircle className="w-5 h-5 text-red-600" />
-                      <p className="text-sm font-bold text-red-600">Warning: This action cannot be undone</p>
+                      <p className="text-sm font-bold text-red-600">Delete this account?</p>
                     </div>
+                    {/* A soft delete: the account can be restored from Deleted Users,
+                        so the warning must not promise it is permanent. */}
                     <p className="text-sm text-red-700">
-                      Deleting this user will permanently remove their account from the system. They will not be able to access the platform anymore.
+                      The user will no longer be able to access the platform. Their records stay on file, and an admin can restore the account later from Deleted Users.
                     </p>
                   </div>
                   <textarea

@@ -14,6 +14,7 @@ const {
   DEFAULT_SERVICE_CLASS,
   getPaymentReleaseHours,
 } = require('../config/serviceClasses');
+const { calculatePlatformFee: feeFor } = require('../utils/platformFee');
 
 // Fallback for a job that somehow reaches here without a snapshotted window.
 // Deliberately the longest class, not the shortest — guessing wrong should
@@ -65,17 +66,32 @@ function calculateReleaseDate(completionDate = new Date(), job = null, overrideH
   return releaseDate;
 }
 
+/**
+ * The platform's cut, by the Booking Fee settings (utils/platformFee.js) — the
+ * same rule kayod/server's EscrowService applies, so a release scheduled here
+ * is charged what the app would have charged. This used to be a flat 20%
+ * (15% Premium) whatever the settings said.
+ */
 async function calculatePlatformFee(amount, providerId = null) {
-  let feeRate = 0.20;
-
-  if (providerId) {
-    const provider = await User.findById(providerId);
-    if (provider?.isPremium && provider.premiumExpiresAt && provider.premiumExpiresAt > new Date()) {
-      feeRate = 0.15;
-    }
+  // Required here, not at the top: kayod/server's tests load this module next
+  // to the app's own models, and both declare a JobPostingSettings model.
+  const JobPostingSettings = require('../models/JobPostingSettings');
+  let config = null;
+  try {
+    config = await JobPostingSettings.findOne({ key: 'job-posting' }).lean();
+  } catch (err) {
+    config = null; // unreadable settings: the standard rate, as in the app
   }
 
-  return Math.round(amount * feeRate);
+  let isPremium = false;
+  if (providerId) {
+    const provider = await User.findById(providerId);
+    // No expiry date means Premium without an end, as kayod/server reads it.
+    const expiresAt = provider?.premiumExpiresAt ? new Date(provider.premiumExpiresAt) : null;
+    isPremium = Boolean(provider?.isPremium && (!expiresAt || expiresAt > new Date()));
+  }
+
+  return feeFor(amount, config, { isPremium });
 }
 
 async function scheduleEscrowRelease(jobId, jobCompletedAt = new Date(), session = null, options = {}) {

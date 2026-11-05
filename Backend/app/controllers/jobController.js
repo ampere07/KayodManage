@@ -25,8 +25,73 @@ const { createActivityLog } = require('./activityLogController');
 const { auditLog } = require('../utils/activityLogger');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
+const escapeRegex = require('../utils/escapeRegex');
 
 // Helper function to strip random suffix from icon paths
+/**
+ * A job's applicants are the providers' quotes. kayod/server keeps them in one
+ * `jobquotes` document per job (it has no Application model — the admin's
+ * `applications` collection is legacy and never written). Read-only here:
+ * accepting a quote holds the CLIENT's wallet funds in escrow, which is the
+ * client's action in the app, not something the admin panel does for them.
+ */
+const jobQuotesCollection = () => mongoose.connection.db.collection('jobquotes');
+
+// Jobs out of the marketplace (hidden or deleted) are left out of the live list.
+const LIVE_JOB = { isHidden: { $ne: true }, isDeleted: { $ne: true } };
+
+// A job's price: its posted budget, or for a quote-priced job (budget 0) the
+// agreed quote. The list's Price column, its price sort and the completed
+// value all use this one rule.
+const JOB_PRICE = {
+  $cond: [
+    { $gt: ['$budget', 0] },
+    '$budget',
+    { $ifNull: ['$agreedPrice', { $ifNull: ['$acceptedProvider.agreedPrice', 0] }] },
+  ],
+};
+
+/** Ids of the jobs that have at least one quote. */
+const jobIdsWithQuotes = () => jobQuotesCollection().distinct('jobId', { 'quotes.0': { $exists: true } });
+
+/** Value of completed, live jobs. */
+const completedJobValue = async () => {
+  const [row] = await Job.aggregate([
+    { $match: { ...LIVE_JOB, status: 'completed' } },
+    { $group: { _id: null, totalValue: { $sum: JOB_PRICE } } },
+  ]);
+  return row ? row.totalValue : 0;
+};
+
+const getJobQuotes = async (jobId) => {
+  const doc = await jobQuotesCollection().findOne({ jobId: new mongoose.Types.ObjectId(String(jobId)) });
+  const raw = Array.isArray(doc?.quotes) ? doc.quotes : [];
+  if (!raw.length) return [];
+
+  const providers = await User.find({ _id: { $in: raw.map((q) => q.providerId).filter(Boolean) } })
+    .select('name email phone phoneNumber profileImage')
+    .lean();
+  const providerById = new Map(providers.map((p) => [String(p._id), p]));
+
+  return raw
+    .map((q) => ({
+      _id: q._id,
+      provider: providerById.get(String(q.providerId)) || null,
+      amount: q.amount ?? null,
+      status: q.status || 'pending',
+      submittedAt: q.submittedAt || doc.createdAt || null
+    }))
+    .sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+};
+
+const countJobQuotes = async (jobId) => {
+  const doc = await jobQuotesCollection().findOne(
+    { jobId: new mongoose.Types.ObjectId(String(jobId)) },
+    { projection: { quotes: 1 } }
+  );
+  return Array.isArray(doc?.quotes) ? doc.quotes.length : 0;
+};
+
 const cleanIconPath = (iconPath) => {
   if (!iconPath || !iconPath.startsWith('ik:')) return iconPath;
   
@@ -69,52 +134,99 @@ const getJobs = async (req, res) => {
   }
   
   if (search) {
+    const term = escapeRegex(search.trim());
     query.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
-      { professionName: { $regex: search, $options: 'i' } },
-      { categoryName: { $regex: search, $options: 'i' } }
+      { title: { $regex: term, $options: 'i' } },
+      { description: { $regex: term, $options: 'i' } },
+      { professionName: { $regex: term, $options: 'i' } },
+      { categoryName: { $regex: term, $options: 'i' } }
     ];
+    // The search box offers job IDs too (the details panel shows the full id).
+    if (mongoose.Types.ObjectId.isValid(search.trim())) {
+      query.$or.push({ _id: new mongoose.Types.ObjectId(search.trim()) });
+    }
   }
-  
+
   if (status && status !== 'all') {
     query.status = status;
   }
-  
+
   if (category && category !== 'all') {
-    query.categoryName = { $regex: category, $options: 'i' };
+    query.categoryName = { $regex: escapeRegex(category), $options: 'i' };
   }
-  
+
   if (profession && profession !== 'all') {
-    query.professionName = { $regex: profession, $options: 'i' };
+    query.professionName = { $regex: escapeRegex(profession), $options: 'i' };
   }
   
   if (paymentMethod && paymentMethod !== 'all') {
     query.paymentMethod = paymentMethod;
   }
+
+  // The Jobs page's quick filters. "No quotes yet" means an open job no
+  // provider has quoted on; it narrows any status filter rather than replacing it.
+  const flag = req.query.flag;
+  if (flag === 'dispute') {
+    query['completionStatus.dispute.isActive'] = true;
+  } else if (flag === 'no_quotes') {
+    query.$and = [...(query.$and || []), { status: 'open' }, { _id: { $nin: await jobIdsWithQuotes() } }];
+  }
+
+  const people = [
+    { path: 'userId', select: 'name email phone phoneNumber userType profileImage' },
+    { path: 'assignedToId', select: 'name email phone phoneNumber userType profileImage' },
+  ];
+  const sort = req.query.sort;
+  let jobs;
+  if (sort === 'price_desc' || sort === 'price_asc') {
+    // Price is computed (budget or agreed quote), so sorting by it needs an
+    // aggregation; populate afterwards exactly as the find() path does. Jobs
+    // with no price yet (open, waiting on quotes) go last either way rather
+    // than heading the "lowest price" list.
+    const docs = await Job.aggregate([
+      { $match: query },
+      { $addFields: { listPrice: JOB_PRICE } },
+      { $addFields: { unpriced: { $cond: [{ $gt: ['$listPrice', 0] }, 0, 1] } } },
+      { $sort: { unpriced: 1, listPrice: sort === 'price_desc' ? -1 : 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      { $project: { listPrice: 0, unpriced: 0 } },
+    ]);
+    jobs = await Job.populate(docs, people);
+  } else if (sort === 'archived_desc' || sort === 'archived_asc') {
+    // The Archived page's order: when the job was taken down (deleted, else
+    // hidden), not when it was posted.
+    const docs = await Job.aggregate([
+      { $match: query },
+      { $addFields: { archivedAt: { $ifNull: ['$deletedAt', '$hiddenAt'] } } },
+      { $sort: { archivedAt: sort === 'archived_desc' ? -1 : 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      { $project: { archivedAt: 0 } },
+    ]);
+    jobs = await Job.populate(docs, people);
+  } else {
+    jobs = await Job.find(query)
+      .populate(people)
+      .sort({ createdAt: sort === 'oldest' ? 1 : -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+  }
   
-  // Fetch jobs and populate user virtuals
-  const jobs = await Job.find(query)
-    .populate('userId', 'name email phone phoneNumber userType profileImage')
-    .populate('assignedToId', 'name email phone phoneNumber userType profileImage')
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
-  
-  // Get job IDs for application count
+  // Quote counts for the rows on this page. A job's applicants are its quotes
+  // (see getJobQuotes); `applicationCount` keeps its name for the API's sake.
   const jobIds = jobs.map(job => job._id);
-  
-  // Get application counts for each job
-  const applicationCounts = await Application.aggregate([
-    { $match: { job: { $in: jobIds } } },
-    { $group: { _id: '$job', count: { $sum: 1 } } }
-  ]);
-  
-  // Create a map of job ID to application count
+  const quoteCounts = await jobQuotesCollection()
+    .aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $project: { jobId: 1, count: { $size: { $ifNull: ['$quotes', []] } } } }
+    ])
+    .toArray();
+
   const countMap = {};
-  applicationCounts.forEach(item => {
-    countMap[item._id.toString()] = item.count;
+  quoteCounts.forEach(item => {
+    countMap[item.jobId.toString()] = item.count;
   });
   
   // Add application count to each job
@@ -148,11 +260,11 @@ const getJobs = async (req, res) => {
   const total = await Job.countDocuments(query);
   const pages = Math.ceil(total / limit);
   
-  // Calculate total value of ALL jobs (not filtered)
-  const totalValueResult = await Job.aggregate([
-    { $group: { _id: null, totalValue: { $sum: '$budget' } } }
-  ]);
-  const totalValue = totalValueResult.length > 0 ? totalValueResult[0].totalValue : 0;
+  // Value of completed work across the platform (not narrowed by the list's
+  // filters). Quote-based jobs carry budget 0 — their price is the agreed
+  // quote — and cancelled or archived jobs earned nothing, so neither belongs
+  // in the sum. Same price rule the list's Price column uses.
+  const totalValue = await completedJobValue();
   
   res.json({
     jobs: jobsWithData,
@@ -180,11 +292,7 @@ const getJobDetails = async (req, res) => {
     throw ApiError.notFound('Job not found');
   }
   
-  // Get applications for this job
-  const applications = await Application.find({ job: jobId })
-    .populate('provider', 'name email phone')
-    .sort({ appliedAt: -1 })
-    .lean();
+  const quotes = await getJobQuotes(job._id);
   
   let locationDisplay = 'Location not specified';
   try {
@@ -202,8 +310,8 @@ const getJobDetails = async (req, res) => {
     icon: cleanIconPath(job.icon),
     user: job.userId,
     assignedTo: job.assignedToId,
-    applications,
-    applicationCount: applications.length,
+    quotes,
+    applicationCount: quotes.length,
     locationDisplay
   };
   
@@ -245,7 +353,7 @@ const updateJobStatus = async (req, res) => {
     throw ApiError.notFound('Job not found');
   }
   
-  const applicationCount = await Application.countDocuments({ job: jobId });
+  const applicationCount = await countJobQuotes(jobId);
   
   let locationDisplay = 'Location not specified';
   try {
@@ -1587,6 +1695,54 @@ const assignJobToProvider = async (req, res) => {
   res.json(jobWithData);
 };
 
+/**
+ * getJobsSummary — the Jobs page's header in one request: live jobs by status,
+ * the counts behind its two quick filters, and the value of completed work.
+ * Replaces four list requests made only to read their totals.
+ */
+const getJobsSummary = async (req, res) => {
+  const [statusRows, disputes, quotedIds, totalValue] = await Promise.all([
+    Job.aggregate([{ $match: LIVE_JOB }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Job.countDocuments({ ...LIVE_JOB, 'completionStatus.dispute.isActive': true }),
+    jobIdsWithQuotes(),
+    completedJobValue(),
+  ]);
+  const openWithoutQuotes = await Job.countDocuments({ ...LIVE_JOB, status: 'open', _id: { $nin: quotedIds } });
+  const byStatus = { open: 0, scheduled: 0, in_progress: 0, completed: 0, cancelled: 0, expired: 0 };
+  for (const row of statusRows) if (row._id) byStatus[row._id] = (byStatus[row._id] || 0) + row.count;
+
+  res.json({
+    total: statusRows.reduce((n, row) => n + row.count, 0),
+    byStatus,
+    disputes,
+    openWithoutQuotes,
+    totalValue,
+  });
+};
+
+/**
+ * getArchivedJobsSummary — the Archived page's counters. Archived jobs counted
+ * by status and by how they were taken down. A job can be both hidden and
+ * deleted, and the list's Hidden and Deleted filters each include it, so the
+ * page sums these cells per filter rather than reading fixed totals: every
+ * counter is then exactly the rows clicking it shows.
+ */
+const getArchivedJobsSummary = async (req, res) => {
+  const rows = await Job.aggregate([
+    { $match: { $or: [{ isHidden: true }, { isDeleted: true }] } },
+    {
+      $group: {
+        _id: { status: '$status', hidden: { $eq: ['$isHidden', true] }, deleted: { $eq: ['$isDeleted', true] } },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  res.json({
+    cells: rows.map(({ _id, count }) => ({ status: _id.status, hidden: _id.hidden, deleted: _id.deleted, count })),
+  });
+};
+
 const getJobStats = async (req, res) => {
   const totalJobs = await Job.countDocuments();
   const openJobs = await Job.countDocuments({ status: 'open' });
@@ -1677,7 +1833,7 @@ const hideJob = async (req, res) => {
     console.warn('⚠️ No adminId found, activity log NOT created');
   }
   
-  const applicationCount = await Application.countDocuments({ job: jobId });
+  const applicationCount = await countJobQuotes(jobId);
   
   let locationDisplay = 'Location not specified';
   try {
@@ -1769,7 +1925,7 @@ const unhideJob = async (req, res) => {
     console.warn('⚠️ No adminId found, activity log NOT created');
   }
   
-  const applicationCount = await Application.countDocuments({ job: jobId });
+  const applicationCount = await countJobQuotes(jobId);
   
   let locationDisplay = 'Location not specified';
   try {
@@ -2221,6 +2377,8 @@ module.exports = {
   submitRebookVerdict: asyncHandler(submitRebookVerdict, 'Failed to record rebook verdict'),
   assignJobToProvider: asyncHandler(assignJobToProvider, 'Failed to assign job'),
   getJobStats: asyncHandler(getJobStats, 'Failed to fetch job stats'),
+  getJobsSummary: asyncHandler(getJobsSummary, 'Failed to fetch the jobs summary'),
+  getArchivedJobsSummary: asyncHandler(getArchivedJobsSummary, 'Failed to fetch the archived jobs summary'),
   hideJob: asyncHandler(hideJob, 'Failed to hide job'),
   unhideJob: asyncHandler(unhideJob, 'Failed to unhide job'),
   deleteJob: asyncHandler(deleteJob, 'Failed to delete job'),

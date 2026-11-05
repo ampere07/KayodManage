@@ -216,7 +216,8 @@ exports.updateLegalDocument = asyncHandler(async (req, res) => {
   }
 
   record.revision = (record.revision || 1) + 1;
-  record.updatedBy = req.session?.email || req.session?.uid || 'admin';
+  // Login stores the admin's email as `username`; `email`/`uid` were never set.
+  record.updatedBy = req.session?.username || 'admin';
 
   await record.save();
 

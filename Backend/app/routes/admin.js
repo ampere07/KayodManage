@@ -27,6 +27,7 @@ const {
   getActivityLogs,
   getAuditCatalog,
   getAuditTeam,
+  getActivitySummary,
   exportActivityLogs,
   getActivityLogDetail
 } = require('../controllers/activityLogController');
@@ -65,6 +66,7 @@ router.get('/users/:userId/images', adminAuth, getUserImages);
 router.get('/activity-logs', requireSuperAdmin, getActivityLogs);
 router.get('/activity-logs/catalog', requireSuperAdmin, getAuditCatalog);
 router.get('/activity-logs/team', requireSuperAdmin, getAuditTeam);
+router.get('/activity-logs/summary', requireSuperAdmin, getActivitySummary);
 router.get('/activity-logs/export', requireSuperAdmin, exportActivityLogs);
 // After the fixed paths above, so 'catalog' and 'team' aren't read as ids.
 router.get('/activity-logs/:logId', requireSuperAdmin, getActivityLogDetail);

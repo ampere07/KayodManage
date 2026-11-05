@@ -39,6 +39,15 @@ const advertisementSchema = new mongoose.Schema({
   overlays: { type: [overlaySchema], default: [] },
   // Optional deep link / action fired when the banner is tapped in the client.
   linkAction: { type: String, trim: true, default: '' },
+  // Which carousels in the app show it: 'client_home' and/or 'provider_home'
+  // (utils/advertisementRules PLACEMENTS, validated by the controller). No
+  // default: a document from before placements existed has none, and the app
+  // keeps it on the client home, where every ad used to show.
+  placements: { type: [String], default: undefined },
+  // Optional schedule. The app shows a published ad from startsAt (null: right
+  // away) until endsAt (null: until it's paused).
+  startsAt: { type: Date, default: null },
+  endsAt: { type: Date, default: null },
   // Lifecycle, as shown to admins: a 'draft' has never gone live, a 'paused' ad
   // has been taken down. Deliberately has NO schema default — legacy documents
   // predate the field and a default would be applied on hydration, masking an

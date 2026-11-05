@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transactionsService } from '../services';
 import toast from 'react-hot-toast';
+import type { TransactionCountFilters, TransactionsSort } from '../types/transactions.types';
 
 interface UseTransactionsParams {
   page: number;
@@ -11,6 +12,7 @@ interface UseTransactionsParams {
   paymentMethod?: string;
   dateFrom?: string;
   dateTo?: string;
+  sort?: TransactionsSort;
 }
 
 const TRANSACTIONS_QUERY_KEY = 'transactions';
@@ -23,13 +25,13 @@ export const useTransactions = (params: UseTransactionsParams) => {
   });
 };
 
-export const useTransactionCounts = (type?: string) => {
+export const useTransactionCounts = (type?: string, filters: TransactionCountFilters = {}) => {
   return useQuery({
-    queryKey: [TRANSACTIONS_QUERY_KEY, 'counts', type],
+    queryKey: [TRANSACTIONS_QUERY_KEY, 'counts', type, filters],
     // One aggregation on the server instead of five calls to the list endpoint
     // that each fetched a row nobody used, purely to read a count off the
     // pagination block. Measured ~1,315ms -> ~82ms.
-    queryFn: () => transactionsService.getTransactionCounts(type),
+    queryFn: () => transactionsService.getTransactionCounts(type, filters),
     placeholderData: (previousData) => previousData,
   });
 };

@@ -21,6 +21,8 @@ const jobsService = {
   restoreJob: vi.fn(),
   forceCancelJob: vi.fn(),
   resolveDispute: vi.fn(),
+  // The panel loads the full job and its quotes when it opens.
+  getJobById: vi.fn().mockResolvedValue({ quotes: [] }),
 };
 
 vi.mock('../../services', () => ({ jobsService }));
@@ -32,6 +34,8 @@ vi.mock('../UI/VerificationStatusBadge', () => ({ default: () => null }));
 vi.mock('../UI/UserTypeBadge', () => ({ default: () => null }));
 vi.mock('../UI/ClickableImage', () => ({ default: () => null }));
 vi.mock('../Layout/Layout', () => ({ SidebarContext: React.createContext({ isCollapsed: false }) }));
+// Job categories (for the header icon) come from a React Query hook.
+vi.mock('../../hooks/useJobs', () => ({ useJobCategories: () => ({ categories: [], professionsList: [] }) }));
 
 const { default: JobDetailsModal } = await import('./JobDetailsModal');
 
