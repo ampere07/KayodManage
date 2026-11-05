@@ -6,6 +6,7 @@
 export * from './alerts.types';
 export * from './audit.types';
 export * from './configuration.types';
+export * from './dashboard.types';
 export * from './jobs.types';
 export * from './support.types';
 export * from './transactions.types';

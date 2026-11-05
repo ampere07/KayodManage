@@ -76,6 +76,16 @@ export const useAdvertisementMutations = () => {
     onSettled: () => invalidate(),
   });
 
+  const duplicateAdvertisement = useMutation({
+    mutationFn: (id: string) => advertisementsService.duplicateAdvertisement(id),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Duplicated as a draft');
+    },
+    onError: (error: any) =>
+      toast.error(error?.response?.data?.message || 'Failed to duplicate advertisement'),
+  });
+
   const deleteAdvertisement = useMutation({
     mutationFn: (id: string) => advertisementsService.deleteAdvertisement(id),
     onSuccess: () => {
@@ -90,6 +100,7 @@ export const useAdvertisementMutations = () => {
     createAdvertisement,
     updateAdvertisement,
     reorderAdvertisements,
+    duplicateAdvertisement,
     deleteAdvertisement,
   };
 };

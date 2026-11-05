@@ -12,6 +12,7 @@ export interface Transaction {
     phone?: string;
     location?: string;
     profileImage?: string;
+    userType?: 'client' | 'provider';
   };
   toUser?: {
     _id: string;
@@ -20,6 +21,7 @@ export interface Transaction {
     phone?: string;
     location?: string;
     profileImage?: string;
+    userType?: 'client' | 'provider';
   };
   fromUserData?: {
     _id: string;
@@ -28,6 +30,7 @@ export interface Transaction {
     phone?: string;
     location?: string;
     profileImage?: string;
+    userType?: 'client' | 'provider';
   };
   toUserData?: {
     _id: string;
@@ -36,6 +39,7 @@ export interface Transaction {
     phone?: string;
     location?: string;
     profileImage?: string;
+    userType?: 'client' | 'provider';
   };
   user?: {
     _id: string;
@@ -44,10 +48,18 @@ export interface Transaction {
     phone?: string;
     location?: string;
     profileImage?: string;
+    userType?: 'client' | 'provider';
   };
   amount: number;
   type: string;
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'processing' | 'held' | 'refunded' | 'escrowed';
+  /** Per-type details: a top-up's Xendit channel, a cash-out's channel and
+   *  account, a refund request's reason. */
+  metadata?: Record<string, any>;
+  failureReason?: string;
+  failedAt?: Date;
+  xenditId?: string;
+  refundStatus?: 'pending' | 'approved' | 'declined';
   jobId?: {
     _id: string;
     title: string;
@@ -94,7 +106,14 @@ export interface TransactionsQueryParams {
   jobId?: string;
   page?: number;
   limit?: number;
+  /** Date (newest first by default) or amount. */
+  sort?: TransactionsSort;
 }
+
+export type TransactionsSort = 'newest' | 'oldest' | 'amount_desc' | 'amount_asc';
+
+/** The list filters the counters are narrowed by, so a count is the rows it shows. */
+export type TransactionCountFilters = Pick<TransactionsQueryParams, 'search' | 'paymentMethod' | 'dateFrom' | 'dateTo'>;
 
 export interface TransactionsResponse {
   success: boolean;
@@ -137,6 +156,8 @@ export interface TransactionCounts {
   failedAmount: number;
   cancelled: number;
   cancelledAmount: number;
+  /** Every status present (expired, processing… included), with its amount. */
+  byStatus?: Record<string, { count: number; amount: number }>;
 }
 
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'cancelled';

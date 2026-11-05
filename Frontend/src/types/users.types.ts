@@ -211,6 +211,8 @@ export interface UsersQueryParams {
   isVerified?: string;
   accountStatus?: string;
   profession?: string;
+  /** Joined date order; newest first unless 'oldest'. */
+  sort?: 'newest' | 'oldest';
 }
 
 /** One cell of GET /api/users/counts (Backend userService.countUsersByFacet). */

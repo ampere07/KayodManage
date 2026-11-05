@@ -23,6 +23,12 @@ export interface AdDestination {
   value: string;
   label: string;
   group: string;
+  /**
+   * Who the screen is for. Every route opens for every account, but a provider
+   * sent to Post a Job (or a client to Service Area) lands somewhere useless —
+   * the ad panel warns when an ad's placements and destination don't match.
+   */
+  audience?: 'clients' | 'providers';
 }
 
 /** UI-only marker for the "External link" option — never stored. */
@@ -30,13 +36,13 @@ export const AD_URL_SENTINEL = '__url__';
 
 export const AD_DESTINATIONS: AdDestination[] = [
   // Jobs
-  { value: 'CreateJobScreen', label: 'Post a Job', group: 'Jobs' },
+  { value: 'CreateJobScreen', label: 'Post a Job', group: 'Jobs', audience: 'clients' },
   { value: 'Jobs', label: 'My Jobs / My Works (tab)', group: 'Jobs' },
   { value: 'ArchivedJobs', label: 'Archived Jobs & Drafts', group: 'Jobs' },
 
   // Discover
-  { value: 'AllProviders', label: 'Browse Providers', group: 'Discover' },
-  { value: 'FavoriteProviders', label: 'Favorite Providers', group: 'Discover' },
+  { value: 'AllProviders', label: 'Browse Providers', group: 'Discover', audience: 'clients' },
+  { value: 'FavoriteProviders', label: 'Favorite Providers', group: 'Discover', audience: 'clients' },
 
   // Wallet & rewards
   { value: 'Wallet', label: 'Wallet', group: 'Wallet & rewards' },
@@ -53,11 +59,11 @@ export const AD_DESTINATIONS: AdDestination[] = [
   { value: 'SavedAddresses', label: 'Saved Addresses', group: 'Account' },
 
   // Provider tools — registered for every account, but only meaningful to providers.
-  { value: 'ServiceArea', label: 'Service Area', group: 'Provider tools' },
-  { value: 'ProfessionSelectionScreen', label: 'Certifications', group: 'Provider tools' },
-  { value: 'IdentityVerificationScreen', label: 'Identity Verification', group: 'Provider tools' },
-  { value: 'VerificationScreen', label: 'Verification Wizard', group: 'Provider tools' },
-  { value: 'PerformanceHistory', label: 'Performance History', group: 'Provider tools' },
+  { value: 'ServiceArea', label: 'Service Area', group: 'Provider tools', audience: 'providers' },
+  { value: 'ProfessionSelectionScreen', label: 'Certifications', group: 'Provider tools', audience: 'providers' },
+  { value: 'IdentityVerificationScreen', label: 'Identity Verification', group: 'Provider tools', audience: 'providers' },
+  { value: 'VerificationScreen', label: 'Verification Wizard', group: 'Provider tools', audience: 'providers' },
+  { value: 'PerformanceHistory', label: 'Performance History', group: 'Provider tools', audience: 'providers' },
 
   // Help & info
   { value: 'HelpCenter', label: 'Help Center', group: 'Help & info' },
@@ -109,3 +115,7 @@ export const normalizeAdUrl = (v: string) => {
   if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(s)) return s;
   return `https://${s}`;
 };
+
+/** Who a destination is for, or undefined when it suits everyone. */
+export const destinationAudience = (value?: string) =>
+  AD_DESTINATIONS.find((d) => d.value === (value || '').trim())?.audience;

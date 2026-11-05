@@ -1,412 +1,351 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Search,
-  CheckCircle,
-  XCircle,
-  Clock,
-  CreditCard,
+  Receipt,
   ArrowDownLeft,
-  Calendar,
-  AlertTriangle,
-  RefreshCw,
-  Wallet as WalletIcon,
-  Eye
+  ArrowUpRight,
+  RotateCcw,
+  Clock,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import type { LucideIcon } from 'lucide-react';
+import { format } from 'date-fns';
 
 // Component imports
 import { DateRangePicker } from '../components/Transactions';
-import { TransactionDetailsModal, TopUpModal } from '../components/Modals';
-import StatsCard from '../components/Dashboard/StatsCard';
+import { TransactionDetailsModal } from '../components/Modals';
+import CounterGroups from '../components/UI/CounterGroups';
+import type { Counter, CounterGroup, Tone } from '../components/UI/CounterGroups';
+import { SortHeader, ListFooter, selectClass, ago } from '../components/UI/ListControls';
+import { pesoShort } from '../components/Dashboard/dashboardFormat';
+import {
+  KIND_ICON,
+  PartyLine,
+  StatusBadge,
+  StatusText,
+  describe,
+  kindLabel,
+  methodOf,
+  partiesOf,
+  peso,
+  titleCase,
+} from '../components/Transactions/txPresentation';
+import type { TxKind } from '../components/Transactions/txPresentation';
 
 // Type imports
-import type { Transaction } from '../types';
+import type { Transaction, TransactionsSort } from '../types';
 
 // Utility imports
-import {
-  getInitials,
-  formatPHPCurrency,
-  getTypeColor,
-  getTransactionStatusColor,
-  getTransactionIcon,
-  getUser,
-  getToUser,
-  isOverdue,
-  getCategoryTitle
-} from '../utils';
+import { getTransactionIcon } from '../utils';
 
 // Hooks
 import { useTransactions, useTransactionCounts, useTransactionMutations } from '../hooks/useTransactions';
 import { useJobCategories } from '../hooks/useJobs';
 
+type Category = 'platform_fee' | 'wallet_topup' | 'withdrawal' | 'refund_request';
+
+interface StatusDef {
+  key: string;
+  label: string;
+  tone: Tone;
+  hint: string;
+  /** Needs an admin: the number turns amber while anything is waiting. */
+  alert?: boolean;
+  /** Show the amount beside the number. */
+  money?: boolean;
+}
+
+interface PageDef {
+  title: string;
+  icon: LucideIcon;
+  /** The API's transaction type. */
+  type: string;
+  /** "<n> …" in the subtitle. */
+  noun: string;
+  waiting: { label: string; statuses: StatusDef[] };
+  finished: { label: string; statuses: StatusDef[] };
+}
+
+const PAGES: Record<Category, PageDef> = {
+  platform_fee: {
+    title: 'Fee Records',
+    icon: Receipt,
+    type: 'platform_fee',
+    noun: 'platform fees charged on jobs',
+    waiting: { label: 'Outstanding', statuses: [
+      { key: 'pending', label: 'Pending', tone: 'amber', money: true, hint: 'Charged, not collected yet' },
+    ] },
+    finished: { label: 'Settled', statuses: [
+      { key: 'completed', label: 'Collected', tone: 'emerald', money: true, hint: "Taken from the payer's wallet" },
+      { key: 'failed', label: 'Failed', tone: 'red', hint: 'Could not be collected' },
+      { key: 'cancelled', label: 'Cancelled', tone: 'gray', hint: 'Called off; nothing is owed' },
+    ] },
+  },
+  wallet_topup: {
+    title: 'Top-up Transactions',
+    icon: ArrowDownLeft,
+    type: 'xendit_topup',
+    noun: 'wallet top-ups through Xendit',
+    waiting: { label: 'In progress', statuses: [
+      { key: 'pending', label: 'Pending', tone: 'amber', money: true, hint: 'Waiting for Xendit to confirm the payment' },
+    ] },
+    finished: { label: 'Finished', statuses: [
+      { key: 'completed', label: 'Credited', tone: 'emerald', money: true, hint: 'Paid and added to the wallet' },
+      { key: 'failed', label: 'Failed', tone: 'red', hint: 'The payment did not go through' },
+      { key: 'cancelled', label: 'Cancelled', tone: 'gray', hint: 'Called off before paying' },
+      { key: 'expired', label: 'Expired', tone: 'gray', hint: 'Never paid before the link expired' },
+    ] },
+  },
+  withdrawal: {
+    title: 'Cashout Transactions',
+    icon: ArrowUpRight,
+    type: 'withdrawal',
+    noun: 'cash-outs to bank and e-wallet accounts',
+    waiting: { label: 'Needs action', statuses: [
+      { key: 'pending', label: 'Pending', tone: 'amber', alert: true, money: true, hint: 'Waiting for an admin to pay it out' },
+    ] },
+    finished: { label: 'Finished', statuses: [
+      { key: 'completed', label: 'Paid out', tone: 'emerald', money: true, hint: 'Sent to the account' },
+      { key: 'failed', label: 'Failed', tone: 'red', hint: 'The payout did not go through' },
+      { key: 'cancelled', label: 'Cancelled', tone: 'gray', hint: 'Called off; the money stayed in the wallet' },
+    ] },
+  },
+  refund_request: {
+    title: 'Refund Transactions',
+    icon: RotateCcw,
+    type: 'refund_request',
+    noun: 'refund requests from clients',
+    waiting: { label: 'Needs action', statuses: [
+      { key: 'pending', label: 'Awaiting decision', tone: 'amber', alert: true, money: true, hint: 'A client asked for money back; approve or decline it' },
+    ] },
+    finished: { label: 'Decided', statuses: [
+      { key: 'completed', label: 'Approved', tone: 'emerald', money: true, hint: 'Refunded to the client' },
+      { key: 'failed', label: 'Declined', tone: 'red', hint: 'Turned down by an admin' },
+      { key: 'cancelled', label: 'Cancelled', tone: 'gray', hint: 'Withdrawn before a decision' },
+    ] },
+  },
+};
+
+// Each route's kind of money, for the shared presentation helpers.
+const KIND: Record<Category, TxKind> = { platform_fee: 'fee', wallet_topup: 'topup', withdrawal: 'cashout', refund_request: 'refund' };
+
+const categoryOf = (path: string): Category => {
+  if (path.includes('top-up')) return 'wallet_topup';
+  if (path.includes('cashout')) return 'withdrawal';
+  if (path.includes('refund')) return 'refund_request';
+  return 'platform_fee';
+};
+
+const SORTS: { value: TransactionsSort; label: string }[] = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'amount_desc', label: 'Highest amount' },
+  { value: 'amount_asc', label: 'Lowest amount' },
+];
+
 /**
- * Transactions Management Page
- * Displays and manages all financial transactions
+ * Transactions Page — Fee Records, Top-up, Cashout and Refund, one page per
+ * route. The same counters, rows and footer as the Jobs page: counters by
+ * status (with what is waiting first), each row naming who is involved and
+ * what the money is waiting on.
  */
 const Transactions: React.FC = () => {
   const location = useLocation();
   const { categories } = useJobCategories();
+  const category = categoryOf(location.pathname);
+  const pageDef = PAGES[category];
+  const kind = KIND[category];
+
+  // The status filter lives in the URL (the Dashboard links to ?status=pending).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter = searchParams.get('status') || 'all';
+  const setStatus = (status: string) => {
+    const next = new URLSearchParams();
+    if (status !== 'all') next.set('status', status);
+    setSearchParams(next, { replace: true });
+  };
+  const chooseStatus = (status: string) => setStatus(status === statusFilter ? 'all' : status);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState(() => {
-    const searchParams = new URLSearchParams(location.search);
-    return searchParams.get('status') || 'all';
-  });
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [sort, setSort] = useState<TransactionsSort>('newest');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [transactionModal, setTransactionModal] = useState({ isOpen: false });
-  const [topUpModal, setTopUpModal] = useState({ isOpen: false });
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20,
-    total: 0,
-    pages: 0
-  });
 
-  // Handle query parameters when URL changes
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const status = searchParams.get('status');
+  // The list's own filters; the counters are narrowed by the same ones.
+  const filters = useMemo(() => ({
+    ...(searchTerm && { search: searchTerm }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
+  }), [searchTerm, dateFrom, dateTo]);
 
-    if (status && status !== statusFilter) {
-      setStatusFilter(status);
-    } else if (!status && statusFilter !== 'all') {
-      setStatusFilter('all');
-    }
-  }, [location.search]);
+  const queryParams = useMemo(() => ({
+    page,
+    limit,
+    type: pageDef.type,
+    ...filters,
+    ...(statusFilter !== 'all' && { status: statusFilter }),
+    ...(sort !== 'newest' && { sort }),
+  }), [page, limit, pageDef.type, filters, statusFilter, sort]);
 
-  /**
-   * Get transaction category from URL path
-   */
-  const getTransactionCategory = () => {
-    const path = location.pathname;
-    if (path.includes('fee-records')) return 'platform_fee';
-    if (path.includes('top-up')) return 'wallet_topup';
-    if (path.includes('cashout')) return 'withdrawal';
-    if (path.includes('refund')) return 'refund_request';
-    return 'all';
-  };
-
-  const category = getTransactionCategory();
-
-  const queryParams = useMemo(() => {
-    const params: any = {
-      page: pagination.page,
-      limit: pagination.limit
-    };
-    if (searchTerm) params.search = searchTerm;
-    if (statusFilter !== 'all') params.status = statusFilter;
-    if (paymentMethodFilter !== 'all') params.paymentMethod = paymentMethodFilter;
-    if (dateFrom) params.dateFrom = dateFrom;
-    if (dateTo) params.dateTo = dateTo;
-
-    if (category === 'platform_fee') {
-      params.type = 'platform_fee';
-    } else if (category === 'wallet_topup') {
-      params.type = 'xendit_topup';
-    } else if (category === 'refund_request') {
-      params.type = 'refund_request';
-    } else if (category !== 'all') {
-      params.type = category;
-    } else {
-      params.includeFees = 'true';
-    }
-
-    return params;
-  }, [pagination.page, pagination.limit, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo, category]);
-
-  const transactionType = category === 'wallet_topup'
-    ? 'xendit_topup'
-    : category === 'platform_fee'
-      ? 'platform_fee'
-      : category === 'refund_request'
-        ? 'refund_request'
-        : category;
-
-  const { data: transactionsData, isLoading } = useTransactions(queryParams);
-  const { data: statusCounts = { total: 0, pending: 0, completed: 0, failed: 0, cancelled: 0 } } = useTransactionCounts(transactionType);
+  const { data: transactionsData, isLoading, isPlaceholderData } = useTransactions(queryParams);
+  const { data: counts } = useTransactionCounts(pageDef.type, filters);
   const mutations = useTransactionMutations();
 
   const transactions = transactionsData?.transactions || [];
-  const loading = isLoading;
+  const total = transactionsData?.pagination?.total || 0;
+  const pages = transactionsData?.pagination?.pages || 0;
 
   useEffect(() => {
-    const paginationData = transactionsData?.pagination;
-    if (paginationData) {
-      setPagination(prev => ({
-        ...prev,
-        total: paginationData.total ?? 0,
-        pages: paginationData.pages ?? 1
-      }));
-    }
-  }, [transactionsData]);
+    setPage(1);
+  }, [category, searchTerm, statusFilter, dateFrom, dateTo, sort, limit]);
 
+  // A new route is a new list: its own search, dates and order.
   useEffect(() => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [category, searchTerm, statusFilter, paymentMethodFilter, dateFrom, dateTo]);
+    setSearchTerm('');
+    setDateFrom('');
+    setDateTo('');
+    setSort('newest');
+  }, [category]);
+
+  const countOf = (key: string): number | undefined => {
+    if (!counts) return undefined;
+    if (counts.byStatus) return counts.byStatus[key]?.count || 0;
+    return (counts as any)[key] ?? 0; // a backend from before byStatus
+  };
+  const amountOf = (key: string): number => (counts?.byStatus ? counts.byStatus[key]?.amount || 0 : (counts as any)?.[`${key}Amount`] || 0);
+
+  const toCounter = (def: StatusDef): Counter => {
+    const amount = amountOf(def.key);
+    return {
+      key: def.key,
+      label: def.label,
+      tone: def.tone,
+      hint: def.hint,
+      alert: def.alert,
+      count: countOf(def.key),
+      selected: statusFilter === def.key,
+      onClick: () => chooseStatus(def.key),
+      ...(def.money && amount > 0 ? { extra: { full: peso(amount), short: pesoShort(amount) } } : {}),
+    };
+  };
+
+  // Any status the page has no counter for (processing, refunded…) still gets
+  // one when it has rows, so the counters always add up to All.
+  const known = new Set([...pageDef.waiting.statuses, ...pageDef.finished.statuses].map((s) => s.key));
+  const extraStatuses: StatusDef[] = Object.entries(counts?.byStatus || {})
+    .filter(([key, v]) => !known.has(key) && v.count > 0)
+    .map(([key]) => ({ key, label: titleCase(key), tone: 'gray' as Tone, hint: `Status: ${key}` }));
+  const finishedDefs = [...pageDef.finished.statuses, ...extraStatuses];
+
+  const groups: CounterGroup[] = [
+    { label: pageDef.waiting.label, cells: pageDef.waiting.statuses.map(toCounter) },
+    {
+      label: pageDef.finished.label,
+      total: counts ? finishedDefs.reduce((n, s) => n + (countOf(s.key) || 0), 0) : undefined,
+      cells: finishedDefs.map(toCounter),
+    },
+  ];
+  const finishedCells = finishedDefs.length;
+  const gridClass = finishedCells >= 4 ? 'grid-cols-[0.8fr_1.3fr_4fr]' : 'grid-cols-[0.8fr_1.3fr_3fr]';
+
+  const anyFilterActive = Boolean(searchTerm || dateFrom || dateTo) || statusFilter !== 'all' || sort !== 'newest';
+  const clearFilters = () => {
+    setSearchTerm('');
+    setDateFrom('');
+    setDateTo('');
+    setSort('newest');
+    setStatus('all');
+  };
 
   const updateTransactionStatus = async (transactionId: string, status: string) => {
     try {
-      await mutations.updateTransactionStatus.mutateAsync({ 
-        transactionId, 
-        status, 
-        type: transactionType 
-      });
+      await mutations.updateTransactionStatus.mutateAsync({ transactionId, status, type: pageDef.type });
     } catch (error) {
       console.error('Failed to update transaction status:', error);
     }
   };
 
-  /**
-   * Open transaction modal
-   */
+  // One details panel for every kind of transaction.
   const openTransactionModal = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
-    // Check if it's a top-up transaction
-    if (transaction.type === 'wallet_topup' || transaction.type === 'xendit_topup') {
-      setTopUpModal({ isOpen: true });
-    } else {
-      setTransactionModal({ isOpen: true });
-    }
+    setTransactionModal({ isOpen: true });
   };
 
-  /**
-   * Close modals
-   */
   const closeTransactionModal = () => {
     setTransactionModal({ isOpen: false });
     setTimeout(() => setSelectedTransaction(null), 300);
   };
 
-  const closeTopUpModal = () => {
-    setTopUpModal({ isOpen: false });
-    setTimeout(() => setSelectedTransaction(null), 300);
+  const rowIcon = (tx: Transaction, size: string) => {
+    if (kind === 'fee') {
+      return <div className={`${size} rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden`}>{getTransactionIcon(tx, categories)}</div>;
+    }
+    const { icon: Icon, tile } = KIND_ICON[kind];
+    return <div className={`${size} rounded-xl border flex items-center justify-center flex-shrink-0 ${tile}`}><Icon className="h-5 w-5" /></div>;
   };
 
-  /**
-   * Clear date range filter
-   */
-  const clearDateRange = () => {
-    setDateFrom('');
-    setDateTo('');
-  };
+  const emptyText = statusFilter === 'pending' && !searchTerm && !dateFrom && !dateTo
+    ? { title: 'Nothing waiting', text: category === 'refund_request' ? 'Every refund request has been decided.' : category === 'withdrawal' ? 'Every cash-out has been paid out or closed.' : 'Nothing is pending right now.' }
+    : { title: 'No transactions found', text: 'Try adjusting your search or filters.' };
 
-  /**
-   * Format currency with zero decimals
-   */
-  const formatCurrency = (amount: number) => {
-    return formatPHPCurrency(amount, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).replace('PHP', '₱');
-  };
+  const PageIcon = pageDef.icon;
 
   return (
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
-      {/* Header */}
+      {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        {/* Padding lives on this inner block, not the header wrapper — the
-            filter bar below must sit flush to the edges like Users.tsx.
-            With padding on the wrapper it stacked with the filter bar's own
-            px-4 and pushed the search field ~24px further in. */}
-        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
-        {/* Page Title & Refresh - Desktop only (mobile layout already shows title) */}
-        <div className="hidden md:flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getCategoryTitle(category)}</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">
-              {category === 'platform_fee'
-                ? 'Track and manage platform service fees collected from completed job transactions'
-                : category === 'wallet_topup'
-                  ? 'Monitor and manage wallet top-up transactions processed through payment gateways'
-                  : category === 'withdrawal'
-                    ? 'Monitor and manage user withdrawal requests to external payment methods'
-                    : category === 'refund_request'
-                      ? 'Review and process user refund requests for job payments'
-                      : `${pagination.total.toLocaleString()} total transactions`
-              }
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs">
-
-          </div>
-        </div>
-
-        {/* Mobile Header */}
-        <div className="md:hidden mb-3">
-          {/* Summary strip */}
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total</p>
-              <p className="text-base font-black text-blue-600 leading-tight">{statusCounts.total.toLocaleString()}</p>
-            </div>
-            <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Completed</p>
-              <p className="text-base font-black text-emerald-600 leading-tight">{statusCounts.completed.toLocaleString()}</p>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 bg-blue-50 rounded-lg">
+                  <PageIcon className="h-5 w-5 text-blue-600" />
+                </span>
+                <h1 className="text-2xl font-black text-gray-900 tracking-tight">{pageDef.title}</h1>
+              </div>
+              <p className="text-xs text-gray-500 font-medium">
+                {counts ? `${counts.total.toLocaleString()} ${pageDef.noun}` : pageDef.noun.replace(/^\w/, (c) => c.toUpperCase())}
+                {counts && counts.total > 0 && <span className="text-gray-400"> · {peso(counts.totalAmount || 0)} in all</span>}
+              </p>
             </div>
           </div>
-          {/* Counter pills — grid-cols-3 so > 3 wraps to 2 rows */}
-          {category === 'all' ? (
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { label: 'Fee Records', value: transactions.filter(t => t.type === 'platform_fee').length },
-                { label: 'Top-up',      value: transactions.filter(t => t.type === 'wallet_topup' || t.type === 'xendit_topup' || t.type === 'topup').length },
-                { label: 'Cashout',     value: transactions.filter(t => t.type === 'withdrawal').length },
-                { label: 'Refund',      value: transactions.filter(t => t.type === 'refund' || t.type === 'refund_request').length },
-              ]).map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border bg-gray-50 border-gray-200 text-gray-600">
-                  <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                  <span className="text-[9px] font-black uppercase tracking-wide text-gray-400">{label}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { label: 'All',       value: statusCounts.total,     filterVal: 'all',       activeBg: 'bg-blue-500',    activeBorder: 'border-blue-500'    },
-                { label: 'Pending',   value: statusCounts.pending,   filterVal: 'pending',   activeBg: 'bg-amber-500',   activeBorder: 'border-amber-500'   },
-                { label: 'Done',      value: statusCounts.completed, filterVal: 'completed', activeBg: 'bg-emerald-500', activeBorder: 'border-emerald-500' },
-                { label: 'Failed',    value: statusCounts.failed,    filterVal: 'failed',    activeBg: 'bg-red-500',     activeBorder: 'border-red-500'     },
-                { label: 'Cancelled', value: statusCounts.cancelled, filterVal: 'cancelled', activeBg: 'bg-indigo-500',  activeBorder: 'border-indigo-500'  },
-              ] as { label: string; value: number; filterVal: string; activeBg: string; activeBorder: string }[]).map(({ label, value, filterVal, activeBg, activeBorder }) => {
-                const active = statusFilter === filterVal;
-                return (
-                  <button
-                    key={filterVal}
-                    onClick={() => setStatusFilter(filterVal)}
-                    className={`flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${activeBorder} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+
+          <CounterGroups
+            groups={groups}
+            gridClass={gridClass}
+            all={{ count: counts?.total, selected: statusFilter === 'all', onClick: () => setStatus('all') }}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+            testId="tx-counters"
+            idPrefix="tx"
+            allCell={{ label: 'All', hint: `Every ${pageDef.noun.replace(/s\b.*/, '')}` }}
+          />
         </div>
 
-        {/* Transaction Type Counters Grid */}
-        {/* No bottom margin: the wrapper's md:py-5 already spaces the stats off
-            the filter bar. An mb-5 here stacked on top of it and left a ~40px
-            gap where Users.tsx has ~20px. */}
-        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-           {category === 'all' ? (
-             <>
-               <StatsCard
-                 title="Fee Records"
-                 value={statusCounts.total.toLocaleString()}
-                 icon={CreditCard}
-                 color="purple"
-                 variant="tinted"
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Top-up"
-                 value={transactions.filter(t => t.type === 'wallet_topup' || t.type === 'xendit_topup' || t.type === 'topup').length.toLocaleString()}
-                 icon={WalletIcon}
-                 color="blue"
-                 variant="tinted"
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Cashout"
-                 value={transactions.filter(t => t.type === 'withdrawal').length.toLocaleString()}
-                 icon={ArrowDownLeft}
-                 color="orange"
-                 variant="tinted"
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Refund"
-                 value={transactions.filter(t => t.type === 'refund' || t.type === 'refund_request').length.toLocaleString()}
-                 icon={RefreshCw}
-                 color="green"
-                 variant="tinted"
-                 smallIcon={true}
-               />
-             </>
-           ) : (
-             <>
-               <StatsCard
-                 title="Total"
-                 value={statusCounts.total.toLocaleString()}
-                 icon={CreditCard}
-                 color="blue"
-                 variant="tinted"
-                 onClick={() => setStatusFilter('all')}
-                 isActive={statusFilter === 'all'}
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Pending"
-                 value={statusCounts.pending.toLocaleString()}
-                 icon={Clock}
-                 color="orange"
-                 variant="tinted"
-                 onClick={() => setStatusFilter('pending')}
-                 isActive={statusFilter === 'pending'}
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Completed"
-                 value={statusCounts.completed.toLocaleString()}
-                 icon={CheckCircle}
-                 color="green"
-                 variant="tinted"
-                 onClick={() => setStatusFilter('completed')}
-                 isActive={statusFilter === 'completed'}
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Failed"
-                 value={statusCounts.failed.toLocaleString()}
-                 icon={XCircle}
-                 color="red"
-                 variant="tinted"
-                 onClick={() => setStatusFilter('failed')}
-                 isActive={statusFilter === 'failed'}
-                 smallIcon={true}
-               />
-               <StatsCard
-                 title="Cancelled"
-                 value={statusCounts.cancelled.toLocaleString()}
-                 icon={XCircle}
-                 color="indigo"
-                 variant="tinted"
-                 onClick={() => setStatusFilter('cancelled')}
-                 isActive={statusFilter === 'cancelled'}
-                 smallIcon={true}
-               />
-             </>
-           )}
-        </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-6">
-          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
-          <div className="flex items-center gap-2 lg:contents">
-            <div className="relative flex-1 lg:order-1">
-              {/* Kept byte-identical to the search field in Users.tsx so the
-                  two pages read as one system. Only the placeholder differs. */}
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
+        {/* Filter Bar — one bar for every width. Phones stack it (search, then
+            the dates and order); from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
-                placeholder="Search transactions..."
+                data-testid="transactions-search"
+                placeholder={category === 'platform_fee' || category === 'refund_request' ? 'Search by job or description...' : 'Search transactions...'}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all shadow-sm h-8 text-xs lg:pl-10 lg:h-10 lg:text-sm lg:rounded-xl"
+                className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
               />
             </div>
 
-            {/* Page Limit - Mobile only */}
+            {/* Page Limit - phones (the desktop one sits by the pages) */}
             <select
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
               className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
               <option value={10}>10</option>
@@ -415,233 +354,131 @@ const Transactions: React.FC = () => {
             </select>
           </div>
 
-          {/* Mobile filter dropdowns — hidden on desktop */}
-          <div className="flex gap-2 lg:hidden">
-            <select
-              value={paymentMethodFilter}
-              onChange={(e) => setPaymentMethodFilter(e.target.value)}
-              className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 px-2 py-1.5"
-            >
-              <option value="all">ALL METHODS</option>
-              <option value="wallet">WALLET</option>
-              <option value="cash">CASH</option>
-              <option value="xendit">XENDIT</option>
-            </select>
-            <div className="flex-1">
+          <div className="grid grid-cols-2 gap-2 w-full lg:contents">
+            <div className="lg:w-auto">
               <DateRangePicker
                 startDate={dateFrom}
                 endDate={dateTo}
                 onStartDateChange={setDateFrom}
                 onEndDateChange={setDateTo}
-                onClear={clearDateRange}
+                onClear={() => { setDateFrom(''); setDateTo(''); }}
               />
             </div>
-          </div>
-
-          {/* Row 2 on Desktop: filters + page limit */}
-          {/* Mirrors the desktop filter group in Users.tsx. The lg:flex-initial
-              resets matter: without them this group keeps growing at desktop
-              width and squeezes the flex-1 search field, which is why the same
-              input rendered narrower here than on All Users. */}
-          <div className="hidden lg:flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
-            <div className="flex-1 flex items-center gap-2 lg:flex-initial lg:justify-end">
-              <div className="flex-1 lg:flex-initial">
-                <DateRangePicker
-                  startDate={dateFrom}
-                  endDate={dateTo}
-                  onStartDateChange={setDateFrom}
-                  onEndDateChange={setDateTo}
-                  onClear={clearDateRange}
-                />
-              </div>
-
-              {category !== 'platform_fee' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white px-2.5 py-2 border border-gray-200 rounded-xl shadow-sm text-[10px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shrink-0"
-                >
-                  <option value="all">ALL STATUS</option>
-                  <option value="pending">PENDING</option>
-                  <option value="completed">COMPLETED</option>
-                  <option value="failed">FAILED</option>
-                  <option value="cancelled">CANCELLED</option>
-                </select>
-              )}
-
-              <select
-                value={paymentMethodFilter}
-                onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="bg-white px-2.5 py-2 border border-gray-200 rounded-xl shadow-sm text-[10px] font-black uppercase tracking-widest text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shrink-0"
-              >
-                <option value="all">All Methods</option>
-                <option value="wallet">Wallet</option>
-                <option value="xendit">Xendit</option>
-              </select>
-            </div>
-
-            {/* Pagination Limit for Desktop */}
-            <div className="flex items-center gap-2 lg:order-3 shrink-0">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-              <select
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
+            <select value={sort} onChange={(e) => setSort(e.target.value as TransactionsSort)} aria-label="Sort transactions" className={`${selectClass} lg:w-[170px] xl:hidden`}>
+              {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           </div>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
+        <div className={`flex-1 overflow-y-auto transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500 font-medium tracking-tight">Loading transactions...</p>
+                <p className="text-gray-500">Loading transactions...</p>
               </div>
             </div>
           ) : transactions.length === 0 ? (
-            <div className="bg-white p-12 text-center rounded-xl mx-4 my-8 border border-gray-100 shadow-sm">
-              <div className="text-gray-300 mb-4 bg-gray-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto">
-                <Search className="h-10 w-10" />
+            <div className="bg-white p-12 text-center" data-testid="transactions-empty">
+              <div className="text-gray-300 mb-4">
+                <Search className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-bold text-lg">No transactions found</p>
-              <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters</p>
+              <p className="text-gray-700 font-semibold">{emptyText.title}</p>
+              <p className="text-sm text-gray-500 mt-1">{emptyText.text}</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show all
+                </button>
+              )}
             </div>
           ) : (
             <>
-              {/* Desktop Table View */}
-              <div className="hidden lg:block bg-white shadow-sm border-b border-gray-200">
-                <table className="min-w-full w-full table-fixed">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-30">
+              {/* Desktop View */}
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr>
-                      <th className="w-[30%] px-6 py-4 text-left text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        Transaction Info
+                      <th className="w-[37%] xl:w-[32%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Transaction
                       </th>
-                      <th className="w-[20%] px-6 py-4 text-left text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        {category === 'platform_fee' ? 'Provider' : 'Involved Users'}
+                      <th className="w-[26%] xl:w-[24%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        {category === 'platform_fee' || category === 'refund_request' ? 'Client & provider' : 'Account'}
                       </th>
-                      <th className="w-[12%] px-6 py-4 text-left text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        Amount
+                      <th
+                        className="w-[15%] xl:w-[13%] px-4 xl:px-6 py-3.5 text-right text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'amount_desc' ? 'descending' : sort === 'amount_asc' ? 'ascending' : 'none'}
+                      >
+                        <SortHeader
+                          label="Amount"
+                          dir={sort === 'amount_desc' ? 'desc' : sort === 'amount_asc' ? 'asc' : null}
+                          onClick={() => setSort(sort === 'amount_desc' ? 'amount_asc' : 'amount_desc')}
+                        />
                       </th>
-                      <th className="w-[12%] px-6 py-4 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                      <th className="w-[22%] xl:w-[17%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[16%] px-6 py-4 text-left text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        Date
+                      <th
+                        className="hidden xl:table-cell w-[14%] px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'newest' ? 'descending' : sort === 'oldest' ? 'ascending' : 'none'}
+                      >
+                        <SortHeader
+                          label="Date"
+                          dir={sort === 'newest' ? 'desc' : sort === 'oldest' ? 'asc' : null}
+                          onClick={() => setSort(sort === 'newest' ? 'oldest' : 'newest')}
+                        />
                       </th>
-                      {category !== 'platform_fee' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
-                        <th className="w-[10%] px-6 py-4 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                          Actions
-                        </th>
-                      )}
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {transactions.map((transaction) => {
-                      const user = getUser(transaction);
-                      const toUser = getToUser(transaction);
-
+                  <tbody className="bg-white">
+                    {transactions.map((tx) => {
+                      const info = describe(tx, kind);
+                      const parties = partiesOf(tx, kind);
                       return (
-                        <tr 
-                          key={transaction._id}
-                          onClick={() => openTransactionModal(transaction)} 
-                          className="group transition-all duration-150 cursor-pointer"
+                        <tr
+                          key={tx._id}
+                          data-testid={`transaction-row-${tx._id}`}
+                          onClick={() => openTransactionModal(tx)}
+                          className="group h-20 cursor-pointer transition-colors hover:bg-gray-50/70"
                         >
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex items-start gap-4">
-                              <div className="w-11 h-11 rounded-xl bg-gray-50 group-hover:bg-white transition-colors border border-gray-100 items-center justify-center flex flex-shrink-0">
-                                {getTransactionIcon(transaction, categories)}
-                              </div>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle overflow-hidden">
+                            <div className="flex items-center gap-4 min-w-0">
+                              {rowIcon(tx, 'h-11 w-11')}
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${getTypeColor(transaction.type, transaction.transactionType)}`}>
-                                    {transaction.type?.replace('_', ' ')}
-                                  </span>
-                                  {isOverdue(transaction) && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
-                                </div>
-                                <p className="text-sm font-semibold text-gray-900 line-clamp-1 transition-colors">
-                                  {transaction.description?.replace(/^ASAP\s*/i, '').replace(/priority fee for job:\s*/i, '').replace(/^Platform fee for job:\s*/i, '') || transaction.description}
+                                <p className="text-[10px] text-gray-400 font-bold tracking-wider truncate">{kindLabel(tx, kind)}</p>
+                                <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">{info.title}</p>
+                                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500 min-w-0">
+                                  <span className="truncate" title={info.detail}>{info.detail}</span>
+                                  {/* Below xl the Date column is hidden; its age rides here. */}
+                                  <span className="xl:hidden flex-shrink-0 text-gray-400">· {ago(tx.createdAt)}</span>
                                 </p>
-                                <p className="text-[11px] text-gray-400 mt-1 font-medium">ID: {transaction._id.slice(-8).toUpperCase()}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="space-y-2">
-                              {user && (
-                                <div className="flex items-center gap-3">
-                                  <div className="h-8 w-8 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100 flex-shrink-0">
-                                    <span className="text-[10px] font-bold text-gray-600">{getInitials(user.name)}</span>
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-semibold text-gray-900 truncate">{user.name}</p>
-                                    <p className="text-[10px] text-gray-400 truncate">{user.email}</p>
-                                  </div>
-                                </div>
-                              )}
-                              {toUser && transaction.type !== 'platform_fee' && user?._id !== toUser._id && (
-                                <div className="flex items-center gap-3 pl-4">
-                                  <ArrowDownLeft className="h-3 w-3 text-gray-300 flex-shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className="text-[11px] font-medium text-gray-600 truncate">{toUser.name}</p>
-                                  </div>
-                                </div>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="space-y-1.5 min-w-0">
+                              {parties.map((party) => <PartyLine key={party.role} party={party} />)}
+                              {parties.length === 1 && parties[0].sub && (
+                                <p className="pl-[68px] text-[11px] text-gray-400 truncate">{parties[0].sub}</p>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div>
-                              <p className="text-sm font-bold text-gray-900">
-                                {formatCurrency(transaction.amount)}
-                              </p>
-                              <div className="flex items-center gap-1 mt-1">
-                                <CreditCard className="h-3 w-3 text-gray-300" />
-                                <span className="text-[10px] text-gray-400 font-bold uppercase">{transaction.paymentMethod}</span>
-                              </div>
+                          <td className="px-4 xl:px-6 py-2 text-right border-b border-gray-200 h-20 align-middle">
+                            <p className="text-sm font-black text-gray-900 tabular-nums">{peso(tx.amount)}</p>
+                            <p className="mt-0.5 text-[9px] font-black text-gray-400 uppercase tracking-wider truncate">{methodOf(tx, kind)}</p>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex flex-col items-start gap-1.5 min-w-0">
+                              <StatusBadge tx={tx} kind={kind} />
+                              <StatusText tx={tx} kind={kind} className="text-[11px] max-w-full" />
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold border uppercase tracking-wider ${getTransactionStatusColor(transaction.status)}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                  transaction.status === 'completed' ? 'bg-green-500' :
-                                  transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} />
-                                {transaction.status}
-                              </span>
-                              {transaction.description?.toUpperCase().startsWith('ASAP') && (
-                                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-orange-500 text-white">ASAP</span>
-                              )}
-                            </div>
+                          <td className="hidden xl:table-cell px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className="text-xs font-bold text-gray-900 truncate">{ago(tx.createdAt)}</p>
+                            <p className="text-[10px] font-medium text-gray-400 mt-1">{format(new Date(tx.createdAt), 'MMM d, yyyy')}</p>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="space-y-1">
-                              <p className="text-xs font-semibold text-gray-900">
-                                {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-400 uppercase">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(transaction.createdAt).toLocaleDateString()}
-                              </div>
-                            </div>
-                          </td>
-                          {category !== 'platform_fee' && category !== 'wallet_topup' && category !== 'withdrawal' && category !== 'refund_request' && (
-                            <td className="px-6 py-4 border-b border-gray-300">
-                              <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                                  <Eye className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          )}
                         </tr>
                       );
                     })}
@@ -649,58 +486,36 @@ const Transactions: React.FC = () => {
                 </table>
               </div>
 
-              {/* Mobile View */}
-              <div className="lg:hidden flex-1 overflow-y-auto">
+              {/* Phones and tablets */}
+              <div className="lg:hidden flex-1 overflow-y-auto bg-white">
                 <div className="px-3 py-3 space-y-2">
-                  {transactions.map((transaction) => {
-                    const user = getUser(transaction);
+                  {transactions.map((tx) => {
+                    const info = describe(tx, kind);
+                    const parties = partiesOf(tx, kind);
                     return (
                       <div
-                        key={transaction._id}
-                        onClick={() => openTransactionModal(transaction)}
-                        className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
+                        key={tx._id}
+                        data-testid={`transaction-card-${tx._id}`}
+                        onClick={() => openTransactionModal(tx)}
+                        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer"
                       >
-                        {/* Main Row */}
-                        <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
-                          <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-1.5 flex-shrink-0">
-                            {getTransactionIcon(transaction, categories)}
-                          </div>
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
+                          {rowIcon(tx, 'h-12 w-12')}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border truncate max-w-[130px] ${getTypeColor(transaction.type, transaction.transactionType)}`}>
-                                {transaction.type?.replace(/_/g, ' ')}
-                              </span>
-                            </div>
-                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">
-                              {transaction.description?.replace(/^ASAP\s*/i, '').replace(/priority fee for job:\s*/i, '') || transaction.description}
-                            </p>
+                            <p className="text-[10px] font-bold text-gray-400 tracking-wider truncate">{kindLabel(tx, kind)}</p>
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{info.title}</p>
+                            <StatusText tx={tx} kind={kind} className="mt-1 text-[11px]" />
                           </div>
-                          {/* Status + ASAP badge stacked on right */}
-                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getTransactionStatusColor(transaction.status)}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                transaction.status === 'completed' ? 'bg-green-500' :
-                                transaction.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                              }`} />
-                              {transaction.status}
-                            </span>
-                            {transaction.description?.toUpperCase().startsWith('ASAP') && (
-                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-orange-500 text-white">ASAP</span>
-                            )}
-                          </div>
+                          <StatusBadge tx={tx} kind={kind} small />
                         </div>
-                        {/* Footer strip */}
                         <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            <div className="h-5 w-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 flex-shrink-0">
-                              {getInitials(user?.name || 'U')}
-                            </div>
-                            <p className="text-[10px] font-bold text-gray-500 truncate">{user?.name || 'Anonymous'}</p>
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            {parties.filter((party) => party.name).map((party) => <PartyLine key={party.role} party={party} small />)}
                           </div>
-                          <p className="text-sm font-black text-gray-900 flex-shrink-0">{formatCurrency(transaction.amount)}</p>
+                          <p className="text-sm font-black text-gray-900 flex-shrink-0">{peso(tx.amount)}</p>
                           <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
                             <Clock className="h-2.5 w-2.5" />
-                            {formatDistanceToNow(new Date(transaction.createdAt), { addSuffix: true })}
+                            {ago(tx.createdAt)}
                           </div>
                         </div>
                       </div>
@@ -708,55 +523,22 @@ const Transactions: React.FC = () => {
                   })}
                 </div>
               </div>
-          </>
+            </>
+          )}
+        </div>
+
+        {!isLoading && transactions.length > 0 && (
+          <ListFooter page={page} limit={limit} total={total} pages={pages} onPage={setPage} onLimit={setLimit} />
         )}
       </div>
 
-        {/* Pagination Toolbar */}
-        {pagination.pages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 h-[65px] flex items-center justify-between">
-            <div className="hidden sm:block">
-              <p className="text-sm text-gray-500 font-medium">
-                Showing <span className="font-bold text-gray-900">{((pagination.page - 1) * pagination.limit) + 1}</span> to <span className="font-bold text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-bold text-gray-900">{pagination.total}</span> results
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                disabled={pagination.page === 1}
-                className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-40 transition-all shadow-sm"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-                disabled={pagination.page === pagination.pages}
-                className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-40 transition-all shadow-sm"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      {selectedTransaction && (
-        <>
-          <TransactionDetailsModal
-            isOpen={transactionModal.isOpen}
-            onClose={closeTransactionModal}
-            transaction={selectedTransaction}
-            onStatusUpdate={updateTransactionStatus}
-          />
-          <TopUpModal
-            isOpen={topUpModal.isOpen}
-            onClose={closeTopUpModal}
-            transaction={selectedTransaction}
-            onStatusUpdate={updateTransactionStatus}
-          />
-        </>
-      )}
+      {/* Details panel */}
+      <TransactionDetailsModal
+        isOpen={transactionModal.isOpen}
+        onClose={closeTransactionModal}
+        transaction={selectedTransaction}
+        onStatusUpdate={updateTransactionStatus}
+      />
     </div>
   );
 };

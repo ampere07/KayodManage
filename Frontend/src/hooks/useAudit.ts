@@ -25,6 +25,17 @@ export const useAuditLogs = (filters: AuditFilters, enabled = true) =>
     refetchOnMount: true,
   });
 
+/** Entries per action under the log's other filters — the counters. */
+export const useAuditSummary = (filters: Parameters<typeof auditService.getSummary>[0], enabled = true) =>
+  useQuery({
+    queryKey: [AUDIT_QUERY_KEY, 'summary', filters],
+    queryFn: () => auditService.getSummary(filters),
+    enabled,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+    refetchOnMount: true,
+  });
+
 /** Admins with their activity in a window — paged, searchable and sortable on the server. */
 export const useAuditTeam = (query: AuditTeamQuery, enabled = true) =>
   useQuery({
@@ -36,10 +47,10 @@ export const useAuditTeam = (query: AuditTeamQuery, enabled = true) =>
     refetchOnMount: true,
   });
 
-export const useAdminActivity = (adminId: string | undefined, limit: number, enabled = true) =>
+export const useAdminActivity = (adminId: string | undefined, limit: number, enabled = true, excludeSignIns = false) =>
   useQuery({
-    queryKey: [AUDIT_QUERY_KEY, 'admin', adminId, limit],
-    queryFn: () => auditService.getAdminActivity(adminId!, 1, limit),
+    queryKey: [AUDIT_QUERY_KEY, 'admin', adminId, limit, excludeSignIns],
+    queryFn: () => auditService.getAdminActivity(adminId!, 1, limit, excludeSignIns),
     enabled: Boolean(adminId) && enabled,
     placeholderData: keepPreviousData,
     staleTime: 15_000,

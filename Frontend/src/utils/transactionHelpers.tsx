@@ -110,6 +110,10 @@ export const getTransactionStatusIcon = (status: string): JSX.Element | null => 
   }
 };
 
+// Cache-buster for ImageKit icons, fixed for the page load: a fresh one per
+// render made every row download its icon again on every re-render.
+const ICON_STAMP = Date.now();
+
 /**
  * Get transaction icon based on type
  */
@@ -143,7 +147,7 @@ export const getTransactionIcon = (transaction: any, categories?: JobCategory[])
     if (iconData?.imagePath) {
       // Add cache-busting for ImageKit icons
       const iconPath = iconData.imagePath.startsWith('https://ik.imagekit.io')
-        ? `${iconData.imagePath}?t=${Date.now()}`
+        ? `${iconData.imagePath}?t=${ICON_STAMP}`
         : iconData.imagePath;
 
       return (

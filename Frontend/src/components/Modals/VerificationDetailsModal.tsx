@@ -21,12 +21,13 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
-// Function to format normalized profession names to display format
+// Readable credential name: split camelCase keys ("nbiClearance" -> "Nbi
+// Clearance") but leave acronyms and file names as uploaded — splitting before
+// every capital turned "TESDA-NCII.pdf" into "T E S D A- N C I I.pdf".
 const formatCredentialName = (name: string): string => {
-  // Convert camelCase or lowercase with spaces to proper format
   return name
-    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-    .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/^./, str => str.toUpperCase())
     .trim();
 };
 
@@ -434,6 +435,9 @@ const VerificationDetailsModal: React.FC<VerificationDetailsModalProps> = ({
 
   const handleFlagForReview = async () => {
     const notes = window.prompt('Reason for flagging (optional):');
+    // Cancel returns null (an empty OK returns ""): the admin backed out, so
+    // nothing is flagged and the user keeps their verified status.
+    if (notes === null) return;
 
     setUpdating(true);
     try {

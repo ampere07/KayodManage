@@ -83,69 +83,25 @@ export const usePrefetchData = () => {
             queryKey: ['jobs', { page: 1, limit: 20 }],
             queryFn: () => jobsService.getJobs({ page: 1, limit: 20 }),
           }),
+          // The Jobs page header (useJobsSummary): status tabs, quick filters, value.
           queryClient.prefetchQuery({
-            queryKey: ['jobs', 'counts'],
-            queryFn: async () => {
-              const [totalData, openData, inProgressData, completedData] = await Promise.all([
-                jobsService.getJobs({ limit: 1, page: 1 }),
-                jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
-                jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
-                jobsService.getJobs({ status: 'completed', limit: 1, page: 1 })
-              ]);
-              return {
-                total: totalData.pagination?.total || 0,
-                open: openData.pagination?.total || 0,
-                inProgress: inProgressData.pagination?.total || 0,
-                completed: completedData.pagination?.total || 0,
-                totalValue: totalData.stats?.totalValue || 0
-              };
-            },
+            queryKey: ['jobs', 'summary'],
+            queryFn: () => jobsService.getJobsSummary(),
           }),
 
-          // Transactions - Fee Records
-          queryClient.prefetchQuery({
-            queryKey: ['transactions', { page: 1, limit: 20, type: 'fee_record', includeFees: 'true' }],
-            queryFn: () => transactionsService.getTransactions({ page: 1, limit: 20, type: 'fee_record', includeFees: 'true' }),
-          }),
-
-          // Transactions - Top Up
-          queryClient.prefetchQuery({
-            queryKey: ['transactions', { page: 1, limit: 20, type: 'xendit_topup' }],
-            queryFn: () => transactionsService.getTransactions({ page: 1, limit: 20, type: 'xendit_topup' }),
-          }),
-
-          // Transactions - Cashout
-          queryClient.prefetchQuery({
-            queryKey: ['transactions', { page: 1, limit: 20, type: 'withdrawal' }],
-            queryFn: () => transactionsService.getTransactions({ page: 1, limit: 20, type: 'withdrawal' }),
-          }),
-
-          // Transactions - Refund
-          queryClient.prefetchQuery({
-            queryKey: ['transactions', { page: 1, limit: 20, type: 'refund' }],
-            queryFn: () => transactionsService.getTransactions({ page: 1, limit: 20, type: 'refund' }),
-          }),
-
-          // Transaction counts
-          queryClient.prefetchQuery({
-            queryKey: ['transactions', 'counts', 'fee_record'],
-            queryFn: async () => {
-              const [totalData, pendingData, completedData, failedData, cancelledData] = await Promise.all([
-                transactionsService.getTransactions({ type: 'fee_record', limit: 1, page: 1 }),
-                transactionsService.getTransactions({ type: 'fee_record', status: 'pending', limit: 1, page: 1 }),
-                transactionsService.getTransactions({ type: 'fee_record', status: 'completed', limit: 1, page: 1 }),
-                transactionsService.getTransactions({ type: 'fee_record', status: 'failed', limit: 1, page: 1 }),
-                transactionsService.getTransactions({ type: 'fee_record', status: 'cancelled', limit: 1, page: 1 })
-              ]);
-              return {
-                total: totalData.pagination?.total || 0,
-                pending: pendingData.pagination?.total || 0,
-                completed: completedData.pagination?.total || 0,
-                failed: failedData.pagination?.total || 0,
-                cancelled: cancelledData.pagination?.total || 0
-              };
-            },
-          }),
+          // Transactions: the first page and the counters of each of the four
+          // lists, under the keys those pages use (useTransactions /
+          // useTransactionCounts with no filters).
+          ...(['platform_fee', 'xendit_topup', 'withdrawal', 'refund_request'] as const).flatMap((type) => [
+            queryClient.prefetchQuery({
+              queryKey: ['transactions', { page: 1, limit: 20, type }],
+              queryFn: () => transactionsService.getTransactions({ page: 1, limit: 20, type }),
+            }),
+            queryClient.prefetchQuery({
+              queryKey: ['transactions', 'counts', type, {}],
+              queryFn: () => transactionsService.getTransactionCounts(type, {}),
+            }),
+          ]),
 
           // Verifications
           queryClient.prefetchQuery({

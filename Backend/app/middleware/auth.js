@@ -1,7 +1,9 @@
 const User = require('../models/User');
+const { noteSessionActivity } = require('../utils/adminSessions');
 
 const authMiddleware = (req, res, next) => {
   if (req.session && req.session.isAuthenticated) {
+    noteSessionActivity(req);
     // Attach user data to request object
     req.user = {
       id: req.session.userId || req.session.adminId || 'admin',
@@ -39,6 +41,8 @@ const adminAuth = async (req, res, next) => {
         return endSession(req, res);
       }
       req.session.role = adminUser.userType;
+      // When and from where this session was last used, for the superadmin's session list.
+      noteSessionActivity(req);
 
       // Attach admin user data to request object
       req.user = {

@@ -84,8 +84,16 @@ export interface AuditFilters {
   from?: string;
   to?: string;
   search?: string;
+  /** asc = oldest first; newest first otherwise. */
+  order?: 'asc' | 'desc';
   page: number;
   limit: number;
+}
+
+/** Entries per action under the log's admin / record / period / search filters. */
+export interface AuditSummary {
+  total: number;
+  byAction: Record<string, number>;
 }
 
 export interface AuditTeamMember {
@@ -120,6 +128,8 @@ export interface AuditTeamResponse {
   page: number;
   limit: number;
   pages: number;
+  /** What each activity filter would show under the search (the page's counters). */
+  counts: { all: number; active: number; sensitive: number; none: number };
   /** Every admin in the window, regardless of search or page. */
   totals: { admins: number; actions: number; logins: number; sensitive: number; activeAdmins: number };
 }
@@ -198,6 +208,9 @@ export interface AuditEntryDetail {
   aboutTarget: AuditEntrySummary[];
   /** All other entries about the same target (aboutTarget holds the latest 10). */
   aboutTargetTotal: number;
-  /** Where this entry sits in its admin's newest-first history (position is 0-based). */
-  adminHistory: { total: number; position: number };
+  /**
+   * Where this entry sits in its admin's newest-first history (position is
+   * 0-based), and what they did just before and just after it.
+   */
+  adminHistory: { total: number; position: number; before: AuditEntrySummary | null; after: AuditEntrySummary | null };
 }

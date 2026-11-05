@@ -33,7 +33,8 @@ const getUsers = async (req, res) => {
   };
   
   const query = userService.buildUserQuery(filters);
-  const pagination = { skip, limit };
+  // Joined date, newest first unless the list asks for the oldest.
+  const pagination = { skip, limit, sort: req.query.sort === 'oldest' ? 'oldest' : 'newest' };
   
   const { users, total } = await userService.getUsers(query, pagination);
   const pages = Math.ceil(total / limit);

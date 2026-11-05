@@ -1,17 +1,25 @@
 // Job Types
 import type { ServiceClassId } from '../constants/serviceClasses';
 
-export interface Application {
+export type JobQuoteStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'expired';
+
+/**
+ * A provider's quote on a job — the app's "applicant". Read from kayod/server's
+ * jobquotes; the admin panel shows them but never accepts one (accepting holds
+ * the client's funds in escrow, which is the client's action).
+ */
+export interface JobQuote {
   _id: string;
   provider: {
     _id: string;
     name: string;
-    email: string;
+    email?: string;
     phone?: string;
-  };
-  status: 'pending' | 'accepted' | 'rejected';
-  appliedAt: Date | string;
-  message?: string;
+    phoneNumber?: string;
+  } | null;
+  amount: number | null;
+  status: JobQuoteStatus;
+  submittedAt: Date | string | null;
 }
 
 export interface Job {
@@ -32,8 +40,10 @@ export interface Job {
   locationDisplay: string;
   locationDetails?: string;
   date: Date | string;
+  selectedDates?: (Date | string)[];
+  timeWindows?: string[];
   paymentMethod: 'wallet' | 'xendit';
-  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
+  status: 'open' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
   user?: {
     _id: string;
     name: string;
@@ -67,8 +77,9 @@ export interface Job {
   escrowReleaseAt?: Date | string | null;
   paidAmount: number;
   paidAt?: Date | string;
+  /** Number of quotes providers have submitted (the job's applicants). */
   applicationCount: number;
-  applications?: Application[];
+  quotes?: JobQuote[];
   isHidden?: boolean;
   hiddenAt?: Date | string;
   hiddenBy?: string;
@@ -111,9 +122,36 @@ export interface JobsQueryParams {
   search?: string;
   status?: string;
   category?: string;
+  profession?: string;
   paymentMethod?: string;
+  /** Quick filters: jobs in an active dispute, or open jobs nobody has quoted on. */
+  flag?: JobsQuickFilter;
+  sort?: JobsSort;
   archived?: boolean;
   archiveType?: 'hidden' | 'removed';
+}
+
+export type JobsQuickFilter = 'dispute' | 'no_quotes';
+/** archived_* order by when the job was hidden or deleted (the Archived page). */
+export type JobsSort = 'newest' | 'oldest' | 'price_desc' | 'price_asc' | 'archived_desc' | 'archived_asc';
+export type JobStatus = Job['status'];
+
+/** GET /api/jobs/summary — live jobs only (not hidden or deleted). */
+export interface JobsSummary {
+  total: number;
+  byStatus: Record<JobStatus, number>;
+  disputes: number;
+  openWithoutQuotes: number;
+  /** Value of completed jobs (budget, or the agreed quote). */
+  totalValue: number;
+}
+
+/**
+ * GET /api/jobs/archived-summary — archived jobs counted by status and by how
+ * they were taken down. A job can be both hidden and deleted.
+ */
+export interface ArchivedJobsSummary {
+  cells: { status: JobStatus; hidden: boolean; deleted: boolean; count: number }[];
 }
 
 export interface JobsPagination {
@@ -135,7 +173,7 @@ export interface JobsResponse {
 export interface JobDetailsResponse {
   success: boolean;
   job: Job;
-  applications: Application[];
+  quotes: JobQuote[];
 }
 
 export interface UpdateJobStatusRequest {
@@ -147,11 +185,9 @@ export interface UpdateJobStatusResponse {
   job: Job;
 }
 
-export type JobStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type ServiceTier = 'basic' | 'standard' | 'premium';
 export type PaymentMethod = 'wallet' | 'xendit';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
-export type ApplicationStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
  * resolveDispute's response. `escrow` describes what actually happened to the

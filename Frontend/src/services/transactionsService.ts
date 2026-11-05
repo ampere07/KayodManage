@@ -4,6 +4,7 @@ import type {
   TransactionsQueryParams,
   TransactionsResponse,
   TransactionCounts,
+  TransactionCountFilters,
   UpdateTransactionStatusRequest,
   UpdateTransactionStatusResponse
 } from '../types/transactions.types';
@@ -29,8 +30,8 @@ class TransactionsService {
    * Replaces five calls to getTransactions({ limit: 1 }) that existed only to
    * read a count off each reply — ~1,315ms of round trips for five integers.
    */
-  async getTransactionCounts(type?: string): Promise<TransactionCounts> {
-    const params = type && type !== 'all' ? { type } : undefined;
+  async getTransactionCounts(type?: string, filters: TransactionCountFilters = {}): Promise<TransactionCounts> {
+    const params = { ...filters, ...(type && type !== 'all' ? { type } : {}) };
     const response = await apiClient.get<TransactionCounts>(
       `${this.baseUrl}/counts`,
       { params }

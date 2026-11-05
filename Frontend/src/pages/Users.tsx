@@ -2,63 +2,83 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Search,
-  Briefcase,
-  User as UserIcon,
   CheckCircle,
   Users as UsersIcon,
-  Shield,
   Clock,
-  Ban,
-  type LucideIcon
+  Wallet,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { UserDetailsModal } from '../components/Modals';
 import { settingsService } from '../services/settingsService';
 import { useQuery } from '@tanstack/react-query';
-import { resolveIconForProfession } from '../utils/professionUtils';
+import { resolveIconForProfession, getProfessionDisplayName } from '../utils/professionUtils';
 import { useUsers, useUserCountCells, useUserMutations } from '../hooks/useUsers';
-import StatsCard from '../components/Dashboard/StatsCard';
+import CounterGroups from '../components/UI/CounterGroups';
+import type { Counter, CounterGroup, Tone } from '../components/UI/CounterGroups';
+import { SortHeader, ListFooter, selectClass, ago } from '../components/UI/ListControls';
 import type { User } from '../types';
 
 type UserKind = 'client' | 'provider';
 type TypeFilter = 'all' | UserKind;
 type AccountFilter = 'all' | 'suspended' | 'restricted' | 'banned';
 type VerifiedFilter = 'all' | 'verified' | 'unverified';
-type CardColor = 'blue' | 'purple' | 'indigo' | 'orange' | 'red';
+type JoinedSort = 'newest' | 'oldest';
 
-interface FilterCard {
-  key: string;
-  title: string;
-  /** Shorter label for the mobile pills. */
-  pillTitle: string;
-  count: number;
-  icon: LucideIcon;
-  color: CardColor;
-  active: boolean;
-  onClick: () => void;
-}
-
-const PILL_ACTIVE: Record<CardColor, string> = {
-  blue: 'bg-blue-500 border-blue-500',
-  purple: 'bg-purple-500 border-purple-500',
-  indigo: 'bg-indigo-500 border-indigo-500',
-  orange: 'bg-orange-500 border-orange-500',
-  red: 'bg-red-500 border-red-500',
+// The counter grid's columns, one per group, sized by how many cells each
+// holds. Keyed by the groups' cell counts; literal so Tailwind generates them.
+const GRID_BY_GROUPS: Record<string, string> = {
+  'all-2-3-2': 'grid-cols-[0.8fr_2fr_3fr_2fr]',
+  'all-2-2': 'grid-cols-[0.8fr_2fr_2fr]',
+  '3-2': 'grid-cols-[3fr_2fr]',
 };
 
-// Card groups share the desktop row in proportion to their card count, so every
-// card is the same width. Literal class names so Tailwind generates them.
-const GROUP_FLEX: Record<number, string> = {
-  1: 'lg:flex-[1]',
-  2: 'lg:flex-[2]',
-  3: 'lg:flex-[3]',
+// The routes whose counters lead with an All cell.
+const ALL_CELL: Record<string, { label: string; hint: string }> = {
+  all: { label: 'All', hint: 'Every customer and provider' },
+  flagged: { label: 'All', hint: 'Every restricted, suspended or banned account' },
+  deleted: { label: 'All', hint: 'Every deleted account' },
 };
+
+const STATUS_COUNTERS: { key: Exclude<AccountFilter, 'all'>; label: string; tone: Tone; hint: string }[] = [
+  { key: 'suspended', label: 'Suspended', tone: 'yellow', hint: 'Locked out for a set time' },
+  { key: 'restricted', label: 'Restricted', tone: 'orange', hint: 'Can sign in, but limited in what they can do' },
+  { key: 'banned', label: 'Banned', tone: 'red', hint: 'Removed from the platform' },
+];
 
 const getInitials = (name: string): string => {
   const nameParts = name.trim().split(' ').filter(part => part.length > 0);
   if (nameParts.length === 0) return '?';
   return nameParts[0][0].toUpperCase();
 };
+
+const day = (value?: Date | string | null) => (value ? format(new Date(value), 'MMM d') : '');
+
+/**
+ * The line under a row's status badge: when a restriction ends or began, or
+ * that the person is online now. Nothing when there is nothing to add.
+ */
+const statusLine = (user: User): { text: string; tone: string } | null => {
+  const details = user.restrictionDetails;
+  if (user.accountStatus === 'deleted' || user.accountStatus === 'banned') {
+    return details?.restrictedAt ? { text: `Since ${day(details.restrictedAt)}`, tone: 'text-gray-500' } : null;
+  }
+  if (user.accountStatus === 'suspended') {
+    const until = details?.suspendedUntil || details?.expiresAt;
+    return { text: until ? `Until ${day(until)}` : 'No end date', tone: 'text-gray-500' };
+  }
+  if (user.isRestricted || user.accountStatus === 'restricted') {
+    return { text: details?.expiresAt ? `Until ${day(details.expiresAt)}` : 'No end date', tone: 'text-gray-500' };
+  }
+  if (user.isOnline) return { text: 'Online now', tone: 'text-emerald-600' };
+  return null;
+};
+
+/** The account type as a label, in the Jobs page's Client / Provider colours. */
+const RoleLabel: React.FC<{ user: User }> = ({ user }) => (
+  <span className={`text-[9px] font-black uppercase tracking-wider ${user.userType === 'provider' ? 'text-indigo-600' : 'text-purple-600'}`}>
+    {user.userType === 'provider' ? 'Provider' : 'Client'}
+  </span>
+);
 
 const Users: React.FC = () => {
   const location = useLocation();
@@ -70,6 +90,7 @@ const Users: React.FC = () => {
   const [accountFilter, setAccountFilter] = useState<AccountFilter>('all');
   const [verifiedFilter, setVerifiedFilter] = useState<VerifiedFilter>('all');
   const [professionFilter, setProfessionFilter] = useState<string>('all');
+  const [sort, setSort] = useState<JoinedSort>('newest');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [detailsModal, setDetailsModal] = useState({ isOpen: false });
   const [professionsList, setProfessionsList] = useState<string[]>([]);
@@ -98,15 +119,6 @@ const Users: React.FC = () => {
     return 'All Users';
   };
 
-  const getPageDescription = () => {
-    const type = getUserType();
-    if (type === 'customers') return 'Manage customer accounts and their service requests';
-    if (type === 'providers') return 'Manage service providers and their verification status';
-    if (type === 'flagged') return 'Review and manage restricted, suspended, and banned user accounts';
-    if (type === 'deleted') return 'View and manage soft deleted user accounts';
-    return 'Monitor and manage all user accounts across the platform';
-  };
-
   const userType = getUserType();
 
   // What each route lists before any card or tab narrows it. Staff accounts
@@ -132,9 +144,10 @@ const Users: React.FC = () => {
     ...(activeStatuses && { accountStatus: activeStatuses.join(',') }),
     ...(verifiedFilter !== 'all' && { isVerified: String(verifiedFilter === 'verified') }),
     ...(professionParam && { profession: professionParam }),
-  }), [pagination.page, pagination.limit, activeTypes, activeStatuses, searchTerm, verifiedFilter, professionParam]);
+    ...(sort !== 'newest' && { sort }),
+  }), [pagination.page, pagination.limit, activeTypes, activeStatuses, searchTerm, verifiedFilter, professionParam, sort]);
 
-  const { data: usersData, isLoading, refetch } = useUsers(queryParams);
+  const { data: usersData, isLoading, isPlaceholderData } = useUsers(queryParams);
   const { data: countCells = [], isLoading: countsLoading } = useUserCountCells({
     ...(searchTerm && { search: searchTerm }),
     ...(professionParam && { profession: professionParam }),
@@ -150,8 +163,6 @@ const Users: React.FC = () => {
       (verified === 'all' || cell.isVerified === (verified === 'verified'))
         ? sum + cell.count
         : sum, 0);
-  // Until the first counts arrive, a dash rather than a misleading 0.
-  const shown = (n: number) => (countsLoading ? '—' : n.toLocaleString());
   const { data: jobCategoriesData } = useQuery({
     queryKey: ['job-categories'],
     queryFn: () => settingsService.getJobCategories()
@@ -171,6 +182,7 @@ const Users: React.FC = () => {
   }, [jobCategoriesData]);
 
   const mutations = useUserMutations();
+  const [iconStamp] = useState(() => Date.now());
 
   const getProviderProfessions = (user: User): string[] => {
     if (user.userType !== 'provider') return [];
@@ -250,6 +262,10 @@ const Users: React.FC = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, [location.pathname]);
 
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [sort]);
+
   const getStatusLabel = (user: User) => {
     if (user.accountStatus === 'deleted') return 'Deleted';
     if (user.accountStatus === 'banned') return 'Banned';
@@ -286,66 +302,72 @@ const Users: React.FC = () => {
 
   const resetPage = () => setPagination(prev => ({ ...prev, page: 1 }));
   const fixedType = userType === 'customers' || userType === 'providers';
-  const allTitle = { all: 'All Users', customers: 'All Customers', providers: 'All Providers', flagged: 'All Flagged', deleted: 'All Deleted' }[userType];
 
-  // Account type. Every card filters this list in place. On the customers and
-  // providers pages the route fixes the type, so the group is a single total
-  // card, which clears the status filter.
-  const typeCards: FilterCard[] = fixedType
-    ? [{
-        key: 'scope',
-        title: allTitle,
-        pillTitle: 'All',
-        icon: userType === 'customers' ? UserIcon : Briefcase,
-        color: userType === 'customers' ? 'purple' : 'indigo',
-        count: countWhere(scope.types, scope.statuses, verifiedFilter),
-        active: accountFilter === 'all',
-        onClick: () => { setAccountFilter('all'); resetPage(); },
-      }]
-    : ([
-        { type: 'all', title: allTitle, pillTitle: userType === 'all' ? 'All Users' : 'All', icon: UsersIcon, color: 'blue' },
-        { type: 'client', title: 'Customers', pillTitle: 'Customers', icon: UserIcon, color: 'purple' },
-        { type: 'provider', title: 'Providers', pillTitle: 'Providers', icon: Briefcase, color: 'indigo' },
-      ] as const).map(({ type, ...card }) => ({
-        ...card,
-        key: type,
-        count: countWhere(type === 'all' ? scope.types : [type], activeStatuses, verifiedFilter),
-        active: typeFilter === type,
-        onClick: () => { setTypeFilter(type); resetPage(); },
-      }));
-
-  // Account status. Toggles: clicking the selected card again clears it.
-  const statusCards: FilterCard[] = userType === 'deleted' ? [] : ([
-    { status: 'suspended', title: 'Suspended', icon: Clock, color: 'orange' },
-    { status: 'restricted', title: 'Restricted', icon: Shield, color: 'indigo' },
-    { status: 'banned', title: 'Banned', icon: Ban, color: 'red' },
-  ] as const).map(({ status, ...card }) => ({
-    ...card,
-    key: status,
-    pillTitle: card.title,
-    count: countWhere(activeTypes, [status], verifiedFilter),
-    active: accountFilter === status,
-    onClick: () => { setAccountFilter(prev => (prev === status ? 'all' : status)); resetPage(); },
+  // Every counter is the rows clicking it would leave: its own value combined
+  // with whatever the other filters are set to. Clicking the selected one
+  // again lifts that filter. On the customers and providers pages the route
+  // fixes the type, so there is no type group.
+  const typeCells: Counter[] = fixedType ? [] : ([
+    { key: 'client', label: 'Customers', tone: 'purple', hint: 'People who post jobs' },
+    { key: 'provider', label: 'Providers', tone: 'indigo', hint: 'People who quote on jobs and do the work' },
+  ] as const).map((cell) => ({
+    ...cell,
+    count: countsLoading ? undefined : countWhere([cell.key], activeStatuses, verifiedFilter),
+    selected: typeFilter === cell.key,
+    onClick: () => { setTypeFilter(prev => (prev === cell.key ? 'all' : cell.key)); resetPage(); },
   }));
 
-  const cardGroups = [
-    { label: fixedType ? 'Total' : 'Account type', cards: typeCards },
-    ...(statusCards.length ? [{ label: 'Account status', cards: statusCards }] : []),
+  const statusCells: Counter[] = userType === 'deleted' ? [] : STATUS_COUNTERS.map((cell) => ({
+    ...cell,
+    count: countsLoading ? undefined : countWhere(activeTypes, [cell.key], verifiedFilter),
+    selected: accountFilter === cell.key,
+    onClick: () => { setAccountFilter(prev => (prev === cell.key ? 'all' : cell.key)); resetPage(); },
+  }));
+
+  const verificationCells: Counter[] = ([
+    { key: 'verified', label: 'Verified', tone: 'emerald', hint: 'Identity checked by an admin' },
+    { key: 'unverified', label: 'Unverified', tone: 'amber', hint: 'Not checked yet' },
+  ] as const).map((cell) => ({
+    ...cell,
+    count: countsLoading ? undefined : countWhere(activeTypes, activeStatuses, cell.key),
+    selected: verifiedFilter === cell.key,
+    onClick: () => { setVerifiedFilter(prev => (prev === cell.key ? 'all' : cell.key)); resetPage(); },
+  }));
+
+  const counterGroups: CounterGroup[] = [
+    ...(typeCells.length ? [{
+      label: 'Account type',
+      total: countsLoading ? undefined : countWhere(scope.types, activeStatuses, verifiedFilter),
+      cells: typeCells,
+    }] : []),
+    ...(statusCells.length ? [{ label: 'Account status', cells: statusCells }] : []),
+    { label: 'Verification', cells: verificationCells },
   ];
+  const scopeTotal = countsLoading ? undefined : countWhere(scope.types, scope.statuses, 'all');
 
-  const verificationTabs = (['all', 'verified', 'unverified'] as const).map(key => ({
-    key,
-    label: { all: 'All', verified: 'Verified', unverified: 'Unverified' }[key],
-    count: countWhere(activeTypes, activeStatuses, key),
-  }));
-
-  const anyFilterActive = typeFilter !== 'all' || accountFilter !== 'all' || verifiedFilter !== 'all';
+  const anyFilterActive = Boolean(searchTerm) || typeFilter !== 'all' || accountFilter !== 'all' || verifiedFilter !== 'all'
+    || professionFilter !== 'all' || sort !== 'newest';
   const clearFilters = () => {
+    setSearchTerm('');
     setTypeFilter('all');
     setAccountFilter('all');
     setVerifiedFilter('all');
+    setProfessionFilter('all');
+    setSort('newest');
     resetPage();
   };
+
+  // The route's description, led by how many accounts it holds.
+  const description = (() => {
+    const n = scopeTotal === undefined ? null : scopeTotal.toLocaleString();
+    switch (userType) {
+      case 'customers': return n ? `${n} customer accounts, and the jobs they post` : 'Customer accounts and the jobs they post';
+      case 'providers': return n ? `${n} provider accounts, their trades and verification` : 'Provider accounts, their trades and verification';
+      case 'flagged': return n ? `${n} restricted, suspended or banned accounts` : 'Restricted, suspended and banned accounts';
+      case 'deleted': return n ? `${n} deleted accounts` : 'Deleted accounts';
+      default: return n ? `${n} customers and providers on the platform` : 'Every customer and provider on the platform';
+    }
+  })();
 
   const handleVerify = async (userId: string, isVerified: boolean) => {
     try {
@@ -371,9 +393,9 @@ const Users: React.FC = () => {
     <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
                   <UsersIcon className="h-5 w-5 text-blue-600" />
@@ -382,82 +404,48 @@ const Users: React.FC = () => {
                   {getPageTitle()}
                 </h1>
               </div>
-              <p className="text-xs text-gray-500 font-medium">{getPageDescription()}</p>
-            </div>
-            
-
-          </div>
-
-          {/* Mobile — the same filter cards, as pills */}
-          <div className="md:hidden">
-            <div className="grid grid-cols-3 gap-2">
-              {cardGroups.flatMap(group => group.cards).map(card => (
-                <button
-                  key={card.key}
-                  onClick={card.onClick}
-                  className={`flex items-center justify-center gap-1 py-1.5 px-3 rounded-full border transition-all active:scale-95 ${card.active ? `${PILL_ACTIVE[card.color]} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                >
-                  <span className="text-[11px] font-black">{shown(card.count)}</span>
-                  <span className={`text-[9px] font-black uppercase tracking-wide ${card.active ? 'text-white/80' : 'text-gray-400'}`}>{card.pillTitle}</span>
-                </button>
-              ))}
+              <p className="text-xs text-gray-500 font-medium">{description}</p>
             </div>
           </div>
 
-          {/* Stat cards: account type and account status are separate filters that
-              combine, and each number is the rows clicking that card would show. */}
-          <div className="hidden md:flex md:flex-col lg:flex-row gap-4 lg:gap-6">
-            {cardGroups.map((group, index) => (
-              <div key={group.label} className={`min-w-0 ${GROUP_FLEX[group.cards.length] || 'lg:flex-1'}`}>
-                <div className="flex items-center justify-between h-4 mb-2">
-                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{group.label}</span>
-                  {index === cardGroups.length - 1 && anyFilterActive && (
-                    <button
-                      onClick={clearFilters}
-                      className="text-[10px] font-black text-blue-600 hover:text-blue-700 uppercase tracking-widest"
-                    >
-                      Clear filters
-                    </button>
-                  )}
-                </div>
-                <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}>
-                  {group.cards.map(card => (
-                    <div key={card.key} className="cursor-pointer" onClick={card.onClick}>
-                      <StatsCard
-                        title={card.title}
-                        value={shown(card.count)}
-                        icon={card.icon}
-                        color={card.color}
-                        variant="tinted"
-                        isActive={card.active}
-                        smallIcon={true}
-                        showActiveIcon={false}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <CounterGroups
+            groups={counterGroups}
+            gridClass={GRID_BY_GROUPS[[...(ALL_CELL[userType] ? ['all'] : []), ...counterGroups.map((group) => group.cells.length)].join('-')] || 'grid-cols-3'}
+            all={{
+              count: scopeTotal,
+              selected: typeFilter === 'all' && accountFilter === 'all' && verifiedFilter === 'all',
+              onClick: () => { setTypeFilter('all'); setAccountFilter('all'); setVerifiedFilter('all'); resetPage(); },
+            }}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+            testId="users-counters"
+            idPrefix="users"
+            allCell={ALL_CELL[userType]}
+          />
         </div>
 
-        {/* Filter Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-6">
-          {/* Row 1: Search + View Toggle (mobile) / Search (desktop) */}
-          <div className="flex items-center gap-2 lg:contents">
-            <div className="relative flex-1 lg:order-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
+        {/* Filter Bar — one bar for every width. Phones stack it (search, then
+            the selects); from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search by name, email or phone..."
                 data-testid="users-search-input"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium transition-all shadow-sm h-8 text-xs lg:pl-10 lg:h-10 lg:text-sm lg:rounded-xl"
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  // A new search starts at page 1 — otherwise a search typed on
+                  // page 3 asks for page 3 of the matches and shows nothing.
+                  resetPage();
+                }}
+                className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
               />
             </div>
 
-            {/* Page Limit - Mobile only */}
+            {/* Page Limit - phones (the desktop one sits by the pages) */}
             <select
               value={pagination.limit}
               onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
@@ -469,20 +457,7 @@ const Users: React.FC = () => {
             </select>
           </div>
 
-          {/* Row 2 below lg: verification (and profession on the providers page) */}
-          <div className="grid grid-cols-2 gap-2 lg:hidden">
-            <select
-              value={verifiedFilter}
-              onChange={(e) => {
-                setVerifiedFilter(e.target.value as VerifiedFilter);
-                resetPage();
-              }}
-              className={`bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 ${userType === 'providers' ? '' : 'col-span-2'}`}
-            >
-              {verificationTabs.map(tab => (
-                <option key={tab.key} value={tab.key}>{tab.label} ({shown(tab.count)})</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-2 w-full lg:contents">
             {userType === 'providers' && (
               <select
                 value={professionFilter}
@@ -490,84 +465,46 @@ const Users: React.FC = () => {
                   setProfessionFilter(e.target.value);
                   resetPage();
                 }}
-                className="bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 h-8 w-full px-2 py-1.5 truncate"
+                className={`${selectClass} lg:w-[170px]`}
               >
-                <option value="all">All Professions</option>
+                <option value="all">Professions</option>
                 {professionsList.map(prof => (
                   <option key={prof} value={prof} className="capitalize">{prof}</option>
                 ))}
               </select>
             )}
-          </div>
-
-          {/* Desktop filter row */}
-          <div className="hidden lg:flex items-center justify-between gap-3 lg:flex-initial lg:order-2 lg:justify-end lg:gap-6 shrink-0">
-            <div className="flex-1 flex items-center gap-1.5 lg:flex-initial lg:justify-end overflow-x-auto no-scrollbar pb-0.5">
-              {userType === 'providers' && (
-                <select
-                  value={professionFilter}
-                  onChange={(e) => {
-                    setProfessionFilter(e.target.value);
-                    resetPage();
-                  }}
-                  className="bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-wider text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 lg:min-w-[140px] lg:max-w-[160px] truncate"
-                >
-                  <option value="all">Professions</option>
-                  {professionsList.map(prof => (
-                    <option key={prof} value={prof} className="capitalize">{prof}</option>
-                  ))}
-                </select>
-              )}
-              <div className="flex items-center gap-1 min-w-max">
-                {verificationTabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => {
-                      setVerifiedFilter(tab.key);
-                      resetPage();
-                    }}
-                    className={`px-2.5 py-2 text-[10px] font-black rounded-xl transition-all border uppercase tracking-widest ${verifiedFilter === tab.key
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200'
-                      }`}
-                  >
-                    {tab.label} ({shown(tab.count)})
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pagination Limit for Desktop */}
-            <div className="flex items-center gap-2 order-3 shrink-0">
-               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
-               <select
-                 value={pagination.limit}
-                 onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                 className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-               >
-                 <option value={10}>10</option>
-                 <option value={20}>20</option>
-                 <option value={50}>50</option>
-               </select>
-            </div>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as JoinedSort)}
+              aria-label="Sort users"
+              className={`${selectClass} lg:w-[160px] xl:hidden ${userType === 'providers' ? '' : 'col-span-2'}`}
+            >
+              <option value="newest">Newest joined</option>
+              <option value="oldest">Oldest joined</option>
+            </select>
           </div>
         </div>
       </div>
 
       {/* Content Area */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : users.length === 0 ? (
-            <div className="bg-white p-20 text-center">
-              <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gray-50 mb-6">
-                <UsersIcon className="h-10 w-10 text-gray-300" />
+            <div className="bg-white p-12 text-center" data-testid="users-empty">
+              <div className="text-gray-300 mb-4">
+                <UsersIcon className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-900 font-black text-xl mb-2">No users found</p>
-              <p className="text-gray-500 text-sm max-w-xs mx-auto">We couldn't find any user profiles matching your current selection.</p>
+              <p className="text-gray-700 font-semibold">No users found</p>
+              <p className="text-sm text-gray-500 mt-1">No accounts match your search or filters.</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show all users
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -575,232 +512,240 @@ const Users: React.FC = () => {
               <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
                 <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
-                    <tr className="border-b border-gray-200">
-                      <th className="w-[24%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        User Profile
+                    <tr>
+                      <th className="w-[31%] xl:w-[27%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        User
                       </th>
-                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Account Type
-                      </th>
-                      <th className="w-[19%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[21%] xl:w-[20%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Profession
                       </th>
-                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[17%] xl:w-[15%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[10%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Wallet Balance
+                      <th className="w-[15%] xl:w-[10%] px-4 xl:px-6 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Wallet
                       </th>
-                      <th className="w-[15%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Top-up / Cash-out
+                      <th
+                        className="hidden xl:table-cell w-[12%] px-6 py-3.5 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200 whitespace-nowrap"
+                        title="Lifetime top-ups (in) and cash-outs (out)"
+                      >
+                        In / out
                       </th>
-                      <th className="w-[12%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Joined Date
+                      <th
+                        className="w-[16%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'newest' ? 'descending' : 'ascending'}
+                      >
+                        <SortHeader
+                          label="Joined"
+                          dir={sort === 'newest' ? 'desc' : 'asc'}
+                          onClick={() => setSort(sort === 'newest' ? 'oldest' : 'newest')}
+                        />
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {users.map((user) => (
-                      <tr
-                        key={user._id}
-                        data-testid={`user-row-${user._id}`}
-                        onClick={() => openDetailsModal(user)}
-                        className="group h-20 transition-all duration-150 cursor-pointer"
-                      >
-                        <td className="w-[24%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                          <div className="flex items-center gap-3">
-                            <div className="relative flex-shrink-0">
-                              {user.profileImage ? (
-                                <img
-                                  src={user.profileImage}
-                                  alt={user.name}
-                                  className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center border border-gray-100">
-                                  <span className="text-sm font-bold text-blue-600 uppercase">
-                                    {getInitials(user.name)}
-                                  </span>
-                                </div>
-                              )}
-                              {user.isOnline && (
-                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                              )}
+                  <tbody className="bg-white">
+                    {users.map((user) => {
+                      const line = statusLine(user);
+                      const professions = getProviderProfessions(user);
+                      const pending = (user.financials?.topUpPending || 0) + (user.financials?.cashOutPending || 0);
+                      return (
+                        <tr
+                          key={user._id}
+                          data-testid={`user-row-${user._id}`}
+                          onClick={() => openDetailsModal(user)}
+                          className="group h-20 cursor-pointer transition-colors hover:bg-gray-50/70"
+                        >
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="relative flex-shrink-0">
+                                {user.profileImage ? (
+                                  <img
+                                    src={user.profileImage}
+                                    alt={user.name}
+                                    className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center border border-gray-100">
+                                    <span className="text-sm font-bold text-blue-600 uppercase">
+                                      {getInitials(user.name)}
+                                    </span>
+                                  </div>
+                                )}
+                                {user.isOnline && (
+                                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <RoleLabel user={user} />
+                                <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
+                                  {user.name}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">{user.phoneNumber || user.phone || user.email || 'No contact info'}</p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">
-                                {user.name}
-                              </p>
-                              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{user.phoneNumber || user.phone || user.email || 'No contact info'}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="w-[10%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                          <div className="flex justify-center">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${user.userType === 'provider'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                              : 'bg-purple-50 text-purple-700 border-purple-100'
-                              }`}>
-                              {user.userType === 'provider' ? <Briefcase className="h-3 w-3" /> : <UserIcon className="h-3.5 w-3.5" />}
-                              {user.userType}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="w-[19%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                          <div className="flex flex-wrap justify-center gap-x-8 gap-y-4 mx-auto py-0.5">
-                            {user.userType === 'provider' && (
-                              (() => {
-                                const professions = getProviderProfessions(user);
-                                
-                                if (professions.length === 0) return <span className="text-gray-300 font-bold">—</span>;
-
-                                return professions.map((prof, idx) => {
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            {user.userType !== 'provider' ? (
+                              <span className="text-xs text-gray-300">—</span>
+                            ) : professions.length === 0 ? (
+                              <span className="text-xs text-gray-400">No trade listed</span>
+                            ) : (
+                              <div className="flex items-start gap-2 min-w-0">
+                                {/* Two trades from xl, one below it; the rest as a count, named on hover. */}
+                                {professions.slice(0, 2).map((prof, idx) => {
                                   const iconData = resolveIconForProfession(prof, categories);
-                                  // Add cache-busting for ImageKit icons
                                   const iconPath = iconData.imagePath.startsWith('https://ik.imagekit.io')
-                                    ? `${iconData.imagePath}?t=${Date.now()}`
+                                    ? `${iconData.imagePath}?t=${iconStamp}`
                                     : iconData.imagePath;
-                                  const label = prof.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().toUpperCase();
-
+                                  const label = getProfessionDisplayName(prof, categories);
                                   return (
-                                    <div
-                                      key={idx}
-                                      className="flex flex-col items-center gap-1.5 group/prof"
-                                    >
-                                      <div className="w-12 h-12 rounded-xl bg-indigo-50/40 flex items-center justify-center p-2 border border-indigo-100/60 shadow-sm group-hover/prof:bg-indigo-50/90 group-hover/prof:scale-105 transition-all duration-300">
+                                    <div key={idx} className={`${idx === 0 ? 'flex' : 'hidden xl:flex'} flex-col items-center gap-1 w-[72px] min-w-0 flex-shrink-0`} title={label}>
+                                      <div className="w-9 h-9 rounded-xl bg-indigo-50/40 flex items-center justify-center p-1.5 border border-indigo-100/60 flex-shrink-0">
                                         <img
                                           src={iconPath}
-                                          className="w-full h-full object-contain filter contrast-[1.1]"
+                                          className="w-full h-full object-contain"
                                           alt={label}
                                           onError={(e) => {
                                             (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/3203/3203952.png'; // Fallback icon
                                           }}
                                         />
                                       </div>
-                                      <span className="text-[9px] font-bold text-gray-900 uppercase tracking-tight text-center leading-tight max-w-[80px]">
+                                      <span className="text-[10px] font-semibold text-gray-700 text-center leading-tight w-full line-clamp-2 break-words">
                                         {label}
                                       </span>
                                     </div>
                                   );
-                                });
-                              })()
+                                })}
+                                {professions.length > 1 && (
+                                  <span
+                                    className="xl:hidden self-center text-[11px] font-bold text-gray-400 flex-shrink-0"
+                                    title={professions.slice(1).map((prof) => getProfessionDisplayName(prof, categories)).join(', ')}
+                                  >
+                                    +{professions.length - 1}
+                                  </span>
+                                )}
+                                {professions.length > 2 && (
+                                  <span
+                                    className="hidden xl:inline self-center text-[11px] font-bold text-gray-400 flex-shrink-0"
+                                    title={professions.slice(2).map((prof) => getProfessionDisplayName(prof, categories)).join(', ')}
+                                  >
+                                    +{professions.length - 2}
+                                  </span>
+                                )}
+                              </div>
                             )}
-                          </div>
-                        </td>
-                        <td className="w-[10%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                          <div className="flex flex-col items-center gap-1.5">
-                            {getStatusLabel(user) ? (
-                              <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
-                                {getStatusLabel(user)}
-                              </span>
-                            ) : (
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
-                                {user.isVerified ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                                {user.isVerified ? 'Verified' : 'Unverified'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="w-[10%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
-                          <p className="text-sm font-black text-gray-900">
-                            {formatCurrency(user.wallet?.balance || 0)}
-                          </p>
-                        </td>
-                        <td className="w-[15%] px-6 py-2 text-center border-b border-gray-300 h-20 align-middle">
-                          {/* Lifetime money in and out of this account. Settled
-                              amounts only; anything still in flight is called
-                              out underneath rather than folded into the total. */}
-                          <div className="flex flex-col items-center gap-0.5">
-                            <p className="text-xs font-black text-emerald-600" data-testid={`user-topup-${user._id}`}>
-                              ↓ {formatCurrency(user.financials?.topUpTotal || 0)}
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex flex-col items-start gap-1.5 min-w-0">
+                              {getStatusLabel(user) ? (
+                                <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(user)}`}>
+                                  {getStatusLabel(user)}
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                                  {user.isVerified ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                                  {user.isVerified ? 'Verified' : 'Unverified'}
+                                </span>
+                              )}
+                              {line && <span className={`text-[11px] truncate max-w-full ${line.tone}`}>{line.text}</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 text-right border-b border-gray-200 h-20 align-middle">
+                            <p className="text-sm font-black text-gray-900 tabular-nums">
+                              {formatCurrency(user.wallet?.balance || 0)}
                             </p>
-                            <p className="text-xs font-black text-rose-600" data-testid={`user-cashout-${user._id}`}>
-                              ↑ {formatCurrency(user.financials?.cashOutTotal || 0)}
-                            </p>
-                            {((user.financials?.topUpPending || 0) + (user.financials?.cashOutPending || 0)) > 0 && (
-                              <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">
-                                {formatCurrency((user.financials?.topUpPending || 0) + (user.financials?.cashOutPending || 0))} pending
+                            {pending > 0 && (
+                              <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">
+                                {formatCurrency(pending)} pending
                               </p>
                             )}
-                          </div>
-                        </td>
-                        <td className="w-[12%] px-6 py-2 border-b border-gray-300 h-20 align-middle">
-                          <div className="flex flex-col">
-                            <p className="text-xs font-bold text-gray-900">
-                              {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
+                            {/* Below xl the Top-up / Cash-out column is hidden; its totals ride here. */}
+                            <p className="xl:hidden text-[10px] font-black mt-0.5 whitespace-nowrap">
+                              <span className="text-emerald-600">↓{formatCurrency(user.financials?.topUpTotal || 0)}</span>{' '}
+                              <span className="text-rose-600">↑{formatCurrency(user.financials?.cashOutTotal || 0)}</span>
                             </p>
-                            <p className="text-[10px] text-gray-400 mt-0.5">{new Date(user.createdAt).toLocaleDateString()}</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="hidden xl:table-cell px-6 py-2 text-right border-b border-gray-200 h-20 align-middle">
+                            {/* Lifetime money in and out of this account. Settled
+                                amounts only; anything still in flight is called
+                                out under the wallet balance. */}
+                            <p className="text-xs font-black text-emerald-600 tabular-nums" data-testid={`user-topup-${user._id}`}>
+                              ↓ {formatCurrency(user.financials?.topUpTotal || 0)}
+                            </p>
+                            <p className="text-xs font-black text-rose-600 tabular-nums mt-0.5" data-testid={`user-cashout-${user._id}`}>
+                              ↑ {formatCurrency(user.financials?.cashOutTotal || 0)}
+                            </p>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className="text-xs font-bold text-gray-900 truncate">{ago(user.createdAt)}</p>
+                            <p className="text-[10px] font-medium text-gray-400 mt-1">{format(new Date(user.createdAt), 'MMM d, yyyy')}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              {/* Mobile View */}
-              <div className="lg:hidden flex-1 overflow-y-auto">
+              {/* Phones and tablets */}
+              <div className="lg:hidden flex-1 overflow-y-auto bg-white">
                 <div className="px-3 py-3 space-y-2">
-                  {users.map((user) => (
-                    <div
-                      key={user._id}
-                      data-testid={`user-card-${user._id}`}
-                      onClick={() => openDetailsModal(user)}
-                      className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                    >
-                      {/* Main Row */}
-                      <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
-                        <div className="relative flex-shrink-0">
-                          {user.profileImage ? (
-                            <img src={user.profileImage} className="h-12 w-12 rounded-full border border-gray-100 bg-white object-cover" alt="" />
-                          ) : (
-                            <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
-                              <span className="text-sm font-black text-blue-600">{getInitials(user.name)}</span>
-                            </div>
-                          )}
-                          {user.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border truncate max-w-[130px] ${user.userType === 'provider' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-purple-50 text-purple-700 border-purple-100'}`}>
-                              {user.userType || 'Unknown'}
-                            </span>
+                  {users.map((user) => {
+                    const line = statusLine(user);
+                    const professions = getProviderProfessions(user);
+                    return (
+                      <div
+                        key={user._id}
+                        data-testid={`user-card-${user._id}`}
+                        onClick={() => openDetailsModal(user)}
+                        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
+                          <div className="relative flex-shrink-0">
+                            {user.profileImage ? (
+                              <img src={user.profileImage} className="h-12 w-12 rounded-full border border-gray-100 bg-white object-cover" alt="" />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
+                                <span className="text-sm font-black text-blue-600">{getInitials(user.name)}</span>
+                              </div>
+                            )}
+                            {user.isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                           </div>
-                          <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{user.name}</p>
-                        </div>
-                        {/* Status + profession stacked on the right */}
-                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <div className="flex-1 min-w-0">
+                            <RoleLabel user={user} />
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{user.name}</p>
+                            {user.userType === 'provider' && professions.length > 0 ? (
+                              <p className="mt-0.5 text-[11px] text-gray-500 truncate">
+                                {professions.map((prof) => getProfessionDisplayName(prof, categories)).join(' · ')}
+                              </p>
+                            ) : line ? (
+                              <p className={`mt-0.5 text-[11px] truncate ${line.tone}`}>{line.text}</p>
+                            ) : null}
+                          </div>
                           {getStatusLabel(user) ? (
-                            <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white ${getStatusColor(user)}`}>
+                            <span data-testid={`user-status-${user._id}`} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border bg-white flex-shrink-0 ${getStatusColor(user)}`}>
                               {getStatusLabel(user)}
                             </span>
                           ) : (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight border flex-shrink-0 ${user.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
                               {user.isVerified ? 'Verified' : 'Unverified'}
                             </span>
                           )}
-                          {user.userType === 'provider' && getProviderProfessions(user).length > 0 && (
-                            <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 max-w-[110px] truncate text-right">
-                              {getProviderProfessions(user)[0].replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}
-                            </span>
-                          )}
+                        </div>
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <p className="text-[10px] font-semibold text-gray-500 truncate flex-1 min-w-0">{user.email || user.phone}</p>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[10px] font-black text-emerald-600">↓{formatCurrency(user.financials?.topUpTotal || 0)}</span>
+                            <span className="text-[10px] font-black text-rose-600">↑{formatCurrency(user.financials?.cashOutTotal || 0)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Wallet className="h-3 w-3 text-gray-400" />
+                            <p className="text-sm font-black text-gray-900">{formatCurrency(user.wallet?.balance || 0)}</p>
+                          </div>
                         </div>
                       </div>
-                      {/* Footer strip */}
-                      <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
-                        <p className="text-[10px] font-bold text-gray-500 truncate flex-1 min-w-0">{user.email || user.phone}</p>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <span className="text-[10px] font-black text-emerald-600">↓{formatCurrency(user.financials?.topUpTotal || 0)}</span>
-                          <span className="text-[10px] font-black text-rose-600">↑{formatCurrency(user.financials?.cashOutTotal || 0)}</span>
-                        </div>
-                        <p className="text-sm font-black text-gray-900 flex-shrink-0">{formatCurrency(user.wallet?.balance || 0)}</p>
-                        <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
-                          <Clock className="h-2.5 w-2.5" />
-                          {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -808,40 +753,14 @@ const Users: React.FC = () => {
         </div>
 
         {!loading && users.length > 0 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
-            <div className="flex items-center justify-between w-full">
-              <div>
-                <p className="text-xs md:text-sm text-gray-700">
-                  Showing{' '}
-                  <span className="font-medium">
-                    {((pagination.page - 1) * pagination.limit) + 1}
-                  </span>{' '}
-                  to{' '}
-                  <span className="font-medium">
-                    {Math.min(pagination.page * pagination.limit, pagination.total)}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-medium">{pagination.total}</span> results
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(pagination.pages, prev.page + 1) }))}
-                  disabled={pagination.page === pagination.pages}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+          <ListFooter
+            page={pagination.page}
+            limit={pagination.limit}
+            total={pagination.total}
+            pages={pagination.pages}
+            onPage={(page) => setPagination(prev => ({ ...prev, page }))}
+            onLimit={(limit) => setPagination(prev => ({ ...prev, limit, page: 1 }))}
+          />
         )}
       </div>
 

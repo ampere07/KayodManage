@@ -60,6 +60,8 @@ export interface ChatSupport {
 export interface ChatSupportsResponse {
   success: boolean;
   chatSupports: ChatSupport[];
+  /** total = number of pages, count = number of tickets. */
+  pagination?: { current: number; total: number; count: number };
 }
 
 export interface ChatSupportDetailsResponse {

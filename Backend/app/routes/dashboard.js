@@ -1,9 +1,10 @@
 const express = require('express');
-const { getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison, getPopularJobs } = require('../controllers/dashboardController');
+const { getOverview, getStats, getActivity, getAlerts, markAlertAsRead, getRevenueChart, getStatsComparison, getPopularJobs } = require('../controllers/dashboardController');
 const { adminAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
+router.get('/overview', adminAuth, getOverview);
 router.get('/stats', adminAuth, getStats);
 router.get('/stats-comparison', adminAuth, getStatsComparison);
 router.get('/activity', adminAuth, getActivity);

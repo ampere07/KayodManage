@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const { getLocationFromIP } = require('../utils/geolocation');
+const { clientIp } = require('../utils/clientIp');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
@@ -55,16 +56,13 @@ const login = async (req, res) => {
   admin.lastLogin = new Date();
   await admin.save();
   
-  // Get real IP address (handle proxy headers)
-  const realIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                 req.headers['x-real-ip'] || 
-                 req.ip || 
-                 req.connection.remoteAddress || 
-                 'Unknown';
-  
+  // The address our proxy saw, not a header the browser could set (utils/clientIp).
+  const realIp = clientIp(req) || 'Unknown';
+
   // Get location from IP
   const location = getLocationFromIP(realIp);
-    
+
+  const now = new Date().toISOString();
   req.session.isAuthenticated = true;
   req.session.role = admin.userType;
   req.session.username = admin.email;
@@ -74,8 +72,12 @@ const login = async (req, res) => {
   req.session.ipAddress = realIp;
   req.session.location = location;
   req.session.sessionId = req.sessionID;
+  // Superadmins see when and where each session was last used (Settings → Management).
+  req.session.signedInAt = now;
+  req.session.lastSeenAt = now;
+  req.session.lastIp = realIp;
 
-  await logActivity(admin._id, 'admin_login', location && location !== 'Unknown' ? `Signed in from ${location}` : 'Signed in', {
+  const signInLog = await logActivity(admin._id, 'admin_login', location && location !== 'Unknown' ? `Signed in from ${location}` : 'Signed in', {
     targetType: 'admin',
     targetId: admin._id,
     targetModel: 'User',
@@ -83,6 +85,8 @@ const login = async (req, res) => {
     userAgent: req.session.userAgent,
     metadata: { location, targetName: admin.name }
   });
+  // Ties this session to its sign-in entry, so the session list doesn't show it twice.
+  if (signInLog?._id) req.session.signInLogId = String(signInLog._id);
 
   res.json({
     success: true,

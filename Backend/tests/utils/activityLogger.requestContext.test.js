@@ -38,9 +38,11 @@ const inRequest = (req, fn) => new Promise((resolve, reject) => {
 });
 
 test("a log written during a request records that request's IP and browser", async () => {
+  // req.ip is what Express read through the trusted proxy; the left-most
+  // X-Forwarded-For entry is the client's own claim and is ignored.
   const log = await withStubbedSave(() =>
     inRequest(
-      { headers: { "x-forwarded-for": "203.0.113.7, 10.0.0.1", "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0" } },
+      { ip: "203.0.113.7", headers: { "x-forwarded-for": "198.51.100.66, 203.0.113.7", "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0" } },
       () => logActivity(ADMIN, "user_banned", "Banned user X")
     )
   );

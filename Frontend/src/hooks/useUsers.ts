@@ -12,6 +12,7 @@ interface UseUsersParams {
   restricted?: string;
   accountStatus?: string;
   profession?: string;
+  sort?: 'newest' | 'oldest';
 }
 
 const USERS_QUERY_KEY = 'users';

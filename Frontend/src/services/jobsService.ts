@@ -4,9 +4,10 @@ import type {
   JobsResponse,
   JobDetailsResponse,
   JobsQueryParams,
+  JobsSummary,
+  ArchivedJobsSummary,
   UpdateJobStatusRequest,
   UpdateJobStatusResponse,
-  Application,
   ResolveDisputeResponse,
   DisputeFinding,
 } from '../types/jobs.types';
@@ -23,6 +24,22 @@ class JobsService {
    */
   async getJobs(params?: JobsQueryParams): Promise<JobsResponse> {
     const response = await apiClient.get<JobsResponse>(this.baseUrl, { params });
+    return response.data;
+  }
+
+  /**
+   * Live jobs by status, the quick-filter counts and the completed value
+   */
+  async getJobsSummary(): Promise<JobsSummary> {
+    const response = await apiClient.get<JobsSummary>(`${this.baseUrl}/summary`);
+    return response.data;
+  }
+
+  /**
+   * Archived jobs by status and by hidden / deleted (the Archived page's counters)
+   */
+  async getArchivedJobsSummary(): Promise<ArchivedJobsSummary> {
+    const response = await apiClient.get<ArchivedJobsSummary>(`${this.baseUrl}/archived-summary`);
     return response.data;
   }
 
@@ -107,16 +124,6 @@ class JobsService {
   }
 
   /**
-   * Get job applications
-   */
-  async getJobApplications(jobId: string): Promise<{ success: boolean; applications: Application[] }> {
-    const response = await apiClient.get<{ success: boolean; applications: Application[] }>(
-      `${this.baseUrl}/${jobId}/applications`
-    );
-    return response.data;
-  }
-
-  /**
    * Delete a job
    */
   async deleteJob(jobId: string): Promise<{ success: boolean; message: string }> {
@@ -142,32 +149,6 @@ class JobsService {
   async unhideJob(jobId: string): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.patch<{ success: boolean; message: string }>(
       `${this.baseUrl}/${jobId}/unhide`
-    );
-    return response.data;
-  }
-
-  /**
-   * Accept job application
-   */
-  async acceptApplication(
-    jobId: string,
-    applicationId: string
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post<{ success: boolean; message: string }>(
-      `${this.baseUrl}/${jobId}/applications/${applicationId}/accept`
-    );
-    return response.data;
-  }
-
-  /**
-   * Reject job application
-   */
-  async rejectApplication(
-    jobId: string,
-    applicationId: string
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post<{ success: boolean; message: string }>(
-      `${this.baseUrl}/${jobId}/applications/${applicationId}/reject`
     );
     return response.data;
   }

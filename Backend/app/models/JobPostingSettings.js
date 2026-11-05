@@ -11,13 +11,15 @@ const jobPostingSettingsSchema = new mongoose.Schema({
     default: 'job-posting',
     unique: true,
   },
-  // Maximum number of simultaneously active jobs a single user may have posted.
+  // Most open + in-progress jobs one client may have at once. Enforced by the
+  // Kayod server when a job goes live (create, publish draft, repost, extend).
   maxActiveJobsPerUser: {
     type: Number,
     default: 5,
     min: 1,
   },
-  // Number of days a job post stays live before it auto-expires.
+  // NOT USED: nothing in the Kayod app reads this. Job posts expire on their
+  // own schedule (Job.computeScheduleWindow). Not shown on the settings page.
   jobPostDurationDays: {
     type: Number,
     default: 30,
@@ -30,11 +32,13 @@ const jobPostingSettingsSchema = new mongoose.Schema({
     default: 100,
     min: 0,
   },
-  // Booking fee model, based on the agreed price at booking:
-  //  - agreedPrice >= bookingFeeThreshold -> fee = agreedPrice * (bookingFeePercentage / 100)
-  //  - agreedPrice <  bookingFeeThreshold -> fee = bookingFeeMinimum (flat)
-  // Defaults are 0 (fee disabled / opt-in) so no fee is charged until an admin
-  // sets a percentage or a minimum — this avoids surprise charges on upgrade.
+  // Booking fee = the platform's cut of a job, taken from the provider's payout
+  // when the held payment is released (utils/platformFee.js, mirrored in
+  // kayod/server):
+  //  - agreedPrice >= bookingFeeThreshold -> agreedPrice * (bookingFeePercentage / 100)
+  //  - agreedPrice <  bookingFeeThreshold -> bookingFeeMinimum (flat)
+  // A percentage of 0 means "not set" and the standard 20% applies (15% for
+  // Premium) — it does NOT switch the fee off.
   bookingFeePercentage: {
     type: Number,
     default: 0,
@@ -226,17 +230,20 @@ const jobPostingSettingsSchema = new mongoose.Schema({
     default: 3,
     min: 0,
   },
-  // When true, a newly posted job must be approved by an admin before going live.
+  // NOT USED: there is no approval queue; jobs go live when posted. Not shown
+  // on the settings page.
   requireApproval: {
     type: Boolean,
     default: false,
   },
-  // When true, clients may attach images to a job post.
+  // NOT USED: attachments are always allowed (maxAttachments sets how many).
+  // Not shown on the settings page.
   allowAttachments: {
     type: Boolean,
     default: true,
   },
-  // Maximum number of image attachments allowed per job post.
+  // Most photos and videos (counted together, as the app's picker counts them)
+  // on one job post, 1-10. Enforced by the Kayod server and its client.
   maxAttachments: {
     type: Number,
     default: 5,
@@ -246,7 +253,7 @@ const jobPostingSettingsSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  // uid/email of the admin who last saved the settings.
+  // Email of the admin who last saved the settings (session.username).
   updatedBy: {
     type: String,
     trim: true,

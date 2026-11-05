@@ -30,7 +30,7 @@ const LegalDocument = require('../models/LegalDocument');
 const ADMIN_TYPES = ['admin', 'superadmin', 'finance', 'customer support', 'support'];
 const TARGET_FIELDS = 'name email title subject description type';
 
-const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegex = require('../utils/escapeRegex');
 
 const toObjectId = (value, name) => {
   if (!mongoose.Types.ObjectId.isValid(value)) throw ApiError.badRequest(`Invalid ${name}`);
@@ -50,20 +50,32 @@ const dateRange = ({ from, to }) => {
 };
 
 /**
+ * The audit log's areas as the page counts them: sign-ins are an area of their
+ * own, so "Team & access" holds only the changes to admin accounts and the
+ * areas split the log with nothing counted twice.
+ */
+const SIGN_IN = 'admin_login';
+const actionTypesInArea = (area) =>
+  area === 'signins'
+    ? [SIGN_IN]
+    : actionTypesInGroup(area).filter((type) => type !== SIGN_IN);
+
+/**
  * The Mongo filter for the audit log's query-string filters — shared by the
- * paged list and the CSV export, so an export holds exactly what's on screen.
+ * paged list, the CSV export and the summary, so they all count the same rows.
  *
  * ?adminId= ?group= ?actionType= ?sensitive=true ?targetType= ?targetId= ?from= ?to= ?search=
+ * group is an area: a catalog group, or `signins` (see actionTypesInArea).
  */
 const buildLogQuery = async (params) => {
   const { adminId, group, actionType, targetType, targetId, search } = params;
   const query = {};
   if (adminId) query.adminId = toObjectId(adminId, 'adminId');
 
-  // Action filter: one action, or a group, optionally narrowed to sensitive ones.
+  // Action filter: one action, or an area, optionally narrowed to sensitive ones.
   let actionTypes = null;
   if (actionType && actionType !== 'all') actionTypes = [actionType];
-  else if (group && group !== 'all') actionTypes = actionTypesInGroup(group);
+  else if (group && group !== 'all') actionTypes = actionTypesInArea(group);
   if (params.sensitive === 'true') {
     actionTypes = (actionTypes || SENSITIVE_ACTION_TYPES).filter((type) => SENSITIVE_ACTION_TYPES.includes(type));
   }
@@ -96,18 +108,19 @@ const LOG_ORDER = { createdAt: -1, _id: -1 };
 /**
  * GET /api/admin/activity-logs — the audit log, filtered (see buildLogQuery) and
  * paged on the server so every entry is reachable, not just the newest page.
- * ?page= ?limit=
+ * ?page= ?limit= ?order=asc (oldest first; newest first otherwise)
  */
 exports.getActivityLogs = asyncHandler(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const query = await buildLogQuery(req.query);
+  const order = req.query.order === 'asc' ? { createdAt: 1, _id: 1 } : LOG_ORDER;
 
   const [logs, total] = await Promise.all([
     ActivityLog.find(query)
       .populate('adminId', 'name email userType')
       .populate({ path: 'targetId', select: TARGET_FIELDS })
-      .sort(LOG_ORDER)
+      .sort(order)
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
@@ -124,6 +137,28 @@ exports.getActivityLogs = asyncHandler(async (req, res) => {
     hasMore: page * limit < total,
   });
 }, 'Failed to fetch activity logs');
+
+/**
+ * GET /api/admin/activity-logs/summary — how many entries each action has under
+ * the log's other filters (admin, record, period, search), for the page's
+ * counters. The area, action and sensitive filters are left out: those are
+ * what the counters choose between, and the page sums them per area from the
+ * catalog, so each counter is the number of rows clicking it shows.
+ */
+exports.getActivitySummary = asyncHandler(async (req, res) => {
+  const { group, actionType, sensitive, ...rest } = req.query;
+  const query = await buildLogQuery(rest);
+  const rows = await ActivityLog.aggregate([
+    { $match: query },
+    { $group: { _id: '$actionType', count: { $sum: 1 } } },
+  ]);
+  const byAction = Object.fromEntries(rows.map((row) => [row._id, row.count]));
+  res.json({
+    success: true,
+    total: rows.reduce((sum, row) => sum + row.count, 0),
+    byAction,
+  });
+}, 'Failed to summarise the audit log');
 
 const EXPORT_LIMIT = 5000;
 
@@ -297,6 +332,13 @@ exports.getAuditTeam = asyncHandler(async (req, res) => {
     const pattern = new RegExp(escapeRegex(search.trim()), 'i');
     rows = rows.filter((a) => pattern.test(a.name || '') || pattern.test(a.email || ''));
   }
+  // What each activity filter would show under the search — the page's counters.
+  const counts = {
+    all: rows.length,
+    active: rows.filter((a) => a.actions > 0).length,
+    sensitive: rows.filter((a) => a.sensitive > 0).length,
+    none: rows.filter((a) => a.actions === 0).length,
+  };
   if (activity === 'active') rows = rows.filter((a) => a.actions > 0);
   else if (activity === 'none') rows = rows.filter((a) => a.actions === 0);
   else if (activity === 'sensitive') rows = rows.filter((a) => a.sensitive > 0);
@@ -321,6 +363,7 @@ exports.getAuditTeam = asyncHandler(async (req, res) => {
     page,
     limit,
     pages: Math.max(Math.ceil(rows.length / limit), 1),
+    counts,
     totals: {
       admins: everyone.length,
       actions: everyone.reduce((sum, a) => sum + a.actions, 0),
@@ -632,7 +675,10 @@ exports.getActivityLogDetail = asyncHandler(async (req, res) => {
   if (!log) throw ApiError.notFound('Audit entry not found');
 
   const adminId = log.adminId?._id;
-  const [target, bulk, aboutTarget, aboutTargetTotal, adminTotal, newerByAdmin] = await Promise.all([
+  // Later / earlier than this entry in the list's order (createdAt, ties by _id).
+  const newer = { $or: [{ createdAt: { $gt: log.createdAt } }, { createdAt: log.createdAt, _id: { $gt: log._id } }] };
+  const older = { $or: [{ createdAt: { $lt: log.createdAt } }, { createdAt: log.createdAt, _id: { $lt: log._id } }] };
+  const [target, bulk, aboutTarget, aboutTargetTotal, adminTotal, newerByAdmin, justAfter, justBefore] = await Promise.all([
     describeTarget(log),
     describeBulkItems(log),
     log.targetId
@@ -645,12 +691,10 @@ exports.getActivityLogDetail = asyncHandler(async (req, res) => {
     log.targetId ? ActivityLog.countDocuments({ targetId: log.targetId, _id: { $ne: log._id } }) : 0,
     adminId ? ActivityLog.countDocuments({ adminId }) : 0,
     // Entries ahead of this one in the list's order (newest first, ties by _id).
-    adminId
-      ? ActivityLog.countDocuments({
-          adminId,
-          $or: [{ createdAt: { $gt: log.createdAt } }, { createdAt: log.createdAt, _id: { $gt: log._id } }],
-        })
-      : 0,
+    adminId ? ActivityLog.countDocuments({ adminId, ...newer }) : 0,
+    // What the same admin did right after and right before, for context.
+    adminId ? ActivityLog.findOne({ adminId, ...newer }).sort({ createdAt: 1, _id: 1 }).populate('adminId', 'name').lean() : null,
+    adminId ? ActivityLog.findOne({ adminId, ...older }).sort(LOG_ORDER).populate('adminId', 'name').lean() : null,
   ]);
 
   const action = AUDIT_ACTIONS[log.actionType];
@@ -675,8 +719,14 @@ exports.getActivityLogDetail = asyncHandler(async (req, res) => {
     bulk,
     aboutTarget: aboutTarget.map(entrySummary),
     aboutTargetTotal,
-    // position: 0-based index of this entry in the admin's newest-first history.
-    adminHistory: { total: adminTotal, position: newerByAdmin },
+    // position: 0-based index of this entry in the admin's newest-first history;
+    // before / after: their actions on either side of it.
+    adminHistory: {
+      total: adminTotal,
+      position: newerByAdmin,
+      before: justBefore ? entrySummary(justBefore) : null,
+      after: justAfter ? entrySummary(justAfter) : null,
+    },
   });
 }, 'Failed to fetch the audit entry');
 

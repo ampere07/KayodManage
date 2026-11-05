@@ -655,23 +655,23 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               {/* Title */}
               <div className="flex-1 min-w-0">
                 <h1 className="text-[15px] font-black text-gray-900 leading-tight truncate">
-                  {title === 'Dashboard' ? 'Dashboard Overview' : title}
+                  {title}
                 </h1>
                 <p className="text-[10px] text-gray-400 font-medium truncate">
                   {(() => {
                     switch (title) {
-                      case 'Dashboard': return "Welcome back! Your service marketplace's performance view";
+                      case 'Dashboard': return "How the marketplace is doing, and what's waiting on you";
                       case 'All Users': return 'Monitor and manage all user accounts across the platform';
                       case 'Customers': return 'Manage customer accounts and their service requests';
                       case 'Service Providers': return 'Manage service providers and their verification status';
                       case 'Flagged & Suspended': return 'Review and manage restricted, suspended, and banned user accounts';
                       case 'Deleted Users': return 'View and manage soft deleted user accounts';
-                      case 'Jobs Management': return 'Monitor and manage all service requests across the platform';
-                      case 'Archived Jobs': return 'View and manage job listings that have been hidden or removed';
+                      case 'Jobs Management': return 'Every service request, and what each one is waiting on';
+                      case 'Archived Jobs': return 'Hidden and deleted jobs; open one to unhide or restore it';
                       case 'Fee Records':
                       case 'Top-up Transactions':
                       case 'Cashout Transactions':
-                      case 'Refund Transactions': return 'Monitor financial records and payments';
+                      case 'Refund Transactions': return 'Money in, out and owed, and what each one is waiting on';
                       case 'User Verifications': return 'Review identity verification requests';
                       case 'Audit Log': return 'What every admin did, to whom, and when';
                       case 'Flagged': return 'Review flagged content and users';

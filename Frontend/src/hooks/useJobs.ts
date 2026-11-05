@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { jobsService, settingsService } from '../services';
 import toast from 'react-hot-toast';
 import { useMemo } from 'react';
+import type { JobsQuickFilter, JobsSort } from '../types/jobs.types';
 
 interface UseJobsParams {
   page: number;
@@ -9,7 +10,10 @@ interface UseJobsParams {
   search?: string;
   status?: string;
   category?: string;
+  profession?: string;
   paymentMethod?: string;
+  flag?: JobsQuickFilter;
+  sort?: JobsSort;
   archived?: boolean;
   archiveType?: 'hidden' | 'removed';
 }
@@ -24,29 +28,11 @@ export const useJobs = (params: UseJobsParams) => {
   });
 };
 
-export const useJobCounts = () => {
+/** The Jobs page header: live jobs by status, quick-filter counts, completed value. */
+export const useJobsSummary = () => {
   return useQuery({
-    queryKey: [JOBS_QUERY_KEY, 'counts'],
-    queryFn: async () => {
-      // Was labeled "assigned" — there is no "assigned" job status in the
-      // real app (see improvements doc §2); this counts in_progress jobs.
-      const [totalData, openData, inProgressData, completedData] = await Promise.all([
-        jobsService.getJobs({ limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'open', limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'in_progress', limit: 1, page: 1 }),
-        jobsService.getJobs({ status: 'completed', limit: 1, page: 1 })
-      ]);
-
-      const totalValue = totalData.stats?.totalValue || 0;
-
-      return {
-        total: totalData.pagination?.total || 0,
-        open: openData.pagination?.total || 0,
-        inProgress: inProgressData.pagination?.total || 0,
-        completed: completedData.pagination?.total || 0,
-        totalValue
-      };
-    },
+    queryKey: [JOBS_QUERY_KEY, 'summary'],
+    queryFn: () => jobsService.getJobsSummary(),
     placeholderData: (previousData) => previousData,
   });
 };
@@ -59,20 +45,11 @@ export const useArchivedJobs = (params: UseJobsParams) => {
   });
 };
 
-export const useArchivedJobCounts = () => {
+/** The Archived page's counters: archived jobs by status and hidden / deleted. */
+export const useArchivedJobsSummary = () => {
   return useQuery({
-    queryKey: [JOBS_QUERY_KEY, 'archived-counts'],
-    queryFn: async () => {
-      const [hiddenData, removedData] = await Promise.all([
-        jobsService.getJobs({ limit: 1, page: 1, archived: true, archiveType: 'hidden' }),
-        jobsService.getJobs({ limit: 1, page: 1, archived: true, archiveType: 'removed' })
-      ]);
-
-      return {
-        hidden: hiddenData.pagination?.total || 0,
-        removed: removedData.pagination?.total || 0
-      };
-    },
+    queryKey: [JOBS_QUERY_KEY, 'archived-summary'],
+    queryFn: () => jobsService.getArchivedJobsSummary(),
     placeholderData: (previousData) => previousData,
   });
 };

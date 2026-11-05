@@ -2,24 +2,26 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Search,
-  Filter,
-  RefreshCw,
-  ChevronRight,
   ShieldCheck,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
-  AlertCircle,
-  Calendar,
-  User,
+  Clock,
+  AlertTriangle,
+  RotateCcw,
+  FileText,
 } from "lucide-react";
-import toast from "react-hot-toast";
-import { formatDistanceToNow } from "date-fns";
+import type { LucideIcon } from "lucide-react";
+import { format, formatDistanceToNowStrict } from "date-fns";
 
 import { VerificationDetailsModal } from "../components/Modals";
-import UserTypeBadge from "../components/UI/UserTypeBadge";
-import StatsCard from "../components/Dashboard/StatsCard";
+import CounterGroups from "../components/UI/CounterGroups";
+import type { Counter, CounterGroup, Tone } from "../components/UI/CounterGroups";
+import { SortHeader, ListFooter, ago } from "../components/UI/ListControls";
 import { useVerifications, useUpdateVerificationStatus } from "../hooks";
 import type { Verification, UserInfo } from "../types";
+
+type TypeFilter = "all" | "client" | "provider";
+type DateSort = "newest" | "oldest";
 
 const getInitials = (name: string): string => {
   const nameParts = name
@@ -30,100 +32,154 @@ const getInitials = (name: string): string => {
   return nameParts[0][0].toUpperCase();
 };
 
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const configs = {
-    approved: { bg: "bg-green-100", text: "text-green-800", icon: CheckCircle },
-    rejected: { bg: "bg-red-100", text: "text-red-800", icon: XCircle },
-    pending: {
-      bg: "bg-yellow-100",
-      text: "text-yellow-800",
-      icon: AlertCircle,
-    },
-    under_review: {
-      bg: "bg-yellow-100",
-      text: "text-yellow-800",
-      icon: AlertCircle,
-    },
-    resubmission_requested: {
-      bg: "bg-orange-100",
-      text: "text-orange-800",
-      icon: AlertCircle,
-    },
-    flagged: { bg: "bg-red-100", text: "text-red-800", icon: AlertCircle },
-  };
+/**
+ * The status counters. "Pending review" covers both a new submission (pending)
+ * and one an admin has opened (under_review): both still need a decision.
+ */
+const STATUS_COUNTERS: { key: string; label: string; tone: Tone; hint: string; alert?: boolean; statuses: string[] }[] = [
+  { key: "under_review", label: "Pending", tone: "amber", alert: true, statuses: ["pending", "under_review"], hint: "Submitted (or opened) and waiting for an admin to decide" },
+  { key: "flagged", label: "Flagged", tone: "red", alert: true, statuses: ["flagged"], hint: "Marked as suspicious; needs a closer look" },
+  { key: "approved", label: "Approved", tone: "emerald", statuses: ["approved"], hint: "Identity confirmed" },
+  { key: "rejected", label: "Rejected", tone: "red", statuses: ["rejected"], hint: "Turned down" },
+  { key: "resubmission_requested", label: "Resubmit", tone: "orange", statuses: ["resubmission_requested"], hint: "Sent back for new documents; waiting on the user" },
+];
+const STATUS_KEYS = ["all", ...STATUS_COUNTERS.map((s) => s.key)];
+const statusesOf = (key: string) => STATUS_COUNTERS.find((s) => s.key === key)?.statuses || [key];
 
-  const config = configs[status as keyof typeof configs] || configs.pending;
-  const Icon = config.icon;
+// Row badges: the submission's own status, in the counters' colours.
+const BADGE: Record<string, { label: string; badge: string; dot: string }> = {
+  pending: { label: "Pending", badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+  under_review: { label: "Under review", badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+  approved: { label: "Approved", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  rejected: { label: "Rejected", badge: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
+  resubmission_requested: { label: "Resubmit", badge: "bg-orange-50 text-orange-700 border-orange-200", dot: "bg-orange-500" },
+  flagged: { label: "Flagged", badge: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
+};
 
-  const displayStatus =
-    status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ");
-
+const StatusBadge: React.FC<{ status: string; small?: boolean }> = ({ status, small }) => {
+  const look = BADGE[status] || BADGE.pending;
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${config.bg} ${config.text}`}
-    >
-      <Icon className="w-3 h-3 mr-1" />
-      {displayStatus}
+    <span className={`inline-flex items-center gap-1.5 rounded-full border font-black uppercase whitespace-nowrap ${small ? "px-2 py-0.5 text-[9px] tracking-tight" : "px-2.5 py-1 text-[10px] tracking-wider"} ${look.badge}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${look.dot}`} />
+      {look.label}
     </span>
   );
 };
 
-const UserAvatar: React.FC<{ user: UserInfo; size?: "sm" | "md" | "lg" }> = ({
-  user,
-  size = "md",
-}) => {
-  const sizeClasses = {
-    sm: "w-8 h-8 text-sm",
-    md: "w-10 h-10 text-sm",
-    lg: "w-16 h-16 text-2xl",
-  };
+const day = (value?: string) => (value ? format(new Date(value), "MMM d") : "");
 
-  if (user.profileImage) {
-    return (
-      <img
-        src={user.profileImage}
-        alt={user.name}
-        className={`${sizeClasses[size].split(" ").slice(0, 2).join(" ")} rounded-full object-cover`}
-      />
-    );
+/** The line under a status: how long it has waited, or how it was decided. */
+const statusLine = (v: Verification): { text: string; icon: LucideIcon; tone: string } => {
+  switch (v.status) {
+    case "pending":
+    case "under_review":
+      return { text: `Waiting ${formatDistanceToNowStrict(new Date(v.submittedAt))}`, icon: Clock, tone: "text-amber-600" };
+    case "approved":
+      return { text: `Approved ${day(v.reviewedAt)}`.trim(), icon: CheckCircle2, tone: "text-gray-500" };
+    case "rejected":
+      return { text: v.rejectionReason ? `“${v.rejectionReason}”` : `Rejected ${day(v.reviewedAt)}`.trim(), icon: XCircle, tone: "text-gray-500" };
+    case "resubmission_requested":
+      return { text: v.reviewedAt ? `Asked ${day(v.reviewedAt)} · waiting on the user` : "Waiting on the user", icon: RotateCcw, tone: "text-gray-500" };
+    case "flagged":
+      return { text: `Flagged ${day(v.reviewedAt)}`.trim(), icon: AlertTriangle, tone: "text-red-600 font-semibold" };
+    default:
+      return { text: v.status, icon: Clock, tone: "text-gray-500" };
   }
+};
 
+const StatusText: React.FC<{ v: Verification; className?: string }> = ({ v, className = "" }) => {
+  const line = statusLine(v);
+  const Icon = line.icon;
   return (
-    <div
-      className={`${sizeClasses[size]} rounded-full bg-gray-50 flex items-center justify-center border border-gray-100`}
-    >
-      <span className="font-bold text-gray-400">
-        {getInitials(user.name)}
-      </span>
+    <span className={`flex items-center gap-1 min-w-0 ${line.tone} ${className}`}>
+      <Icon className="h-3 w-3 flex-shrink-0" />
+      <span className="truncate">{line.text}</span>
+    </span>
+  );
+};
+
+const countOf = (value: unknown) => (Array.isArray(value) ? value.length : value ? 1 : 0);
+
+/** What the latest submission holds: face photo, valid ID, credentials. */
+const documentsOf = (v: Verification) => {
+  const latestAttempt = Array.isArray(v.attempts) && v.attempts.length > 0 ? v.attempts[v.attempts.length - 1] : null;
+  const source = latestAttempt || v;
+  const face = countOf(source.faceVerification);
+  const ids = countOf(source.validId);
+  const creds = countOf(source.credentials);
+  const parts = [
+    face ? "face photo" : "",
+    ids ? (ids > 1 ? `${ids} IDs` : "valid ID") : "",
+    creds ? `${creds} credential${creds > 1 ? "s" : ""}` : "",
+  ].filter(Boolean);
+  return { total: face + ids + creds, text: parts.length ? parts.join(", ").replace(/^\w/, (c) => c.toUpperCase()) : "No documents" };
+};
+
+/** How many times this person has submitted. */
+const attemptsOf = (verifications: Verification[]) =>
+  verifications.reduce((max, v) => {
+    const fromAttempts = Array.isArray(v.attempts) ? v.attempts.length : 0;
+    return Math.max(max, fromAttempts, v.verificationAttempts || 0);
+  }, 0) || 1;
+
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
+
+const RoleLabel: React.FC<{ user: UserInfo }> = ({ user }) => (
+  <span className={`text-[9px] font-black uppercase tracking-wider ${user.userType === "provider" ? "text-indigo-600" : "text-purple-600"}`}>
+    {user.userType === "provider" ? "Provider" : "Client"}
+  </span>
+);
+
+const UserAvatar: React.FC<{ user: UserInfo; size?: "sm" | "md" }> = ({ user, size = "md" }) => {
+  const box = size === "sm" ? "w-10 h-10" : "w-10 h-10";
+  if (user.profileImage) {
+    return <img src={user.profileImage} alt={user.name} className={`${box} rounded-full object-cover border border-gray-200 flex-shrink-0`} />;
+  }
+  return (
+    <div className={`${box} rounded-full bg-blue-50 flex items-center justify-center border border-gray-100 flex-shrink-0`}>
+      <span className="text-sm font-bold text-blue-600 uppercase">{getInitials(user.name)}</span>
     </div>
   );
 };
 
+/**
+ * Verifications Page
+ * One row per person, standing on their latest submission. The same counters,
+ * rows and footer as the Jobs and Transactions pages: what needs review first,
+ * then what was decided, and account type; every number is the rows clicking
+ * it shows. The details panel is unchanged.
+ */
 const Verifications: React.FC = () => {
-  const { data: verifications = [], isLoading: loading, refetch } = useVerifications();
+  const { data: verifications = [], isLoading: loading, isPlaceholderData } = useVerifications();
   const updateStatusMutation = useUpdateVerificationStatus();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [userTypeFilter, setUserTypeFilter] = useState<
-    "all" | "client" | "provider"
-  >("all");
-  const [selectedVerification, setSelectedVerification] =
-    useState<Verification | null>(null);
+  const [sort, setSort] = useState<DateSort>("newest");
+  const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
-  const [highlightedUserId, setHighlightedUserId] = useState<string | null>(
-    null,
-  );
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20,
-  });
+  const [highlightedUserId, setHighlightedUserId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
 
+  // Status and account type live in the URL; they combine.
+  const statusParam = searchParams.get("status") || "all";
+  const statusFilter = STATUS_KEYS.includes(statusParam) ? statusParam : "all";
+  const typeParam = searchParams.get("type") || "all";
+  const typeFilter: TypeFilter = typeParam === "client" || typeParam === "provider" ? typeParam : "all";
+  const setFilters = (status: string, type: TypeFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (status === "all") next.delete("status"); else next.set("status", status);
+    if (type === "all") next.delete("type"); else next.set("type", type);
+    setSearchParams(next, { replace: true });
+  };
+  // Clicking the selected counter again lifts that filter.
+  const chooseStatus = (status: string) => setFilters(status === statusFilter ? "all" : status, typeFilter);
+  const chooseType = (type: TypeFilter) => setFilters(statusFilter, type === typeFilter ? "all" : type);
+
+  // ?id= / ?verificationId= opens that person's submission (links from elsewhere).
   useEffect(() => {
-    const id = searchParams.get("id");
-    const verificationId = searchParams.get("verificationId");
-    const targetId = id || verificationId;
+    const targetId = searchParams.get("id") || searchParams.get("verificationId");
 
     if (targetId && verifications.length > 0) {
       const verification = verifications.find(
@@ -136,15 +192,13 @@ const Verifications: React.FC = () => {
         setModalOpen(true);
 
         setTimeout(() => {
-          highlightedRowRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-          });
+          highlightedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         }, 300);
 
-        searchParams.delete("id");
-        searchParams.delete("verificationId");
-        setSearchParams(searchParams, { replace: true });
+        const next = new URLSearchParams(searchParams);
+        next.delete("id");
+        next.delete("verificationId");
+        setSearchParams(next, { replace: true });
       }
     }
   }, [verifications, searchParams, setSearchParams]);
@@ -156,20 +210,17 @@ const Verifications: React.FC = () => {
     reason?: string,
     banUser?: boolean,
   ): Promise<void> => {
-    try {
-      await updateStatusMutation.mutateAsync({
-        verificationId,
-        status,
-        adminNotes: notes,
-        rejectionReason: reason,
-        banUser,
-      });
-      setModalOpen(false);
-      toast.success("Verification status updated successfully");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update status");
-      throw error;
-    }
+    // No toast here: the details panel announces the outcome ("Verification
+    // approved …") and apiClient reports failures, so one here doubled both.
+    // Errors propagate so the panel can show which action failed.
+    await updateStatusMutation.mutateAsync({
+      verificationId,
+      status,
+      adminNotes: notes,
+      rejectionReason: reason,
+      banUser,
+    });
+    setModalOpen(false);
   };
 
   const openModal = (verification: Verification) => {
@@ -206,79 +257,92 @@ const Verifications: React.FC = () => {
     return Object.values(grouped);
   }, [verifications]);
 
-  const stats = useMemo(() => {
-    const total = userVerifications.length;
-    const pending = userVerifications.filter(({ verifications }) =>
-      verifications.some((v) => v.status === "pending" || v.status === "under_review")
-    ).length;
-    const approved = userVerifications.filter(({ verifications }) =>
-      verifications.some((v) => v.status === "approved")
-    ).length;
-    const rejected = userVerifications.filter(({ verifications }) =>
-      verifications.some((v) => v.status === "rejected")
-    ).length;
-    
-    return { total, pending, approved, rejected };
-  }, [userVerifications]);
+  // A user's standing is their LATEST submission (the API sorts newest first),
+  // the same one the row's badge shows. Matching any past submission listed a
+  // user who was rejected once and approved on retry under both Approved and
+  // Rejected.
+  const latestOf = (list: Verification[]) => list[0];
+
+  // Search narrows the counters as well as the list.
+  const searched = useMemo(() => {
+    // "KYD: 6a…" as copied from the details panel, or the 8-character ID a row shows.
+    const term = searchTerm.trim().toLowerCase().replace(/^(kyd|id):\s*/, "");
+    if (!term) return userVerifications;
+    return userVerifications.filter(({ user }) =>
+      (user.name?.toLowerCase() ?? "").includes(term) ||
+      (user.email?.toLowerCase() ?? "").includes(term) ||
+      (user._id?.toLowerCase() ?? "").includes(term),
+    );
+  }, [userVerifications, searchTerm]);
+
+  const matches = (row: { user: UserInfo; verifications: Verification[] }, status: string, type: TypeFilter) =>
+    (status === "all" || statusesOf(status).includes(latestOf(row.verifications)?.status)) &&
+    (type === "all" || row.user.userType === type);
+  const countWhere = (status: string, type: TypeFilter) => searched.filter((row) => matches(row, status, type)).length;
 
   const filteredUsers = useMemo(() => {
-    return userVerifications.filter(({ user, verifications }) => {
-      const matchesSearch =
-        (user.name?.toLowerCase() ?? "").includes(searchTerm.toLowerCase()) ||
-        (user.email?.toLowerCase() ?? "").includes(searchTerm.toLowerCase());
-
-      const matchesStatus =
-        statusFilter === "all" ||
-        verifications.some((v) => {
-          if (statusFilter === "under_review") {
-            return v.status === "under_review" || v.status === "pending";
-          }
-          return v.status === statusFilter;
-        });
-
-      const matchesUserType =
-        userTypeFilter === "all" || user.userType === userTypeFilter;
-
-      return matchesSearch && matchesStatus && matchesUserType;
-    });
-  }, [userVerifications, searchTerm, statusFilter, userTypeFilter]);
+    const rows = searched.filter((row) => matches(row, statusFilter, typeFilter));
+    const time = (row: { verifications: Verification[] }) => new Date(latestOf(row.verifications)?.submittedAt || 0).getTime();
+    return [...rows].sort((a, b) => (sort === "newest" ? time(b) - time(a) : time(a) - time(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched, statusFilter, typeFilter, sort]);
 
   useEffect(() => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-  }, [searchTerm, statusFilter, userTypeFilter]);
+    setPage(1);
+  }, [searchTerm, statusFilter, typeFilter, sort, limit]);
 
-  const paginatedUsers = useMemo(() => {
-    const startIndex = (pagination.page - 1) * pagination.limit;
-    const endIndex = startIndex + pagination.limit;
-    return filteredUsers.slice(startIndex, endIndex);
-  }, [filteredUsers, pagination.page, pagination.limit]);
+  const paginatedUsers = useMemo(() => filteredUsers.slice((page - 1) * limit, page * limit), [filteredUsers, page, limit]);
+  const totalPages = Math.ceil(filteredUsers.length / limit);
 
-  const totalPages = Math.ceil(filteredUsers.length / pagination.limit);
+  const toCounter = (def: (typeof STATUS_COUNTERS)[number]): Counter => ({
+    key: def.key,
+    label: def.label,
+    tone: def.tone,
+    hint: def.hint,
+    alert: def.alert,
+    count: countWhere(def.key, typeFilter),
+    selected: statusFilter === def.key,
+    onClick: () => chooseStatus(def.key),
+  });
+  const groups: CounterGroup[] = [
+    { label: "Needs review", cells: STATUS_COUNTERS.filter((s) => s.alert).map(toCounter) },
+    {
+      label: "Reviewed",
+      total: ["approved", "rejected", "resubmission_requested"].reduce((n, key) => n + countWhere(key, typeFilter), 0),
+      cells: STATUS_COUNTERS.filter((s) => !s.alert).map(toCounter),
+    },
+    {
+      label: "Account type",
+      cells: ([
+        { key: "client", label: "Customers", tone: "purple", hint: "People who post jobs" },
+        { key: "provider", label: "Providers", tone: "indigo", hint: "People who quote on jobs and do the work" },
+      ] as const).map((cell) => ({
+        ...cell,
+        count: countWhere(statusFilter, cell.key),
+        selected: typeFilter === cell.key,
+        onClick: () => chooseType(cell.key),
+      })),
+    },
+  ];
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 md:left-72 flex items-center justify-center bg-gray-50/50 backdrop-blur-sm z-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <div className="h-16 w-16 rounded-full border-4 border-gray-100 border-t-blue-600 animate-spin" />
-            <ShieldCheck className="absolute inset-0 m-auto h-6 w-6 text-blue-600 animate-pulse" />
-          </div>
-          <div className="flex flex-col items-center italic">
-            <p className="text-sm font-black text-gray-900 tracking-widest uppercase">Loading Verifications</p>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] mt-1">Establishing Secure Connection</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const anyFilterActive = Boolean(searchTerm) || statusFilter !== "all" || typeFilter !== "all" || sort !== "newest";
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSort("newest");
+    setFilters("all", "all");
+  };
+
+  const emptyText = statusFilter === "under_review" && !searchTerm
+    ? { title: "Nothing to review", text: "Every submission has been decided." }
+    : { title: "No users found", text: "Try adjusting your search or filters." };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
                   <ShieldCheck className="h-5 w-5 text-blue-600" />
@@ -288,196 +352,61 @@ const Verifications: React.FC = () => {
                 </h1>
               </div>
               <p className="text-xs text-gray-500 font-medium">
-                Review and manage identity compliance for providers and customers
+                {loading ? "Identity checks for providers and customers" : `${userVerifications.length.toLocaleString()} people have sent identity documents`}
+                {!loading && countWhere("under_review", "all") > 0 && (
+                  <span className="text-amber-600 font-semibold"> · {countWhere("under_review", "all")} waiting for review</span>
+                )}
               </p>
             </div>
-            
-
           </div>
 
-          {/* Mobile Header */}
-          <div className="md:hidden">
-            {/* Summary strip */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Users</p>
-                <p className="text-base font-black text-blue-600 leading-tight">{stats.total.toLocaleString()}</p>
-              </div>
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Pending</p>
-                <p className="text-base font-black text-amber-600 leading-tight">{stats.pending.toLocaleString()}</p>
-              </div>
-            </div>
-            {/* Filter pills */}
-            <div className="flex gap-2">
-              {([
-                { label: 'All',      value: stats.total,    filterVal: 'all',          activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'Pending',  value: stats.pending,  filterVal: 'under_review', activeBg: 'bg-amber-500',   border: 'border-amber-500'   },
-                { label: 'Approved', value: stats.approved, filterVal: 'approved',     activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-                { label: 'Rejected', value: stats.rejected, filterVal: 'rejected',     activeBg: 'bg-red-500',     border: 'border-red-500'     },
-              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
-                const active = statusFilter === filterVal;
-                return (
-                  <button
-                    key={filterVal}
-                    onClick={() => setStatusFilter(filterVal)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="cursor-pointer" onClick={() => setStatusFilter('all')}>
-              <StatsCard
-                title="Total Users"
-                value={stats.total.toString()}
-                icon={User}
-                color="blue"
-                variant="tinted"
-                isActive={statusFilter === 'all'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('under_review')}>
-              <StatsCard
-                title="Pending Review"
-                value={stats.pending.toString()}
-                icon={AlertCircle}
-                color="orange"
-                variant="tinted"
-                isActive={statusFilter === 'under_review'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('approved')}>
-              <StatsCard
-                title="Approved"
-                value={stats.approved.toString()}
-                icon={CheckCircle}
-                color="green"
-                variant="tinted"
-                isActive={statusFilter === 'approved'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => setStatusFilter('rejected')}>
-              <StatsCard
-                title="Rejected"
-                value={stats.rejected.toString()}
-                icon={XCircle}
-                color="red"
-                variant="tinted"
-                isActive={statusFilter === 'rejected'}
-                smallIcon={true}
-              />
-            </div>
-          </div>
+          <CounterGroups
+            groups={groups}
+            gridClass="grid-cols-[0.8fr_2fr_3fr_2fr]"
+            all={{ count: loading ? undefined : searched.length, selected: statusFilter === "all" && typeFilter === "all", onClick: () => setFilters("all", "all") }}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+            testId="ver-counters"
+            idPrefix="ver"
+            allCell={{ label: "All", hint: "Everyone who has sent identity documents" }}
+          />
         </div>
 
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col lg:flex-row items-center gap-4">
-          {/* Mobile: search row with view toggle on the right */}
-          <div className="flex items-center gap-2 w-full lg:contents">
+        {/* Filter Bar — one bar for every width. Phones stack it (search, then
+            the order); from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
+              <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
+                data-testid="verifications-search"
                 placeholder="Search by name, email or KYD ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-4 h-8 lg:h-auto lg:py-2 bg-white border border-gray-200 rounded-lg lg:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs lg:text-sm font-medium transition-all shadow-sm"
+                className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
               />
             </div>
 
-            {/* Page Limit - Mobile only */}
+            {/* Page Limit - phones (the desktop one sits by the pages) */}
             <select
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
               className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
             </select>
-          </div>
 
-          {/* Mobile: filter dropdowns in a 2-col grid below search */}
-          <div className="grid grid-cols-2 gap-2 w-full lg:hidden">
-            <button
-              onClick={() => setUserTypeFilter(userTypeFilter === 'all' ? 'client' : userTypeFilter === 'client' ? 'provider' : 'all')}
-              className={`h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 border transition-all ${
-                userTypeFilter === 'all'
-                  ? "bg-white border-gray-200 text-gray-600"
-                  : userTypeFilter === 'client'
-                  ? "bg-purple-600 border-purple-600 text-white"
-                  : "bg-indigo-600 border-indigo-600 text-white"
-              }`}
-            >
-              {userTypeFilter === 'all' ? 'All Types' : userTypeFilter === 'client' ? 'Customers' : 'Providers'}
-            </button>
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="under_review">Pending Review</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="flagged">Flagged</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Desktop: user type toggle buttons */}
-          <div className="hidden lg:flex items-center gap-0.5 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <button
-              onClick={() => setUserTypeFilter('all')}
-              className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
-                userTypeFilter === 'all'
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setUserTypeFilter('client')}
-              className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
-                userTypeFilter === 'client'
-                  ? "bg-purple-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Customers
-            </button>
-            <button
-              onClick={() => setUserTypeFilter('provider')}
-              className={`px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
-                userTypeFilter === 'provider'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Providers
-            </button>
-          </div>
-
-          <div className="hidden lg:flex items-center gap-2 shrink-0">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
             <select
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as DateSort)}
+              aria-label="Sort verifications"
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
             </select>
           </div>
         </div>
@@ -485,105 +414,102 @@ const Verifications: React.FC = () => {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {filteredUsers.length === 0 ? (
-            <div className="bg-white p-12 text-center">
-              <div className="text-gray-400 mb-4">
+        <div className={`flex-1 overflow-y-auto transition-opacity ${isPlaceholderData ? "opacity-60" : ""}`}>
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Loading verifications...</p>
+              </div>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="bg-white p-12 text-center" data-testid="verifications-empty">
+              <div className="text-gray-300 mb-4">
                 <Search className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-medium">No users found</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Try adjusting your search or filters
-              </p>
+              <p className="text-gray-700 font-semibold">{emptyText.title}</p>
+              <p className="text-sm text-gray-500 mt-1">{emptyText.text}</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show everyone
+                </button>
+              )}
             </div>
           ) : (
             <>
               {/* Desktop View */}
-              <div className="hidden lg:block bg-white flex-1 relative">
-                <table className="min-w-full table-fixed border-separate border-spacing-0">
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
                   <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
-                    <tr className="border-b border-gray-200">
-                      <th className="w-[30%] px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Verification Subject
+                    <tr>
+                      <th className="w-[31%] xl:w-[30%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        User
                       </th>
-                      <th className="w-[18%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Category
+                      <th className="w-[27%] xl:w-[28%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Documents
                       </th>
-                      <th className="w-[18%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                      <th className="w-[24%] xl:w-[24%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
                         Status
                       </th>
-                      <th className="w-[17%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Attempts
-                      </th>
-                      <th className="w-[17%] px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                        Submission
+                      <th
+                        className="w-[18%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === "newest" ? "descending" : "ascending"}
+                      >
+                        <SortHeader
+                          label="Submitted"
+                          dir={sort === "newest" ? "desc" : "asc"}
+                          onClick={() => setSort(sort === "newest" ? "oldest" : "newest")}
+                        />
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white border-b border-gray-300">
-                    {paginatedUsers.map(({ user, verifications }) => {
-                      const latestVerification = verifications[0];
+                  <tbody className="bg-white">
+                    {paginatedUsers.map(({ user, verifications: list }) => {
+                      const latest = list[0];
                       const isHighlighted = highlightedUserId === user._id;
-                      
-                      const attemptCount = verifications.reduce((max, v) => {
-                        const fromAttempts = Array.isArray(v.attempts) ? v.attempts.length : 0;
-                        const fromField = v.verificationAttempts || 0;
-                        return Math.max(max, Math.max(fromAttempts, fromField));
-                      }, 0) || 1;
+                      const docs = documentsOf(latest);
+                      const attempts = attemptsOf(list);
 
                       return (
                         <tr
                           key={user._id}
+                          data-testid={`verification-row-${user._id}`}
                           ref={isHighlighted ? highlightedRowRef : null}
-                          onClick={() => openModal(latestVerification)}
-                          className={`group transition-all duration-150 cursor-pointer ${
-                            isHighlighted ? "bg-blue-50/30 shadow-inner" : ""
-                          }`}
+                          onClick={() => openModal(latest)}
+                          className={`group h-20 cursor-pointer transition-colors ${isHighlighted ? "bg-blue-50/60" : "hover:bg-gray-50/70"}`}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
-                            <div className="flex items-center gap-4">
-                              <div className="relative flex-shrink-0">
-                                <UserAvatar user={user} size="md" />
-                                <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${user.userType === 'provider' ? 'bg-indigo-500' : 'bg-purple-500'}`}>
-                                  <ShieldCheck className="h-2 w-2 text-white" />
-                                </div>
-                              </div>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <UserAvatar user={user} />
                               <div className="min-w-0">
-                                <p className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
-                                  {user.name}
-                                </p>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-                                  ID: {user._id.slice(-8).toUpperCase()}
+                                <RoleLabel user={user} />
+                                <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">{user.name}</p>
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  <span className="font-mono text-gray-400">ID {user._id.slice(-8).toUpperCase()}</span>
+                                  {user.email && <> · {user.email}</>}
                                 </p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex justify-center">
-                              <UserTypeBadge userType={user.userType} />
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-900 min-w-0">
+                              <FileText className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                              <span className="truncate" title={docs.text}>{docs.text}</span>
+                            </p>
+                            <p className="mt-1 text-[11px] text-gray-500">
+                              {attempts > 1 ? `${ordinal(attempts)} attempt` : "First attempt"}
+                              {docs.total > 0 && <> · {docs.total} file{docs.total > 1 ? "s" : ""}</>}
+                            </p>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex flex-col items-start gap-1.5 min-w-0">
+                              <StatusBadge status={latest.status} />
+                              <StatusText v={latest} className="text-[11px] max-w-full" />
                             </div>
                           </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex justify-center">
-                              <StatusBadge status={latestVerification.status} />
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-center border-b border-gray-300">
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100">
-                              <RefreshCw className="h-3 w-3 text-gray-400" />
-                              <span className="text-xs font-black text-gray-700">{attemptCount}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 border-b border-gray-300">
-                            <div className="flex flex-col items-center">
-                              <p className="text-xs font-bold text-gray-900">
-                                {formatDistanceToNow(new Date(latestVerification.submittedAt), { addSuffix: true })}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-400 uppercase mt-1">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(latestVerification.submittedAt).toLocaleDateString()}
-                              </div>
-                            </div>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className="text-xs font-bold text-gray-900 truncate">{ago(latest.submittedAt)}</p>
+                            <p className="text-[10px] font-medium text-gray-400 mt-1">{format(new Date(latest.submittedAt), "MMM d, yyyy")}</p>
                           </td>
                         </tr>
                       );
@@ -592,118 +518,51 @@ const Verifications: React.FC = () => {
                 </table>
               </div>
 
-              {/* Mobile View */}
-              <div className="lg:hidden">
-              <div className="px-3 py-3 space-y-2">
-                {paginatedUsers.map(({ user, verifications }) => {
-                  const latestVerification = verifications[0];
-                  const totalDocuments = verifications.reduce((sum, v) => {
-                    const latestAttempt = Array.isArray(v.attempts) && v.attempts.length > 0
-                      ? v.attempts[v.attempts.length - 1]
-                      : null;
-                    const faceCount = latestAttempt?.faceVerification ? 1 : 0;
-                    const idCount = latestAttempt?.validId ? (Array.isArray(latestAttempt.validId) ? latestAttempt.validId.length : 1) : 0;
-                    const credCount = latestAttempt?.credentials ? (Array.isArray(latestAttempt.credentials) ? latestAttempt.credentials.length : 1) : 0;
-                    return sum + faceCount + idCount + credCount;
-                  }, 0);
-                  const isHighlighted = highlightedUserId === user._id;
+              {/* Phones and tablets */}
+              <div className="lg:hidden bg-white">
+                <div className="px-3 py-3 space-y-2">
+                  {paginatedUsers.map(({ user, verifications: list }) => {
+                    const latest = list[0];
+                    const docs = documentsOf(latest);
+                    const attempts = attemptsOf(list);
+                    const isHighlighted = highlightedUserId === user._id;
 
-                  return (
-                    <div
-                      key={user._id}
-                      onClick={() => openModal(latestVerification)}
-                      className={`bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all ${
-                        isHighlighted ? "ring-2 ring-blue-500 shadow-lg" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <StatusBadge status={latestVerification.status} />
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest">
-                          {formatDistanceToNow(new Date(latestVerification.submittedAt), { addSuffix: true })}
-                        </span>
-                      </div>
-
-                      <div className="px-3 py-2.5">
-                        <div className="flex items-start gap-3">
+                    return (
+                      <div
+                        key={user._id}
+                        data-testid={`verification-card-${user._id}`}
+                        onClick={() => openModal(latest)}
+                        className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer ${isHighlighted ? "ring-2 ring-blue-500" : ""}`}
+                      >
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
                           <UserAvatar user={user} size="sm" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-black text-gray-900 leading-tight mb-0.5">
-                              {user.name}
-                            </p>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 truncate">
-                              {user.email}
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              <UserTypeBadge userType={user.userType} />
-                              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 border border-gray-100 rounded text-[9px] font-black text-gray-500 uppercase tracking-widest">
-                                <RefreshCw className="h-2 w-2" />
-                                {verifications.length} ATTEMPTS
-                              </div>
-                            </div>
+                            <RoleLabel user={user} />
+                            <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{user.name}</p>
+                            <StatusText v={latest} className="mt-1 text-[11px]" />
                           </div>
-                          <div className="text-right">
-                            <div className="flex flex-col items-end gap-1">
-                              <div className="p-1.5 rounded-lg bg-gray-50 border border-gray-100">
-                                <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
-                              </div>
-                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-[0.2em]">View</span>
-                            </div>
-                          </div>
+                          <StatusBadge status={latest.status} small />
                         </div>
-
-                        <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-dashed border-gray-100">
-                          <div className="flex items-center gap-3">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Documents</span>
-                              <span className="text-xs font-black text-gray-900">{totalDocuments} Files</span>
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">User ID</span>
-                              <span className="text-xs font-mono font-bold text-gray-600">ID: {user._id.slice(-6).toUpperCase()}</span>
-                            </div>
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <p className="flex-1 min-w-0 text-[10px] font-semibold text-gray-500 truncate">
+                            {docs.text}{attempts > 1 ? ` · ${ordinal(attempts)} attempt` : ""}
+                          </p>
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-gray-400 flex-shrink-0">
+                            <Clock className="h-2.5 w-2.5" />
+                            {ago(latest.submittedAt)}
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 </div>
               </div>
-
             </>
           )}
         </div>
 
-        {/* Pagination — outside scroll, always sticky at bottom */}
-        {totalPages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
-            <div className="flex items-center justify-between w-full">
-              <p className="text-xs md:text-sm text-gray-700">
-                Showing{" "}
-                <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to{" "}
-                <span className="font-medium">{Math.min(pagination.page * pagination.limit, filteredUsers.length)}</span> of{" "}
-                <span className="font-medium">{filteredUsers.length}</span> results
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
-                  disabled={pagination.page === totalPages}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+        {!loading && filteredUsers.length > 0 && (
+          <ListFooter page={page} limit={limit} total={filteredUsers.length} pages={totalPages} onPage={setPage} onLimit={setLimit} />
         )}
       </div>
 

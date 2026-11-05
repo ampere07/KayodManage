@@ -5,6 +5,7 @@ import type {
   AuditEntryDetail,
   AuditFilters,
   AuditLogsResponse,
+  AuditSummary,
   AuditTeamQuery,
   AuditTeamResponse,
 } from '../types/audit.types';
@@ -22,6 +23,12 @@ export const auditService = {
 
   async getLogs(filters: AuditFilters): Promise<AuditLogsResponse> {
     const response = await apiClient.get('/api/admin/activity-logs', { params: params({ ...filters }) });
+    return response.data;
+  },
+
+  /** Entries per action under the admin / record / period / search filters — the page's counters. */
+  async getSummary(filters: Omit<AuditFilters, 'page' | 'limit' | 'group' | 'actionType' | 'sensitive' | 'order'>): Promise<AuditSummary> {
+    const response = await apiClient.get('/api/admin/activity-logs/summary', { params: params({ ...filters }) });
     return response.data;
   },
 
@@ -50,8 +57,11 @@ export const auditService = {
     return response.data;
   },
 
-  async getAdminActivity(adminId: string, page = 1, limit = 15): Promise<AdminActivityResponse> {
-    const response = await apiClient.get(`/api/admin/admins/${adminId}/activity`, { params: { page, limit } });
+  /** `excludeSignIns`: leave admin_login entries out of the list (the summary still counts them). */
+  async getAdminActivity(adminId: string, page = 1, limit = 15, excludeSignIns = false): Promise<AdminActivityResponse> {
+    const response = await apiClient.get(`/api/admin/admins/${adminId}/activity`, {
+      params: { page, limit, ...(excludeSignIns ? { exclude: 'signins' } : {}) },
+    });
     return response.data;
   },
 };

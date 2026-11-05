@@ -125,6 +125,9 @@ const ServiceClassPicker: React.FC<{
         {SERVICE_CLASS_IDS.map((id) => {
           const definition = SERVICE_CLASSES[id];
           const isSelected = !isInheriting && normalizeServiceClass(value) === id;
+          // A class with no hold (Immediate) says so in its description; "held
+          // after completion" with no window would contradict it.
+          const window = formatReleaseWindow(definition.paymentReleaseHours);
 
           return (
             <button
@@ -152,11 +155,14 @@ const ServiceClassPicker: React.FC<{
                   identified by name and icon alone, because the window is only
                   what happens to differ between classes today. */}
               <span className="block text-xs text-gray-500 mt-1">
-                {definition.description} Payment is held{' '}
-                <strong className="font-semibold text-gray-700">
-                  {formatReleaseWindow(definition.paymentReleaseHours)}
-                </strong>{' '}
-                after completion.
+                {definition.description}
+                {window && (
+                  <>
+                    {' '}Payment is held{' '}
+                    <strong className="font-semibold text-gray-700">{window}</strong>{' '}
+                    after completion.
+                  </>
+                )}
               </span>
             </button>
           );

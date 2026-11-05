@@ -1,17 +1,21 @@
 import React from 'react';
-import { BadgeCheck, Briefcase, Clock, Copy, Crown, Phone, ShieldCheck, User as UserIcon, Wallet } from 'lucide-react';
-import { format, differenceInDays, differenceInYears } from 'date-fns';
+import { BadgeCheck, Briefcase, Clock, Copy, Crown, MapPin, ShieldCheck, User as UserIcon, Wallet } from 'lucide-react';
+import { format, differenceInDays, differenceInYears, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useUserStanding } from '../../hooks/useUsers';
 import { formatPHPCurrency } from '../../utils/currency';
 import { getProfessionDisplayName, professionKey, resolveIconForProfession } from '../../utils/professionUtils';
-import type { JobCategory, User } from '../../types';
+import PanelSection from '../UI/PanelSection';
+import type { JobCategory, LegalAcceptance, User } from '../../types';
 
 /**
- * The Profile tab's account details, grouped the way an admin reads an account:
- * who they are, how to reach them, the work they offer, their money, and how
- * trustworthy the account looks. Facts sit in a two-column grid and counts in
- * small tiles, so the panel's width does the work instead of a long list.
+ * The Profile tab's account details in the standard panel sections, in the
+ * who → what → when → where order every details panel follows:
+ *   Profile (who they are, how to reach them) · Work, Money and Standing (what
+ *   they do, hold and owe, and how trustworthy the account looks) · Timeline
+ *   (when things happened) · Location (where they live and work).
+ * Facts sit in a two-column grid and counts in small tiles, so the panel's
+ * width does the work instead of a long list.
  *
  * Member since, last seen and the client rating are not repeated here — the
  * "at a glance" tiles above already show them.
@@ -26,6 +30,12 @@ interface UserProfileDetailsProps {
   user: User;
   jobCategories: JobCategory[];
   verification: { reviewedBy?: string | null; reviewedAt?: string | Date | null; loading: boolean };
+  /** Restrictions, suspensions and bans on record, and active warnings (the panel loads them). */
+  penalties?: { loading: boolean; total: number; warnings: number };
+  /** The restriction on file and dispute findings, shown under Standing. */
+  securityAudit?: React.ReactNode;
+  /** The agreements this user accepted, shown in the Timeline. */
+  legalAcceptances?: LegalAcceptance[];
 }
 
 const dateOnly = (value?: string | Date | null) => (value ? format(new Date(value), 'MMM d, yyyy') : null);
@@ -35,16 +45,6 @@ const copy = (value: string, label: string) =>
   navigator.clipboard.writeText(value)
     .then(() => toast.success(`${label} copied`))
     .catch(() => toast.error(`Failed to copy ${label.toLowerCase()}`));
-
-const Card: React.FC<{ title: string; icon: React.ElementType; children: React.ReactNode; testId?: string }> = ({ title, icon: Icon, children, testId }) => (
-  <section className="rounded-xl border border-gray-100 bg-gray-50/60 p-4" data-testid={testId}>
-    <h3 className="flex items-center gap-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3">
-      <Icon className="w-3.5 h-3.5 text-gray-400" />
-      {title}
-    </h3>
-    {children}
-  </section>
-);
 
 /** A fact in the two-column grid: small label above, value below. */
 const Fact: React.FC<{ label: string; children?: React.ReactNode; empty?: boolean; sub?: React.ReactNode; wide?: boolean }> = ({ label, children, empty, sub, wide }) => (
@@ -114,7 +114,7 @@ const CREDENTIAL_STATUS: Record<string, { label: string; className: string }> = 
   expired: { label: 'Expired', className: 'bg-gray-100 text-gray-600 border-gray-200' },
 };
 
-const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCategories, verification }) => {
+const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCategories, verification, penalties, securityAudit, legalAcceptances = [] }) => {
   const isProvider = user.userType === 'provider';
   const standing = useUserStanding(user._id);
   const now = new Date();
@@ -172,15 +172,39 @@ const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCatego
     : '';
   const pendingCount = (n?: number) => (standing.data ? n : standing.isError ? '—' : '…');
 
+  // When: the account's dated events, in order; future ones are marked upcoming.
+  const restriction = user.restrictionDetails;
+  const restrictionWord = ({ restricted: 'restricted', suspended: 'suspended', banned: 'banned', deleted: 'deleted' } as Record<string, string>)[
+    String(restriction?.type || user.accountStatus || '')
+  ] || 'restricted';
+  const restrictionEnds = restriction?.suspendedUntil || restriction?.expiresAt;
+  const events = ([
+    { key: 'joined', label: 'Joined Kayod', at: user.createdAt, detail: `signed up with ${signUp}` },
+    { key: 'verified', label: 'Identity verified', at: user.isVerified ? verification.reviewedAt : null, detail: verification.reviewedBy ? `by ${verification.reviewedBy}` : undefined },
+    { key: 'login', label: 'Last signed in', at: user.lastLogin },
+    { key: 'restricted', label: `Account ${restrictionWord}`, at: user.accountStatus && user.accountStatus !== 'active' ? restriction?.restrictedAt : null, tone: 'bg-red-500' },
+    { key: 'restriction-ends', label: restrictionEnds && new Date(restrictionEnds) > now ? `${restrictionWord.replace(/^\w/, (c) => c.toUpperCase())} until` : 'Restriction ended', at: user.accountStatus && user.accountStatus !== 'active' ? restrictionEnds : null },
+    { key: 'premium', label: user.premiumExpiresAt && new Date(user.premiumExpiresAt) > now ? 'Premium ends' : 'Premium ended', at: user.isPremium ? user.premiumExpiresAt : null, tone: 'bg-amber-400' },
+    { key: 'fee-paid', label: 'Last fee paid', at: isProvider ? fee?.lastFeePayment : null },
+    { key: 'fee-unpaid', label: 'Fee left unpaid', at: isProvider && (fee?.unpaidFees || 0) > 0 ? fee?.lastUnpaidDate : null, tone: 'bg-amber-500' },
+    { key: 'strike', label: 'Cancellation strike', at: lastStrike?.cancelledAt, detail: lastStrike?.ratingDeducted ? `−${lastStrike.ratingDeducted}★` : undefined, tone: 'bg-amber-500' },
+  ] as { key: string; label: string; at?: string | Date | null; detail?: string; tone?: string }[])
+    .filter((event) => event.at && !Number.isNaN(new Date(event.at).getTime()))
+    .sort((a, b) => new Date(a.at!).getTime() - new Date(b.at!).getTime());
+  const agreements = legalAcceptances.slice().sort((a, b) => new Date(b.acceptedAt).getTime() - new Date(a.acceptedAt).getTime());
+
   return (
-    <div className="space-y-4" data-testid="user-profile-details">
-      <Card title="About" icon={UserIcon} testId="user-about">
+    <div data-testid="user-profile-details">
+      {/* Who */}
+      <PanelSection icon={UserIcon} label="Profile" description="Who they are and how to reach them" testId="user-about">
         {user.bio && (
-          <p className="text-sm text-gray-700 italic bg-white border border-gray-100 rounded-lg px-3 py-2 mb-3 whitespace-pre-line">“{user.bio}”</p>
+          <p className="text-sm text-gray-700 italic bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-3 whitespace-pre-line">“{user.bio}”</p>
         )}
         <Facts>
           <Fact label="Full name">{fullName}</Fact>
           <Fact label="Account type">{isProvider ? 'Service provider' : 'Customer'}</Fact>
+          <Fact label="Email" wide><span data-testid="user-contact-email"><CopyValue value={user.email} label="Email" /></span></Fact>
+          <Fact label="Phone" empty={!phone}>{phone && <CopyValue value={phone} label="Phone number" />}</Fact>
           <Fact label="Date of birth" empty={!user.dateOfBirth} sub={user.dateOfBirth ? `${differenceInYears(now, new Date(user.dateOfBirth))} years old` : undefined}>
             {dateOnly(user.dateOfBirth)}
           </Fact>
@@ -191,26 +215,11 @@ const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCatego
           {user.referralCode && <Fact label="Referral code"><CopyValue value={user.referralCode} label="Referral code" /></Fact>}
           {user.languages?.length ? <Fact label="Languages" wide><Chips items={user.languages} /></Fact> : null}
         </Facts>
-      </Card>
+      </PanelSection>
 
-      <Card title="Contact & location" icon={Phone} testId="user-contact">
-        <Facts>
-          <Fact label="Email" wide><span data-testid="user-contact-email"><CopyValue value={user.email} label="Email" /></span></Fact>
-          <Fact label="Phone" empty={!phone}>{phone && <CopyValue value={phone} label="Phone number" />}</Fact>
-          <Fact label="Location" empty={!user.location}>{user.location}</Fact>
-          {addresses.length > 0 && (
-            <Fact label="Saved addresses" sub={addresses.length > 1 ? `${addresses.length} saved` : undefined}>
-              {defaultAddress?.name}{defaultAddress?.city ? ` · ${defaultAddress.city}` : ''}
-            </Fact>
-          )}
-          {isProvider && user.serviceArea?.radius != null && (
-            <Fact label="Service area">{user.serviceArea.radius} km{serviceCenter ? ` around ${serviceCenter}` : ''}</Fact>
-          )}
-        </Facts>
-      </Card>
-
+      {/* What */}
       {isProvider && (
-        <Card title="Work profile" icon={Briefcase} testId="user-work-profile">
+        <PanelSection icon={Briefcase} label="Work" description="What they offer and how they take jobs" testId="user-work-profile">
           {/* Status on one line: are they taking work, and how fast do they answer. */}
           <div className="flex flex-wrap gap-2">
             <span
@@ -308,10 +317,10 @@ const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCatego
               {user.certifications?.length ? <Fact label="Certifications"><Chips items={user.certifications} tone="bg-indigo-50 text-indigo-700 border-indigo-100" /></Fact> : null}
             </dl>
           ) : null}
-        </Card>
+        </PanelSection>
       )}
 
-      <Card title="Money & fees" icon={Wallet} testId="user-money-summary">
+      <PanelSection icon={Wallet} label="Money" description="What's in their wallet and what they owe" testId="user-money-summary">
         <div className="grid grid-cols-3 gap-2">
           <Stat
             label="Wallet"
@@ -342,35 +351,120 @@ const UserProfileDetails: React.FC<UserProfileDetailsProps> = ({ user, jobCatego
             <Stat label="Fees paid" value={peso(fee.totalFeesPaid)} sub={fee.lastFeePayment ? `last ${dateOnly(fee.lastFeePayment)}` : undefined} />
           </div>
         )}
-      </Card>
+      </PanelSection>
 
-      <Card title="Verification & standing" icon={ShieldCheck} testId="user-standing">
+      <PanelSection icon={ShieldCheck} label="Standing" description="Verification, reports and penalties" testId="user-standing">
         <p className="text-sm mb-3">
           <span className="text-gray-500 text-xs">Identity: </span>
           <span className={`font-semibold ${user.isVerified ? 'text-green-700' : 'text-amber-600'}`}>{identityStatus}</span>
           {reviewedLine && <span className="text-[11px] text-gray-400"> · {reviewedLine}</span>}
         </p>
-        <div className="grid grid-cols-2 gap-2">
-          <Stat
-            label="Reports against"
-            value={pendingCount(standing.data?.reportsAgainst.total)}
-            tone={standing.data && standing.data.reportsAgainst.total > 0 ? 'alert' : undefined}
-            sub={standing.data && standing.data.reportsAgainst.open > 0 ? `${standing.data.reportsAgainst.open} still open` : undefined}
-          />
-          <Stat label="Reports filed" value={pendingCount(standing.data?.reportsFiled)} />
-          <Stat
-            label="Support tickets"
-            value={pendingCount(standing.data?.support.total)}
-            sub={standing.data && standing.data.support.open > 0 ? `${standing.data.support.open} open` : undefined}
-          />
-          <Stat
-            label="Cancel strikes"
-            value={strikes?.count || 0}
-            tone={(strikes?.count || 0) > 0 ? 'warn' : undefined}
-            sub={lastStrike?.cancelledAt ? `last ${dateOnly(lastStrike.cancelledAt)}${lastStrike.ratingDeducted ? ` · −${lastStrike.ratingDeducted}★` : ''}` : undefined}
-          />
+        {/* Every count in one grid, then the restriction on file and dispute findings. */}
+        <div data-testid="user-security-audit">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Stat
+              label="Reports against"
+              value={pendingCount(standing.data?.reportsAgainst.total)}
+              tone={standing.data && standing.data.reportsAgainst.total > 0 ? 'alert' : undefined}
+              sub={standing.data && standing.data.reportsAgainst.open > 0 ? `${standing.data.reportsAgainst.open} still open` : undefined}
+            />
+            <Stat label="Reports filed" value={pendingCount(standing.data?.reportsFiled)} />
+            <Stat
+              label="Support tickets"
+              value={pendingCount(standing.data?.support.total)}
+              sub={standing.data && standing.data.support.open > 0 ? `${standing.data.support.open} open` : undefined}
+            />
+            <Stat
+              label="Cancel strikes"
+              value={strikes?.count || 0}
+              tone={(strikes?.count || 0) > 0 ? 'warn' : undefined}
+              sub={lastStrike?.cancelledAt ? `last ${dateOnly(lastStrike.cancelledAt)}${lastStrike.ratingDeducted ? ` · −${lastStrike.ratingDeducted}★` : ''}` : undefined}
+            />
+            {/* Restrictions, suspensions and bans — the count GET /users/:id/penalties returns. */}
+            <Stat
+              label="Penalties"
+              value={!penalties || penalties.loading ? '…' : penalties.total}
+              tone={penalties && !penalties.loading && penalties.total > 0 ? 'alert' : undefined}
+            />
+            <Stat
+              label="Warnings"
+              value={!penalties || penalties.loading ? '…' : penalties.warnings}
+              tone={penalties && !penalties.loading && penalties.warnings > 0 ? 'warn' : undefined}
+            />
+          </div>
+          <div className="mt-3 space-y-3 empty:hidden">{securityAudit}</div>
         </div>
-      </Card>
+      </PanelSection>
+
+      {/* When */}
+      <PanelSection icon={Clock} label="Timeline" description="When things happened on this account" testId="user-timeline">
+        <ol className="space-y-3">
+          {events.map((event, index) => {
+            const at = new Date(event.at!);
+            const upcoming = at.getTime() > now.getTime();
+            return (
+              <li key={event.key} className="relative flex gap-3" data-testid={`user-when-${event.key}`}>
+                {index < events.length - 1 && <span className="absolute left-[4px] top-3 bottom-[-12px] w-px bg-gray-200" aria-hidden="true" />}
+                <span className={`relative mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ring-2 ring-white ${upcoming ? 'border-2 border-dashed border-blue-400 bg-white' : event.tone || 'bg-gray-400'}`} />
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold ${upcoming ? 'text-blue-700' : 'text-gray-900'}`}>
+                    {event.label}
+                    {upcoming && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-500">upcoming</span>}
+                  </p>
+                  <p className="text-[11px] text-gray-500">{format(at, 'MMM d, yyyy · h:mm a')} ({formatDistanceToNow(at, { addSuffix: true })})</p>
+                  {event.detail && <p className="text-[11px] text-gray-500">{event.detail}</p>}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        {/* Legal agreements. Appended by the Kayod server whenever this user
+            affirms the agreements — at sign-up, at booking, when posting a job.
+            Never edited here: it is an audit trail, and a mutable one proves
+            nothing. Empty for accounts created before acceptances were
+            recorded, which is meaningful in itself and so is said plainly. */}
+        <div className="mt-4" data-testid="user-legal">
+          <p className="text-[11px] font-semibold text-gray-500 mb-2">
+            Legal agreements <span className="text-gray-400 font-normal">({agreements.length})</span>
+          </p>
+          {agreements.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">
+              No recorded acceptances. Accounts created before agreement tracking was added will show nothing here.
+            </p>
+          ) : (
+            <ul className="rounded-lg border border-gray-100 divide-y divide-gray-100">
+              {agreements.map((entry, index) => (
+                <li key={`${entry.acceptedAt}-${index}`} className="px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-gray-900 capitalize">{String(entry.context || '').replace('-', ' ')}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">v{entry.version}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{entry.acceptedAt ? new Date(entry.acceptedAt).toLocaleString() : '—'}</p>
+                  {Array.isArray(entry.documentIds) && entry.documentIds.length > 0 ? (
+                    <p className="text-[11px] text-gray-400 mt-0.5">{entry.documentIds.join(', ')}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PanelSection>
+
+      {/* Where */}
+      <PanelSection icon={MapPin} label="Location" description="Where they live and work" testId="user-location" last>
+        <Facts>
+          <Fact label="Location" empty={!user.location} wide>{user.location}</Fact>
+          {addresses.length > 0 && (
+            <Fact label="Saved addresses" sub={addresses.length > 1 ? `${addresses.length} saved` : undefined}>
+              {defaultAddress?.name}{defaultAddress?.city ? ` · ${defaultAddress.city}` : ''}
+            </Fact>
+          )}
+          {isProvider && user.serviceArea?.radius != null && (
+            <Fact label="Service area">{user.serviceArea.radius} km{serviceCenter ? ` around ${serviceCenter}` : ''}</Fact>
+          )}
+        </Facts>
+      </PanelSection>
     </div>
   );
 };

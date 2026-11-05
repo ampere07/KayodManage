@@ -26,7 +26,12 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      refetchOnMount: false, // Don't refetch when component mounts if data exists
+      // Refetch on mount only when the cached data is stale. With the 30-minute
+      // staleTime below that means "after a change invalidated it": `false`
+      // ignored invalidation for any page not on screen, so restoring a job
+      // from Archived, or banning someone from Verifications, left All Jobs and
+      // Users showing the old numbers until a full reload.
+      refetchOnMount: true,
       refetchOnReconnect: false, // Don't refetch on network reconnect
       retry: 1,
       staleTime: 30 * 60 * 1000, // 30 minutes - data stays fresh longer

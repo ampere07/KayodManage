@@ -15,9 +15,15 @@ import {
   MapPin,
   Calendar,
   Info,
+  Users as UsersIcon,
+  Clock,
+  UserCheck,
+  Scale,
+  Lock,
+  ExternalLink,
 } from "lucide-react";
 import { getStatusBadge } from "../../utils";
-import UserTypeBadge from "../UI/UserTypeBadge";
+import PanelSection from "../UI/PanelSection";
 import { useAuth } from "../../context/AuthContext";
 import type {
   DisputeFinding,
@@ -391,14 +397,6 @@ const formatResponseTime = (minutes: number): string => {
   return parts.join(" ");
 };
 
-const getPriorityClasses = (priority = "medium") => {
-  const normalized = priority.toLowerCase();
-  if (normalized === "urgent") return "bg-red-100 text-red-800";
-  if (normalized === "high") return "bg-orange-100 text-orange-800";
-  if (normalized === "low") return "bg-green-100 text-green-800";
-  return "bg-yellow-100 text-yellow-800";
-};
-
 const formatSystemEventMessage = (message: Message) => {
   const text = message.message || "";
   const normalized = text.toLowerCase();
@@ -437,6 +435,66 @@ const RESOLUTION_NOTE_PRESETS = [
 /** Sentinel for the "write my own" choice — never a real note body. */
 const CUSTOM_NOTE_OPTION = "__custom__";
 
+const titleCase = (value: string) =>
+  value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+/** A fact in the sidebar's two-column grid: small label above, value below. */
+const Fact: React.FC<{
+  label: string;
+  children: React.ReactNode;
+  wide?: boolean;
+  mono?: boolean;
+}> = ({ label, children, wide, mono }) => (
+  <div className={`min-w-0 ${wide ? "col-span-2" : ""}`}>
+    <dt className="text-[11px] text-gray-500">{label}</dt>
+    <dd
+      className={`text-sm mt-0.5 break-words text-gray-900 ${mono ? "font-mono text-xs" : "font-semibold"}`}
+    >
+      {children}
+    </dd>
+  </div>
+);
+
+const PRIORITY_TONE: Record<string, string> = {
+  urgent: "text-red-600",
+  high: "text-orange-600",
+  medium: "text-gray-900",
+  low: "text-gray-500",
+};
+
+/** A job's address, and coordinates for a map link when it has them. */
+const jobPlaceOf = (job: any) => {
+  const loc = job?.location;
+  const address =
+    (!loc
+      ? ""
+      : typeof loc === "string"
+        ? loc
+        : [loc.address, loc.barangay, loc.city, loc.province, loc.country]
+            .filter(Boolean)
+            .join(", ")) ||
+    (job?.locationDisplay && job.locationDisplay !== "Location not specified"
+      ? job.locationDisplay
+      : "");
+  let coords: string | null = null;
+  if (loc && typeof loc === "object") {
+    if (typeof loc.latitude === "number" && typeof loc.longitude === "number")
+      coords = `${loc.latitude},${loc.longitude}`;
+    else if (Array.isArray(loc.coordinates) && loc.coordinates.length === 2)
+      coords = `${loc.coordinates[1]},${loc.coordinates[0]}`;
+    else if (
+      Array.isArray(loc.coordinates?.coordinates) &&
+      loc.coordinates.coordinates.length === 2
+    )
+      coords = `${loc.coordinates.coordinates[1]},${loc.coordinates.coordinates[0]}`;
+  }
+  const mapsUrl =
+    coords || address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coords || address)}`
+      : "";
+  return { address, mapsUrl, note: job?.locationDetails || "" };
+};
+
 /**
  * "Due by <date>" means the end of that day, not the start of it. Parsing the
  * raw yyyy-mm-dd with `new Date()` yields UTC midnight, which in UTC+8 expires
@@ -473,6 +531,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
   // and description. Tickets only store a jobId (and occasionally a snapshot
   // with no description), so this has to come from the job itself.
   const [concernJob, setConcernJob] = useState<any>(null);
+  const [showJobDescription, setShowJobDescription] = useState(false);
   const [disputeNote, setDisputeNote] = useState("");
   const [resolvingOutcome, setResolvingOutcome] = useState<string | null>(null);
   // Manual account restriction, alongside the money outcomes. The automatic
@@ -531,6 +590,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
     setJobModalLoading(false);
     setJobModalData(null);
     setConcernJob(null);
+    setShowJobDescription(false);
     setDisputeNote("");
     setFaultParty("uncertain");
     setFindingReason("other");
@@ -1008,9 +1068,172 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
     null;
   const concernJobDescription = (concernJob?.description || "").trim() || null;
 
-  const firstName = selectedChat.userName?.split(" ")[0] || "";
-  const lastName =
-    selectedChat.userName?.split(" ").slice(1).join(" ") || firstName;
+  // Who has the case. Acceptance is case-wide on a dispute, so the other
+  // party's thread may be the one that names the admin.
+  const handlerName =
+    selectedChat.acceptedByName ||
+    selectedChat.assignedToName ||
+    (isDisputeTicket
+      ? counterpartChat?.acceptedByName || counterpartChat?.assignedToName
+      : null) ||
+    null;
+  const concernJobId: string | null =
+    originalConcern.jobId || (disputeJobId ? String(disputeJobId) : null);
+  const jobPlace = jobPlaceOf(concernJob);
+
+  /**
+   * When: the ticket's events in order — the old Activity History, plus the
+   * latest message and, while nobody has it, how long it has waited. Clicking
+   * an event scrolls the chat to the message it produced, where there is one.
+   */
+  const timelineEvents = (() => {
+    const events: {
+      type: string;
+      title: string;
+      date: string;
+      timestamp: number;
+      messageId: string | null;
+      reason?: string;
+      detail?: string;
+    }[] = [];
+
+    // 1. Ticket Submitted
+    const firstUserMessage = selectedChat.messages?.[0];
+    events.push({
+      type: "submitted",
+      title: "Ticket opened",
+      detail: selectedChat.userName ? `by ${selectedChat.userName}` : undefined,
+      date: selectedChat.createdAt,
+      timestamp: new Date(selectedChat.createdAt).getTime(),
+      messageId: firstUserMessage
+        ? firstUserMessage._id || "msg-0"
+        : null,
+    });
+
+    // 2. Ticket Accepted ? use persisted acceptance metadata,
+    // not the first admin or system message in the thread.
+    if (selectedChat.acceptedAt) {
+      const acceptanceMessage = selectedChat.messages?.find(
+        (msg) =>
+          msg.senderType === "Admin" &&
+          msg.message.toLowerCase().includes("accepted"),
+      );
+      events.push({
+        type: "accepted",
+        title: selectedChat.acceptedByName
+          ? `Accepted by ${selectedChat.acceptedByName}`
+          : "Accepted",
+        detail: `picked up after ${formatResponseTime(
+          Math.max(
+            0,
+            Math.round(
+              (new Date(selectedChat.acceptedAt).getTime() -
+                new Date(selectedChat.createdAt).getTime()) /
+                (1000 * 60),
+            ),
+          ),
+        )}`,
+        date: selectedChat.acceptedAt,
+        timestamp: new Date(selectedChat.acceptedAt).getTime(),
+        messageId: acceptanceMessage?._id || null,
+      });
+    }
+
+    // 3. Status history (resolved / reopened)
+    if (
+      selectedChat.statusHistory &&
+      selectedChat.statusHistory.length > 0
+    ) {
+      selectedChat.statusHistory.forEach((historyItem) => {
+        let correspondingMessage = null;
+
+        if (historyItem.status === "resolved") {
+          const historyTime = new Date(
+            historyItem.timestamp,
+          ).getTime();
+          correspondingMessage = selectedChat.messages?.find(
+            (msg) => {
+              const txt = msg.message.toLowerCase();
+              const msgTime = new Date(msg.timestamp).getTime();
+              return (
+                msg.senderType === "Admin" &&
+                (txt.includes("resolved") ||
+                  txt.includes("closed")) &&
+                Math.abs(msgTime - historyTime) < 5000
+              );
+            },
+          );
+        } else if (historyItem.status === "reopened") {
+          const historyTime = new Date(
+            historyItem.timestamp,
+          ).getTime();
+          correspondingMessage = selectedChat.messages?.find(
+            (msg) => {
+              const txt = msg.message.toLowerCase();
+              const msgTime = new Date(msg.timestamp).getTime();
+              return (
+                msg.senderType === "Admin" &&
+                txt.includes("reopened") &&
+                Math.abs(msgTime - historyTime) < 5000
+              );
+            },
+          );
+        }
+
+        const messageId = correspondingMessage
+          ? `${historyItem.status}-${correspondingMessage.timestamp}`
+          : null;
+
+        events.push({
+          type: historyItem.status,
+          title:
+            historyItem.status === "resolved" ? "Resolved" : "Reopened",
+          detail: historyItem.performedByName
+            ? `by ${historyItem.performedByName}`
+            : undefined,
+          date: historyItem.timestamp,
+          timestamp: new Date(historyItem.timestamp).getTime(),
+          reason: historyItem.reason,
+          messageId,
+        });
+      });
+    }
+
+    // The latest message either side wrote — where the conversation stands.
+    // Internal notes, and the system lines that accepting / resolving /
+    // reopening post (already events above), don't count; same test as the
+    // chat's own system-message styling.
+    const messages = selectedChat.messages || [];
+    const isWritten = (m: Message) => {
+      const text = (m.message || "").toLowerCase();
+      if (m.isInternal) return false;
+      if (text.includes("previous ticket resolved") || text.includes("previous ticket summary")) return false;
+      return !(
+        m.senderType === "Admin" &&
+        (text.includes("ticket has been") ||
+          text.includes("chat has been") ||
+          text.includes("ticket reopened") ||
+          text.includes("chat reopened"))
+      );
+    };
+    const lastIndex = messages.map(isWritten).lastIndexOf(true);
+    if (lastIndex > 0) {
+      const last = messages[lastIndex];
+      events.push({
+        type: "message",
+        title: "Latest message",
+        date: last.timestamp,
+        timestamp: new Date(last.timestamp).getTime(),
+        messageId: last._id || `msg-${lastIndex}`,
+        detail: `from ${last.senderType === "Admin" ? last.senderName || "support" : last.senderName || selectedChat.userName || "the user"}`,
+      });
+    }
+
+    events.sort((a, b) => a.timestamp - b.timestamp);
+    return events;
+  })();
+  const waitingForAdmin =
+    selectedChat.status === "open" && !isTicketAccepted;
 
   return ReactDOM.createPortal(
     <>
@@ -1776,7 +1999,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
           )}
         </div>
 
-        {/* Column 2: User Information & Details Sidebar.
+        {/* Column 2: Ticket details sidebar.
 
             The show/hide toggle must stay within the `flex` family. It used to
             emit `block` / `hidden md:block`; Tailwind emits breakpoint variants
@@ -1785,31 +2008,35 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
             scroll area below was then inert, its height collapsed to the
             content, and `overflow-hidden` here clipped everything past the fold
             with no scrollbar — Resolve Dispute and Internal Note sit at the
-            bottom of that area and were unreachable. */}
+            bottom of that area and were unreachable.
+
+            Sections follow the details-panel standard (UI/PanelSection), in
+            who → what → when → where order — People, Concern, Timeline,
+            Location — then the admin's actions on the ticket. */}
         <div
           // 550px matches JobDetailsModal's panel, which opens over this one —
           // a narrower panel made the two look like different surfaces. shrink-0
           // pins it: as a flex item it would otherwise be squeezed by the chat
           // column and no longer match.
-          className={`flex-col h-full bg-gray-50 fixed inset-0 z-[110] md:relative md:inset-auto md:z-auto md:w-[550px] md:shrink-0 border-l border-gray-300 min-h-0 overflow-hidden ${showMobileDetails ? "flex" : "hidden md:flex"}`}
+          data-testid="support-details-panel"
+          className={`flex-col h-full bg-white fixed inset-0 z-[110] md:relative md:inset-auto md:z-auto md:w-[550px] md:shrink-0 border-l border-gray-300 min-h-0 overflow-hidden ${showMobileDetails ? "flex" : "hidden md:flex"}`}
         >
           {/* Header with Close Button */}
-          <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-            <div className="flex items-center gap-2">
+          <div className="flex-shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-gray-200 bg-white">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setShowMobileDetails(false)}
                 className="md:hidden p-1 -ml-1 text-gray-600 hover:bg-gray-200 rounded-full"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
-              <h3 className="text-lg font-bold text-gray-900">
-                User Information
-              </h3>
+              <h3 className="text-lg font-bold text-gray-900">Ticket details</h3>
             </div>
 
             <button
               onClick={onClose}
-              className="hidden md:block p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              aria-label="Close"
+              className="hidden md:block p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -1817,542 +2044,399 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
 
           {/* Scrollable Content Area */}
           <div className="flex-1 overflow-y-auto min-h-0 pb-24">
-            {/* The dispute's two parties, and which way the complaint runs.
-                Stated as a sentence rather than labelled with a heading, and
-                left unboxed so it reads as part of the panel instead of an
-                interruption. Doubles as the thread switcher. */}
-            {isDisputeTicket && (
-              <div className="px-6 pt-6">
-                {disputeParties ? (
-                  <>
-                    <p className="text-sm leading-snug text-gray-600">
-                      <span className="font-bold text-gray-900">
-                        {disputeParties.reporter.userName || "One party"}
-                      </span>{" "}
-                      reported{" "}
-                      <span className="font-bold text-gray-900">
-                        {disputeParties.reported.userName || "the other"}
-                      </span>
-                    </p>
-                    {/* Caption and the thread switcher share a row: the button
-                        acts on exactly what the sentence describes. */}
-                    <div className="mt-1 mb-3 flex items-start justify-between gap-3">
-                      <p className="text-[11px] leading-relaxed text-gray-400">
-                        Each party has their own thread — talk to both before
-                        ruling.
-                      </p>
-                      {onSwitchChat && (
-                        <button
-                          type="button"
-                          data-testid="dispute-counterpart-switch-btn"
-                          onClick={() => onSwitchChat(disputeParties.other)}
-                          title={`Open ${disputeParties.other.userName || "the other party"}'s thread of this dispute`}
-                          className="relative inline-flex shrink-0 items-center gap-1.5 rounded-full bg-purple-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-purple-700"
-                        >
-                          <RefreshCw className="h-3.5 w-3.5" />
-                          Switch to {disputeParties.otherRole}
-                          {(disputeParties.other.unreadCount || 0) > 0 && (
-                            <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                              {disputeParties.other.unreadCount}
-                            </span>
-                          )}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {([
-                        {
-                          party: disputeParties.reporter,
-                          role: disputeParties.reporterRole,
-                          tag: "Reporter",
-                          accent: "text-amber-600",
-                          rail: "bg-amber-400",
-                        },
-                        {
-                          party: disputeParties.reported,
-                          role: disputeParties.reportedRole,
-                          tag: "Reported",
-                          accent: "text-red-500",
-                          rail: "bg-red-400",
-                        },
-                      ] as {
-                        party: typeof selectedChat;
-                        role: string;
-                        tag: string;
-                        accent: string;
-                        rail: string;
-                      }[]).map(({ party, role, tag, accent, rail }) => {
-                        const viewing = party._id === selectedChat._id;
-                        return (
-                          <div
-                            key={party._id}
-                            data-testid={`dispute-party-${tag.toLowerCase()}`}
-                            className={`relative flex items-center gap-3 overflow-hidden rounded-lg border py-2.5 pl-4 pr-3 transition-colors ${
-                              viewing
-                                ? "border-gray-300 bg-gray-50"
-                                : "border-gray-200 bg-white"
-                            }`}
-                          >
-                            {/* Colour rail carries the reporter/reported
-                                distinction without another badge. */}
-                            <span
-                              aria-hidden="true"
-                              className={`absolute inset-y-0 left-0 w-1 ${rail}`}
-                            />
-                            {party.userProfileImage ? (
-                              <img
-                                src={party.userProfileImage}
-                                alt={party.userName || "User"}
-                                className="h-9 w-9 shrink-0 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-200">
-                                <span className="text-xs font-bold text-gray-600">
-                                  {getInitials(party.userName || "Unknown")}
-                                </span>
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-bold text-gray-900">
-                                {party.userName || "Unknown"}
-                                {(party.unreadCount || 0) > 0 && (
-                                  <span
-                                    title={`${party.unreadCount} unread in this thread`}
-                                    className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 align-middle text-[10px] font-bold text-white"
-                                  >
-                                    {party.unreadCount}
-                                  </span>
-                                )}
-                              </p>
-                              <p className="truncate text-[11px]">
-                                <span className={`font-bold ${accent}`}>{tag}</span>
-                                <span className="text-gray-400"> · {role}</span>
-                              </p>
-                            </div>
-                            {/* Switching lives on the caption row above; rows
-                                only mark which thread is on screen. */}
-                            {viewing && (
-                              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                                Viewing
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs leading-relaxed text-gray-400">
-                    The other party&apos;s thread isn&apos;t loaded, so the
-                    direction of this dispute can&apos;t be shown — check the
-                    Support inbox for the matching “{selectedChat.subject}” ticket.
+            {/* What needs attention, first */}
+            {isAdminUser && !canManageTicket && selectedChat.status === "open" && (
+              <div className="px-5 md:px-6 py-5 border-b border-gray-100">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="support-accept-notice">
+                  <p className="text-xs font-bold text-blue-900">
+                    Accept this ticket to take ownership
                   </p>
-                )}
+                  <p className="mt-0.5 text-xs text-blue-700">
+                    Messaging, internal notes, dispute rulings, and resolution
+                    actions are locked until the ticket is accepted.
+                  </p>
+                </div>
               </div>
             )}
-            <div className="px-6 py-6">
-              {isDisputeTicket && (
-                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                  Thread you are viewing
+
+            {/* Who */}
+            <PanelSection
+              icon={UsersIcon}
+              label="People"
+              description={
+                isDisputeTicket
+                  ? "Who raised it, who it's about, and who's handling it"
+                  : "Who asked, and who's handling it"
+              }
+              testId="support-section-who"
+            >
+              {/* The dispute's two parties, and which way the complaint runs.
+                  Stated as a sentence, and doubles as the thread switcher. */}
+              {isDisputeTicket && disputeParties ? (
+                <>
+                  <p className="text-sm leading-snug text-gray-600">
+                    <span className="font-bold text-gray-900">
+                      {disputeParties.reporter.userName || "One party"}
+                    </span>{" "}
+                    reported{" "}
+                    <span className="font-bold text-gray-900">
+                      {disputeParties.reported.userName || "the other"}
+                    </span>
+                  </p>
+                  {/* Caption and the thread switcher share a row: the button
+                      acts on exactly what the sentence describes. */}
+                  <div className="mt-1 mb-3 flex items-start justify-between gap-3">
+                    <p className="text-[11px] leading-relaxed text-gray-400">
+                      Each party has their own thread — talk to both before
+                      ruling.
+                    </p>
+                    {onSwitchChat && (
+                      <button
+                        type="button"
+                        data-testid="dispute-counterpart-switch-btn"
+                        onClick={() => onSwitchChat(disputeParties.other)}
+                        title={`Open ${disputeParties.other.userName || "the other party"}'s thread of this dispute`}
+                        className="relative inline-flex shrink-0 items-center gap-1.5 rounded-full bg-purple-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-purple-700"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Switch to {disputeParties.otherRole}
+                        {(disputeParties.other.unreadCount || 0) > 0 && (
+                          <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                            {disputeParties.other.unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {([
+                      {
+                        party: disputeParties.reporter,
+                        role: disputeParties.reporterRole,
+                        tag: "Reporter",
+                        accent: "text-amber-600",
+                        rail: "bg-amber-400",
+                      },
+                      {
+                        party: disputeParties.reported,
+                        role: disputeParties.reportedRole,
+                        tag: "Reported",
+                        accent: "text-red-500",
+                        rail: "bg-red-400",
+                      },
+                    ] as {
+                      party: typeof selectedChat;
+                      role: string;
+                      tag: string;
+                      accent: string;
+                      rail: string;
+                    }[]).map(({ party, role, tag, accent, rail }) => {
+                      const viewing = party._id === selectedChat._id;
+                      return (
+                        <div
+                          key={party._id}
+                          data-testid={`dispute-party-${tag.toLowerCase()}`}
+                          className={`relative flex items-center gap-3 overflow-hidden rounded-lg border py-2.5 pl-4 pr-3 transition-colors ${
+                            viewing
+                              ? "border-gray-300 bg-gray-50"
+                              : "border-gray-200 bg-white"
+                          }`}
+                        >
+                          {/* Colour rail carries the reporter/reported
+                              distinction without another badge. */}
+                          <span
+                            aria-hidden="true"
+                            className={`absolute inset-y-0 left-0 w-1 ${rail}`}
+                          />
+                          {party.userProfileImage ? (
+                            <img
+                              src={party.userProfileImage}
+                              alt={party.userName || "User"}
+                              className="h-9 w-9 shrink-0 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-200">
+                              <span className="text-xs font-bold text-gray-600">
+                                {getInitials(party.userName || "Unknown")}
+                              </span>
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-gray-900">
+                              {party.userName || "Unknown"}
+                              {(party.unreadCount || 0) > 0 && (
+                                <span
+                                  title={`${party.unreadCount} unread in this thread`}
+                                  className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 align-middle text-[10px] font-bold text-white"
+                                >
+                                  {party.unreadCount}
+                                </span>
+                              )}
+                            </p>
+                            <p className="truncate text-[11px]">
+                              <span className={`font-bold ${accent}`}>{tag}</span>
+                              <span className="text-gray-400"> · {role}</span>
+                            </p>
+                            {party.userEmail && (
+                              <p className="truncate text-[11px] text-gray-500">
+                                {party.userEmail}
+                              </p>
+                            )}
+                          </div>
+                          {/* Switching lives on the caption row above; rows
+                              only mark which thread is on screen. */}
+                          {viewing && (
+                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                              Viewing
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {isDisputeTicket && (
+                    <p className="mb-3 text-xs leading-relaxed text-gray-400">
+                      The other party&apos;s thread isn&apos;t loaded, so the
+                      direction of this dispute can&apos;t be shown — check the
+                      Support inbox for the matching “{selectedChat.subject}” ticket.
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2.5 min-w-0" data-testid="support-person">
+                    {selectedChat.userProfileImage ? (
+                      <img
+                        src={selectedChat.userProfileImage}
+                        alt={selectedChat.userName || "User"}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                        <span className="text-sm font-bold text-blue-600">
+                          {getInitials(selectedChat.userName || selectedChat.userEmail || "Unknown")}
+                        </span>
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[9px] font-black uppercase tracking-wider ${selectedChat.userType === "provider" ? "text-indigo-600" : "text-purple-600"}`}>
+                        {selectedChat.userType === "provider" ? "Provider" : "Client"}
+                      </p>
+                      <p className="truncate text-sm font-bold text-gray-900">
+                        {selectedChat.userName || "Unknown"}
+                      </p>
+                      <p className="truncate text-[11px] text-gray-500">
+                        {selectedChat.userEmail || "No email on file"}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+              <p className="mt-3 flex items-center gap-1.5 text-xs text-gray-600" data-testid="support-handler">
+                <UserCheck className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                {handlerName ? (
+                  <span>
+                    Handled by <span className="font-semibold text-gray-900">{handlerName}</span>
+                  </span>
+                ) : (
+                  <span className="font-semibold text-amber-700">Nobody has picked this up yet</span>
+                )}
+              </p>
+            </PanelSection>
+
+            {/* What */}
+            <PanelSection
+              icon={MessageSquare}
+              label="Concern"
+              description="What they reported"
+              testId="support-section-what"
+            >
+              <p className="text-sm font-bold text-gray-900 break-words">
+                {selectedChat.subject || "No subject"}
+              </p>
+              {/* The report itself sits directly under its subject — they are
+                  one thought. */}
+              {originalConcern.text ? (
+                <p className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-gray-700 [overflow-wrap:anywhere]">
+                  {originalConcern.text}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-xs italic text-gray-400">
+                  {originalConcern.hasImage
+                    ? "Opened with an attachment and no message."
+                    : "No description was provided."}
                 </p>
               )}
-              <div className="flex items-start gap-4 mb-6">
-                {selectedChat.userProfileImage ? (
-                  <img
-                    src={selectedChat.userProfileImage}
-                    alt={selectedChat.userName || "User"}
-                    className="w-16 h-16 rounded-full object-cover flex-shrink-0"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl font-bold text-gray-600">
-                      {getInitials(
-                        selectedChat.userName ||
-                          selectedChat.userEmail ||
-                          "Unknown",
-                      )}
-                    </span>
-                  </div>
-                )}
-                <div className="flex-1">
-                  <p className="text-base font-semibold text-gray-900">
-                    {selectedChat.userName || "Username"}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {selectedChat.userEmail || "Email"}
-                  </p>
-                </div>
-              </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="text-sm text-gray-600">First Name: </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {firstName}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-600">Last Name: </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {lastName}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">User Type: </span>
-                  <UserTypeBadge userType={selectedChat.userType || "client"} />
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-300 my-4"></div>
-
-            {/* The concern itself — what the user reported, in the panel's
-                own label/value idiom rather than a card. */}
-            <div className="px-6 pb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-3">Concern</h3>
-
-              <div className="space-y-3">
-                <div>
-                  <span className="text-sm text-gray-600">Subject: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.subject || "No subject"}
-                  </span>
-                  {/* The report itself sits directly under its subject — they
-                      are one thought, and splitting them put the description
-                      below unrelated metadata. */}
-                  {originalConcern.text ? (
-                    <p className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-gray-700 [overflow-wrap:anywhere]">
-                      {originalConcern.text}
-                    </p>
-                  ) : (
-                    <p className="mt-1.5 text-xs italic text-gray-400">
-                      {originalConcern.hasImage
-                        ? "Opened with an attachment and no message."
-                        : "No description was provided."}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <span className="text-sm text-gray-600">Category: </span>
-                  <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-purple-800 align-middle">
-                    {selectedChat.category || "general"}
-                  </span>
+              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+                <Fact label="Category">
+                  {titleCase(selectedChat.category || "general")}
                   {isDisputeTicket && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-800 align-middle">
-                      Dispute
-                    </span>
+                    <span className="font-normal text-amber-700"> · dispute</span>
+                  )}
+                </Fact>
+                <Fact label="Priority">
+                  <span className={PRIORITY_TONE[normalizedPriority] || "text-gray-900"}>
+                    {titleCase(normalizedPriority)}
+                  </span>
+                </Fact>
+                <Fact label="Ticket ID" mono>
+                  {selectedChat.ticketId || selectedChat._id}
+                </Fact>
+                {originalConcern.attachments > 0 && (
+                  <Fact label="Attachments">{originalConcern.attachments}</Fact>
+                )}
+              </dl>
+
+              {/* The job the concern is about */}
+              {(concernJobTitle || concernJobId) && (
+                <div className="mt-4 rounded-lg border border-gray-100 px-3 py-2.5 min-w-0" data-testid="support-concern-job">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                    About the job
+                  </p>
+                  <p className="text-sm font-bold text-gray-900 break-words">
+                    {concernJobTitle || "Job"}
+                  </p>
+                  {concernJobDescription && (
+                    <>
+                      <p
+                        className={`mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-600 [overflow-wrap:anywhere] ${showJobDescription ? "" : "line-clamp-3"}`}
+                      >
+                        {concernJobDescription}
+                      </p>
+                      {concernJobDescription.length > 160 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowJobDescription((v) => !v)}
+                          className="mt-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                        >
+                          {showJobDescription ? "Show less" : "Show more"}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {concernJobId && (
+                    <button
+                      type="button"
+                      onClick={() => toggleJobDetails(concernJobId)}
+                      disabled={jobModalLoading}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-60"
+                    >
+                      <Briefcase className="h-3.5 w-3.5" />
+                      {isJobDetailsOpenFor(concernJobId)
+                        ? "Close Job Details"
+                        : "View Job Details"}
+                    </button>
                   )}
                 </div>
-
-                {concernJobTitle && (
-                  <div>
-                    <span className="text-sm text-gray-600">Job title: </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {concernJobTitle}
-                    </span>
-                  </div>
-                )}
-
-                {concernJobDescription && (
-                  <div>
-                    <span className="text-sm text-gray-600">Job description: </span>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-gray-700 [overflow-wrap:anywhere]">
-                      {concernJobDescription}
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <span className="text-sm text-gray-600">Reported by: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.userName || "the user"}
-                  </span>
-                </div>
-
-                {originalConcern.at && (
-                  <div>
-                    <span className="text-sm text-gray-600">Reported on: </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {new Date(originalConcern.at).toLocaleString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                )}
-
-                {originalConcern.attachments > 0 && (
-                  <div>
-                    <span className="text-sm text-gray-600">Attachments: </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {originalConcern.attachments}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {originalConcern.jobId && (
-                <button
-                  type="button"
-                  onClick={() => toggleJobDetails(originalConcern.jobId as string)}
-                  disabled={jobModalLoading}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-60"
-                >
-                  <Briefcase className="h-3.5 w-3.5" />
-                  {isJobDetailsOpenFor(originalConcern.jobId)
-                    ? "Close Job Details"
-                    : "View Job Details"}
-                </button>
               )}
-            </div>
+            </PanelSection>
 
-            <div className="border-t border-gray-300 my-4"></div>
-
-            {/* Ticket Details */}
-            <div className="px-6 pb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Ticket Details
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <span className="text-sm text-gray-600">Ticket ID: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.ticketId || selectedChat._id}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Created At: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {new Date(selectedChat.createdAt).toLocaleDateString(
-                      "en-US",
-                      {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      },
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Priority:</span>
-                  <span
-                    className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold capitalize ${getPriorityClasses(
-                      normalizedPriority,
-                    )}`}
-                  >
-                    {normalizedPriority}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Last Update: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.updatedAt
-                      ? new Date(selectedChat.updatedAt).toLocaleDateString(
-                          "en-US",
-                          {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          },
-                        )
-                      : "N/A"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Response Time: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.acceptedAt
-                      ? formatResponseTime(
-                          Math.round(
-                            (new Date(selectedChat.acceptedAt).getTime() -
-                              new Date(selectedChat.createdAt).getTime()) /
-                              (1000 * 60),
-                          ),
-                        )
-                      : "Pending"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Assigned To: </span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {selectedChat.assignedToName ||
-                      selectedChat.acceptedByName ||
-                      "Unassigned"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-300 my-4"></div>
-
-            {/* Activity History */}
-            <div className="px-6 pb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Activity History
-              </h3>
-              <div className="space-y-4 max-h-80 overflow-y-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-                {(() => {
-                  const events: {
-                    type: string;
-                    title: string;
-                    date: string;
-                    timestamp: number;
-                    messageId: string | null;
-                    reason?: string;
-                  }[] = [];
-
-                  // 1. Ticket Submitted
-                  const firstUserMessage = selectedChat.messages?.[0];
-                  events.push({
-                    type: "submitted",
-                    title: "Ticket Submitted",
-                    date: selectedChat.createdAt,
-                    timestamp: new Date(selectedChat.createdAt).getTime(),
-                    messageId: firstUserMessage
-                      ? firstUserMessage._id || "msg-0"
-                      : null,
-                  });
-
-                  // 2. Ticket Accepted ? use persisted acceptance metadata,
-                  // not the first admin or system message in the thread.
-                  if (selectedChat.acceptedAt) {
-                    const acceptanceMessage = selectedChat.messages?.find(
-                      (msg) =>
-                        msg.senderType === "Admin" &&
-                        msg.message.toLowerCase().includes("accepted"),
-                    );
-                    events.push({
-                      type: "accepted",
-                      title: selectedChat.acceptedByName
-                        ? `Ticket Accepted by ${selectedChat.acceptedByName}`
-                        : "Ticket Accepted",
-                      date: selectedChat.acceptedAt,
-                      timestamp: new Date(selectedChat.acceptedAt).getTime(),
-                      messageId: acceptanceMessage?._id || null,
-                    });
-                  }
-
-                  // 3. Status history (resolved / reopened)
-                  if (
-                    selectedChat.statusHistory &&
-                    selectedChat.statusHistory.length > 0
-                  ) {
-                    selectedChat.statusHistory.forEach((historyItem) => {
-                      let correspondingMessage = null;
-
-                      if (historyItem.status === "resolved") {
-                        const historyTime = new Date(
-                          historyItem.timestamp,
-                        ).getTime();
-                        correspondingMessage = selectedChat.messages?.find(
-                          (msg) => {
-                            const txt = msg.message.toLowerCase();
-                            const msgTime = new Date(msg.timestamp).getTime();
-                            return (
-                              msg.senderType === "Admin" &&
-                              (txt.includes("resolved") ||
-                                txt.includes("closed")) &&
-                              Math.abs(msgTime - historyTime) < 5000
-                            );
-                          },
-                        );
-                      } else if (historyItem.status === "reopened") {
-                        const historyTime = new Date(
-                          historyItem.timestamp,
-                        ).getTime();
-                        correspondingMessage = selectedChat.messages?.find(
-                          (msg) => {
-                            const txt = msg.message.toLowerCase();
-                            const msgTime = new Date(msg.timestamp).getTime();
-                            return (
-                              msg.senderType === "Admin" &&
-                              txt.includes("reopened") &&
-                              Math.abs(msgTime - historyTime) < 5000
-                            );
-                          },
-                        );
-                      }
-
-                      const messageId = correspondingMessage
-                        ? `${historyItem.status}-${correspondingMessage.timestamp}`
-                        : null;
-
-                      events.push({
-                        type: historyItem.status,
-                        title:
-                          historyItem.status === "resolved"
-                            ? "Ticket Resolved"
-                            : "Ticket Reopened",
-                        date: historyItem.timestamp,
-                        timestamp: new Date(historyItem.timestamp).getTime(),
-                        reason: historyItem.reason,
-                        messageId,
-                      });
-                    });
-                  }
-
-                  // Sort chronologically
-                  events.sort((a, b) => a.timestamp - b.timestamp);
-
-                  // Render timeline
-                  return events.map((event, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex gap-3 ${event.messageId ? "cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded transition-colors" : ""}`}
-                      onClick={() =>
-                        event.messageId && scrollToMessage(event.messageId)
-                      }
+            {/* When */}
+            <PanelSection
+              icon={Clock}
+              label="Timeline"
+              description="What happened and what's next"
+              testId="support-section-when"
+              last={!jobPlace.address && !canManageTicket}
+            >
+              <ol className="space-y-3">
+                {timelineEvents.map((event, idx) => {
+                  const isLast = idx === timelineEvents.length - 1 && !waitingForAdmin;
+                  const tone =
+                    event.type === "resolved"
+                      ? "bg-emerald-500"
+                      : event.type === "reopened"
+                        ? "bg-amber-500"
+                        : "bg-gray-400";
+                  return (
+                    <li
+                      key={`${event.type}-${idx}`}
+                      data-testid={`support-when-${event.type}`}
+                      className={`relative flex gap-3 ${event.messageId ? "cursor-pointer rounded -mx-2 px-2 py-1 hover:bg-gray-50 transition-colors" : ""}`}
+                      onClick={() => event.messageId && scrollToMessage(event.messageId)}
+                      title={event.messageId ? "Show this in the conversation" : undefined}
                     >
-                      <div className="flex flex-col items-center pt-1">
-                        <div className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white"></div>
-                        {idx < events.length - 1 && (
-                          <div className="w-0.5 flex-1 bg-gray-300 mt-1 min-h-[32px]"></div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">
-                          {event.title}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {new Date(event.date).toLocaleDateString("en-US", {
+                      {!isLast && (
+                        <span
+                          className={`absolute ${event.messageId ? "left-[12px]" : "left-[4px]"} top-3 bottom-[-12px] w-px bg-gray-200`}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className={`relative mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ring-2 ring-white ${tone}`} />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-900">{event.title}</p>
+                        <p className="text-[11px] text-gray-500">
+                          {new Date(event.date).toLocaleString("en-US", {
                             month: "short",
                             day: "numeric",
                             year: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
                           })}
                         </p>
+                        {event.detail && (
+                          <p className="text-[11px] text-gray-500">{event.detail}</p>
+                        )}
                         {event.reason && (
-                          <p className="text-xs text-gray-600 mt-0.5 italic">
-                            Reason: {event.reason}
-                          </p>
+                          <p className="text-[11px] text-gray-600 italic">“{event.reason}”</p>
                         )}
                       </div>
+                    </li>
+                  );
+                })}
+                {waitingForAdmin && (
+                  <li className="relative flex gap-3" data-testid="support-when-waiting">
+                    <span className="relative mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ring-2 ring-white bg-amber-500" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-900">Waiting for an admin</p>
+                      <p className="text-[11px] text-amber-700">
+                        for {formatResponseTime(
+                          Math.max(
+                            0,
+                            Math.round(
+                              (Date.now() - new Date(selectedChat.createdAt).getTime()) / (1000 * 60),
+                            ),
+                          ),
+                        )} so far
+                      </p>
                     </div>
-                  ));
-                })()}
-              </div>
-            </div>
-            {isAdminUser && !canManageTicket && selectedChat.status === "open" && (
-              <>
-                <div className="border-t border-gray-300 my-4"></div>
-                <div className="px-6 pb-6">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-sm font-semibold text-blue-900">
-                      Accept this ticket to take ownership
-                    </p>
-                    <p className="mt-1 text-xs text-blue-700">
-                      Messaging, internal notes, dispute rulings, and resolution
-                      actions are locked until the ticket is accepted.
-                    </p>
-                  </div>
-                </div>
-              </>
+                  </li>
+                )}
+              </ol>
+            </PanelSection>
+
+            {/* Where — only when the ticket is about a job with a place */}
+            {jobPlace.address && (
+              <PanelSection
+                icon={MapPin}
+                label="Location"
+                description="Where the job is"
+                testId="support-section-where"
+                last={!canManageTicket}
+              >
+                <p className="flex items-start gap-2 text-sm font-semibold text-gray-900">
+                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <span className="break-words">{jobPlace.address}</span>
+                </p>
+                {jobPlace.note && (
+                  <p className="ml-6 mt-2 rounded-lg bg-amber-50/60 border border-amber-100 px-3 py-2 text-xs text-amber-900">
+                    <span className="font-bold">Note from the client:</span> {jobPlace.note}
+                  </p>
+                )}
+                {jobPlace.mapsUrl && (
+                  <a
+                    href={jobPlace.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-6 mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Open in Google Maps
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </PanelSection>
             )}
 
             {/* Dispute Resolution — only on tickets raiseDispute filed
@@ -2360,202 +2444,194 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
             {isDisputeTicket &&
               selectedChat.status === "open" &&
               canManageTicket && (
-                <>
-                  <div className="border-t border-gray-300 my-4"></div>
-                  <div className="px-6 pb-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">
-                      Resolve Dispute
-                    </h3>
-                    <p className="text-xs text-gray-500 mb-3">
-                      Pick the outcome once you've reviewed both parties'
-                      dispute threads for this job.
-                    </p>
-                    <textarea
-                      data-testid="resolve-dispute-note"
-                      value={disputeNote}
-                      onChange={(e) => setDisputeNote(e.target.value)}
-                      placeholder="Resolution note (sent to both parties)…"
-                      rows={2}
-                      className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
+                <PanelSection
+                  icon={Scale}
+                  label="Rule on the dispute"
+                  description="Review both threads, then decide where the money goes"
+                  testId="support-section-ruling"
+                >
+                  <textarea
+                    data-testid="resolve-dispute-note"
+                    value={disputeNote}
+                    onChange={(e) => setDisputeNote(e.target.value)}
+                    placeholder="Resolution note (sent to both parties)…"
+                    rows={2}
+                    className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
 
-                    {/* The FINDING — who failed, and how — recorded separately
-                        from where the money goes. The same refund can mean "the
-                        provider never arrived", "the work was unacceptable" or
-                        "both sides called it off", so the outcome alone cannot
-                        carry it. Left as "Not established" this records honestly
-                        and sanctions nobody. */}
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-3">
-                      <p className="text-[11px] font-bold text-gray-700 mb-1">
-                        Finding (who was at fault)
-                      </p>
-                      <p className="text-[11px] text-gray-500 mb-2">
-                        Recorded against the party named and counted toward their
-                        restriction threshold. Leave as &quot;Not established&quot;
-                        when the case genuinely cannot be called — an unstated
-                        finding sanctions nobody. An emergency is recorded but never
-                        sanctioned.
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          data-testid="resolve-dispute-fault-party"
-                          aria-label="Party at fault"
-                          value={faultParty}
-                          onChange={(e) =>
-                            setFaultParty(e.target.value as FaultParty)
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="uncertain">Not established</option>
-                          <option value="none">Nobody at fault</option>
-                          <option value="client">Client at fault</option>
-                          <option value="provider">Provider at fault</option>
-                          <option value="both">Both at fault</option>
-                        </select>
-                        <select
-                          data-testid="resolve-dispute-finding-reason"
-                          aria-label="What happened"
-                          value={findingReason}
-                          onChange={(e) =>
-                            setFindingReason(e.target.value as FindingReason)
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="other">Other / unspecified</option>
-                          <option value="no_show">Did not attend</option>
-                          <option value="late_cancel">Cancelled too late</option>
-                          <option value="access_failure">Could not access site</option>
-                          <option value="emergency">Emergency (not sanctioned)</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <button
-                        data-testid="resolve-dispute-pay-provider"
-                        onClick={() => handleResolveDispute("pay_provider")}
-                        disabled={!!resolvingOutcome}
-                        className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  {/* The FINDING — who failed, and how — recorded separately
+                      from where the money goes. The same refund can mean "the
+                      provider never arrived", "the work was unacceptable" or
+                      "both sides called it off", so the outcome alone cannot
+                      carry it. Left as "Not established" this records honestly
+                      and sanctions nobody. */}
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-3">
+                    <p className="text-[11px] font-bold text-gray-700 mb-1">
+                      Finding (who was at fault)
+                    </p>
+                    <p className="text-[11px] text-gray-500 mb-2">
+                      Recorded against the party named and counted toward their
+                      restriction threshold. Leave as &quot;Not established&quot;
+                      when the case genuinely cannot be called — an unstated
+                      finding sanctions nobody. An emergency is recorded but never
+                      sanctioned.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        data-testid="resolve-dispute-fault-party"
+                        aria-label="Party at fault"
+                        value={faultParty}
+                        onChange={(e) =>
+                          setFaultParty(e.target.value as FaultParty)
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
-                        {resolvingOutcome === "pay_provider"
-                          ? "Resolving…"
-                          : "Pay Provider"}
-                      </button>
-                      <button
-                        data-testid="resolve-dispute-refund-client"
-                        onClick={() => handleResolveDispute("refund_client")}
-                        disabled={!!resolvingOutcome}
-                        className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        <option value="uncertain">Not established</option>
+                        <option value="none">Nobody at fault</option>
+                        <option value="client">Client at fault</option>
+                        <option value="provider">Provider at fault</option>
+                        <option value="both">Both at fault</option>
+                      </select>
+                      <select
+                        data-testid="resolve-dispute-finding-reason"
+                        aria-label="What happened"
+                        value={findingReason}
+                        onChange={(e) =>
+                          setFindingReason(e.target.value as FindingReason)
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
-                        {resolvingOutcome === "refund_client"
-                          ? "Resolving…"
-                          : "Refund Client"}
-                      </button>
-                      <button
-                        data-testid="resolve-dispute-no-show-payout"
-                        onClick={() => handleResolveDispute("no_show_payout")}
-                        disabled={!!resolvingOutcome}
-                        className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {resolvingOutcome === "no_show_payout"
-                          ? "Resolving…"
-                          : "Client Did Not Appear"}
-                      </button>
-                      <p className="text-[11px] text-gray-500 px-1 -mt-1">
-                        Pays the provider the reserved-time payout for the slot they
-                        held and refunds the rest to the client. The payout is held
-                        for the job&apos;s normal release window, not paid instantly.
-                      </p>
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                        <label
-                          htmlFor="rebook-deadline"
-                          className="block text-[11px] font-bold text-gray-700 mb-1"
-                        >
-                          Redo deadline
-                        </label>
-                        <p className="text-[11px] text-gray-500 mb-2">
-                          Rebook keeps the client&apos;s payment held and pauses
-                          the payout countdown. A new hold starts from the new
-                          completion. Required — we escalate back to you if the
-                          work isn&apos;t redone by this date.
-                        </p>
-                        <input
-                          id="rebook-deadline"
-                          data-testid="resolve-dispute-rebook-deadline"
-                          type="date"
-                          value={rebookDeadline}
-                          min={new Date(Date.now() + 86400000)
-                            .toISOString()
-                            .slice(0, 10)}
-                          onChange={(e) => setRebookDeadline(e.target.value)}
-                          className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <button
-                          data-testid="resolve-dispute-rebook"
-                          onClick={() => handleResolveDispute("rebook")}
-                          disabled={!!resolvingOutcome || !rebookDeadline}
-                          className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {resolvingOutcome === "rebook"
-                            ? "Resolving…"
-                            : "Rebook"}
-                        </button>
-                      </div>
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                        <p className="text-[11px] font-bold text-gray-700 mb-1">
-                          Account action
-                        </p>
-                        <p className="text-[11px] text-gray-500 mb-2">
-                          Separate from the money outcome, and scoped to THIS
-                          thread&apos;s party. Repeated missed bookings restrict an
-                          account on their own; use this when one case warrants it
-                          now. The resolution note above is recorded as the reason.
-                        </p>
-                        <button
-                          data-testid="dispute-restrict-user"
-                          onClick={handleRestrictThreadOwner}
-                          disabled={restrictingUser || !!resolvingOutcome}
-                          className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {restrictingUser
-                            ? "Restricting…"
-                            : "Restrict This Account"}
-                        </button>
-                      </div>
+                        <option value="other">Other / unspecified</option>
+                        <option value="no_show">Did not attend</option>
+                        <option value="late_cancel">Cancelled too late</option>
+                        <option value="access_failure">Could not access site</option>
+                        <option value="emergency">Emergency (not sanctioned)</option>
+                      </select>
                     </div>
                   </div>
-                </>
+                  <div className="space-y-2">
+                    <button
+                      data-testid="resolve-dispute-pay-provider"
+                      onClick={() => handleResolveDispute("pay_provider")}
+                      disabled={!!resolvingOutcome}
+                      className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resolvingOutcome === "pay_provider"
+                        ? "Resolving…"
+                        : "Pay Provider"}
+                    </button>
+                    <button
+                      data-testid="resolve-dispute-refund-client"
+                      onClick={() => handleResolveDispute("refund_client")}
+                      disabled={!!resolvingOutcome}
+                      className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resolvingOutcome === "refund_client"
+                        ? "Resolving…"
+                        : "Refund Client"}
+                    </button>
+                    <button
+                      data-testid="resolve-dispute-no-show-payout"
+                      onClick={() => handleResolveDispute("no_show_payout")}
+                      disabled={!!resolvingOutcome}
+                      className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resolvingOutcome === "no_show_payout"
+                        ? "Resolving…"
+                        : "Client Did Not Appear"}
+                    </button>
+                    <p className="text-[11px] text-gray-500 px-1 -mt-1">
+                      Pays the provider the reserved-time payout for the slot they
+                      held and refunds the rest to the client. The payout is held
+                      for the job&apos;s normal release window, not paid instantly.
+                    </p>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <label
+                        htmlFor="rebook-deadline"
+                        className="block text-[11px] font-bold text-gray-700 mb-1"
+                      >
+                        Redo deadline
+                      </label>
+                      <p className="text-[11px] text-gray-500 mb-2">
+                        Rebook keeps the client&apos;s payment held and pauses
+                        the payout countdown. A new hold starts from the new
+                        completion. Required — we escalate back to you if the
+                        work isn&apos;t redone by this date.
+                      </p>
+                      <input
+                        id="rebook-deadline"
+                        data-testid="resolve-dispute-rebook-deadline"
+                        type="date"
+                        value={rebookDeadline}
+                        min={new Date(Date.now() + 86400000)
+                          .toISOString()
+                          .slice(0, 10)}
+                        onChange={(e) => setRebookDeadline(e.target.value)}
+                        className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <button
+                        data-testid="resolve-dispute-rebook"
+                        onClick={() => handleResolveDispute("rebook")}
+                        disabled={!!resolvingOutcome || !rebookDeadline}
+                        className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {resolvingOutcome === "rebook"
+                          ? "Resolving…"
+                          : "Rebook"}
+                      </button>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-[11px] font-bold text-gray-700 mb-1">
+                        Account action
+                      </p>
+                      <p className="text-[11px] text-gray-500 mb-2">
+                        Separate from the money outcome, and scoped to THIS
+                        thread&apos;s party. Repeated missed bookings restrict an
+                        account on their own; use this when one case warrants it
+                        now. The resolution note above is recorded as the reason.
+                      </p>
+                      <button
+                        data-testid="dispute-restrict-user"
+                        onClick={handleRestrictThreadOwner}
+                        disabled={restrictingUser || !!resolvingOutcome}
+                        className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {restrictingUser
+                          ? "Restricting…"
+                          : "Restrict This Account"}
+                      </button>
+                    </div>
+                  </div>
+                </PanelSection>
               )}
 
             {/* Internal Notes — admin-only, never rendered to the customer
                 (see isInternal on ChatSupport.messages). */}
             {canManageTicket && (
-              <>
-                <div className="border-t border-gray-300 my-4"></div>
-                <div className="px-6 pb-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-1">
-                    Internal Note
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Visible only to admins — never shown to the user.
-                  </p>
-                  <textarea
-                    data-testid="internal-note-input"
-                    value={internalNoteText}
-                    onChange={(e) => setInternalNoteText(e.target.value)}
-                    placeholder="Add a note for other admins…"
-                    rows={2}
-                    className="w-full mb-2 px-3 py-2 border border-amber-300 bg-amber-50 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                  />
-                  <button
-                    data-testid="internal-note-submit"
-                    onClick={handleAddInternalNote}
-                    disabled={!internalNoteText.trim() || sendingInternalNote}
-                    className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {sendingInternalNote ? "Adding…" : "Add Internal Note"}
-                  </button>
-                </div>
-              </>
+              <PanelSection
+                icon={Lock}
+                label="Internal note"
+                description="Only admins see this — never the user"
+                testId="support-section-note"
+                last={selectedChat.status !== "open"}
+              >
+                <textarea
+                  data-testid="internal-note-input"
+                  value={internalNoteText}
+                  onChange={(e) => setInternalNoteText(e.target.value)}
+                  placeholder="Add a note for other admins…"
+                  rows={2}
+                  className="w-full mb-2 px-3 py-2 border border-amber-300 bg-amber-50 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                />
+                <button
+                  data-testid="internal-note-submit"
+                  onClick={handleAddInternalNote}
+                  disabled={!internalNoteText.trim() || sendingInternalNote}
+                  className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {sendingInternalNote ? "Adding…" : "Add Internal Note"}
+                </button>
+              </PanelSection>
             )}
 
             {/* Resolution Note — required to resolve. There is no separate
@@ -2563,62 +2639,49 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({
                 never be resolved without one. Only shown while the ticket is
                 still open, since it exists purely to gate that action. */}
             {canManageTicket && selectedChat.status === "open" && (
-              <>
-                <div className="border-t border-gray-300 my-4"></div>
-                <div className="px-6 pb-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-1">
-                    Resolution Note
-                    <span className="ml-1 text-red-500" aria-hidden="true">
-                      *
-                    </span>
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Required to resolve. Recorded in the activity log and{" "}
-                    <span className="font-semibold text-gray-700">
-                      sent to the customer
-                    </span>{" "}
-                    as the reason this ticket was closed.
-                  </p>
-
-                  {/* Two ways in: pick a canned line, or switch to free text. */}
-                  <select
-                    data-testid="resolution-note-preset"
-                    value={resolutionNotePreset}
-                    onChange={(e) => {
-                      setResolutionNotePreset(e.target.value);
-                      if (e.target.value !== CUSTOM_NOTE_OPTION) {
-                        setResolutionNoteText("");
-                      }
-                    }}
-                    className="w-full mb-2 px-3 py-2 border border-gray-300 bg-white rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select a note…</option>
-                    {RESOLUTION_NOTE_PRESETS.map((preset) => (
-                      <option key={preset} value={preset}>
-                        {preset}
-                      </option>
-                    ))}
-                    <option value={CUSTOM_NOTE_OPTION}>
-                      Write a custom note…
+              <PanelSection
+                icon={CheckCircle}
+                label="Resolution note"
+                description="Required to resolve · sent to the customer as the reason"
+                testId="support-section-resolution"
+                last
+              >
+                {/* Two ways in: pick a canned line, or switch to free text. */}
+                <select
+                  data-testid="resolution-note-preset"
+                  value={resolutionNotePreset}
+                  onChange={(e) => {
+                    setResolutionNotePreset(e.target.value);
+                    if (e.target.value !== CUSTOM_NOTE_OPTION) {
+                      setResolutionNoteText("");
+                    }
+                  }}
+                  className="w-full mb-2 px-3 py-2 border border-gray-300 bg-white rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select a note…</option>
+                  {RESOLUTION_NOTE_PRESETS.map((preset) => (
+                    <option key={preset} value={preset}>
+                      {preset}
                     </option>
-                  </select>
+                  ))}
+                  <option value={CUSTOM_NOTE_OPTION}>
+                    Write a custom note…
+                  </option>
+                </select>
 
-                  {resolutionNotePreset === CUSTOM_NOTE_OPTION && (
-                    <textarea
-                      data-testid="resolution-note-input"
-                      value={resolutionNoteText}
-                      onChange={(e) => setResolutionNoteText(e.target.value)}
-                      placeholder="Explain how this was resolved — the customer will see this…"
-                      rows={3}
-                      autoFocus
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  )}
-                </div>
-              </>
+                {resolutionNotePreset === CUSTOM_NOTE_OPTION && (
+                  <textarea
+                    data-testid="resolution-note-input"
+                    value={resolutionNoteText}
+                    onChange={(e) => setResolutionNoteText(e.target.value)}
+                    placeholder="Explain how this was resolved — the customer will see this…"
+                    rows={3}
+                    autoFocus
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                )}
+              </PanelSection>
             )}
-
-            {/* Actions - Visible on both Mobile and Desktop */}
           </div>
 
           {/* Sticky Footer Actions */}

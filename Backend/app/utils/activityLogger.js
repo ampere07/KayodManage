@@ -1,13 +1,10 @@
 const ActivityLog = require('../models/ActivityLog');
 const mongoose = require('mongoose');
 const { currentRequest } = require('./requestContext');
+const { clientIp } = require('./clientIp');
 
-/** The caller's IP, through the proxy when there is one — the rule login uses. */
-const requestIp = (req) =>
-  req?.headers?.['x-forwarded-for']?.split(',')[0].trim() ||
-  req?.headers?.['x-real-ip'] ||
-  req?.ip ||
-  undefined;
+/** The caller's IP, through the proxies the app trusts — the rule login uses (utils/clientIp). */
+const requestIp = (req) => clientIp(req);
 
 const logActivity = async (adminId, actionType, description, options = {}) => {
   try {

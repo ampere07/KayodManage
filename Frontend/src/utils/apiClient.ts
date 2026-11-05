@@ -45,7 +45,9 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    const silent404Endpoints = ['/api/verifications/'];
+    // The Job Category page's extras (usage counts, icon check) degrade quietly
+    // on a backend that predates them, rather than toasting on every visit.
+    const silent404Endpoints = ['/api/verifications/', '/job-categories/usage', '/job-categories/icon-check'];
     const isSilent404 = error.response?.status === 404 &&
       silent404Endpoints.some(endpoint => error.config?.url?.includes(endpoint));
     

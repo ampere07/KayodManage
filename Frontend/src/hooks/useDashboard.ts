@@ -1,7 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '../utils/apiClient';
+import type { DashboardOverview } from '../types/dashboard.types';
 
 const DASHBOARD_QUERY_KEY = 'dashboard';
+
+/**
+ * Everything the Dashboard shows, in one request. Refreshed every minute while
+ * the page is open, so the "Needs attention" counts follow the queues without
+ * relying on the live-update socket.
+ */
+export const useDashboardOverview = () => {
+  return useQuery({
+    queryKey: [DASHBOARD_QUERY_KEY, 'overview'],
+    queryFn: async () => (await apiClient.get<DashboardOverview>('/api/dashboard/overview')).data,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
+    placeholderData: (previousData) => previousData,
+  });
+};
 
 export const useDashboardComparison = () => {
   return useQuery({

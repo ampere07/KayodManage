@@ -16,15 +16,15 @@ const SettingsConfiguration: React.FC = () => {
 
   const getDescription = () => {
     if (activeTab === 'job-category') {
-      return 'Manage Job Category Icons, Names, and Professions';
+      return 'The categories and professions clients choose from: their icons, payment release and the home screen’s Popular Categories';
     }
     if (activeTab === 'job-posting') {
-      return 'Configure job posting rules, limits, budget range, and moderation';
+      return 'The fees, limits and rules the Kayod app applies to every job — from posting to payout, cancellations and no-shows';
     }
     if (activeTab === 'legal') {
       return 'Edit the Terms of Use, role addenda, Schedule A, and Privacy Policy shown in the Kayod app';
     }
-    return 'Configure advertisement placements, banners, and promotional content';
+    return 'Banners on the client and provider home screens — design, destination, schedule and how each one performs';
   };
 
   const sidebarItems = [

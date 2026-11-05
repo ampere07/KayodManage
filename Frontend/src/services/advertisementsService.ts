@@ -25,6 +25,12 @@ export const advertisementsService = {
     return response.data;
   },
 
+  /** A draft copy at the end of the carousel; returns { advertisement }. */
+  duplicateAdvertisement: async (id: string) => {
+    const response = await apiClient.post(`${BASE}/${id}/duplicate`);
+    return response.data;
+  },
+
   deleteAdvertisement: async (id: string) => {
     const response = await apiClient.delete(`${BASE}/${id}`);
     return response.data;

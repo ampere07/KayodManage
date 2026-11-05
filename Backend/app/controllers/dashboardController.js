@@ -9,8 +9,11 @@ const DismissedAlert = require('../models/DismissedAlert');
 const ReportedPost = require('../models/ReportedPost');
 const CredentialVerification = require('../models/CredentialVerification');
 const ChatSupport = require('../models/ChatSupport');
+const Report = require('../models/Report');
 const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
+const { OPEN_REPORT_STATUSES, LEGACY_STATUS_MAP } = require('../constants/reportTaxonomy');
+const { DASHBOARD_TZ, DAY_MS, startOfDay, lastDays, lastMonths, fillSeries, rollUpMonths } = require('../utils/dashboardSeries');
 
 const getStats = async (req, res) => {
   const today = new Date();
@@ -565,7 +568,196 @@ const getPopularJobs = async (req, res) => {
   res.json(formattedData);
 };
 
+// ── Overview ──────────────────────────────────────────────────────────────
+// Everything the Dashboard shows, in one request. It is computed here rather
+// than taken from the live-update socket, so the page is right even when the
+// socket is down, and every number means the same thing as the page it links to.
+
+const MARKETPLACE_TYPES = ['client', 'provider'];
+// Hidden and deleted jobs are out of the marketplace; the Jobs page's Revenue
+// card leaves them out of completed value the same way.
+const LIVE_JOB = { isHidden: { $ne: true }, isDeleted: { $ne: true } };
+// A quote-priced job carries budget 0; its price is the agreed quote.
+const JOB_VALUE = {
+  $cond: [
+    { $gt: ['$budget', 0] },
+    '$budget',
+    { $ifNull: ['$agreedPrice', { $ifNull: ['$acceptedProvider.agreedPrice', 0] }] },
+  ],
+};
+// The Job model records completion under completionStatus; older documents
+// may lack it, and then the last update is the best estimate.
+const COMPLETED_AT = { $ifNull: ['$completionStatus.completedAt', '$updatedAt'] };
+// Reports filed before the status rename still carry pending/reviewed.
+const OPEN_REPORT_STATUS_VALUES = [
+  ...OPEN_REPORT_STATUSES,
+  ...Object.keys(LEGACY_STATUS_MAP).filter((s) => OPEN_REPORT_STATUSES.includes(LEGACY_STATUS_MAP[s])),
+];
+
+// The Most requested chart's periods, in days.
+const SERVICE_WINDOWS = [7, 30, 90];
+
+const dayOf = (date) => ({ $dateToString: { format: '%Y-%m-%d', date, timezone: DASHBOARD_TZ } });
+const countAndOldest = (dateField) => ({ _id: null, count: { $sum: 1 }, oldestAt: { $min: dateField } });
+const firstOr = (rows, fallback = { count: 0, oldestAt: null }) => {
+  const row = rows[0];
+  return row ? { count: row.count, oldestAt: row.oldestAt || null } : fallback;
+};
+
+const getOverview = async (req, res) => {
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const days = lastDays(60, now);
+  const months = lastMonths(24, now);
+  // A day of margin on each window; rows outside the keys are dropped below.
+  const since60 = new Date(todayStart.getTime() - 60 * DAY_MS);
+  const since30 = new Date(todayStart.getTime() - 29 * DAY_MS);
+  // Start of the window of `days` days ending today (back = 1), or of the
+  // window of the same length just before it (back = 2).
+  const windowStart = (days, back) => new Date(todayStart.getTime() - (days * back - 1) * DAY_MS);
+  const [oldestYear, oldestMonth] = months[0].split('-').map(Number);
+  const since24m = new Date(Date.UTC(oldestYear, oldestMonth - 1, 1) - DAY_MS);
+
+  const [
+    feeRows, completedRows, postedRows, userRows,
+    verifications, support, reports, reportedPosts, refunds, disputes, cashouts,
+    jobsNowRows, cancelled30, serviceRows, online,
+  ] = await Promise.all([
+    Transaction.aggregate([
+      { $match: { type: 'platform_fee', status: 'completed', $or: [{ completedAt: { $gte: since24m } }, { completedAt: null, createdAt: { $gte: since24m } }] } },
+      { $group: { _id: dayOf({ $ifNull: ['$completedAt', '$createdAt'] }), fees: { $sum: '$amount' }, feeCount: { $sum: 1 } } },
+    ]),
+    Job.aggregate([
+      { $match: { ...LIVE_JOB, status: 'completed' } },
+      { $addFields: { doneAt: COMPLETED_AT } },
+      { $match: { doneAt: { $gte: since24m } } },
+      { $group: { _id: dayOf('$doneAt'), jobValue: { $sum: JOB_VALUE }, jobsCompleted: { $sum: 1 } } },
+    ]),
+    Job.aggregate([
+      { $match: { isDeleted: { $ne: true }, createdAt: { $gte: since60 } } },
+      { $group: { _id: dayOf('$createdAt'), jobsPosted: { $sum: 1 } } },
+    ]),
+    User.aggregate([
+      { $match: { userType: { $in: MARKETPLACE_TYPES }, createdAt: { $gte: since60 } } },
+      {
+        $group: {
+          _id: dayOf('$createdAt'),
+          newClients: { $sum: { $cond: [{ $eq: ['$userType', 'client'] }, 1, 0] } },
+          newProviders: { $sum: { $cond: [{ $eq: ['$userType', 'provider'] }, 1, 0] } },
+        },
+      },
+    ]),
+    // Same rule as the Verifications page: a person counts by their latest submission.
+    CredentialVerification.aggregate([
+      { $addFields: { at: { $ifNull: ['$submittedAt', '$createdAt'] } } },
+      { $sort: { at: -1 } },
+      { $group: { _id: '$userId', status: { $first: '$status' }, at: { $first: '$at' } } },
+      { $match: { status: { $in: ['pending', 'under_review'] } } },
+      { $group: countAndOldest('$at') },
+    ]),
+    // Dispute threads are counted with their dispute, not as support tickets.
+    ChatSupport.aggregate([
+      { $match: { status: 'open', acceptedBy: null, 'metadata.kind': { $ne: 'dispute' } } },
+      { $group: countAndOldest('$createdAt') },
+    ]),
+    Report.aggregate([{ $match: { status: { $in: OPEN_REPORT_STATUS_VALUES } } }, { $group: countAndOldest('$createdAt') }]),
+    ReportedPost.aggregate([{ $match: { status: { $in: OPEN_REPORT_STATUS_VALUES } } }, { $group: countAndOldest('$createdAt') }]),
+    Transaction.aggregate([{ $match: { type: 'refund_request', status: 'pending' } }, { $group: countAndOldest('$createdAt') }]),
+    Job.aggregate([
+      { $match: { isDeleted: { $ne: true }, 'completionStatus.dispute.isActive': true } },
+      { $group: countAndOldest({ $ifNull: ['$completionStatus.dispute.raisedAt', '$updatedAt'] }) },
+    ]),
+    Transaction.aggregate([{ $match: { type: 'withdrawal', status: 'pending' } }, { $group: countAndOldest('$createdAt') }]),
+    Job.aggregate([
+      { $match: { ...LIVE_JOB, status: { $in: ['open', 'scheduled', 'in_progress'] } } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    Job.countDocuments({
+      isDeleted: { $ne: true },
+      status: 'cancelled',
+      $or: [{ 'cancellation.cancelledAt': { $gte: since30 } }, { 'cancellation.cancelledAt': null, updatedAt: { $gte: since30 } }],
+    }),
+    // Jobs posted per service in each window and in the window before it,
+    // in one pass over the last 180 days.
+    Job.aggregate([
+      { $match: { isDeleted: { $ne: true }, createdAt: { $gte: windowStart(SERVICE_WINDOWS[SERVICE_WINDOWS.length - 1], 2) } } },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $gt: [{ $strLenCP: { $ifNull: ['$professionName', ''] } }, 0] },
+              '$professionName',
+              { $ifNull: ['$categoryName', 'Other'] },
+            ],
+          },
+          ...Object.fromEntries(SERVICE_WINDOWS.flatMap((days) => [
+            [`current${days}`, { $sum: { $cond: [{ $gte: ['$createdAt', windowStart(days, 1)] }, 1, 0] } }],
+            [`previous${days}`, {
+              $sum: { $cond: [{ $and: [{ $gte: ['$createdAt', windowStart(days, 2)] }, { $lt: ['$createdAt', windowStart(days, 1)] }] }, 1, 0] },
+            }],
+          ])),
+        },
+      },
+    ]),
+    User.countDocuments({ userType: { $in: MARKETPLACE_TYPES }, isOnline: true }),
+  ]);
+
+  const dailyRows = [...feeRows, ...completedRows, ...postedRows, ...userRows];
+  const byDay = new Map();
+  for (const row of dailyRows) byDay.set(row._id, { ...(byDay.get(row._id) || {}), ...row });
+  const daily = fillSeries(days, [...byDay.values()], ['fees', 'feeCount', 'jobValue', 'jobsCompleted', 'jobsPosted', 'newClients', 'newProviders']);
+  const monthly = fillSeries(months, rollUpMonths([...feeRows, ...completedRows]), ['fees', 'feeCount', 'jobValue', 'jobsCompleted']);
+
+  const last30 = daily.slice(-30);
+  const sum = (rows, field) => rows.reduce((total, row) => total + row[field], 0);
+  const today = daily[daily.length - 1];
+  const jobsNow = Object.fromEntries(jobsNowRows.map((r) => [r._id, r.count]));
+  const reportsOpen = [firstOr(reports), firstOr(reportedPosts)];
+
+  res.json({
+    generatedAt: now.toISOString(),
+    timezone: DASHBOARD_TZ,
+    daily: daily.map(({ key, ...values }) => ({ date: key, ...values })),
+    monthly: monthly.map(({ key, ...values }) => ({ month: key, ...values })),
+    attention: {
+      disputes: firstOr(disputes),
+      refunds: firstOr(refunds),
+      reports: {
+        count: reportsOpen[0].count + reportsOpen[1].count,
+        oldestAt: reportsOpen.map((r) => r.oldestAt).filter(Boolean).sort((a, b) => a - b)[0] || null,
+      },
+      verifications: firstOr(verifications),
+      support: firstOr(support),
+      cashouts: firstOr(cashouts),
+    },
+    jobs: {
+      open: jobsNow.open || 0,
+      scheduled: jobsNow.scheduled || 0,
+      inProgress: jobsNow.in_progress || 0,
+      completed30: sum(last30, 'jobsCompleted'),
+      cancelled30,
+    },
+    topServices: Object.fromEntries(SERVICE_WINDOWS.map((days) => {
+      const rows = serviceRows.map((r) => ({ name: r._id, count: r[`current${days}`], previous: r[`previous${days}`] }));
+      return [`${days}d`, {
+        days,
+        posted: rows.reduce((n, r) => n + r.count, 0),
+        previousPosted: rows.reduce((n, r) => n + r.previous, 0),
+        items: rows.filter((r) => r.count > 0).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 5),
+      }];
+    })),
+    today: {
+      newClients: today.newClients,
+      newProviders: today.newProviders,
+      jobsPosted: today.jobsPosted,
+      jobsCompleted: today.jobsCompleted,
+      online,
+    },
+  });
+};
+
 module.exports = {
+  getOverview: asyncHandler(getOverview, 'Failed to fetch the dashboard overview'),
   getStats: asyncHandler(getStats, 'Failed to fetch dashboard stats'),
   getActivity: asyncHandler(getActivity, 'Failed to fetch activity feed'),
   getAlerts: asyncHandler(getAlerts, 'Failed to fetch alerts'),

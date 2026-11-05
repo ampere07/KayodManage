@@ -8,6 +8,8 @@ const {
   submitRebookVerdict,
   assignJobToProvider,
   getJobStats,
+  getJobsSummary,
+  getArchivedJobsSummary,
   hideJob,
   unhideJob,
   deleteJob,
@@ -23,6 +25,10 @@ router.get('/', adminAuth, getJobs);
 
 // Get job statistics
 router.get('/stats', adminAuth, getJobStats);
+
+// The Jobs and Archived pages' counters (status counts, quick filters, value)
+router.get('/summary', adminAuth, getJobsSummary);
+router.get('/archived-summary', adminAuth, getArchivedJobsSummary);
 
 // Get specific job details with applications
 router.get('/:jobId', adminAuth, getJobDetails);

@@ -1,25 +1,28 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Search,
   MessageSquare,
-  CheckCircle,
-  Calendar,
   MessageCircleQuestion,
-  Eye,
+  CheckCircle2,
   Clock,
-  AlertTriangle
+  UserCheck,
+  Scale,
 } from 'lucide-react';
-import StatsCard from '../components/Dashboard/StatsCard';
+import type { LucideIcon } from 'lucide-react';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import { SupportChatModal } from '../components/Modals';
+import CounterGroups from '../components/UI/CounterGroups';
+import type { CounterGroup } from '../components/UI/CounterGroups';
+import { SortHeader, ListFooter, ago } from '../components/UI/ListControls';
 import { supportService, jobsService } from '../services';
 import type { DisputeFinding } from '../types/jobs.types';
 import { useAuth } from '../context/AuthContext';
 import { useSupportTickets } from '../hooks/useSupportTickets';
 import { useSupportSocket } from '../hooks/useSupportSocket';
-import { getInitials, getStatusBadge } from '../utils';
-import { hasPreviouslyResolved, calculateTicketStats } from '../utils/supportHelpers';
+import { getInitials } from '../utils';
+import { buildTicketRows, hasPreviouslyResolved } from '../utils/supportHelpers';
 import type { TicketRow } from '../utils/supportHelpers';
 import type { ChatSupport, Message } from '../types';
 
@@ -28,18 +31,140 @@ const DISPUTE_OUTCOME_LABELS: Record<string, string> = {
   pay_provider: 'Provider paid',
   refund_client: 'Client refunded',
   rebook: 'Rebooked',
+  no_show_payout: 'No-show payout',
 };
 
-/**
- * A dispute row stands for both parties' threads, so it is badged from the
- * row's combined status. The primary thread's own displayStatus read
- * "Resolved" while the other party's thread was still open.
- */
-const rowStatusBadge = (row: TicketRow) =>
-  row.isDispute
-    ? getStatusBadge(row.status, row.primary.acceptedBy || row.counterpart?.acceptedBy || undefined)
-    : getStatusBadge(row.status, row.primary.acceptedBy, row.primary.displayStatus);
+type RowState = 'open' | 'pending' | 'resolved';
+type View = 'all' | RowState | 'unread' | 'dispute';
+type TypeFilter = 'all' | 'client' | 'provider';
+type SortKey = 'activity_desc' | 'activity_asc';
+const VIEWS: View[] = ['all', 'open', 'pending', 'resolved', 'unread', 'dispute'];
 
+/**
+ * Both threads of a dispute, or the one thread of anything else. A dispute
+ * row stands for both parties, so its state, handler and activity come from
+ * both.
+ */
+const threadsOf = (row: TicketRow): ChatSupport[] =>
+  row.isDispute && row.provider && row.client ? [row.client, row.provider] : [row.primary];
+
+/**
+ * The same three states as the ticket's own badge (the backend's
+ * displayStatus): open = nobody has picked it up, pending = an admin has it,
+ * resolved = closed. A dispute is open while either thread is, and accepted
+ * once either is (acceptance is case-wide).
+ */
+const stateOf = (row: TicketRow): RowState =>
+  row.status === 'closed' ? 'resolved' : threadsOf(row).some((t) => t.acceptedBy) ? 'pending' : 'open';
+
+const handlerOf = (row: TicketRow) =>
+  threadsOf(row).map((t) => t.acceptedByName || t.assignedToName).find(Boolean) || null;
+
+/** The latest message a user or admin can see (internal notes don't count). */
+const lastActivityOf = (row: TicketRow) =>
+  Math.max(
+    ...threadsOf(row).map((t) => {
+      const shown = (t.messages || []).filter((m) => !m.isInternal);
+      const last = shown[shown.length - 1];
+      return new Date(last?.timestamp || t.updatedAt || t.createdAt).getTime();
+    }),
+  );
+
+const closedAtOf = (row: TicketRow) => {
+  const times = threadsOf(row).map((t) => (t.closedAt ? new Date(t.closedAt).getTime() : 0));
+  const latest = Math.max(...times);
+  return latest > 0 ? new Date(latest) : null;
+};
+
+const BADGE: Record<RowState, { label: string; badge: string; dot: string }> = {
+  open: { label: 'Open', badge: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  pending: { label: 'Pending', badge: 'bg-yellow-50 text-yellow-800 border-yellow-200', dot: 'bg-yellow-500' },
+  resolved: { label: 'Resolved', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+};
+
+const StatusBadge: React.FC<{ state: RowState; small?: boolean }> = ({ state, small }) => {
+  const look = BADGE[state];
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border font-black uppercase whitespace-nowrap ${small ? 'px-2 py-0.5 text-[9px] tracking-tight' : 'px-2.5 py-1 text-[10px] tracking-wider'} ${look.badge}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${look.dot}`} />
+      {look.label}
+    </span>
+  );
+};
+
+const day = (value: Date | string) => format(new Date(value), 'MMM d');
+
+/** The line under a status: how long it has waited, who has it, or how it ended. */
+const statusLine = (row: TicketRow): { text: string; icon: LucideIcon; tone: string } => {
+  const state = stateOf(row);
+  if (state === 'open') {
+    return { text: `Waiting ${formatDistanceToNowStrict(new Date(row.createdAt))}`, icon: Clock, tone: 'text-amber-600' };
+  }
+  if (state === 'pending') {
+    const handler = handlerOf(row);
+    return { text: handler ? `With ${handler}` : 'Picked up', icon: UserCheck, tone: 'text-gray-500' };
+  }
+  const closed = closedAtOf(row);
+  const outcome = row.disputeOutcome ? DISPUTE_OUTCOME_LABELS[row.disputeOutcome] || row.disputeOutcome : null;
+  return {
+    text: [outcome || 'Resolved', closed ? day(closed) : ''].filter(Boolean).join(outcome ? ' · ' : ' '),
+    icon: CheckCircle2,
+    tone: 'text-gray-500',
+  };
+};
+
+const StatusText: React.FC<{ row: TicketRow; className?: string }> = ({ row, className = '' }) => {
+  const line = statusLine(row);
+  const Icon = line.icon;
+  return (
+    <span className={`flex items-center gap-1 min-w-0 ${line.tone} ${className}`}>
+      <Icon className="h-3 w-3 flex-shrink-0" />
+      <span className="truncate">{line.text}</span>
+    </span>
+  );
+};
+
+const ROLE_TONE = { client: 'text-purple-600', provider: 'text-indigo-600' };
+const roleOf = (t: ChatSupport) => (t.userType === 'provider' ? 'provider' : 'client');
+
+const RoleLabel: React.FC<{ chat: ChatSupport; className?: string }> = ({ chat, className = '' }) => (
+  <span className={`text-[9px] font-black uppercase tracking-wider ${ROLE_TONE[roleOf(chat)]} ${className}`}>
+    {roleOf(chat) === 'provider' ? 'Provider' : 'Client'}
+  </span>
+);
+
+const Avatar: React.FC<{ chat: ChatSupport }> = ({ chat }) =>
+  chat.userProfileImage ? (
+    <img src={chat.userProfileImage} alt={chat.userName || 'User'} className="w-10 h-10 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+  ) : (
+    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center border border-gray-100 flex-shrink-0">
+      <span className="text-sm font-bold text-blue-600 uppercase">{getInitials(chat.userName || 'Unknown')}</span>
+    </div>
+  );
+
+/** One side of a dispute: role, name, and whether they raised it. */
+const DisputeParty: React.FC<{ chat: ChatSupport; raised: boolean }> = ({ chat, raised }) => (
+  <div className="flex items-baseline gap-2 min-w-0" title={`${chat.userName || 'Unknown'} ${raised ? 'raised this dispute' : 'is the subject of this dispute'}`}>
+    <span className={`w-[58px] flex-shrink-0 text-[9px] font-black uppercase tracking-wider ${ROLE_TONE[roleOf(chat)]}`}>{roleOf(chat) === 'provider' ? 'Provider' : 'Client'}</span>
+    <span className="text-xs font-semibold text-gray-900 truncate">{chat.userName || 'Unknown'}</span>
+    <span className={`text-[10px] font-semibold flex-shrink-0 ${raised ? 'text-amber-600' : 'text-gray-400'}`}>{raised ? 'raised it' : 'reported'}</span>
+  </div>
+);
+
+const PRIORITY_WORD: Record<string, { text: string; tone: string }> = {
+  urgent: { text: 'Urgent', tone: 'text-red-600 font-semibold' },
+  high: { text: 'High priority', tone: 'text-orange-600 font-semibold' },
+};
+
+const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+
+/**
+ * Support Page
+ * One row per conversation — a job dispute's two threads are one row. The
+ * same counters, rows and footer as the other list pages: where each ticket
+ * stands, what needs a look, and account type; every number is the rows
+ * clicking it shows. The chat panel opens on click, as before.
+ */
 const Support: React.FC = () => {
   const { user } = useAuth();
   const [selectedChat, setSelectedChat] = useState<ChatSupport | null>(null);
@@ -52,16 +177,8 @@ const Support: React.FC = () => {
 
   const {
     tickets,
-    // Rows collapse each dispute's two threads into one entry.
-    paginatedRows,
-    ticketRows,
-    filteredTickets,
     loading,
-    filters,
-    pagination,
-    totalPages,
-    setFilters,
-    setPagination,
+    isPlaceholderData,
     fetchTickets,
     updateTicket,
     acceptTicket,
@@ -392,31 +509,134 @@ const Support: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChat?._id, selectedChat?.acceptedBy, counterpartChat?.acceptedBy, user?.role]);
 
-  const stats = calculateTicketStats(tickets);
+  // ── The list ─────────────────────────────────────────────────────────────
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sort, setSort] = useState<SortKey>('activity_desc');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 md:left-72 flex items-center justify-center bg-gray-50/50 backdrop-blur-sm z-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <div className="h-16 w-16 rounded-full border-4 border-gray-100 border-t-blue-600 animate-spin" />
-            <MessageCircleQuestion className="absolute inset-0 m-auto h-6 w-6 text-blue-600 animate-pulse" />
-          </div>
-          <div className="flex flex-col items-center italic">
-            <p className="text-sm font-black text-gray-900 tracking-widest uppercase">Loading Support Tickets</p>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] mt-1">Establishing Secure Connection</p>
-          </div>
-        </div>
-      </div>
+  // What's showing and account type live in the URL; they combine.
+  const viewParam = (searchParams.get('status') || 'all') as View;
+  const view: View = VIEWS.includes(viewParam) ? viewParam : 'all';
+  const typeParam = searchParams.get('type') || 'all';
+  const typeFilter: TypeFilter = typeParam === 'client' || typeParam === 'provider' ? typeParam : 'all';
+  const setFilters = (nextView: View, nextType: TypeFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextView === 'all') next.delete('status'); else next.set('status', nextView);
+    if (nextType === 'all') next.delete('type'); else next.set('type', nextType);
+    setSearchParams(next, { replace: true });
+  };
+  // Clicking the selected counter again lifts that filter.
+  const chooseView = (next: View) => setFilters(next === view ? 'all' : next, typeFilter);
+  const chooseType = (next: TypeFilter) => setFilters(view, next === typeFilter ? 'all' : next);
+
+  const rows = useMemo(() => buildTicketRows(tickets), [tickets]);
+
+  // Search narrows the counters as well as the list.
+  const searched = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase().replace(/^#/, '');
+    if (!term) return rows;
+    return rows.filter((row) =>
+      [row.jobTitle, row.jobId, ...threadsOf(row).flatMap((t) => [t.subject, t.category, t.userName, t.userEmail, t.ticketId, t._id])]
+        .some((value) => String(value || '').toLowerCase().includes(term)),
     );
-  }
+  }, [rows, searchTerm]);
+
+  const matchesView = (row: TicketRow, v: View) =>
+    v === 'all' ||
+    (v === 'unread' ? row.unreadCount > 0 : v === 'dispute' ? row.isDispute && row.status !== 'closed' : stateOf(row) === v);
+  // A dispute concerns a client and a provider, so it counts under both.
+  const matchesType = (row: TicketRow, t: TypeFilter) => t === 'all' || threadsOf(row).some((thread) => roleOf(thread) === t);
+  const countWhere = (v: View, t: TypeFilter) => searched.filter((row) => matchesView(row, v) && matchesType(row, t)).length;
+
+  const filtered = useMemo(() => {
+    const list = searched.filter((row) => matchesView(row, view) && matchesType(row, typeFilter));
+    return [...list].sort((a, b) => (sort === 'activity_desc' ? lastActivityOf(b) - lastActivityOf(a) : lastActivityOf(a) - lastActivityOf(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched, view, typeFilter, sort]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, view, typeFilter, sort, limit]);
+
+  const totalPages = Math.ceil(filtered.length / limit);
+  const pageRows = filtered.slice((page - 1) * limit, page * limit);
+  const myId = user?.id || user?._id || user?.adminId;
+
+  const viewCell = (key: View, label: string, tone: CounterGroup['cells'][number]['tone'], hint: string, alert?: boolean) => ({
+    key,
+    label,
+    tone,
+    hint,
+    alert,
+    count: loading ? undefined : countWhere(key, typeFilter),
+    selected: view === key,
+    onClick: () => chooseView(key),
+  });
+  const groups: CounterGroup[] = [
+    {
+      label: 'Status',
+      cells: [
+        viewCell('open', 'Open', 'blue', 'Nobody has picked these up yet'),
+        viewCell('pending', 'Pending', 'yellow', 'An admin has these and is working on them'),
+        viewCell('resolved', 'Resolved', 'emerald', 'Closed with a resolution note'),
+      ],
+    },
+    {
+      label: 'Needs a look',
+      cells: [
+        viewCell('unread', 'New replies', 'red', 'Messages from the user nobody has read yet', true),
+        viewCell('dispute', 'Disputes', 'amber', 'Job disputes not ruled on yet', true),
+      ],
+    },
+    {
+      label: 'Account type',
+      cells: ([
+        { key: 'client', label: 'Customers', tone: 'purple', hint: 'Tickets from customers, and disputes involving one' },
+        { key: 'provider', label: 'Providers', tone: 'indigo', hint: 'Tickets from providers, and disputes involving one' },
+      ] as const).map((cell) => ({
+        ...cell,
+        count: loading ? undefined : countWhere(view, cell.key),
+        selected: typeFilter === cell.key,
+        onClick: () => chooseType(cell.key),
+      })),
+    },
+  ];
+
+  const anyFilterActive = Boolean(searchTerm) || view !== 'all' || typeFilter !== 'all' || sort !== 'activity_desc';
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSort('activity_desc');
+    setFilters('all', 'all');
+  };
+  const waitingCount = countWhere('open', 'all');
+  const emptyText = view === 'open' && !searchTerm
+    ? { title: 'Nobody is waiting', text: 'Every ticket has been picked up.' }
+    : view === 'unread' && !searchTerm
+      ? { title: 'No new replies', text: 'Every message has been read.' }
+      : { title: 'No tickets found', text: 'Try adjusting your search or filters.' };
+
+  /** What the conversation is about: category (or dispute) above the subject, then the ticket. */
+  const concernOf = (row: TicketRow) => {
+    const chat = row.primary;
+    const priority = PRIORITY_WORD[(chat.priority || '').toLowerCase()];
+    return {
+      label: row.isDispute ? 'Job dispute' : titleCase(chat.category || 'General'),
+      // A dispute reads off the JOB: its two threads can carry different
+      // subjects, so the primary thread's would depend on who reported.
+      title: row.isDispute ? row.jobTitle || chat.subject.replace(/^Dispute:\s*/i, '') : chat.subject,
+      ref: row.isDispute && row.jobId ? `Job #${row.jobId.slice(-6).toUpperCase()}` : `#${(chat.ticketId || chat._id.slice(-8)).toUpperCase()}`,
+      priority,
+    };
+  };
 
   return (
-    <div className="fixed inset-0 md:left-72 flex flex-col bg-gray-50 mt-16 md:mt-0 h-screen overflow-hidden text-gray-700">
+    <div className="fixed top-16 md:top-0 bottom-0 left-0 md:left-72 right-0 flex flex-col bg-gray-50 overflow-hidden">
+      {/* Header Section */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 z-30 shadow-sm relative">
-        <div className="px-4 pt-3 pb-2 md:px-6 md:py-5">
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="hidden md:flex items-start justify-between gap-6 mb-5">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1.5 bg-blue-50 rounded-lg">
                   <MessageSquare className="h-5 w-5 text-blue-600" />
@@ -426,565 +646,250 @@ const Support: React.FC = () => {
                 </h1>
               </div>
               <p className="text-xs text-gray-500 font-medium">
-                Manage and respond to user support tickets, inquiries, and technical assistance requests
+                {loading ? 'Conversations with customers and providers' : `${rows.length.toLocaleString()} conversations with customers and providers`}
+                {!loading && waitingCount > 0 && (
+                  <span className="text-amber-600 font-semibold"> · {waitingCount} waiting for an admin</span>
+                )}
               </p>
             </div>
-            
-
           </div>
 
-          {/* Mobile Header */}
-          <div className="md:hidden">
-            {/* Summary strip */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Tickets</p>
-                <p className="text-base font-black text-blue-600 leading-tight">{stats.totalTickets.toLocaleString()}</p>
-              </div>
-              <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Open</p>
-                <p className="text-base font-black text-orange-600 leading-tight">{stats.openTickets.toLocaleString()}</p>
-              </div>
-            </div>
-            {/* Filter pills */}
-            <div className="flex gap-2">
-              {([
-                { label: 'All',      value: stats.totalTickets,   filterVal: 'all',      activeBg: 'bg-blue-500',    border: 'border-blue-500'    },
-                { label: 'Open',     value: stats.openTickets,    filterVal: 'open',     activeBg: 'bg-orange-500',  border: 'border-orange-500'  },
-                { label: 'Pending',  value: stats.pendingTickets, filterVal: 'pending',  activeBg: 'bg-indigo-500',  border: 'border-indigo-500'  },
-                { label: 'Resolved', value: stats.resolvedTickets,filterVal: 'resolved', activeBg: 'bg-emerald-500', border: 'border-emerald-500' },
-              ] as { label: string; value: number; filterVal: string; activeBg: string; border: string }[]).map(({ label, value, filterVal, activeBg, border }) => {
-                const active = filters.activeTab === filterVal;
-                return (
-                  <button
-                    key={filterVal}
-                    onClick={() => { setFilters(prev => ({ ...prev, activeTab: filterVal })); setPagination(prev => ({ ...prev, page: 1 })); }}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-full border transition-all active:scale-95 ${active ? `${activeBg} ${border} text-white` : 'bg-white border-gray-200 text-gray-600'}`}
-                  >
-                    <span className="text-[11px] font-black">{value.toLocaleString()}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-wide ${active ? 'text-white/80' : 'text-gray-400'}`}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="cursor-pointer" onClick={() => {
-              setFilters(prev => ({ ...prev, activeTab: 'all' }));
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}>
-              <StatsCard
-                title="Total Tickets"
-                value={stats.totalTickets.toString()}
-                icon={MessageSquare}
-                color="blue"
-                variant="tinted"
-                isActive={filters.activeTab === 'all'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => {
-              setFilters(prev => ({ ...prev, activeTab: 'open' }));
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}>
-              <StatsCard
-                title="Open Tickets"
-                value={stats.openTickets.toString()}
-                icon={MessageCircleQuestion}
-                color="orange"
-                variant="tinted"
-                isActive={filters.activeTab === 'open'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => {
-              setFilters(prev => ({ ...prev, activeTab: 'pending' }));
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}>
-              <StatsCard
-                title="Pending Response"
-                value={stats.pendingTickets.toString()}
-                icon={Clock}
-                color="indigo"
-                variant="tinted"
-                isActive={filters.activeTab === 'pending'}
-                smallIcon={true}
-              />
-            </div>
-            <div className="cursor-pointer" onClick={() => {
-              setFilters(prev => ({ ...prev, activeTab: 'resolved' }));
-              setPagination(prev => ({ ...prev, page: 1 }));
-            }}>
-              <StatsCard
-                title="Resolved"
-                value={stats.resolvedTickets.toString()}
-                icon={CheckCircle}
-                color="green"
-                variant="tinted"
-                isActive={filters.activeTab === 'resolved'}
-                smallIcon={true}
-              />
-            </div>
-          </div>
+          <CounterGroups
+            groups={groups}
+            gridClass="grid-cols-[0.8fr_3fr_2fr_2fr]"
+            all={{ count: loading ? undefined : countWhere('all', 'all'), selected: view === 'all' && typeFilter === 'all', onClick: () => setFilters('all', 'all') }}
+            filtered={anyFilterActive}
+            onClear={clearFilters}
+            testId="support-counters"
+            idPrefix="support"
+            allCell={{ label: 'All', hint: 'Every conversation; a dispute’s two threads count once' }}
+          />
         </div>
 
-        <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex flex-col md:flex-row items-center gap-4">
-          {/* Mobile: search row (no page limit on mobile) */}
-          <div className="flex items-center gap-2 w-full md:contents">
+        {/* Filter Bar — one bar for every width. Phones stack it (search, then
+            the order); from lg it's one row. */}
+        <div className="px-4 lg:px-6 py-2 lg:py-3 bg-gray-50/50 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 w-full lg:w-auto lg:flex-1 lg:min-w-[200px]">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <Search className="absolute left-3 lg:left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-3.5 w-3.5 lg:h-4 lg:w-4" />
               <input
                 type="text"
-                placeholder="Search tickets by ID, subject or customer..."
-                value={filters.searchQuery}
-                onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-                className="w-full pl-8 pr-4 h-8 md:h-10 bg-white border border-gray-200 rounded-lg md:rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs md:text-sm font-medium transition-all shadow-sm"
+                data-testid="support-search"
+                placeholder="Search by subject, name, email, ticket ID or job..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 h-8 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs font-medium transition-all shadow-sm lg:pl-10 lg:pr-4 lg:h-9 lg:rounded-xl lg:text-sm"
               />
             </div>
-          </div>
 
-          {/* Mobile: filter dropdowns in a 2-col grid */}
-          <div className="grid grid-cols-2 gap-2 w-full md:hidden">
-            <button
-              onClick={() => {
-                const next = filters.userTypeFilter === 'all' ? 'client' : filters.userTypeFilter === 'client' ? 'provider' : 'all';
-                setFilters(prev => ({ ...prev, userTypeFilter: next }));
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-              className={`h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 border transition-all ${
-                filters.userTypeFilter === 'all'
-                  ? "bg-white border-gray-200 text-gray-600"
-                  : filters.userTypeFilter === 'client'
-                  ? "bg-purple-600 border-purple-600 text-white"
-                  : "bg-indigo-600 border-indigo-600 text-white"
-              }`}
-            >
-              {filters.userTypeFilter === 'all' ? 'All Types' : filters.userTypeFilter === 'client' ? 'Customers' : 'Providers'}
-            </button>
-            <div className="relative">
-              <select
-                value={filters.activeTab}
-                onChange={(e) => {
-                  setFilters(prev => ({ ...prev, activeTab: e.target.value }));
-                  setPagination(prev => ({ ...prev, page: 1 }));
-                }}
-                className="h-8 rounded-lg text-[11px] font-black w-full px-2 py-1.5 bg-white border border-gray-200 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none"
-              >
-                <option value="all">All Tickets</option>
-                <option value="open">Open</option>
-                <option value="pending">Pending</option>
-                <option value="resolved">Resolved</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Desktop: user type toggle buttons */}
-          <div className="hidden md:flex items-center gap-2 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <button
-              onClick={() => {
-                setFilters(prev => ({ ...prev, userTypeFilter: 'all' }));
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                filters.userTypeFilter === 'all'
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              All Types
-            </button>
-            <button
-              onClick={() => {
-                setFilters(prev => ({ ...prev, userTypeFilter: 'client' }));
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                filters.userTypeFilter === 'client'
-                  ? "bg-purple-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Customers
-            </button>
-            <button
-              onClick={() => {
-                setFilters(prev => ({ ...prev, userTypeFilter: 'provider' }));
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-              className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                filters.userTypeFilter === 'provider'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Providers
-            </button>
-          </div>
-
-          {/* Pagination Limit for Desktop */}
-          <div className="hidden md:flex items-center gap-2 md:order-3 shrink-0">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Page Limit</span>
+            {/* Page Limit - phones (the desktop one sits by the pages) */}
             <select
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-              className="bg-white px-2 py-1 border border-gray-200 rounded-lg shadow-sm text-xs font-black text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black text-gray-600 focus:outline-none h-8 px-2 shrink-0"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
             </select>
+
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              aria-label="Sort tickets"
+              className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm text-[11px] font-black uppercase tracking-wider text-gray-600 focus:outline-none h-8 px-2 shrink-0"
+            >
+              <option value="activity_desc">Latest</option>
+              <option value="activity_asc">Quietest</option>
+            </select>
           </div>
         </div>
       </div>
 
+      {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {ticketRows.length === 0 ? (
-            <div className="bg-white p-12 text-center">
-              <div className="text-gray-400 mb-4">
+        <div className={`flex-1 overflow-y-auto transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Loading support tickets...</p>
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bg-white p-12 text-center" data-testid="support-empty">
+              <div className="text-gray-300 mb-4">
                 <MessageCircleQuestion className="h-12 w-12 mx-auto" />
               </div>
-              <p className="text-gray-600 font-medium">No tickets found</p>
-              <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+              <p className="text-gray-700 font-semibold">{emptyText.title}</p>
+              <p className="text-sm text-gray-500 mt-1">{emptyText.text}</p>
+              {anyFilterActive && (
+                <button type="button" onClick={clearFilters} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  Show every ticket
+                </button>
+              )}
             </div>
           ) : (
             <>
-              <div className="hidden md:block bg-white">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-10 border-b-2 border-gray-300">
+              {/* Desktop View */}
+              <div className="hidden lg:block bg-white flex-1 relative overflow-hidden">
+                <table className="w-full table-fixed border-separate border-spacing-0">
+                  <thead className="bg-gray-50/80 backdrop-blur-md sticky top-0 z-20">
                     <tr>
-                      {/* Wide enough for two users side by side on a dispute row. */}
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[26%] min-w-[300px]">User</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Subject</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Messages</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created</th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                      <th className="w-[30%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        User
+                      </th>
+                      <th className="w-[30%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Concern
+                      </th>
+                      <th className="w-[22%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                        Status
+                      </th>
+                      <th
+                        className="w-[18%] px-4 xl:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 border-b border-gray-200"
+                        aria-sort={sort === 'activity_desc' ? 'descending' : 'ascending'}
+                      >
+                        <SortHeader
+                          label="Activity"
+                          dir={sort === 'activity_desc' ? 'desc' : 'asc'}
+                          onClick={() => setSort(sort === 'activity_desc' ? 'activity_asc' : 'activity_desc')}
+                        />
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white">
-                    {paginatedRows.map((row) => {
+                    {pageRows.map((row) => {
                       const chat = row.primary;
+                      const concern = concernOf(row);
+                      const parties = row.isDispute && row.reporter && row.reported;
                       return (
-                      <tr
-                        key={row.key}
-                        data-testid={`support-ticket-row-${row.key}`}
-                        onClick={() => handleSelectChat(chat)}
-                        className="hover:bg-gray-50 transition-colors cursor-pointer"
-                      >
-                        <td className="px-6 py-2.5 border-b border-gray-300">
-                          {/* A dispute concerns two people, so the cell lists
-                              both with their role. Everything else keeps the
-                              single-party layout unchanged. */}
-                          {row.isDispute && row.reporter && row.reported ? (
-                            // Reporter on the left, the person reported on the
-                            // right, arrow between: the row reads left-to-right
-                            // as "X reported Y".
-                            <div className="flex items-center gap-2.5">
-                              {([
-                                { party: row.reporter, role: row.reporterRole },
-                                { party: row.reported, role: row.reportedRole },
-                              ] as { party: typeof chat; role: string }[]).map(({ party, role }, i) => (
-                                <React.Fragment key={party._id}>
-                                  {i > 0 && (
-                                    <span
-                                      aria-hidden="true"
-                                      className="shrink-0 text-base font-bold text-gray-300"
-                                    >
-                                      →
-                                    </span>
-                                  )}
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    {party.userProfileImage ? (
-                                      <img
-                                        src={party.userProfileImage}
-                                        alt={party.userName || 'User'}
-                                        className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-100"
-                                      />
-                                    ) : (
-                                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                                        <span className="text-[10px] font-bold text-blue-600 uppercase">
-                                          {getInitials(party.userName || 'Unknown')}
-                                        </span>
-                                      </div>
-                                    )}
-                                    <div className="min-w-0">
-                                      <div
-                                        className="text-[13px] font-bold text-gray-900 truncate leading-tight"
-                                        title={`${party.userName || 'Unknown'} — ${role}, ${i === 0 ? 'raised this dispute' : 'is the subject of this dispute'}`}
-                                      >
-                                        {party.userName || 'Unknown'}
-                                      </div>
-                                      <div className="text-[9px] font-black uppercase tracking-widest leading-tight">
-                                        <span className={i === 0 ? 'text-amber-600' : 'text-red-500'}>
-                                          {i === 0 ? 'Reporter' : 'Reported'}
-                                        </span>
-                                        <span className="text-gray-300"> · </span>
-                                        <span className="text-gray-400">{role}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </React.Fragment>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-3">
-                              {chat.userProfileImage ? (
-                                <img
-                                  src={chat.userProfileImage}
-                                  alt={chat.userName || 'User'}
-                                  className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-100"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                                  <span className="text-sm font-bold text-blue-600 uppercase">
-                                    {getInitials(chat.userName || 'Unknown')}
-                                  </span>
+                        <tr
+                          key={row.key}
+                          data-testid={`support-ticket-row-${row.key}`}
+                          onClick={() => handleSelectChat(chat)}
+                          className="group h-20 cursor-pointer transition-colors hover:bg-gray-50/70"
+                        >
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            {parties ? (
+                              // Who raised it, then who it is against.
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
+                                  <Scale className="h-4 w-4 text-amber-600" />
                                 </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-sm font-bold text-gray-900 truncate">{chat.userName || 'Unknown'}</div>
-                                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{chat.userEmail || 'N/A'}</div>
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <DisputeParty chat={row.reporter!} raised />
+                                  <DisputeParty chat={row.reported!} raised={false} />
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 border-b border-gray-300">
-                          <div className="max-w-[260px]">
-                            {row.isDispute ? (
-                              <>
-                                {/* Headline off the JOB, not the thread subject:
-                                    the two threads of one dispute can carry
-                                    different subjects (one side files it as
-                                    "Payment / wallet", the other as "Dispute:
-                                    <job>"), so using the primary thread's
-                                    subject makes the same dispute read
-                                    differently depending on who reported. */}
-                                <div
-                                  className="text-sm font-semibold text-gray-900 truncate"
-                                  title={row.jobTitle || chat.subject}
-                                >
-                                  {row.jobTitle || chat.subject.replace(/^Dispute:\s*/i, '')}
-                                </div>
-                                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
-                                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
-                                  <span className="uppercase tracking-wider">Job dispute</span>
-                                  {row.jobId && (
-                                    <span title={`Job ${row.jobId}`}>
-                                      · #{row.jobId.slice(-6).toUpperCase()}
-                                    </span>
-                                  )}
-                                  {row.disputeOutcome && (
-                                    <span className="text-emerald-600">
-                                      · {DISPUTE_OUTCOME_LABELS[row.disputeOutcome] || row.disputeOutcome}
-                                    </span>
-                                  )}
-                                </div>
-                              </>
                             ) : (
-                              <div className="text-sm font-medium text-gray-900 truncate" title={chat.subject}>
-                                {chat.subject}
+                              <div className="flex items-center gap-3 min-w-0">
+                                <Avatar chat={chat} />
+                                <div className="min-w-0">
+                                  <RoleLabel chat={chat} />
+                                  <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">{chat.userName || 'Unknown'}</p>
+                                  <p className="text-[11px] text-gray-500 truncate">{chat.userEmail || 'No email'}</p>
+                                </div>
                               </div>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
-                          <div className="text-sm text-gray-600">{chat.category}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
-                          <div className="flex items-center justify-center gap-2">
-                            {/* row.status is open while EITHER thread is open. */}
-                            {rowStatusBadge(row)}
-                            {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100 shadow-sm shadow-purple-50/50" title="You previously resolved a ticket in this conversation">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Prev. Resolved
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
-                          <div
-                            className="flex items-center justify-center gap-1"
-                            title={row.isDispute ? 'Combined across both dispute threads' : undefined}
-                          >
-                            <MessageSquare className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-medium text-gray-900">{row.messageCount}</span>
-                            {row.unreadCount > 0 && (
-                              <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                                {row.unreadCount}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap border-b border-gray-300">
-                          <div className="text-xs text-gray-500">
-                            {new Date(row.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(row.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center border-b border-gray-300">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectChat(chat);
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            title="View chat"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className={`text-[9px] font-black uppercase tracking-wider truncate ${row.isDispute ? 'text-amber-600' : 'text-gray-400'}`}>{concern.label}</p>
+                            <p className="text-sm font-semibold text-gray-900 truncate" title={concern.title}>{concern.title}</p>
+                            <p className="text-[11px] text-gray-500 truncate">
+                              <span className="font-mono text-gray-400">{concern.ref}</span>
+                              {concern.priority && <span className={concern.priority.tone}> · {concern.priority.text}</span>}
+                            </p>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <div className="flex flex-col items-start gap-1.5 min-w-0">
+                              <StatusBadge state={stateOf(row)} />
+                              <StatusText row={row} className="text-[11px] max-w-full" />
+                              {hasPreviouslyResolved(chat, myId) && (
+                                <span className="flex items-center gap-1 text-[10px] font-semibold text-purple-600" title="You resolved an earlier ticket in this conversation">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  You resolved one before
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 xl:px-6 py-2 border-b border-gray-200 h-20 align-middle">
+                            <p className="text-xs font-bold text-gray-900 truncate">{ago(new Date(lastActivityOf(row)))}</p>
+                            <p className="mt-1 flex items-center gap-1 text-[11px] text-gray-500" title={row.isDispute ? 'Across both dispute threads' : undefined}>
+                              <MessageSquare className="h-3 w-3 text-gray-400" />
+                              {row.messageCount} message{row.messageCount === 1 ? '' : 's'}
+                              {row.unreadCount > 0 && (
+                                <span className="text-red-600 font-semibold" data-testid="support-row-unread"> · {row.unreadCount} new</span>
+                              )}
+                            </p>
+                          </td>
+                        </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
 
-              <div className="md:hidden px-3 py-3 space-y-2">
-                {paginatedRows.map((row) => {
-                  const chat = row.primary;
-                  return (
-                  <div
-                    key={row.key}
-                    data-testid={`support-ticket-row-${row.key}`}
-                    onClick={() => handleSelectChat(chat)}
-                    className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between px-3 py-2 gap-1.5 bg-gray-50/80 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        {rowStatusBadge(row)}
-                        {row.isDispute && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-100">
-                            Dispute
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-widest">
-                        {new Date(row.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    <div className="px-3 py-2.5">
-                      <div className="flex items-start gap-3">
-                        {chat.userProfileImage ? (
-                          <img
-                            src={chat.userProfileImage}
-                            alt={chat.userName || 'User'}
-                            className="h-8 w-8 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center border border-gray-100 shadow-sm flex-shrink-0">
-                            <span className="text-xs font-bold text-blue-600">
-                              {getInitials(chat.userName || 'Unknown')}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          {/* Both parties named, so a dispute card is not
-                              mistaken for a single-user ticket. */}
-                          <p className="text-sm font-black text-gray-900 leading-tight mb-0.5">
-                            {row.isDispute && row.provider && row.client
-                              ? `${row.client.userName || 'Client'} ↔ ${row.provider.userName || 'Provider'}`
-                              : chat.userName || 'Unknown User'}
-                          </p>
-                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 truncate">
-                            {row.isDispute ? 'Client ↔ Provider' : chat.userEmail || 'N/A'}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 border border-gray-100 rounded text-[9px] font-black text-gray-500 uppercase tracking-widest">
-                              <MessageSquare className="h-2 w-2" />
-                              {chat.messages?.length || 0} MESSAGES
+              {/* Phones and tablets */}
+              <div className="lg:hidden bg-white">
+                <div className="px-3 py-3 space-y-2">
+                  {pageRows.map((row) => {
+                    const chat = row.primary;
+                    const concern = concernOf(row);
+                    const parties = row.isDispute && row.reporter && row.reported;
+                    return (
+                      <div
+                        key={row.key}
+                        data-testid={`support-ticket-card-${row.key}`}
+                        onClick={() => handleSelectChat(chat)}
+                        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start gap-3 px-3 pt-3 pb-2.5">
+                          {parties ? (
+                            <div className="w-10 h-10 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
+                              <Scale className="h-4 w-4 text-amber-600" />
                             </div>
-                            {(chat.unreadCount || 0) > 0 && (
-                              <div className="inline-flex items-center px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded text-[9px] font-black uppercase tracking-widest">
-                                {chat.unreadCount} NEW
-                              </div>
+                          ) : (
+                            <Avatar chat={chat} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            {parties ? (
+                              <>
+                                <p className="text-[9px] font-black uppercase tracking-wider text-amber-600">Job dispute</p>
+                                <p className="text-[13px] font-black text-gray-900 truncate leading-snug">
+                                  {row.reporter!.userName || 'Unknown'} → {row.reported!.userName || 'Unknown'}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <RoleLabel chat={chat} />
+                                <p className="text-[13px] font-black text-gray-900 truncate leading-snug">{chat.userName || 'Unknown'}</p>
+                              </>
                             )}
+                            <StatusText row={row} className="mt-1 text-[11px]" />
                           </div>
+                          <StatusBadge state={stateOf(row)} small />
                         </div>
-                        <div className="text-right">
-                          <div className="p-1.5 rounded-lg bg-gray-50 border border-gray-100 transition-colors">
-                            <Eye className="h-3.5 w-3.5 text-gray-400" />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-2.5 pt-2 border-t border-dashed border-gray-100">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Subject</span>
-                          <span className="text-xs font-black text-gray-900 line-clamp-2">{chat.subject}</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Category</span>
-                          <span className="text-xs font-bold text-indigo-600">{chat.category}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Ticket ID</span>
-                          <span className="text-xs font-mono font-bold text-gray-500 uppercase">#{chat._id.slice(-6).toUpperCase()}</span>
-                        </div>
-                      </div>
-
-                      {/* Footer: Resolved Check */}
-                      {hasPreviouslyResolved(chat, user?.id || user?._id || user?.adminId) && (
-                        <div className="mt-2.5 py-2 border-t border-dashed border-gray-100">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-50 text-purple-700 border border-purple-100" title="You previously resolved a ticket in this conversation">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Prev. Resolved
+                        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                          <p className="flex-1 min-w-0 text-[10px] font-semibold text-gray-500 truncate">{concern.title}</p>
+                          <div className="flex items-center gap-1 text-[9px] font-bold flex-shrink-0">
+                            {row.unreadCount > 0 && <span className="text-red-600">{row.unreadCount} new ·</span>}
+                            <span className="flex items-center gap-0.5 text-gray-400">
+                              <Clock className="h-2.5 w-2.5" />
+                              {ago(new Date(lastActivityOf(row)))}
                             </span>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  );
-                })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-
             </>
           )}
         </div>
 
-        {/* Pagination — outside scroll, always sticky at bottom */}
-        {totalPages > 1 && (
-          <div className="flex-shrink-0 bg-white border-t border-gray-200 z-10 px-4 h-[65px] flex items-center">
-            <div className="flex items-center justify-between w-full">
-              <p className="text-xs md:text-sm text-gray-700">
-                Showing{' '}
-                <span className="font-medium">{((pagination.page - 1) * pagination.limit) + 1}</span>{' '}
-                to{' '}
-                <span className="font-medium">{Math.min(pagination.page * pagination.limit, ticketRows.length)}</span>{' '}
-                of{' '}
-                <span className="font-medium">{filteredTickets.length}</span> results
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
-                  disabled={pagination.page === totalPages}
-                  className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+        {!loading && filtered.length > 0 && (
+          <ListFooter page={page} limit={limit} total={filtered.length} pages={totalPages} onPage={setPage} onLimit={setLimit} />
         )}
       </div>
 
